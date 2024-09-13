@@ -43,9 +43,6 @@ contract FakeComponentToken is Initializable, AccessControlUpgradeable, UUPSUpgr
     /// @notice Role for the upgrader of the FakeComponentToken
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADE_ROLE");
 
-    // Base at which we do all calculations to minimize rounding losses
-    uint256 private constant _BASE = 1e18;
-
     // Events
 
     /**
@@ -186,11 +183,11 @@ contract FakeComponentToken is Initializable, AccessControlUpgradeable, UUPSUpgr
 
     /**
      * @notice Set the CurrencyToken used to mint and burn the FakeComponentToken
-     * @param currencyAddress Address of the CurrencyToken
+     * @param currencyToken New CurrencyToken
      */
-    function setCurrencyToken(IERC20 currencyAddress) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setCurrencyToken(IERC20 currencyToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
         FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        $.currencyToken = currencyAddress;
+        $.currencyToken = currencyToken;
     }
 
     // View Functions
