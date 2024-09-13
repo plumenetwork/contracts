@@ -254,7 +254,10 @@ contract AggregateToken is
             $.componentTokenMap[componentToken] = true;
             $.componentTokenList.push(componentToken);
         }
+
+        currencyToken.approve(address(componentToken), currencyTokenAmount);
         uint256 componentTokenAmount = componentToken.buy(currencyToken, currencyTokenAmount);
+        componentToken.approve(address(componentToken), 0);
 
         emit ComponentTokenBought(msg.sender, $.currencyToken, currencyTokenAmount, componentTokenAmount);
     }
@@ -339,6 +342,15 @@ contract AggregateToken is
     function getTokenURI() public view returns (string memory) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
         return $.tokenURI;
+    }
+
+    /**
+     * @notice Check if the given ComponentToken has ever been added to the AggregateToken
+     * @param componentToken ComponentToken to check
+     */
+    function getComponentToken(IComponentToken componentToken) public view returns (bool) {
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        return $.componentTokenMap[componentToken];
     }
 
     /// @notice Get all ComponentTokens that have ever been added to the AggregateToken

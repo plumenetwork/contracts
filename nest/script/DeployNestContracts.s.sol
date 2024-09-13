@@ -19,7 +19,9 @@ contract DeployNestContracts is Script {
 
         address fakeComponentTokenProxy = Upgrades.deployUUPSProxy(
             "FakeComponentToken.sol",
-            abi.encodeCall(FakeComponentToken.initialize, (msg.sender, "Banana", "BAN", IERC20(USDC_ADDRESS), 18))
+            abi.encodeCall(
+                FakeComponentToken.initialize, (ARC_ADMIN_ADDRESS, "Banana", "BAN", IERC20(USDC_ADDRESS), 18)
+            )
         );
         console.log("FakeComponentToken deployed to:", fakeComponentTokenProxy);
 
@@ -28,7 +30,7 @@ contract DeployNestContracts is Script {
             abi.encodeCall(
                 AggregateToken.initialize,
                 (
-                    msg.sender,
+                    ARC_ADMIN_ADDRESS,
                     "Apple",
                     "AAPL",
                     IERC20(USDC_ADDRESS),
