@@ -9,5 +9,7 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
  * @notice Proxy contract for the AggregateToken
  */
 contract AggregateTokenProxy is ERC1967Proxy {
+
     constructor(address logic, bytes memory data) ERC1967Proxy(logic, data) { }
+
 }

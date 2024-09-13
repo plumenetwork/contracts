@@ -4,12 +4,11 @@ pragma solidity ^0.8.25;
 import "forge-std/Script.sol";
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { Upgrades } from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
-import { AggregateTokenProxy } from "../src/proxies/AggregateTokenProxy.sol";
-import { FakeComponentTokenProxy } from "../src/proxies/FakeComponentTokenProxy.sol";
 import { AggregateToken } from "../src/AggregateToken.sol";
 import { FakeComponentToken } from "../src/FakeComponentToken.sol";
+import { AggregateTokenProxy } from "../src/proxies/AggregateTokenProxy.sol";
+import { FakeComponentTokenProxy } from "../src/proxies/FakeComponentTokenProxy.sol";
 
 contract DeployNestContracts is Script {
 
@@ -20,8 +19,8 @@ contract DeployNestContracts is Script {
         vm.startBroadcast(ARC_ADMIN_ADDRESS);
 
         FakeComponentToken fakeComponentToken = new FakeComponentToken();
-        FakeComponentTokenProxy fakeComponentTokenProxy = new fakeComponentTokenProxy(
-            fakeComponentToken,
+        FakeComponentTokenProxy fakeComponentTokenProxy = new FakeComponentTokenProxy(
+            address(fakeComponentToken),
             abi.encodeCall(
                 FakeComponentToken.initialize, (ARC_ADMIN_ADDRESS, "Banana", "BAN", IERC20(USDC_ADDRESS), 18)
             )
@@ -30,14 +29,14 @@ contract DeployNestContracts is Script {
 
         AggregateToken aggregateToken = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
-            aggregateToken,
+            address(aggregateToken),
             abi.encodeCall(
                 AggregateToken.initialize,
                 (
                     ARC_ADMIN_ADDRESS,
                     "Apple",
                     "AAPL",
-                    IERC20(USDC_ADDRESS),
+                    USDC_ADDRESS,
                     18,
                     15e17,
                     12e17,
