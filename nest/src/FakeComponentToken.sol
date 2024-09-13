@@ -1,137 +1,211 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
-import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/contracts/token/ERC20/ERC20Upgradeable.sol";
 
 /**
- * @title ComponentTokenExample
- * @dev ERC20 token that represents a component of an AggregateToken
- * Invariant: the total value of all ComponentTokens minted is equal to the total value of all of its component tokens
+ * @title FakeComponentToken
+ * @author Eugene Y. Q. Shen
+ * @notice Fake example of a ComponentToken that could be used in an AggregateToken when testing.
+ * Users can buy and sell one FakeComponentToken by exchanging it with one CurrencyToken at any time.
+ * @custom:oz-upgrades-from FakeComponentToken
  */
-contract ComponentToken is IComponentToken, ERC20Upgradeable {
-    IERC20 public currencyToken;
+contract FakeComponentToken is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    ERC20Upgradeable,
+    IComponentToken
+{
 
-    // Base at which we do calculations in order to minimize rounding differences
-    uint256 _BASE = 10 ** 18;
+    // Storage
 
-    // Price at which the vault manager is willing to sell the aggregate token, times the base
-    uint256 askPrice;
-    /* Price at which the vault manager is willing to buy back the aggregate token, times the base
-     * This is always smaller than the ask price, so if the vault manager never changes either price,
-     * then they will always be able to buy back all outstanding ComponentTokens at a profit
-     */
-    uint256 bidPrice;
+    /// @custom:storage-location erc7201:plume.storage.FakeComponentToken
+    struct FakeComponentTokenStorage {
+        /// @dev CurrencyToken used to mint and burn the FakeComponentToken
+        IERC20 currencyToken;
+        /// @dev Number of decimals of the FakeComponentToken
+        uint8 decimals;
+    }
 
-    uint8 private _currencyDecimals;
-    uint8 private _decimals;
+    // keccak256(abi.encode(uint256(keccak256("plume.storage.FakeComponentToken")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant FAKE_COMPONENT_TOKEN_STORAGE_LOCATION =
+        0x2c4e9dd7fc35b7006b8a84e1ac11ecc9e53a0dd5c8824b364abab355c5037600;
+
+    function _getFakeComponentTokenStorage() private pure returns (FakeComponentTokenStorage storage $) {
+        assembly {
+            $.slot := FAKE_COMPONENT_TOKEN_STORAGE_LOCATION
+        }
+    }
+
+    // Constants
+
+    /// @notice Role for the upgrader of the FakeComponentToken
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADE_ROLE");
 
     // Events
 
     /**
-     * @dev Emitted when a user stakes currencyToken to receive aggregateToken in return
-     * @param user Address of the user who staked the currencyToken
-     * @param currencyTokenAmount Amount of currencyToken staked
-     * @param aggregateTokenAmount Amount of aggregateToken received
+     * @notice Emitted when a user buys FakeComponentToken using CurrencyToken
+     * @param user Address of the user who bought the FakeComponentToken
+     * @param currencyToken CurrencyToken used to buy the FakeComponentToken
+     * @param currencyTokenAmount Amount of CurrencyToken paid
+     * @param componentTokenAmount Amount of FakeComponentToken received
      */
-    event Buy(address indexed user, uint256 currencyTokenAmount, uint256 aggregateTokenAmount);
+    event ComponentTokenBought(
+        address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
+    );
 
     /**
-     * @dev Emitted when a user unstakes aggregateToken to receive currencyToken in return
-     * @param user Address of the user who unstaked the aggregateToken
-     * @param currencyTokenAmount Amount of currencyToken received
-     * @param aggregateTokenAmount Amount of aggregateToken unstaked
+     * @notice Emitted when a user sells FakeComponentToken to receive CurrencyToken
+     * @param user Address of the user who sold the FakeComponentToken
+     * @param currencyToken CurrencyToken received in exchange for the FakeComponentToken
+     * @param currencyTokenAmount Amount of CurrencyToken received
+     * @param componentTokenAmount Amount of FakeComponentToken sold
      */
-    event Sell(address indexed user, uint256 currencyTokenAmount, uint256 aggregateTokenAmount);
+    event ComponentTokenSold(
+        address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
+    );
 
+    // Errors
+
+    /**
+     * @notice Indicates a failure because the given CurrencyToken does not match actual CurrencyToken
+     * @param invalidCurrencyToken CurrencyToken that does not match the actual CurrencyToken
+     * @param currencyToken Actual CurrencyToken used to mint and burn the FakeComponentToken
+     */
+    error InvalidCurrencyToken(IERC20 invalidCurrencyToken, IERC20 currencyToken);
+
+    /**
+     * @notice Indicates a failure because the FakeComponentToken does not have enough CurrencyToken
+     * @param currencyToken CurrencyToken used to mint and burn the FakeComponentToken
+     * @param amount Amount of CurrencyToken required in the failed transfer
+     */
+    error CurrencyTokenInsufficientBalance(IERC20 currencyToken, uint256 amount);
+
+    /**
+     * @notice Indicates a failure because the user does not have enough CurrencyToken
+     * @param currencyToken CurrencyToken used to mint and burn the FakeComponentToken
+     * @param user Address of the user who is selling the CurrencyToken
+     * @param amount Amount of CurrencyToken required in the failed transfer
+     */
+    error UserCurrencyTokenInsufficientBalance(IERC20 currencyToken, address user, uint256 amount);
+
+    // Initializer
+
+    /**
+     * @notice Initialize the FakeComponentToken
+     * @param owner Address of the owner of the FakeComponentToken
+     * @param name Name of the FakeComponentToken
+     * @param symbol Symbol of the FakeComponentToken
+     * @param currencyToken CurrencyToken used to mint and burn the FakeComponentToken
+     * @param decimals_ Number of decimals of the FakeComponentToken
+     */
     function initialize(
+        address owner,
         string memory name,
         string memory symbol,
-        uint8 __decimals,
-        string memory _tokenURI,
-        address _currencyToken,
-        uint256 _askPrice,
-        uint256 _bidPrice
+        IERC20 currencyToken,
+        uint8 decimals_
     ) public initializer {
-        tokenURI = _tokenURI;
+        __ERC20_init(name, symbol);
+        __AccessControl_init();
+        __UUPSUpgradeable_init();
 
-        currencyToken = IERC20(_currencyToken);
-        _currencyDecimals = currencyToken.decimals();
-        askPrice = _askPrice;
-        bidPrice = _bidPrice;
-        _decimals = __decimals;
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(UPGRADER_ROLE, owner);
+
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        $.currencyToken = currencyToken;
+        $.decimals = decimals_;
     }
 
     // Override Functions
 
     /**
-     * @notice Returns the number of decimals of the aggregateToken
+     * @notice Revert when `msg.sender` is not authorized to upgrade the contract
+     * @param newImplementation Address of the new implementation
      */
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+
+    /// @notice Number of decimals of the FakeComponentToken
     function decimals() public view override returns (uint8) {
-        return _decimals;
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        return $.decimals;
     }
 
     // User Functions
 
     /**
-     * @notice Stake the currencyToken to receive aggregateToken in return
-     * @dev The user must approve the contract to spend the currencyToken
-     * @param currencyTokenAmount Amount of currencyToken to stake
+     * @notice Buy FakeComponentToken using CurrencyToken
+     * @dev The user must approve the contract to spend the CurrencyToken
+     * @param currencyToken_ CurrencyToken used to buy the FakeComponentToken
+     * @param amount Amount of CurrencyToken to pay to receive the same amount of FakeComponentToken
      */
-    function buy(
-        address currencyToken,
-        uint256 currencyTokenAmount
-    ) public {
-        /*
-        // TODO: figure decimals math
-        uint256 aggregateTokenAmount = currencyTokenAmount * _BASE / askPrice;
+    function buy(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        IERC20 currencyToken = $.currencyToken;
 
-        require(currencyToken.transferFrom(msg.sender, address(this), currencyTokenAmount), "AggregateToken: failed to transfer currencyToken");
-        _mint(msg.sender, aggregateTokenAmount);
+        if (currencyToken_ != currencyToken) {
+            revert InvalidCurrencyToken(currencyToken_, currencyToken);
+        }
+        if (!currencyToken.transferFrom(msg.sender, address(this), amount)) {
+            revert UserCurrencyTokenInsufficientBalance(currencyToken, msg.sender, amount);
+        }
 
-        emit Staked(msg.sender, currencyTokenAmount, aggregateTokenAmount);
-        */
+        _mint(msg.sender, amount);
 
-        DEX.swap(p, address(this));
+        emit ComponentTokenBought(msg.sender, currencyToken, amount, amount);
 
+        return amount;
     }
 
     /**
-     * @notice Unstake the aggregateToken to receive currencyToken in return
-     * @param currencyTokenAmount Amount of currencyToken to receive
+     * @notice Sell FakeComponentToken to receive CurrencyToken
+     * @param currencyToken_ CurrencyToken received in exchange for the FakeComponentToken
+     * @param amount Amount of CurrencyToken to receive in exchange for the FakeComponentToken
      */
-    function (
-        address currencyToken,
-        uint256 currencyTokenAmount
-    ) public {
-        // TODO: figure decimals math
-        uint256 aggregateTokenAmount = currencyTokenAmount * _BASE / bidPrice;
+    function sell(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        IERC20 currencyToken = $.currencyToken;
 
-        require(currencyToken.transfer(msg.sender, currencyTokenAmount), "AggregateToken: failed to transfer currencyToken");
-        _burn(msg.sender, aggregateTokenAmount);
+        if (currencyToken_ != currencyToken) {
+            revert InvalidCurrencyToken(currencyToken_, currencyToken);
+        }
+        if (!currencyToken.transfer(msg.sender, amount)) {
+            revert CurrencyTokenInsufficientBalance(currencyToken, amount);
+        }
 
-        emit Unstaked(msg.sender, currencyTokenAmount, aggregateTokenAmount);
-    }
+        _burn(msg.sender, amount);
 
-    /**
-     * @notice 
-     */
-    function claim(uint256 amount) public {
-        // TODO - rebasing vs. streaming
-    }
+        emit ComponentTokenSold(msg.sender, currencyToken, amount, amount);
 
-    function claimAll() public {
-        uint256 amount = claimableAmount(msg.sender);
-        claim(amount);
+        return amount;
     }
 
     // Admin Setter Functions
 
-    function setAskPrice(uint256 price) public onlyOwner {
-        askPrice = price;
+    /**
+     * @notice Set the CurrencyToken used to mint and burn the FakeComponentToken
+     * @param currencyToken New CurrencyToken
+     */
+    function setCurrencyToken(IERC20 currencyToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        $.currencyToken = currencyToken;
     }
-    
-    function setBidPrice(uint256 price) public onlyOwner {
-        bidPrice = price;
+
+    // Getter View Functions
+
+    /// @notice CurrencyToken used to mint and burn the FakeComponentToken
+    function getCurrencyToken() public view returns (IERC20) {
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        return $.currencyToken;
     }
+
 }
