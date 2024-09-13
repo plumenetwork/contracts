@@ -3,7 +3,7 @@ pragma solidity ^0.8.25;
 
 import "forge-std/Script.sol";
 
-import { IERC20 } from "openzeppelin-contracts/token/ERC20/IERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Upgrades } from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 import { FakeComponentToken } from "../src/FakeComponentToken.sol";
