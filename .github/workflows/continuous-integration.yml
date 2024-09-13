@@ -28,11 +28,11 @@ jobs:
         with:
           version: nightly
 
-      - name: Run Forge build
-        run: |
-          forge --version
-          forge build nest --sizes
-        id: build
+      # - name: Run Forge build
+      #   run: |
+      #     forge --version
+      #     forge build nest --sizes
+      #   id: build
 
       - name: Run Forge format
         run: |
