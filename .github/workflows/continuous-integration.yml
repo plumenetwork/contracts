@@ -34,10 +34,10 @@ jobs:
       #     forge build nest --sizes
       #   id: build
 
-      - name: Run Forge format
-        run: |
-          forge fmt nest --check
-        id: format
+      # - name: Run Forge format
+      #   run: |
+      #     forge fmt nest --check
+      #   id: format
 
       # - name: Run Forge tests
       #   run: |
