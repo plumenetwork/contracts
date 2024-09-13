@@ -5,7 +5,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IComponentToken is IERC20 {
 
-    function buy(address currencyAddress, uint256 amount) external;
-    function sell(address currencyAddress, uint256 amount) external;
+    function buy(IERC20 currencyToken, uint256 currencyTokenAmount) external returns (uint256 componentTokenAmount);
+    function sell(IERC20 currencyToken, uint256 currencyTokenAmount) external returns (uint256 componentTokenAmount);
 
 }

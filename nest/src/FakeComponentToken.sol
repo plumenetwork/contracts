@@ -140,9 +140,9 @@ contract FakeComponentToken is Initializable, AccessControlUpgradeable, UUPSUpgr
      * @notice Buy FakeComponentToken using CurrencyToken
      * @dev The user must approve the contract to spend the CurrencyToken
      * @param currencyToken_ CurrencyToken used to buy the FakeComponentToken
-     * @param amount Amount of FakeComponentToken to buy using the same amount of CurrencyToken
+     * @param amount Amount of CurrencyToken to pay to receive the same amount of FakeComponentToken
      */
-    function buy(IERC20 currencyToken_, uint256 amount) public {
+    function buy(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
         FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
         IERC20 currencyToken = $.currencyToken;
 
@@ -156,14 +156,16 @@ contract FakeComponentToken is Initializable, AccessControlUpgradeable, UUPSUpgr
         _mint(msg.sender, amount);
 
         emit ComponentTokenBought(msg.sender, currencyToken, amount, amount);
+
+        return amount;
     }
 
     /**
      * @notice Sell FakeComponentToken to receive CurrencyToken
      * @param currencyToken_ CurrencyToken received in exchange for the FakeComponentToken
-     * @param amount Amount of FakeComponentToken to sell to receive the same amount of CurrencyToken
+     * @param amount Amount of CurrencyToken to receive in exchange for the FakeComponentToken
      */
-    function sell(IERC20 currencyToken_, uint256 amount) public {
+    function sell(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
         FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
         IERC20 currencyToken = $.currencyToken;
 
@@ -177,9 +179,11 @@ contract FakeComponentToken is Initializable, AccessControlUpgradeable, UUPSUpgr
         _burn(msg.sender, amount);
 
         emit ComponentTokenSold(msg.sender, currencyToken, amount, amount);
+
+        return amount;
     }
 
-    // Admin Functions
+    // Admin Setter Functions
 
     /**
      * @notice Set the CurrencyToken used to mint and burn the FakeComponentToken
@@ -190,7 +194,7 @@ contract FakeComponentToken is Initializable, AccessControlUpgradeable, UUPSUpgr
         $.currencyToken = currencyToken;
     }
 
-    // View Functions
+    // Getter View Functions
 
     /// @notice CurrencyToken used to mint and burn the FakeComponentToken
     function getCurrencyToken() public view returns (IERC20) {
