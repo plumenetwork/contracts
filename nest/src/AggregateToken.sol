@@ -165,6 +165,8 @@ contract AggregateToken is
         _grantRole(UPGRADER_ROLE, owner);
 
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        $.componentTokenMap[currencyToken] = true;
+        $.componentTokenList.push(currencyToken);
         $.currencyToken = currencyToken;
         $.decimals = decimals_;
         $.askPrice = askPrice;
