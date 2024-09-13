@@ -1,6 +1,28 @@
 [profile.default]
+solc = "0.8.25"
+evm_version = "cancun"
 src = "src"
 out = "out"
 libs = ["lib"]
+ffi = true
+ast = true
+build_info = true
+extra_output = ["storageLayout"]
+
+[fmt]
+single_line_statement_blocks = "multi"
+multiline_func_header = "params_first"
+sort_imports = true
+contract_new_lines = true
+bracket_spacing = true
+int_types = "long"
+quote_style = "double"
+number_underscore = "thousands"
+wrap_comments = true
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/",
+  "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+]

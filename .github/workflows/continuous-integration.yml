@@ -1,6 +1,12 @@
-name: test
+name: Continuous Integration
 
-on: workflow_dispatch
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 env:
   FOUNDRY_PROFILE: ci
@@ -10,7 +16,7 @@ jobs:
     strategy:
       fail-fast: true
 
-    name: Foundry project
+    name: Build and Test Contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
