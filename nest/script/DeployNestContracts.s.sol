@@ -6,6 +6,8 @@ import "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Upgrades } from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
+import { AggregateTokenProxy } from "../src/proxies/AggregateTokenProxy.sol";
+import { FakeComponentTokenProxy } from "../src/proxies/FakeComponentTokenProxy.sol";
 import { AggregateToken } from "../src/AggregateToken.sol";
 import { FakeComponentToken } from "../src/FakeComponentToken.sol";
 
@@ -17,16 +19,18 @@ contract DeployNestContracts is Script {
     function run() external {
         vm.startBroadcast(ARC_ADMIN_ADDRESS);
 
-        address fakeComponentTokenProxy = Upgrades.deployUUPSProxy(
-            "FakeComponentToken.sol",
+        FakeComponentToken fakeComponentToken = new FakeComponentToken();
+        FakeComponentTokenProxy fakeComponentTokenProxy = new fakeComponentTokenProxy(
+            fakeComponentToken,
             abi.encodeCall(
                 FakeComponentToken.initialize, (ARC_ADMIN_ADDRESS, "Banana", "BAN", IERC20(USDC_ADDRESS), 18)
             )
         );
-        console.log("FakeComponentToken deployed to:", fakeComponentTokenProxy);
+        console.log("FakeComponentTokenProxy deployed to:", address(fakeComponentTokenProxy));
 
-        address aggregateTokenProxy = Upgrades.deployUUPSProxy(
-            "AggregateToken.sol",
+        AggregateToken aggregateToken = new AggregateToken();
+        AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
+            aggregateToken,
             abi.encodeCall(
                 AggregateToken.initialize,
                 (
@@ -41,7 +45,7 @@ contract DeployNestContracts is Script {
                 )
             )
         );
-        console.log("AggregateToken deployed to:", aggregateTokenProxy);
+        console.log("AggregateTokenProxy deployed to:", address(aggregateTokenProxy));
 
         vm.stopBroadcast();
     }
