@@ -36,7 +36,7 @@ jobs:
 
       - name: Run Forge format
         run: |
-          forge fmt nest
+          forge fmt nest --check
         id: format
 
       # - name: Run Forge tests
