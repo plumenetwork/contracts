@@ -7,8 +7,10 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { AggregateToken } from "../src/AggregateToken.sol";
 import { FakeComponentToken } from "../src/FakeComponentToken.sol";
+import { NestStaking } from "../src/NestStaking.sol";
 import { AggregateTokenProxy } from "../src/proxies/AggregateTokenProxy.sol";
 import { FakeComponentTokenProxy } from "../src/proxies/FakeComponentTokenProxy.sol";
+import { NestStakingProxy } from "../src/proxies/NestStakingProxy.sol";
 
 contract DeployNestContracts is Script {
 
@@ -45,6 +47,11 @@ contract DeployNestContracts is Script {
             )
         );
         console.log("AggregateTokenProxy deployed to:", address(aggregateTokenProxy));
+
+        NestStaking nestStaking = new NestStaking();
+        NestStakingProxy nestStakingProxy =
+            new NestStakingProxy(address(nestStaking), abi.encodeCall(NestStaking.initialize, (ARC_ADMIN_ADDRESS)));
+        console.log("NestStakingProxy deployed to:", address(nestStakingProxy));
 
         vm.stopBroadcast();
     }
