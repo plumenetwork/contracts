@@ -16,7 +16,7 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  * Users can buy and sell one FakeComponentToken by exchanging it with one CurrencyToken at any time.
  * @custom:oz-upgrades-from FakeComponentToken
  */
-contract FakeComponentToken is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ERC20Upgradeable {
+contract FakeComponentToken is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ERC20Upgradeable, IComponentToken {
 
     // Storage
 
