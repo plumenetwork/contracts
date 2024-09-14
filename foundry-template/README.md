@@ -4,6 +4,5 @@ Copy this folder to start a new Foundry project, then run the following to initi
 
 ```bash
 $ forge install foundry-rs/forge-std
-$ forge install OpenZeppelin/openzeppelin-foundry-upgrades
 $ forge install OpenZeppelin/openzeppelin-contracts-upgradeable
 ```
