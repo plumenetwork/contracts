@@ -141,7 +141,7 @@ contract AggregateToken is
      * @param owner Address of the owner of the AggregateToken
      * @param name Name of the AggregateToken
      * @param symbol Symbol of the AggregateToken
-     * @param currencyToken CurrencyToken used to mint and burn the AggregateToken
+     * @param currencyAddress Address of the CurrencyToken used to mint and burn the AggregateToken
      * @param decimals_ Number of decimals of the AggregateToken
      * @param askPrice Price at which users can buy the AggregateToken using CurrencyToken, times the base
      * @param bidPrice Price at which users can sell the AggregateToken to receive CurrencyToken, times the base
@@ -151,7 +151,7 @@ contract AggregateToken is
         address owner,
         string memory name,
         string memory symbol,
-        IERC20 currencyToken,
+        address currencyAddress,
         uint8 decimals_,
         uint256 askPrice,
         uint256 bidPrice,
@@ -165,9 +165,9 @@ contract AggregateToken is
         _grantRole(UPGRADER_ROLE, owner);
 
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        $.componentTokenMap[currencyToken] = true;
-        $.componentTokenList.push(currencyToken);
-        $.currencyToken = currencyToken;
+        $.componentTokenMap[IComponentToken(currencyAddress)] = true;
+        $.componentTokenList.push(IComponentToken(currencyAddress));
+        $.currencyToken = IERC20(currencyAddress);
         $.decimals = decimals_;
         $.askPrice = askPrice;
         $.bidPrice = bidPrice;
