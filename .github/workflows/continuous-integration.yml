@@ -28,18 +28,23 @@ jobs:
         with:
           version: nightly
 
-      # - name: Run Forge build
+      # - name: Run forge build
       #   run: |
       #     forge --version
       #     forge build nest --sizes
       #   id: build
 
-      # - name: Run Forge format
+      # - name: Run forge fmt
       #   run: |
       #     forge fmt nest --check
-      #   id: format
+      #   id: fmt
 
-      # - name: Run Forge tests
+      # - name: Run forge docs
+      #   run: |
+      #     forge docs
+      #   id: docs
+
+      # - name: Run forge test
       #   run: |
       #     forge test nest -vvv
       #   id: test
