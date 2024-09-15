@@ -39,10 +39,10 @@ jobs:
       #     forge fmt nest --check
       #   id: fmt
 
-      # - name: Run forge docs
+      # - name: Run forge doc
       #   run: |
-      #     forge docs
-      #   id: docs
+      #     forge doc
+      #   id: doc
 
       # - name: Run forge test
       #   run: |
