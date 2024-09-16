@@ -8,9 +8,9 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { AggregateToken } from "../src/AggregateToken.sol";
 import { FakeComponentToken } from "../src/FakeComponentToken.sol";
 import { NestStaking } from "../src/NestStaking.sol";
-import { AggregateTokenProxy } from "../src/proxies/AggregateTokenProxy.sol";
-import { FakeComponentTokenProxy } from "../src/proxies/FakeComponentTokenProxy.sol";
-import { NestStakingProxy } from "../src/proxies/NestStakingProxy.sol";
+import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
+import { FakeComponentTokenProxy } from "../src/proxy/FakeComponentTokenProxy.sol";
+import { NestStakingProxy } from "../src/proxy/NestStakingProxy.sol";
 
 contract DeployNestContracts is Script {
 

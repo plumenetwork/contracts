@@ -7,13 +7,12 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 
 import { AggregateToken } from "./AggregateToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
-import { AggregateTokenProxy } from "./proxies/AggregateTokenProxy.sol";
+import { AggregateTokenProxy } from "./proxy/AggregateTokenProxy.sol";
 
 /**
  * @title NestStaking
  * @author Eugene Y. Q. Shen
  * @notice Contract for creating AggregateTokens
- * @custom:oz-upgrades-from NestStaking
  */
 contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 

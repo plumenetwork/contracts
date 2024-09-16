@@ -14,7 +14,6 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  * @author Eugene Y. Q. Shen
  * @notice Fake example of a ComponentToken that could be used in an AggregateToken when testing.
  * Users can buy and sell one FakeComponentToken by exchanging it with one CurrencyToken at any time.
- * @custom:oz-upgrades-from FakeComponentToken
  */
 contract FakeComponentToken is
     Initializable,
@@ -136,8 +135,7 @@ contract FakeComponentToken is
 
     /// @notice Number of decimals of the FakeComponentToken
     function decimals() public view override returns (uint8) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        return $.decimals;
+        return _getFakeComponentTokenStorage().decimals;
     }
 
     // User Functions
@@ -149,8 +147,7 @@ contract FakeComponentToken is
      * @param amount Amount of CurrencyToken to pay to receive the same amount of FakeComponentToken
      */
     function buy(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
+        IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
 
         if (currencyToken_ != currencyToken) {
             revert InvalidCurrencyToken(currencyToken_, currencyToken);
@@ -172,8 +169,7 @@ contract FakeComponentToken is
      * @param amount Amount of CurrencyToken to receive in exchange for the FakeComponentToken
      */
     function sell(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
+        IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
 
         if (currencyToken_ != currencyToken) {
             revert InvalidCurrencyToken(currencyToken_, currencyToken);
@@ -196,16 +192,14 @@ contract FakeComponentToken is
      * @param currencyToken New CurrencyToken
      */
     function setCurrencyToken(IERC20 currencyToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        $.currencyToken = currencyToken;
+        _getFakeComponentTokenStorage().currencyToken = currencyToken;
     }
 
     // Getter View Functions
 
     /// @notice CurrencyToken used to mint and burn the FakeComponentToken
     function getCurrencyToken() public view returns (IERC20) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        return $.currencyToken;
+        return _getFakeComponentTokenStorage().currencyToken;
     }
 
 }

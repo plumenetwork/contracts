@@ -8,6 +8,8 @@ ffi = true
 ast = true
 build_info = true
 extra_output = ["storageLayout"]
+optimizer = true
+optimizer_runs = 2000
 
 [fmt]
 single_line_statement_blocks = "multi"
