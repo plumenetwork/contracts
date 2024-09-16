@@ -2,7 +2,6 @@
 pragma solidity ^0.8.25;
 
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
@@ -196,10 +195,14 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
                 abi.encode(SIGNED_OPERATIONS_TYPEHASH, targets, calls, values, nonce, nonceDependency, expiresAt)
             );
             bytes32 hash = _hashTypedDataV4(structHash);
-            address signer = ECDSA.recover(hash, v, r, s);
-            if (signer != address(this)) {
-                bytes memory signature = abi.encodePacked(r, s, v);
-                if (IERC1271(msg.sender).isValidSignature(hash, signature) != MAGICVALUE) {
+
+            try IERC1271(msg.sender).isValidSignature(hash, abi.encodePacked(r, s, v)) returns (bytes4 magicValue) {
+                if (magicValue != MAGICVALUE) {
+                    revert InvalidSigner(nonce, msg.sender);
+                }
+            } catch {
+                address signer = ECDSA.recover(hash, v, r, s);
+                if (signer != address(this)) {
                     revert InvalidSigner(nonce, signer);
                 }
             }
