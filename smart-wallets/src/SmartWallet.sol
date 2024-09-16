@@ -52,6 +52,31 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      */
     event UserWalletUpgraded(address indexed userWallet);
 
+    // Errors
+
+    /**
+     * @notice Indicates a failure because the AssetVault for the user already exists
+     * @param assetVault Existing AssetVault for the user
+     */
+    error AssetVaultAlreadyExists(AssetVault assetVault);
+
+    // Base Smart Wallet Functions
+
+    /// @notice Deploy an AssetVault for this smart wallet if it does not already exist
+    function deployAssetVault() public {
+        SmartWalletStorage storage $ = _getSmartWalletStorage();
+        if (address($.assetVault) != address(0)) {
+            revert AssetVaultAlreadyExists($.assetVault);
+        }
+
+        $.assetVault = new AssetVault();
+    }
+
+    /// @notice AssetVault associated with the smart wallet
+    function getAssetVault() external view returns (IAssetVault) {
+        return _getSmartWalletStorage().assetVault;
+    }
+
     // User Wallet Functions
 
     /**
