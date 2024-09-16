@@ -66,12 +66,6 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
     // Errors
 
     /**
-     * @notice Indicates a failure because the caller is not the user wallet
-     * @param invalidUser Address of the caller who tried to cancel the SignedOperations
-     */
-    error UnauthorizedCancel(address invalidUser);
-
-    /**
      * @notice Indicates a failure because the SignedOperations have expired
      * @param nonce Nonce of the expired SignedOperations
      * @param expiresAt Timestamp at which the SignedOperations expired
