@@ -190,19 +190,25 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
 
         // Create a new scope to avoid stack too deep errors
         {
-            // Code inspired by OpenZeppelin's ERC20Permit.sol
             bytes32 structHash = keccak256(
                 abi.encode(SIGNED_OPERATIONS_TYPEHASH, targets, calls, values, nonce, nonceDependency, expiresAt)
             );
             bytes32 hash = _hashTypedDataV4(structHash);
-            address signer = ECDSA.recover(hash, v, r, s);
-            if (signer != address(this)) {
-                bytes memory signature = abi.encodePacked(r, s, v);
-                if (IERC1271(msg.sender).isValidSignature(hash, signature) != MAGICVALUE) {
+
+            try IERC1271(msg.sender).isValidSignature(hash, abi.encodePacked(r, s, v)) returns (bytes4 magicValue) {
+                if (magicValue != MAGICVALUE) {
+                    revert InvalidSigner(nonce, msg.sender);
+                }
+                $.nonces[nonce] = 1;
+            } catch {
+                // Code inspired by OpenZeppelin's ERC20Permit.sol
+                address signer = ECDSA.recover(hash, v, r, s);
+
+                if (signer != address(this)) {
                     revert InvalidSigner(nonce, signer);
                 }
+                $.nonces[nonce] = 1;
             }
-            $.nonces[nonce] = 1;
         }
 
         for (uint256 i = 0; i < length; i++) {
