@@ -8,6 +8,8 @@ ffi = true
 ast = true
 build_info = true
 extra_output = ["storageLayout"]
+optimizer = true
+optimizer_runs = 200 # used default optimization level when deploying $P to mainnet
 
 [fmt]
 single_line_statement_blocks = "multi"
