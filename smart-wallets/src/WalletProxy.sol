@@ -23,7 +23,7 @@ contract WalletProxy is Proxy {
     WalletFactory public immutable walletFactory;
 
     /**
-     * @notice Initialize the WalletProxy
+     * @notice Construct the WalletProxy
      * @param walletFactory_ WalletFactory implementation
      * @dev The WalletFactory is immutable and set at deployment
      */

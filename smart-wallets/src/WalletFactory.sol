@@ -20,7 +20,7 @@ contract WalletFactory is Ownable {
     SmartWallet public smartWallet;
 
     /**
-     * @notice Initialize the WalletFactory
+     * @notice Construct the WalletFactory
      * @param owner_ Address of the owner of the WalletFactory
      * @param smartWallet_ Initial SmartWallet implementation
      * @dev The owner of the WalletFactory should be set to Plume Governance once ready
