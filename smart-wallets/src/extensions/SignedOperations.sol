@@ -208,7 +208,7 @@ contract SignedOperations is EIP712, ISignedOperations {
             bytes32 structHash = keccak256(
                 abi.encode(SIGNED_OPERATIONS_TYPEHASH, targets, calls, values, nonce, nonceDependency, expiresAt)
             );
-            bytes32 hash = _hashTypedDataV4(hashStruct);
+            bytes32 hash = _hashTypedDataV4(structHash);
             address signer = hash.recover(v, r, s);
             if (signer != address(this)) {
                 revert InvalidSigner(nonce, signer);
@@ -217,13 +217,16 @@ contract SignedOperations is EIP712, ISignedOperations {
         }
 
         for (uint256 i = 0; i < length; i++) {
-            (bool success,) = targets[i].call{ value: values[i] }(calls[i]);
-            if (!success) {
-                revert FailedCall(nonce, targets[i], calls[i], values[i]);
+            {
+                (bool success,) = targets[i].call{ value: values[i] }(calls[i]);
+                if (success) {
+                    continue;
+                }
             }
+            revert FailedCall(nonce, targets[i], calls[i], values[i]);
         }
 
-        emit SignedOperationsExecuted(msg.signer, nonce);
+        emit SignedOperationsExecuted(msg.sender, nonce);
     }
 
 }
