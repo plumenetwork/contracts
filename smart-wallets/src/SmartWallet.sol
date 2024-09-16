@@ -5,7 +5,11 @@ import { Proxy } from "@openzeppelin/contracts/proxy/Proxy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { WalletUtils } from "./WalletUtils.sol";
+
+import { AssetVault } from "./extensions/AssetVault.sol";
 import { SignedOperations } from "./extensions/SignedOperations.sol";
+
+import { IAssetVault } from "./interfaces/IAssetVault.sol";
 import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
 
 /**
@@ -32,6 +36,8 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
     struct SmartWalletStorage {
         /// @dev Address of the current user wallet implementation for each user
         address userWallet;
+        /// @dev AssetVault associated with the smart wallet
+        AssetVault assetVault;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.SmartWallet")) - 1)) & ~bytes32(uint256(0xff))
@@ -72,7 +78,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
     }
 
     /// @notice AssetVault associated with the smart wallet
-    function getAssetVault() external view returns (IAssetVault) {
+    function getAssetVault() external view returns (IAssetVault assetVault) {
         return _getSmartWalletStorage().assetVault;
     }
 
