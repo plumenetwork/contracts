@@ -200,14 +200,13 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
                 if (magicValue != MAGICVALUE) {
                     revert InvalidSigner(nonce, msg.sender);
                 }
-                $.nonces[nonce] = 1;
             } catch {
                 address signer = ECDSA.recover(hash, v, r, s);
                 if (signer != address(this)) {
                     revert InvalidSigner(nonce, signer);
                 }
-                $.nonces[nonce] = 1;
             }
+            $.nonces[nonce] = 1;
         }
 
         for (uint256 i = 0; i < length; i++) {
