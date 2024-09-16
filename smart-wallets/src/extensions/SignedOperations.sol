@@ -190,6 +190,7 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
 
         // Create a new scope to avoid stack too deep errors
         {
+            // Code inspired by OpenZeppelin's ERC20Permit.sol
             bytes32 structHash = keccak256(
                 abi.encode(SIGNED_OPERATIONS_TYPEHASH, targets, calls, values, nonce, nonceDependency, expiresAt)
             );
