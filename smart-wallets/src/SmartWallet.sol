@@ -68,13 +68,20 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
         if (address($.assetVault) != address(0)) {
             revert AssetVaultAlreadyExists($.assetVault);
         }
-
         $.assetVault = new AssetVault();
     }
 
     /// @notice AssetVault associated with the smart wallet
     function getAssetVault() external view returns (IAssetVault) {
         return _getSmartWalletStorage().assetVault;
+    }
+
+    /**
+     * @notice Get the number of AssetTokens that are currently locked in the AssetVault
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     */
+    function getBalanceLocked(IERC20 assetToken) public view returns (uint256 balanceLocked) {
+        return _getSmartWalletStorage().assetVault.getBalanceLocked(assetToken);
     }
 
     // User Wallet Functions
