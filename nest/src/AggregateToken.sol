@@ -16,7 +16,6 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  * @notice ERC20 token that represents a basket of ComponentTokens
  * @dev Invariant: the total value of all AggregateTokens minted is approximately
  *   equal to the total value of all of its constituent ComponentTokens
- * @custom:oz-upgrades-from AggregateToken
  */
 contract AggregateToken is
     Initializable,
@@ -184,8 +183,7 @@ contract AggregateToken is
 
     /// @notice Number of decimals of the AggregateToken
     function decimals() public view override returns (uint8) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        return $.decimals;
+        return _getAggregateTokenStorage().decimals;
     }
 
     // User Functions
@@ -274,8 +272,7 @@ contract AggregateToken is
         IComponentToken componentToken,
         uint256 currencyTokenAmount
     ) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
+        IERC20 currencyToken = _getAggregateTokenStorage().currencyToken;
 
         uint256 componentTokenAmount = componentToken.sell(currencyToken, currencyTokenAmount);
 
@@ -289,8 +286,7 @@ contract AggregateToken is
      * @param currencyToken New CurrencyToken
      */
     function setCurrencyToken(IERC20 currencyToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        $.currencyToken = currencyToken;
+        _getAggregateTokenStorage().currencyToken = currencyToken;
     }
 
     /**
@@ -298,8 +294,7 @@ contract AggregateToken is
      * @param askPrice New ask price
      */
     function setAskPrice(uint256 askPrice) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        $.askPrice = askPrice;
+        _getAggregateTokenStorage().askPrice = askPrice;
     }
 
     /**
@@ -307,8 +302,7 @@ contract AggregateToken is
      * @param bidPrice New bid price
      */
     function setBidPrice(uint256 bidPrice) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        $.bidPrice = bidPrice;
+        _getAggregateTokenStorage().bidPrice = bidPrice;
     }
 
     /**
@@ -316,34 +310,29 @@ contract AggregateToken is
      * @param tokenURI New token URI
      */
     function setTokenURI(string memory tokenURI) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        $.tokenURI = tokenURI;
+        _getAggregateTokenStorage().tokenURI = tokenURI;
     }
 
     // Getter View Functions
 
     /// @notice CurrencyToken used to mint and burn the AggregateToken
     function getCurrencyToken() public view returns (IERC20) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        return $.currencyToken;
+        return _getAggregateTokenStorage().currencyToken;
     }
 
     /// @notice Price at which users can buy the AggregateToken using CurrencyToken, times the base
     function getAskPrice() public view returns (uint256) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        return $.askPrice;
+        return _getAggregateTokenStorage().askPrice;
     }
 
     /// @notice Price at which users can sell the AggregateToken to receive CurrencyToken, times the base
     function getBidPrice() public view returns (uint256) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        return $.bidPrice;
+        return _getAggregateTokenStorage().bidPrice;
     }
 
     /// @notice URI for the AggregateToken metadata
     function getTokenURI() public view returns (string memory) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        return $.tokenURI;
+        return _getAggregateTokenStorage().tokenURI;
     }
 
     /**
@@ -351,14 +340,12 @@ contract AggregateToken is
      * @param componentToken ComponentToken to check
      */
     function getComponentToken(IComponentToken componentToken) public view returns (bool) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        return $.componentTokenMap[componentToken];
+        return _getAggregateTokenStorage().componentTokenMap[componentToken];
     }
 
     /// @notice Get all ComponentTokens that have ever been added to the AggregateToken
     function getComponentTokenList() public view returns (IComponentToken[] memory) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        return $.componentTokenList;
+        return _getAggregateTokenStorage().componentTokenList;
     }
 
 }
