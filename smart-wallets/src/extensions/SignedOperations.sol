@@ -4,6 +4,7 @@ pragma solidity 0.8.25;
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
+import { WalletUtils } from "../WalletUtils.sol";
 import { ISignedOperations } from "../interfaces/ISignedOperations.sol";
 
 /**
@@ -12,7 +13,7 @@ import { ISignedOperations } from "../interfaces/ISignedOperations.sol";
  * @notice Smart wallet extension that allows users to sign multiple operations that
  *   anyone can execute in a single transaction, enabling gasless and batched transactions.
  */
-contract SignedOperations is EIP712, ISignedOperations {
+contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
 
     using ECDSA for bytes32;
 
@@ -114,17 +115,6 @@ contract SignedOperations is EIP712, ISignedOperations {
      * @param value Value that was sent to the contract
      */
     error FailedCall(bytes32 nonce, address target, bytes call, uint256 value);
-
-    // Modifiers
-
-    /// @notice Only the user wallet can call this function
-    modifier onlyWallet() {
-        if (msg.sender != address(this)) {
-            revert UnauthorizedCancel(msg.sender);
-        }
-
-        _;
-    }
 
     // Functions
 
