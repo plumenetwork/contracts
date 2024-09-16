@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
+import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
@@ -14,8 +16,6 @@ import { ISignedOperations } from "../interfaces/ISignedOperations.sol";
  *   anyone can execute in a single transaction, enabling gasless and batched transactions.
  */
 contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
-
-    using ECDSA for bytes32;
 
     // Storage
 
@@ -47,6 +47,9 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
     bytes32 private constant SIGNED_OPERATIONS_TYPEHASH = keccak256(
         "SignedOperations(address[] targets,bytes[] calls,uint256[] values,bytes32 nonce,bytes32 nonceDependency,uint256 expiresAt)"
     );
+
+    /// @dev EIP1271 magic value for isValidSignature: bytes4(keccak256("isValidSignature(bytes32,bytes)")
+    bytes4 internal constant MAGICVALUE = 0x1626ba7e;
 
     // Events
 
@@ -193,9 +196,12 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
                 abi.encode(SIGNED_OPERATIONS_TYPEHASH, targets, calls, values, nonce, nonceDependency, expiresAt)
             );
             bytes32 hash = _hashTypedDataV4(structHash);
-            address signer = hash.recover(v, r, s);
+            address signer = ECDSA.recover(hash, v, r, s);
             if (signer != address(this)) {
-                revert InvalidSigner(nonce, signer);
+                bytes memory signature = abi.encodePacked(r, s, v);
+                if (IERC1271(msg.sender).isValidSignature(hash, signature) != MAGICVALUE) {
+                    revert InvalidSigner(nonce, signer);
+                }
             }
             $.nonces[nonce] = 1;
         }
