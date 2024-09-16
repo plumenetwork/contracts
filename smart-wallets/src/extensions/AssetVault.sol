@@ -3,27 +3,26 @@ pragma solidity 0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import { IAssetToken } from "../interfaces/IAssetToken.sol";
-import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
-
 /**
  * @title AssetVault
  * @author Eugene Y. Q. Shen
  * @notice Smart wallet extension on Plume that allows users to lock yield-bearing assets
  *   in a vault, then take the yield distributed to those locked yield-bearing assets
  *   and manage the redistribution of that yield to multiple beneficiaries.
- * @dev Invariant: yield.amount > 0 for all Yield items
  */
 contract AssetVault {
 
     // Types
 
-    /// @notice Yield of some amount that expires at some time
+    /** 
+     * @notice Yield of some amount that expires at some time
+     * @dev Can be used to represent both yield allowances and yield distributions
+     */
     struct Yield {
         /// @dev Amount of asset tokens that are locked for this yield, must always be positive
         uint256 amount;
         /// @dev Timestamp at which the yield expires
-        uint256 expiresAt;
+        uint256 expiration;
     }
 
     /// @notice Item in a linked list of yield distributions
@@ -41,9 +40,9 @@ contract AssetVault {
     /// @custom:storage-location erc7201:plume.storage.AssetVault
     struct AssetVaultStorage {
         /// @dev Mapping of yield allowances for each asset token and beneficiary
-        mapping(address assetToken => mapping(address beneficiary => Yield)) yieldAllowances;
+        mapping(IERC20 assetToken => mapping(address beneficiary => Yield)) yieldAllowances;
         /// @dev Mapping of the yield distribution list for each asset token
-        mapping(address assetToken => YieldDistributionListItem) yieldDistributions;
+        mapping(IERC20 assetToken => YieldDistributionListItem) yieldDistributions;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AssetVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -56,12 +55,107 @@ contract AssetVault {
         }
     }
 
+    // Constants
+
+    /// @notice Address of the user smart wallet that contains this AssetVault extension
+    address public immutable wallet;
+
+    /** 
+     * @dev Maximum amount of gas used in each iteration of the loops.
+     *   We keep iterating until we have less than this much gas left,
+     *   then we stop the loop so that we do not reach the gas limit.
+     */
+    uint256 private constant MAX_GAS_PER_ITERATION = 50_000;
+
     // Events
+
+    /**
+     * @notice Emitted when the user wallet updates a yield allowance
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param beneficiary Address of the beneficiary of the yield allowance
+     * @param amount Amount of AssetTokens that are locked for this yield
+     * @param expiration Timestamp at which the yield expires
+     */
+    event YieldAllowanceUpdated(IERC20 indexed assetToken, address indexed beneficiary, uint256 amount, uint256 expiration);
+
+    /**
+     * @notice Emitted when the user wallet redistributes yield to the beneficiaries
+     * @param assetToken AssetToken from which the yield was redistributed
+     * @param beneficiary Address of the beneficiary that received the yield redistribution
+     * @param yieldToken Token in which the yield was redistributed
+     * @param yieldShare Amount of yieldToken that was redistributed to the beneficiary
+     */
+    event YieldRedistributed(IERC20 indexed assetToken, address indexed beneficiary, address indexed yieldToken, uint256 yieldShare);
+
+    /**
+     * @notice Emitted when a beneficiary accepts a yield allowance and creates a new yield distribution
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param beneficiary Address of the beneficiary of the yield distribution
+     * @param amount Amount of AssetTokens that are locked for this yield
+     * @param expiration Timestamp at which the yield expires
+     */
+    event YieldDistributionCreated(IERC20 indexed assetToken, address indexed beneficiary, uint256 amount, uint256 expiration);
+
+    /**
+     * @notice Emitted when a beneficiary renounces their yield distributions
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param beneficiary Address of the beneficiary of the yield distribution
+     * @param amount Amount of AssetTokens that are renounced from the yield distributions of the beneficiary
+     */
+    event YieldDistributionRenounced(IERC20 indexed assetToken, address indexed beneficiary, uint256 amount);
+
+    /**
+     * @notice Emitted when anyone clears expired yield distributions from the linked list
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param amountCleared Amount of AssetTokens that were cleared from the yield distributions
+     */
+    event YieldDistributionsCleared(IERC20 indexed assetToken, uint256 amountCleared);
 
     // Errors
 
-    /// @notice Indicates that the caller is not the wallet
-    error UnauthorizedCall();
+    /// @notice Indicates a failure because the given address is 0x0
+    error ZeroAddress();
+
+    /// @notice Indicates a failure because the given amount is 0
+    error ZeroAmount();
+
+    /**
+     * @notice Indicates a failure because the given expiration timestamp is too old
+     * @param expiration Expiration timestamp that was too old
+     * @param currentTimestamp Current block.timestamp
+     */
+    error InvalidExpiration(uint256 expiration, uint256 currentTimestamp);
+
+    /**
+     * @notice Indicates a failure because the given expiration does not match the actual one
+     * @param invalidExpiration Expiration timestamp that does not match the actual expiration
+     * @param expiration Actual expiration timestamp at which the yield expires
+     */
+    error MismatchedExpiration(uint256 invalidExpiration, uint256 expiration);
+
+    /**
+     * @notice Indicates a failure because the beneficiary does not have enough yield allowances
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param beneficiary Address of the beneficiary of the yield allowance
+     * @param allowanceAmount Amount of assetTokens included in this yield allowance
+     * @param amount Amount of assetTokens that the beneficiary tried to accept the yield of
+     */
+    error InsufficientYieldAllowance(IERC20 indexed assetToken, asset indexed beneficiary, uint256 allowanceAmount, uint256 amount);
+
+    /**
+     * @notice Indicates a failure because the beneficiary does not have enough yield distributions
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param beneficiary Address of the beneficiary of the yield distributions
+     * @param amount Amount of assetTokens included in all of their yield distributions
+     * @param amountRenounced Amount of assetTokens that the beneficiary tried to renounce the yield of
+     */
+    error InsufficientYieldDistributions(IERC20 indexed assetToken, asset indexed beneficiary, uint256 amount, uint256 amountRenounced);
+
+    /**
+    * @notice Indicates a failure because the caller is not the user wallet
+    * @param invalidUser Address of the caller who tried to call a wallet-only function
+    */
+    error UnauthorizedCall(address invalidUser);
 
     // Modifiers
 
@@ -74,10 +168,7 @@ contract AssetVault {
         _;
     }
 
-    // Functions
-
-    /// @notice Address of the smart wallet that contains this AssetVault extension
-    address public immutable wallet;
+    // Constructor
 
     /**
      * @notice Construct the AssetVault extension
@@ -88,182 +179,208 @@ contract AssetVault {
         wallet = msg.sender;
     }
 
-    /**
-     * @notice Returns the locked asset token balance for the given asset token
-     * @param assetToken The asset token address
-     * @return lockedBalance The locked asset token balance
-     */
-    function getLockedAssetTokenBalance(address assetToken) public view returns (uint256 lockedBalance) {
-        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
-        uint256 lockedAmount = distribution.yield.amount;
-
-        while (lockedAmount > 0) {
-            if (distribution.yield.expiresAt > block.timestamp) {
-                lockedBalance += lockedAmount;
-            }
-
-            distribution = distribution.next[0];
-            lockedAmount = distribution.yield.amount;
-        }
-    }
+    // User Wallet Functions
 
     /**
-     * @notice Approve yield distribution for the given asset token
-     * @dev This function can only be called by the wallet
-     * @param assetToken The asset token address
-     * @param beneficiary The beneficiary address
-     * @param amount The yield amount
-     * @param expiresAt The expiry timestamp
+     * @notice Update the yield allowance of the given beneficiary
+     * @dev Only the user wallet can update yield allowances for tokens in their own AssetVault
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param beneficiary Address of the beneficiary of the yield allowance
+     * @param amount Amount of assetTokens to be locked for this yield allowance
+     * @param expiration Timestamp at which the yield expires
      */
-    function approveYieldDistribution(
-        address assetToken,
+    function updateYieldAllowance(
+        IERC20 assetToken,
         address beneficiary,
         uint256 amount,
-        uint256 expiresAt
+        uint256 expiration
     ) public onlyWallet {
-        require(assetToken != address(0), "AssetVault: Invalid asset token address");
-        require(beneficiary != address(0), "AssetVault: Invalid beneficiary address");
-        require(amount > 0, "AssetVault: Invalid yield amount");
-        require(expiresAt > block.timestamp, "AssetVault: Invalid yield expiry");
-
-        Yield storage yieldAllowance = _getAssetVaultStorage().yieldAllowances[assetToken][beneficiary];
-        yieldAllowance.amount = amount;
-        yieldAllowance.expiresAt = expiresAt;
-    }
-
-    /**
-     * @notice Accept yield distribution for the given asset token
-     * @dev The beneficiary must call this function to accept the yield distribution
-     * @param assetToken The asset token address
-     * @param amount The yield amount
-     * @param expiresAt The expiry timestamp
-     */
-    function acceptYieldDistribution(address assetToken, uint256 amount, uint256 expiresAt) external {
-        address beneficiary = msg.sender;
-        Yield storage yieldAllowance = _getAssetVaultStorage().yieldAllowances[assetToken][beneficiary];
-
-        require(amount > 0, "AssetVault: Invalid yield amount");
-        require(yieldAllowance.amount >= amount, "AssetVault: Insufficient yield allowance");
-        require(yieldAllowance.expiresAt == expiresAt, "AssetVault: Invalid yield expiry");
-        require(expiresAt > block.timestamp, "AssetVault: Yield expired");
-        require(
-            IAssetToken(assetToken).availableBalanceOf(address(this)) >= amount,
-            "AssetVault: Insufficient available asset token balance"
-        );
-
-        yieldAllowance.amount -= amount;
-
-        YieldDistributionListItem storage yieldListItem = _getAssetVaultStorage().yieldDistributions[assetToken];
-
-        // find the last empty yield distribution
-        while (yieldListItem.yield.amount > 0) {
-            yieldListItem = yieldListItem.next[0];
+        if (assetToken === address(0) || beneficiary === address(0)) {
+            revert ZeroAddress();
+        }
+        if (amount === 0) {
+            revert ZeroAmount();
+        }
+        if (expiration <= block.timestamp) {
+            revert InvalidExpiration(expiration, block.timestamp);
         }
 
-        yieldListItem.beneficiary = beneficiary;
-        yieldListItem.yield.amount = amount;
-        yieldListItem.yield.expiresAt = expiresAt;
+        Yield storage allowance = _getAssetVaultStorage().yieldAllowances[assetToken][beneficiary];
+        allowance.amount = amount;
+        allowance.expiration = expiration;
+
+        emit YieldAllowanceUpdated(assetToken, beneficiary, amount, expiration);
     }
 
     /**
-     * @notice Clear expired yield distributions for the given asset token
-     * @param assetToken The asset token address
+     * @notice Redistribute yield to the beneficiaries of the asset token, using yield distributions
+     * @dev Only the user wallet can initiate the yield redistribution. The yield redistributed
+     *   to each beneficiary is rounded down, and any remaining yieldTokens are kept in the vault.
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param yieldToken Token in which the yield is to be redistributed
+     * @param yieldTokenAmount Amount of yieldToken to redistribute
      */
-    function clearYieldDistribution(address assetToken) external {
-        YieldDistributionListItem storage yieldListItem = _getAssetVaultStorage().yieldDistributions[assetToken];
-
-        while (yieldListItem.yield.amount > 0) {
-            YieldDistributionListItem storage nextYieldDistributionListItem = yieldListItem.next[0];
-
-            // clear expired yield distributions
-            if (yieldListItem.yield.expiresAt <= block.timestamp) {
-                yieldListItem.beneficiary = nextYieldDistributionListItem.beneficiary;
-                yieldListItem.yield = nextYieldDistributionListItem.yield;
-                // TODO test if linked list is updated correctly
-                yieldListItem.next[0] = nextYieldDistributionListItem.next[0];
-            } else {
-                yieldListItem = nextYieldDistributionListItem;
-            }
-
-            if (gasleft() < 20_000) {
-                return;
-            }
-        }
-    }
-
-    /**
-     * @notice Distribute yield for the given asset token
-     * @dev AssetVault will call transferYield function of the wallet
-     * @param assetToken The asset token address
-     * @param yieldCurrency The yield token address
-     * @param yieldAmount The yield amount
-     */
-    function processYieldDistribution(
-        address assetToken,
-        address yieldCurrency,
-        uint256 yieldAmount
+    function redistributeYield(
+        IERC20 assetToken,
+        IERC20 yieldToken,
+        uint256 yieldTokenAmount
     ) external onlyWallet {
-        if (yieldAmount == 0) {
+        if (yieldTokenAmount == 0) {
             return;
         }
 
-        uint256 totalTokenAmount = IERC20(assetToken).balanceOf(msg.sender);
+        uint256 assetTokenAmount = assetToken.balanceOf(wallet);
 
-        YieldDistributionListItem storage yieldListItem = _getAssetVaultStorage().yieldDistributions[assetToken];
-        uint256 lockedAmount = yieldListItem.yield.amount;
-
-        while (lockedAmount > 0) {
-            if (yieldListItem.yield.expiresAt > block.timestamp) {
-                uint256 yieldShare = (yieldAmount * lockedAmount) / totalTokenAmount;
-
-                ISmartWallet(wallet).transferYield(assetToken, yieldCurrency, yieldListItem.beneficiary, yieldShare);
+        // Iterate through the list and transfer yield to the beneficiary for each yield distribution
+        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
+        uint256 amountLocked = distribution.yield.amount;
+        while (amountLocked > 0) {
+            if (distribution.yield.expiration > block.timestamp) {
+                uint256 yieldShare = (yieldTokenAmount * amountLocked) / totalTokenAmount;
+                // TODO: transfer yield from the user wallet to the beneficiary
             }
+            emit YieldRedistributed(assetToken, distribution.beneficiary, yieldToken, yieldShare);
 
-            yieldListItem = yieldListItem.next[0];
-            lockedAmount = yieldListItem.yield.amount;
+            distribution = distribution.next[0];
+            amountLocked = distribution.yield.amount;
+        }
+    }
+
+    // Permissionless Functions
+
+    /**
+     * @notice Get the number of AssetTokens that are currently locked in the AssetVault
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     */
+    function getBalanceLocked(IERC20 assetToken) public view returns (uint256 balanceLocked) {
+        // Iterate through the list and sum up the locked balance across all yield distributions
+        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
+        uint256 amountLocked = distribution.yield.amount;
+        while (amountLocked > 0) {
+            if (distribution.yield.expiration > block.timestamp) {
+                balanceLocked += amountLocked;
+            }
+            distribution = distribution.next[0];
+            amountLocked = distribution.yield.amount;
         }
     }
 
     /**
-     * @notice Release yield distribution for the given asset token
-     * @dev The beneficiary must call this function to release the yield distribution
-     * @param assetToken The asset token address
-     * @param expiresAt The expiry timestamp
-     * @param releaseAmount The release amount
+     * @notice Accept the yield allowance and create a new yield distribution
+     * @dev The beneficiary must call this function to accept the yield allowance
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param amount Amount of AssetTokens included in this yield allowance
+     * @param expiration Timestamp at which the yield expires
      */
-    function releaseYieldDistribution(address assetToken, uint256 expiresAt, uint256 releaseAmount) external {
-        YieldDistributionListItem storage yieldListItem = _getAssetVaultStorage().yieldDistributions[assetToken];
-        uint256 yieldAmount = yieldListItem.yield.amount;
+    function acceptYieldAllowance(IERC20 assetToken, uint256 amount, uint256 expiration) external {
+        AssetVaultStorage storage $ = _getAssetVaultStorage();
+        address beneficiary = msg.sender;
+        Yield storage allowance = $.yieldAllowances[assetToken][beneficiary];
 
-        while (yieldAmount > 0) {
-            // clear expired yield distributions
-            if (yieldListItem.beneficiary == msg.sender && yieldListItem.yield.expiresAt == expiresAt) {
-                if (releaseAmount >= yieldAmount) {
-                    releaseAmount -= yieldAmount;
+        if (amount === 0) {
+            revert ZeroAmount();
+        }
+        if (expiration <= block.timestamp) {
+            revert InvalidExpiration(expiration, block.timestamp);
+        }
+        if (allowance.expiration != expiration) {
+            revert MismatchedExpiration(allowance.expiration, expiration);
+        }
+        if (allowance.amount < amount) {
+            revert InsufficientYieldAllowance(assetToken, beneficiary, allowance.amount, amount);
+        }
 
-                    // canceling the yield distribution completely
-                    // will be cleared by clearYieldDistribution
-                    yieldListItem.yield.expiresAt = block.timestamp - 1 days;
+        allowance.amount -= amount;
 
-                    if (releaseAmount == 0) {
+        // Append the newly created yield distribution to the end of the linked list
+        YieldDistributionListItem storage distribution = $.yieldDistributions[assetToken];
+        while (distribution.yield.amount > 0) {
+            distribution = distribution.next[0];
+        }
+        distribution.beneficiary = beneficiary;
+        distribution.yield.amount = amount;
+        distribution.yield.expiration = expiration;
+
+        emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
+    }
+
+    /**
+     * @notice Renounce the given amount of AssetTokens from the beneficiary's yield distributions
+     * @dev The beneficiary must call this function to reduce the size of their yield distributions.
+     *   If there are too many yield distributions to process, the function will stop to avoid
+     *   reaching the gas limit, and the beneficiary must call the function again to renounce more.
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     * @param amount Amount of AssetTokens to renounce from from the yield distribution
+     * @param expiration Timestamp at which the yield expires
+     */
+    function renounceYieldDistribution(IERC20 assetToken, uint256 amount, uint256 expiration) external returns (uint256 amountRenounced) {
+        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
+        address beneficiary = msg.sender;
+        uint256 amountLeft = amount;
+
+        // Iterate through the list and subtract the amount from the beneficiary's yield distributions
+        uint256 amountLocked = distribution.yield.amount;
+        while (amountLocked > 0) {
+            if (distribution.beneficiary == beneficiary && distribution.yield.expiration == expiration) {
+                // If the entire yield distribution is to be renounced, then set its timestamp
+                // to be in the past so it is cleared on the next run of `clearYieldDistributions`
+                if (amountLeft >= amountLocked) {
+                    amountLeft -= amountLocked;
+                    distribution.yield.expiration = block.timestamp - 1 days;
+                    if (amountLeft == 0) {
                         break;
                     }
                 } else {
-                    yieldListItem.yield.amount -= releaseAmount;
-                    releaseAmount = 0;
+                    distribution.yield.amount -= amountLeft;
+                    amountLeft = 0;
                     break;
                 }
             }
 
-            if (gasleft() < 20_000) {
-                return;
+            if (gasleft() < MAX_GAS_PER_ITERATION) {
+                emit YieldDistributionRenounced(assetToken, beneficiary, amount - amountLeft);
+                return amount - amountLeft;
             }
-
-            yieldListItem = yieldListItem.next[0];
-            yieldAmount = yieldListItem.yield.amount;
+            distribution = distribution.next[0];
+            amountLocked = distribution.yield.amount;
         }
 
-        require(releaseAmount == 0, "AssetVault: Invalid release amount");
+        if (amountLeft > 0) {
+            revert InsufficientYieldDistributions(assetToken, beneficiary, amount - amountLeft, amount);
+        }
+        emit YieldDistributionRenounced(assetToken, beneficiary, amount);
+        return amount;
+    }
+
+    /**
+     * @notice Clear expired yield distributions from the linked list
+     * @dev Anyone can call this function to free up unused storage for gas refunds.
+     *   If there are too many yield distributions to process, the function will stop to avoid
+     *   reaching the gas limit, and the caller must call the function again to clear more.
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     */
+    function clearYieldDistributions(IERC20 assetToken) external {
+        uint256 amountCleared = 0;
+
+        // Iterate through the list and delete all expired yield distributions
+        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
+        while (distribution.yield.amount > 0) {
+            YieldDistributionListItem storage nextDistribution = distribution.next[0];
+            if (distribution.yield.expiration <= block.timestamp) {
+                amountCleared += distribution.yield.amount;
+                distribution.beneficiary = nextDistribution.beneficiary;
+                distribution.yield = nextDistribution.yield;
+                distribution.next[0] = nextDistribution.next[0];
+            } else {
+                distribution = nextDistribution;
+            }
+
+            if (gasleft() < MAX_GAS_PER_ITERATION) {
+                emit YieldDistributionsCleared(assetToken, amountCleared);
+                return;
+            }
+        }
+        emit YieldDistributionsCleared(assetToken, amountCleared);
     }
 
 }
