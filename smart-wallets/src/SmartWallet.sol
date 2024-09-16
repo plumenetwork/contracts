@@ -4,6 +4,8 @@ pragma solidity 0.8.25;
 import { Proxy } from "@openzeppelin/contracts/proxy/Proxy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
+
 /**
  * @title SmartWallet
  * @author Eugene Y. Q. Shen
@@ -14,7 +16,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   and SignedOperations, but any functions that are not defined in the base
  *   implementation are delegated to the custom implementation for each user.
  */
-contract SmartWallet is Proxy {
+contract SmartWallet is Proxy, ISmartWallet {
 
     // Storage
 
@@ -44,18 +46,28 @@ contract SmartWallet is Proxy {
 
     /**
      * @notice Emitted when a user upgrades their user wallet implementation
-     * @param user Address of the user who upgraded their user wallet
      * @param userWallet Address of the new user wallet implementation
      */
-    event UserWalletUpgraded(address indexed user, address indexed userWallet);
+    event UserWalletUpgraded(address indexed userWallet);
 
     // Errors
 
     /**
-     * @notice Emitted when any address other than the user itself
-     *   tries to upgrade the user wallet implementation
+     * @notice Indicates a failure because the caller is not the user wallet
+     * @param invalidUser Address of the caller who tried to upgrade the user wallet
      */
-    error UnauthorizedUpgrade();
+    error UnauthorizedUpgrade(address invalidUser);
+
+    // Modifiers
+
+    /// @notice Only the user wallet can call this function
+    modifier onlyWallet() {
+        if (msg.sender != address(this)) {
+            revert UnauthorizedUpgrade(msg.sender);
+        }
+
+        _;
+    }
 
     // User Wallet Functions
 
@@ -64,12 +76,9 @@ contract SmartWallet is Proxy {
      * @dev Only the user can upgrade the implementation for their own wallet
      * @param userWallet Address of the new user wallet implementation
      */
-    function upgrade(address userWallet) public {
-        if (msg.sender != address(this)) {
-            revert UnauthorizedUpgrade();
-        }
+    function upgrade(address userWallet) public onlyWallet {
         _getSmartWalletStorage().userWallet = userWallet;
-        emit UserWalletUpgraded(msg.sender, userWallet);
+        emit UserWalletUpgraded(userWallet);
     }
 
     /**
