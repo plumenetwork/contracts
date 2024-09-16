@@ -202,9 +202,7 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
                 }
                 $.nonces[nonce] = 1;
             } catch {
-                // Code inspired by OpenZeppelin's ERC20Permit.sol
                 address signer = ECDSA.recover(hash, v, r, s);
-
                 if (signer != address(this)) {
                     revert InvalidSigner(nonce, signer);
                 }
