@@ -10,6 +10,8 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
  */
 contract AggregateTokenProxy is ERC1967Proxy {
 
+    bytes32 private constant PROXY_NAME = keccak256("AggregateTokenProxy");
+
     constructor(address logic, bytes memory data) ERC1967Proxy(logic, data) { }
 
 }
