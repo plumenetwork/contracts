@@ -43,7 +43,7 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
 
     /// @dev EIP712 typehash for the SignedOperations struct.
     bytes32 private constant SIGNED_OPERATIONS_TYPEHASH = keccak256(
-        "SignedOperations(address[] targets,bytes[] calls,uint256[] values,bytes32 nonce,bytes32 nonceDependency,uint256 expiresAt)"
+        "SignedOperations(address[] targets,bytes[] calls,uint256[] values,bytes32 nonce,bytes32 nonceDependency,uint256 expiration)"
     );
 
     // Events
@@ -66,9 +66,9 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
     /**
      * @notice Indicates a failure because the SignedOperations have expired
      * @param nonce Nonce of the expired SignedOperations
-     * @param expiresAt Timestamp at which the SignedOperations expired
+     * @param expiration Timestamp at which the SignedOperations expired
      */
-    error ExpiredSignature(bytes32 nonce, uint256 expiresAt);
+    error ExpiredSignature(bytes32 nonce, uint256 expiration);
 
     /**
      * @notice Indicates a failure because the SignedOperations were constructed
@@ -152,7 +152,7 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
      * @param values Value to send to each contract address
      * @param nonce Arbitrary value to prevent replay attacks on SignedOperations
      * @param nonceDependency Nonce that the SignedOperations depend on, must be positive
-     * @param expiresAt Timestamp at which the SignedOperations expire
+     * @param expiration Timestamp at which the SignedOperations expire
      * @param v Recovery ID of the signer
      * @param r r signature of the signer
      * @param s s signature of the signer
@@ -163,7 +163,7 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
         uint256[] calldata values,
         bytes32 nonce,
         bytes32 nonceDependency,
-        uint256 expiresAt,
+        uint256 expiration,
         uint8 v,
         bytes32 r,
         bytes32 s
@@ -171,8 +171,8 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
         SignedOperationsStorage storage $ = _getSignedOperationsStorage();
         uint256 length = targets.length;
 
-        if (block.timestamp > expiresAt) {
-            revert ExpiredSignature(nonce, expiresAt);
+        if (block.timestamp > expiration) {
+            revert ExpiredSignature(nonce, expiration);
         }
         if (length != calls.length || length != values.length) {
             revert InvalidParameters(nonce);
@@ -188,7 +188,7 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
         {
             // Code inspired by OpenZeppelin's ERC20Permit.sol
             bytes32 structHash = keccak256(
-                abi.encode(SIGNED_OPERATIONS_TYPEHASH, targets, calls, values, nonce, nonceDependency, expiresAt)
+                abi.encode(SIGNED_OPERATIONS_TYPEHASH, targets, calls, values, nonce, nonceDependency, expiration)
             );
             bytes32 hash = _hashTypedDataV4(structHash);
             address signer = ECDSA.recover(hash, v, r, s);

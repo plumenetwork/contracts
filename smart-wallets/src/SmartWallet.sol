@@ -5,7 +5,11 @@ import { Proxy } from "@openzeppelin/contracts/proxy/Proxy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { WalletUtils } from "./WalletUtils.sol";
+
+import { AssetVault } from "./extensions/AssetVault.sol";
 import { SignedOperations } from "./extensions/SignedOperations.sol";
+
+import { IAssetVault } from "./interfaces/IAssetVault.sol";
 import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
 
 /**
@@ -32,6 +36,8 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
     struct SmartWalletStorage {
         /// @dev Address of the current user wallet implementation for each user
         address userWallet;
+        /// @dev AssetVault associated with the smart wallet
+        AssetVault assetVault;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.SmartWallet")) - 1)) & ~bytes32(uint256(0xff))
@@ -51,6 +57,38 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @param userWallet Address of the new user wallet implementation
      */
     event UserWalletUpgraded(address indexed userWallet);
+
+    // Errors
+
+    /**
+     * @notice Indicates a failure because the AssetVault for the user already exists
+     * @param assetVault Existing AssetVault for the user
+     */
+    error AssetVaultAlreadyExists(AssetVault assetVault);
+
+    // Base Smart Wallet Functions
+
+    /// @notice Deploy an AssetVault for this smart wallet if it does not already exist
+    function deployAssetVault() public {
+        SmartWalletStorage storage $ = _getSmartWalletStorage();
+        if (address($.assetVault) != address(0)) {
+            revert AssetVaultAlreadyExists($.assetVault);
+        }
+        $.assetVault = new AssetVault();
+    }
+
+    /// @notice AssetVault associated with the smart wallet
+    function getAssetVault() external view returns (IAssetVault assetVault) {
+        return _getSmartWalletStorage().assetVault;
+    }
+
+    /**
+     * @notice Get the number of AssetTokens that are currently locked in the AssetVault
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     */
+    function getBalanceLocked(IERC20 assetToken) public view returns (uint256 balanceLocked) {
+        return _getSmartWalletStorage().assetVault.getBalanceLocked(assetToken);
+    }
 
     // User Wallet Functions
 
