@@ -33,7 +33,7 @@ contract pUSD is ERC20, ERC20Burnable, ERC20Pausable, AccessControl {
         _grantRole(MINTER_ROLE, owner);
     }
 
-    // Functions
+    // Override Functions
 
     /**
      * @notice Update the balance of `from` and `to` after token transfer
@@ -44,6 +44,13 @@ contract pUSD is ERC20, ERC20Burnable, ERC20Pausable, AccessControl {
     function _update(address from, address to, uint256 value) internal override(ERC20, ERC20Pausable) {
         super._update(from, to, value);
     }
+
+    /// @notice Number of decimals of pUSD
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    // Admin Functions
 
     /// @notice Pause the contract, only the pauser can call this
     function pause() public onlyRole(PAUSER_ROLE) {
