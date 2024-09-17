@@ -5,10 +5,8 @@ import { Proxy } from "@openzeppelin/contracts/proxy/Proxy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { WalletUtils } from "./WalletUtils.sol";
-
 import { AssetVault } from "./extensions/AssetVault.sol";
 import { SignedOperations } from "./extensions/SignedOperations.sol";
-
 import { IAssetVault } from "./interfaces/IAssetVault.sol";
 import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
 

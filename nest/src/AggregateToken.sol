@@ -112,7 +112,7 @@ contract AggregateToken is
     // Errors
 
     /**
-     * @notice Indicates a failure because the given CurrencyToken does not match actual CurrencyToken
+     * @notice Indicates a failure because the given CurrencyToken does not match the actual CurrencyToken
      * @param invalidCurrencyToken CurrencyToken that does not match the actual CurrencyToken
      * @param currencyToken Actual CurrencyToken used to mint and burn the AggregateToken
      */

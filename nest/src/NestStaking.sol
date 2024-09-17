@@ -64,7 +64,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @param askPrice Price at which users can buy the AggregateToken using CurrencyToken, times the base
      * @param bidPrice Price at which users can sell the AggregateToken to receive CurrencyToken, times the base
      * @param tokenURI URI of the AggregateToken metadata
-     * @return address Address of the new AggregateToken
+     * @return aggregateTokenProxyAddress Address of the new AggregateTokenProxy
      */
     function createAggregateToken(
         address owner,
@@ -75,7 +75,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         uint256 askPrice,
         uint256 bidPrice,
         string memory tokenURI
-    ) public returns (address) {
+    ) public returns (address aggregateTokenProxyAddress) {
         AggregateToken aggregateToken = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateToken),
@@ -87,7 +87,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
 
         emit TokenCreated(msg.sender, aggregateTokenProxy);
 
-        return (address(aggregateToken));
+        return (address(aggregateTokenProxy));
     }
 
 }

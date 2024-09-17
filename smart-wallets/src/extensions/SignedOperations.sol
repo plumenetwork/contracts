@@ -119,9 +119,9 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
     /**
      * @notice Check if a nonce has been used before
      * @param nonce Nonce to check
-     * @return True if the nonce has been used before, false otherwise
+     * @return used True if the nonce has been used before, false otherwise
      */
-    function isNonceUsed(bytes32 nonce) public view returns (bool) {
+    function isNonceUsed(bytes32 nonce) public view returns (bool used) {
         return _getSignedOperationsStorage().nonces[nonce] != 0;
     }
 
