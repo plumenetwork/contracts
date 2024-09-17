@@ -19,3 +19,6 @@
 [submodule "plume/lib/forge-std"]
 	path = plume/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "plume/lib/openzeppelin-foundry-upgrades"]
+	path = plume/lib/openzeppelin-foundry-upgrades
+	url = https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades
