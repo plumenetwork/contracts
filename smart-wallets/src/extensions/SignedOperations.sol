@@ -26,7 +26,7 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
          *   of SignedOperations should be executed. The value is 1 if the nonce is used,
          *   and 0 otherwise. We store a uint256 word instead of a bool bit for efficiency.
          */
-        mapping(bytes32 nonce => uint256) nonces;
+        mapping(bytes32 nonce => uint256 used) nonces;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.SignedOperations")) - 1)) & ~bytes32(uint256(0xff))
