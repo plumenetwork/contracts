@@ -33,6 +33,14 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
     // Initializer
 
     /**
+     * @notice Prevent the implementation contract from being initialized or reinitialized
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
      * @notice Initialize the AggregateToken
      * @param owner Address of the owner of the AggregateToken
      */

@@ -19,10 +19,10 @@ import { ERC20PermitUpgradeable } from
  */
 contract P is
     Initializable,
-    AccessControlUpgradeable,
     ERC20Upgradeable,
     ERC20BurnableUpgradeable,
     ERC20PausableUpgradeable,
+    AccessControlUpgradeable,
     ERC20PermitUpgradeable,
     UUPSUpgradeable
 {
@@ -42,7 +42,10 @@ contract P is
 
     // Initializer
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    /**
+     * @notice Prevent the implementation contract from being initialized or reinitialized
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
     constructor() {
         _disableInitializers();
     }
@@ -57,8 +60,8 @@ contract P is
         __ERC20Burnable_init();
         __ERC20Pausable_init();
         __AccessControl_init();
-        __UUPSUpgradeable_init();
         __ERC20Permit_init("Plume");
+        __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);

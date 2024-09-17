@@ -19,9 +19,9 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  */
 contract AggregateToken is
     Initializable,
+    ERC20Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    ERC20Upgradeable,
     IAggregateToken
 {
 
@@ -134,6 +134,14 @@ contract AggregateToken is
     error UserCurrencyTokenInsufficientBalance(IERC20 currencyToken, address user, uint256 amount);
 
     // Initializer
+
+    /**
+     * @notice Prevent the implementation contract from being initialized or reinitialized
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor() {
+        _disableInitializers();
+    }
 
     /**
      * @notice Initialize the AggregateToken
