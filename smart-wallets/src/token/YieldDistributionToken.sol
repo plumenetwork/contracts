@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 
 /**
  * @title YieldDistributionToken
  * @author Eugene Y. Q. Shen
- * @notice ERC20 token that represents TODO
+ * @notice ERC20 token that receives yield deposits and distributes yield
+ *   to token holders proportionally based on how long they have held the token
  */
-abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
+abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionToken {
 
     // Types
 
     /**
      * @notice Balance of one user at one point in time
-     * @param amount Amount of tokens held by the user at that time
+     * @param amount Amount of YieldDistributionTokens held by the user at that time
      * @param previousTimestamp Timestamp of the previous balance for that user
      */
     struct Balance {
@@ -68,7 +69,7 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
     /// @custom:storage-location erc7201:plume.storage.YieldDistributionToken
     struct YieldDistributionTokenStorage {
         /// @dev CurrencyToken in which the yield is deposited and denominated
-        IERC20 currencyToken;
+        ERC20 currencyToken;
         /// @dev Number of decimals of the YieldDistributionToken
         uint8 decimals;
         /// @dev URI for the YieldDistributionToken metadata
@@ -152,13 +153,21 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
 
     /**
      * @notice Construct the YieldDistributionToken
+     * @param owner Address of the owner of the YieldDistributionToken
      * @param name Name of the YieldDistributionToken
      * @param symbol Symbol of the YieldDistributionToken
      * @param currencyToken Token in which the yield is deposited and denominated
      * @param decimals_ Number of decimals of the YieldDistributionToken
      * @param tokenURI URI of the YieldDistributionToken metadata
      */
-    constructor(string memory name, string memory symbol, ERC20 currencyToken, uint8 decimals_, string memory tokenURI) ERC20(name, symbol) {
+    constructor(
+        address owner,
+        string memory name,
+        string memory symbol,
+        ERC20 currencyToken,
+        uint8 decimals_,
+        string memory tokenURI
+    ) ERC20(name, symbol) Ownable(owner) {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         $.currencyToken = currencyToken;
         $.decimals = decimals_;
@@ -227,14 +236,14 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
      * @dev Only the owner can call this setter
      * @param tokenURI New token URI
      */
-    function setTokenURI(string memory tokenURI) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setTokenURI(string memory tokenURI) public onlyOwner {
         _getYieldDistributionTokenStorage().tokenURI = tokenURI;
     }
 
     // Getter View Functions
 
     /// @notice CurrencyToken in which the yield is deposited and denominated
-    function getCurrencyToken() public view returns (IERC20) {
+    function getCurrencyToken() public view returns (ERC20) {
         return _getYieldDistributionTokenStorage().currencyToken;
     }
 
@@ -271,7 +280,7 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
         if (timestamp == lastTimestamp) {
             $.depositHistory.deposits[timestamp].currencyTokenAmount += currencyTokenAmount;
         } else {
-            $.depositHistory[timestamp] = Deposit(currencyTokenAmount, totalSupply(), lastTimestamp);
+            $.depositHistory.deposits[timestamp] = Deposit(currencyTokenAmount, totalSupply(), lastTimestamp);
             $.depositHistory.lastTimestamp = timestamp;
         }
 
@@ -341,14 +350,14 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
 
         Deposit storage deposit = depositHistory.deposits[depositTimestamp];
         Balance storage balance = balanceHistory.balances[balanceTimestamp];
-        uint256 previousBalanceTimestamp = balance.previousBalanceTimestamp;
+        uint256 previousBalanceTimestamp = balance.previousTimestamp;
         Balance storage previousBalance = balanceHistory.balances[previousBalanceTimestamp];
 
         // Iterate through the balanceHistory list until depositTimestamp >= previousBalanceTimestamp
         while (depositTimestamp < previousBalanceTimestamp) {
             balanceTimestamp = previousBalanceTimestamp;
             balance = previousBalance;
-            previousBalanceTimestamp = balance.previousBalanceTimestamp;
+            previousBalanceTimestamp = balance.previousTimestamp;
             previousBalance = balanceHistory.balances[previousBalanceTimestamp];
         }
 
@@ -364,12 +373,12 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
         if (balanceTimestamp < depositTimestamp) {
             balanceHistory.lastTimestamp = depositTimestamp;
             balanceHistory.balances[depositTimestamp].amount = balance.amount;
-            delete balanceHistory.balances[depositTimestamp].previousBalanceTimestamp;
+            delete balanceHistory.balances[depositTimestamp].previousTimestamp;
         } else if (balanceTimestamp > depositTimestamp) {
             if (previousBalanceTimestamp != 0) {
                 balance.previousTimestamp = depositTimestamp;
                 balanceHistory.balances[depositTimestamp].amount = previousBalance.amount;
-                delete balanceHistory.balances[depositTimestamp].previousBalanceTimestamp;
+                delete balanceHistory.balances[depositTimestamp].previousTimestamp;
             }
             balance = previousBalance;
             balanceTimestamp = previousBalanceTimestamp;
@@ -386,9 +395,9 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
          *   This outer loop ends after we go through all deposits or all of the user's balance history.
          */
         uint256 yieldAccrued = 0;
-        uint256 depositAmount = deposit.amount;
+        uint256 depositAmount = deposit.currencyTokenAmount;
         while (depositAmount > 0 && balanceTimestamp > 0) {
-            uint256 previousDepositTimestamp = deposit.previousDepositTimestamp;
+            uint256 previousDepositTimestamp = deposit.previousTimestamp;
             uint256 timeBetweenDeposits = depositTimestamp - previousDepositTimestamp;
 
             /**
@@ -411,7 +420,7 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
                         / deposit.totalSupply / timeBetweenDeposits;
 
                     nextBalanceTimestamp = balanceTimestamp;
-                    balanceTimestamp = balance.previousBalanceTimestamp;
+                    balanceTimestamp = balance.previousTimestamp;
                     balance = balanceHistory.balances[balanceTimestamp];
 
                     /**
@@ -421,7 +430,7 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
                      */
                     if (nextBalanceTimestamp != preserveBalanceTimestamp) {
                         delete balanceHistory.balances[nextBalanceTimestamp].amount;
-                        delete balanceHistory.balances[nextBalanceTimestamp].previousBalanceTimestamp;
+                        delete balanceHistory.balances[nextBalanceTimestamp].previousTimestamp;
                     }
                 }
 
@@ -435,10 +444,11 @@ abstract contract YieldDistributionToken is ERC20, IYieldDistributionToken {
 
             depositTimestamp = previousDepositTimestamp;
             deposit = depositHistory.deposits[depositTimestamp];
-            depositAmount = deposit.amount;
+            depositAmount = deposit.currencyTokenAmount;
         }
 
         $.yieldAccrued[user] += yieldAccrued / _BASE;
         emit YieldAccrued(user, yieldAccrued / _BASE);
     }
+
 }
