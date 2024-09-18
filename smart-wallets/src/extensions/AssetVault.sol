@@ -3,8 +3,8 @@ pragma solidity ^0.8.25;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import { AssetToken } from "../token/AssetToken.sol";
 import { IAssetVault } from "../interfaces/IAssetVault.sol";
+import { AssetToken } from "../token/AssetToken.sol";
 
 /**
  * @title AssetVault

@@ -4,11 +4,11 @@ pragma solidity ^0.8.25;
 import { Proxy } from "@openzeppelin/contracts/proxy/Proxy.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import { AssetToken } from "./token/AssetToken.sol";
 import { WalletUtils } from "./WalletUtils.sol";
 import { AssetVault } from "./extensions/AssetVault.sol";
 import { SignedOperations } from "./extensions/SignedOperations.sol";
 import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
+import { AssetToken } from "./token/AssetToken.sol";
 
 /**
  * @title SmartWallet

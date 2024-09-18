@@ -27,6 +27,10 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
         address[] whitelist;
         /// @dev Mapping of whitelisted users
         mapping(address user => bool whitelisted) isWhitelisted;
+        /// @dev List of all users that have ever held AssetTokens
+        address[] holders;
+        /// @dev Mapping of all users that have ever held AssetTokens
+        mapping(address user => bool held) hasHeld;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AssetToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -134,6 +138,11 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
                 revert InsufficientBalance(from);
             }
         }
+
+        if (!$.hasHeld[to]) {
+            $.holders.push(to);
+            $.hasHeld[to] = true;
+        }
         super._update(from, to, value);
     }
 
@@ -200,8 +209,8 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
                 }
             }
             $.isWhitelisted[user] = false;
+            emit AddressRemovedFromWhitelist(user);
         }
-        emit AddressRemovedFromWhitelist(user);
     }
 
     /**
@@ -245,9 +254,24 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
     /**
      * @notice Check if the user is whitelisted
      * @param user Address of the user to check
+     * @return isWhitelisted Boolean indicating if the user is whitelisted
      */
-    function isAddressWhitelisted(address user) external view returns (bool) {
+    function isAddressWhitelisted(address user) external view returns (bool isWhitelisted) {
         return _getAssetTokenStorage().isWhitelisted[user];
+    }
+
+    /// @notice List of all users that have ever held AssetTokens
+    function getHolders() external view returns (address[] memory) {
+        return _getAssetTokenStorage().holders;
+    }
+
+    /**
+     * @notice Check if the user has ever held AssetTokens
+     * @param user Address of the user to check
+     * @return held Boolean indicating if the user has ever held AssetTokens
+     */
+    function hasBeenHolder(address user) external view returns (bool held) {
+        return _getAssetTokenStorage().hasHeld[user];
     }
 
     /// @notice Price of an AssetToken based on its total value and total supply
@@ -271,10 +295,12 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
     }
 
     /// @notice Claimed yield across all AssetTokens for all users
-    function claimedYield() public view returns (uint256) {
+    function claimedYield() public view returns (uint256 amount) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
-        // TODO: loop through all holders
-        return 0;
+        uint256 length = $.whitelist.length;
+        for (uint256 i = 0; i < length; ++i) {
+            amount += _getYieldDistributionTokenStorage().yieldWithdrawn[$.whitelist[i]];
+        }
     }
 
     /// @notice Unclaimed yield across all AssetTokens for all users
@@ -285,25 +311,29 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
     /**
      * @notice Total yield distributed to a specific user
      * @param user Address of the user for which to get the total yield
+     * @return amount Total yield distributed to the user
      */
-    function totalYield(address user) external view returns (uint256) {
+    function totalYield(address user) external view returns (uint256 amount) {
         return _getYieldDistributionTokenStorage().yieldAccrued[user];
     }
 
     /**
      * @notice Amount of yield that a specific user has claimed
      * @param user Address of the user for which to get the claimed yield
+     * @return amount Amount of yield that the user has claimed
      */
-    function claimedYield(address user) external view returns (uint256) {
+    function claimedYield(address user) external view returns (uint256 amount) {
         return _getYieldDistributionTokenStorage().yieldWithdrawn[user];
     }
 
     /**
      * @notice Amount of yield that a specific user has not yet claimed
      * @param user Address of the user for which to get the unclaimed yield
+     * @return amount Amount of yield that the user has not yet claimed
      */
-    function unclaimedYield(address user) external view returns (uint256) {
-        return _getYieldDistributionTokenStorage().yieldAccrued[user] - _getYieldDistributionTokenStorage().yieldWithdrawn[user];
+    function unclaimedYield(address user) external view returns (uint256 amount) {
+        return _getYieldDistributionTokenStorage().yieldAccrued[user]
+            - _getYieldDistributionTokenStorage().yieldWithdrawn[user];
     }
 
 }
