@@ -1,25 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { AssetToken } from "../token/AssetToken.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 interface IAssetVault {
 
     function updateYieldAllowance(
-        IERC20 assetToken,
+        AssetToken assetToken,
         address beneficiary,
         uint256 amount,
         uint256 expiration
     ) external;
-    function redistributeYield(IERC20 assetToken, IERC20 yieldToken, uint256 yieldTokenAmount) external;
+    function redistributeYield(AssetToken assetToken, ERC20 currencyToken, uint256 currencyTokenAmount) external;
 
-    function getBalanceLocked(IERC20 assetToken) external view returns (uint256 balanceLocked);
-    function acceptYieldAllowance(IERC20 assetToken, uint256 amount, uint256 expiration) external;
+    function getBalanceLocked(AssetToken assetToken) external view returns (uint256 balanceLocked);
+    function acceptYieldAllowance(AssetToken assetToken, uint256 amount, uint256 expiration) external;
     function renounceYieldDistribution(
-        IERC20 assetToken,
+        AssetToken assetToken,
         uint256 amount,
         uint256 expiration
     ) external returns (uint256 amountRenounced);
-    function clearYieldDistributions(IERC20 assetToken) external;
+    function clearYieldDistributions(AssetToken assetToken) external;
 
 }

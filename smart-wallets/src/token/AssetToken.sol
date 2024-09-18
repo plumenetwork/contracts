@@ -41,8 +41,17 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
 
     // Events
 
-    event AddressAddedToWhitelist(address indexed _address);
-    event AddressRemovedFromWhitelist(address indexed _address);
+    /**
+     * @notice Emitted when a user is added to the whitelist
+     * @param user Address of the user that is added to the whitelist
+     */
+    event AddressAddedToWhitelist(address indexed user);
+
+    /**
+     * @notice Emitted when a user is removed from the whitelist
+     * @param user Address of the user that is removed from the whitelist
+     */
+    event AddressRemovedFromWhitelist(address indexed user);
 
     // Errors
 
@@ -58,6 +67,21 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
      */
     error InsufficientBalance(address user);
 
+    /// @notice Indicates a failure because the given address is 0x0
+    error InvalidAddress();
+
+    /**
+     * @notice Indicates a failure because the user is already whitelisted
+     * @param user Address of the user that is already whitelisted
+     */
+    error AddressAlreadyWhitelisted(address user);
+
+    /**
+     * @notice Indicates a failure because the user is not whitelisted
+     * @param user Address of the user that is not whitelisted
+     */
+    error AddressNotWhitelisted(address user);
+
     // Constructor
 
     /**
@@ -67,9 +91,9 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
      * @param symbol Symbol of the AssetToken
      * @param currencyToken Token in which the yield is deposited and denominated
      * @param decimals_ Number of decimals of the AssetToken
+     * @param tokenURI_ URI of the AssetToken metadata
      * @param initialSupply Initial supply of the AssetToken
      * @param totalValue_ Total value of all circulating AssetTokens
-     * @param tokenURI_ URI of the AssetToken metadata
      */
     constructor(
         address owner,
@@ -77,9 +101,9 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
         string memory symbol,
         ERC20 currencyToken,
         uint8 decimals_,
+        string memory tokenURI_,
         uint256 initialSupply,
-        uint256 totalValue_,
-        string memory tokenURI_
+        uint256 totalValue_
     ) YieldDistributionToken(owner, name, symbol, currencyToken, decimals_, tokenURI_) {
         _getAssetTokenStorage().totalValue = totalValue_;
         _mint(owner, initialSupply);
@@ -88,8 +112,8 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
     // Override Functions
 
     /**
-     * @notice Update the balance of `from` and `to` after token transfer
-     * @dev Require that the available balance of `from` is greater than `value`
+     * @notice Update the balance of `from` and `to` after token transfer and accrue yield
+     * @dev Require that both parties are whitelisted and `from` has enough tokens
      * @param from Address to transfer tokens from
      * @param to Address to transfer tokens to
      * @param value Amount of tokens to transfer
@@ -110,128 +134,176 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
                 revert InsufficientBalance(from);
             }
         }
-
         super._update(from, to, value);
     }
 
     // Admin Functions
 
-    function addToWhitelist(address user) external onlyOwner {
-        AssetTokenStorage storage $ = _getAssetTokenStorage();
-        require(user != address(0), "Invalid address");
-        if ($.isWhitelistEnabled) {
-            require(!$.isWhitelisted[user], "Address is already whitelisted");
-            $.isWhitelisted[user] = true;
-            $.whitelist.push(user);
-            emit AddressAddedToWhitelist(user);
-        }
+    /**
+     * @notice Update the total value of all circulating AssetTokens
+     * @dev Only the owner can call this function
+     */
+    function setTotalValue(uint256 totalValue) external onlyOwner {
+        _getAssetTokenStorage().totalValue = totalValue;
     }
 
-    function removeFromWhitelist(address user) external onlyOwner {
-        AssetTokenStorage storage $ = _getAssetTokenStorage();
-        if (!$.isWhitelistEnabled) {
-            return;
-        }
-        require($.isWhitelisted[user], "Address is not whitelisted");
-
-        for (uint256 i = 0; i < $.whitelist.length; i++) {
-            if ($.whitelist[i] == user) {
-                $.whitelist[i] = $.whitelist[$.whitelist.length - 1];
-                $.whitelist.pop();
-                break;
-            }
-        }
-
-        $.isWhitelisted[user] = false;
-
-        emit AddressRemovedFromWhitelist(user);
-    }
-
+    /**
+     * @notice Enable the whitelist
+     * @dev Only the owner can call this function
+     */
     function enableWhitelist() external onlyOwner {
         _getAssetTokenStorage().isWhitelistEnabled = true;
     }
 
-    function isAddressWhitelisted(address user) public view returns (bool) {
-        return _getAssetTokenStorage().isWhitelisted[user];
+    /**
+     * @notice Add a user to the whitelist
+     * @dev Only the owner can call this function
+     * @param user Address of the user to add to the whitelist
+     */
+    function addToWhitelist(address user) external onlyOwner {
+        if (user == address(0)) {
+            revert InvalidAddress();
+        }
+
+        AssetTokenStorage storage $ = _getAssetTokenStorage();
+        if ($.isWhitelistEnabled) {
+            if ($.isWhitelisted[user]) {
+                revert AddressAlreadyWhitelisted(user);
+            }
+            $.whitelist.push(user);
+            $.isWhitelisted[user] = true;
+            emit AddressAddedToWhitelist(user);
+        }
     }
 
     /**
-     * @notice Mint new tokens
-     * @param user The user to mint tokens to
-     * @param value The amount of tokens to mint
+     * @notice Remove a user from the whitelist
+     * @dev Only the owner can call this function
+     * @param user Address of the user to remove from the whitelist
      */
-    function mint(address user, uint256 value) public onlyOwner {
-        _mint(user, value);
+    function removeFromWhitelist(address user) external onlyOwner {
+        if (user == address(0)) {
+            revert InvalidAddress();
+        }
+
+        AssetTokenStorage storage $ = _getAssetTokenStorage();
+        if ($.isWhitelistEnabled) {
+            if (!$.isWhitelisted[user]) {
+                revert AddressNotWhitelisted(user);
+            }
+            uint256 length = $.whitelist.length;
+            for (uint256 i = 0; i < length; i++) {
+                if ($.whitelist[i] == user) {
+                    $.whitelist[i] = $.whitelist[length - 1];
+                    $.whitelist.pop();
+                    break;
+                }
+            }
+            $.isWhitelisted[user] = false;
+        }
+        emit AddressRemovedFromWhitelist(user);
     }
 
     /**
-     * @notice Deposit yield
-     * @param timestamp The timestamp of the deposit
-     * @param amount The amount of yield to deposit
+     * @notice Mint new AssetTokens to the user
+     * @dev Only the owner can call this function
+     * @param user Address of the user to mint AssetTokens to
+     * @param assetTokenAmount Amount of AssetTokens to mint
      */
-    function depositYield(uint256 timestamp, uint256 amount) external onlyOwner {
-        uint256 lastDepositTimestamp = _getYieldDistributionTokenStorage().depositHistory.lastTimestamp;
+    function mint(address user, uint256 assetTokenAmount) external onlyOwner {
+        _mint(user, assetTokenAmount);
+    }
 
-        // To prevent adding to a previous deposit where yield has already been distributed
-        require(
-            lastDepositTimestamp < timestamp,
-            "AssetToken: timestamp must be greater than the previous deposit timestamp"
-        );
-
-        _depositYield(timestamp, amount);
+    /**
+     * @notice Deposit yield into the AssetToken
+     * @dev Only the owner can call this function, and the owner must have
+     *   approved the CurrencyToken to spend the given amount
+     * @param timestamp Timestamp of the deposit, must not be less than the previous deposit timestamp
+     * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
+     */
+    function depositYield(uint256 timestamp, uint256 currencyTokenAmount) external onlyOwner {
+        _depositYield(timestamp, currencyTokenAmount);
     }
 
     // Getter View Functions
 
-    /**
-     * @notice Get the available balance of an user
-     * @dev The available balance is the balance minus the locked balance
-     * @param user The user to get the balance of
-     * @return balanceAvailable The available balance of the user
-     */
-    function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
-        return balanceOf(user) - SmartWallet(payable(user)).getBalanceLocked(ERC20(this));
+    /// @notice Total value of all circulating AssetTokens
+    function getTotalValue() external view returns (uint256) {
+        return _getAssetTokenStorage().totalValue;
     }
 
-    function getPricePerToken() public view returns (uint256) {
+    /// @notice Check if the whitelist is enabled
+    function isWhitelistEnabled() external view returns (bool) {
+        return _getAssetTokenStorage().isWhitelistEnabled;
+    }
+
+    /// @notice Whitelist of users that are allowed to hold AssetTokens
+    function getWhitelist() external view returns (address[] memory) {
+        return _getAssetTokenStorage().whitelist;
+    }
+
+    /**
+     * @notice Check if the user is whitelisted
+     * @param user Address of the user to check
+     */
+    function isAddressWhitelisted(address user) external view returns (bool) {
+        return _getAssetTokenStorage().isWhitelisted[user];
+    }
+
+    /// @notice Price of an AssetToken based on its total value and total supply
+    function getPricePerToken() external view returns (uint256) {
         return _getAssetTokenStorage().totalValue / totalSupply();
     }
 
-    // Get the total yield (unclaimed + claimed)
+    /**
+     * @notice Get the available unlocked AssetToken balance of a user
+     * @param user Address of the user to get the available balance of
+     * @return balanceAvailable Available unlocked AssetToken balance of the user
+     */
+    function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
+        return balanceOf(user) - SmartWallet(payable(user)).getBalanceLocked(this);
+    }
+
+    /// @notice Total yield distributed to all AssetTokens for all users
     function totalYield() public view returns (uint256) {
-        // TODO loop through yield deposit history
+        // TODO: loop through yield deposit history
         return 0;
     }
 
-    // Get unclaimed yield for all users
-    function unclaimedYield() public view returns (uint256) {
+    /// @notice Claimed yield across all AssetTokens for all users
+    function claimedYield() public view returns (uint256) {
+        AssetTokenStorage storage $ = _getAssetTokenStorage();
+        // TODO: loop through all holders
+        return 0;
+    }
+
+    /// @notice Unclaimed yield across all AssetTokens for all users
+    function unclaimedYield() external view returns (uint256) {
         return totalYield() - claimedYield();
     }
 
-    // Get claimed yield for all users
-    function claimedYield() public view returns (uint256) {
-        AssetTokenStorage storage $ = _getAssetTokenStorage();
-        // TODO delete this function, it breaks when we delete from whitelist
-        uint256 totalClaimed = 0;
-        for (uint256 i = 0; i < $.whitelist.length; i++) {
-            totalClaimed += _getYieldDistributionTokenStorage().yieldWithdrawn[$.whitelist[i]];
-        }
-        return totalClaimed;
-    }
-
-    // Get user-specific total yield (unclaimed + claimed)
+    /**
+     * @notice Total yield distributed to a specific user
+     * @param user Address of the user for which to get the total yield
+     */
     function totalYield(address user) external view returns (uint256) {
-        return unclaimedYield(user) + claimedYield(user);
+        return _getYieldDistributionTokenStorage().yieldAccrued[user];
     }
 
-    // Get unclaimed yield for a specific user
-    function unclaimedYield(address user) public view returns (uint256) {
-        return _getYieldDistributionTokenStorage().yieldAccrued[user]
-            - _getYieldDistributionTokenStorage().yieldWithdrawn[user];
-    }
-
-    // Get claimed yield for a specific user
-    function claimedYield(address user) public view returns (uint256) {
+    /**
+     * @notice Amount of yield that a specific user has claimed
+     * @param user Address of the user for which to get the claimed yield
+     */
+    function claimedYield(address user) external view returns (uint256) {
         return _getYieldDistributionTokenStorage().yieldWithdrawn[user];
     }
+
+    /**
+     * @notice Amount of yield that a specific user has not yet claimed
+     * @param user Address of the user for which to get the unclaimed yield
+     */
+    function unclaimedYield(address user) external view returns (uint256) {
+        return _getYieldDistributionTokenStorage().yieldAccrued[user] - _getYieldDistributionTokenStorage().yieldWithdrawn[user];
+    }
+
 }

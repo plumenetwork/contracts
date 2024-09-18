@@ -236,19 +236,19 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @dev Only the owner can call this setter
      * @param tokenURI New token URI
      */
-    function setTokenURI(string memory tokenURI) public onlyOwner {
+    function setTokenURI(string memory tokenURI) external onlyOwner {
         _getYieldDistributionTokenStorage().tokenURI = tokenURI;
     }
 
     // Getter View Functions
 
     /// @notice CurrencyToken in which the yield is deposited and denominated
-    function getCurrencyToken() public view returns (ERC20) {
+    function getCurrencyToken() external view returns (ERC20) {
         return _getYieldDistributionTokenStorage().currencyToken;
     }
 
     /// @notice URI for the YieldDistributionToken metadata
-    function getTokenURI() public view returns (string memory) {
+    function getTokenURI() external view returns (string memory) {
         return _getYieldDistributionTokenStorage().tokenURI;
     }
 
