@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+pragma solidity ^0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -42,9 +42,9 @@ contract AssetVault is IAssetVault {
     /// @custom:storage-location erc7201:plume.storage.AssetVault
     struct AssetVaultStorage {
         /// @dev Mapping of yield allowances for each asset token and beneficiary
-        mapping(IERC20 assetToken => mapping(address beneficiary => Yield)) yieldAllowances;
+        mapping(IERC20 assetToken => mapping(address beneficiary => Yield allowance)) yieldAllowances;
         /// @dev Mapping of the yield distribution list for each asset token
-        mapping(IERC20 assetToken => YieldDistributionListItem) yieldDistributions;
+        mapping(IERC20 assetToken => YieldDistributionListItem distribution) yieldDistributions;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AssetVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -86,11 +86,11 @@ contract AssetVault is IAssetVault {
      * @notice Emitted when the user wallet redistributes yield to the beneficiaries
      * @param assetToken AssetToken from which the yield was redistributed
      * @param beneficiary Address of the beneficiary that received the yield redistribution
-     * @param yieldToken Token in which the yield was redistributed
-     * @param yieldShare Amount of yieldToken that was redistributed to the beneficiary
+     * @param currencyToken Token in which the yield was redistributed
+     * @param yieldShare Amount of currencyToken that was redistributed to the beneficiary
      */
     event YieldRedistributed(
-        IERC20 indexed assetToken, address indexed beneficiary, IERC20 indexed yieldToken, uint256 yieldShare
+        IERC20 indexed assetToken, address indexed beneficiary, IERC20 indexed currencyToken, uint256 yieldShare
     );
 
     /**
@@ -225,13 +225,17 @@ contract AssetVault is IAssetVault {
     /**
      * @notice Redistribute yield to the beneficiaries of the asset token, using yield distributions
      * @dev Only the user wallet can initiate the yield redistribution. The yield redistributed
-     *   to each beneficiary is rounded down, and any remaining yieldTokens are kept in the vault.
+     *   to each beneficiary is rounded down, and any remaining currencyTokens are kept in the vault.
      * @param assetToken AssetToken from which the yield is to be redistributed
-     * @param yieldToken Token in which the yield is to be redistributed
-     * @param yieldTokenAmount Amount of yieldToken to redistribute
+     * @param currencyToken Token in which the yield is to be redistributed
+     * @param currencyTokenAmount Amount of currencyToken to redistribute
      */
-    function redistributeYield(IERC20 assetToken, IERC20 yieldToken, uint256 yieldTokenAmount) external onlyWallet {
-        if (yieldTokenAmount == 0) {
+    function redistributeYield(
+        IERC20 assetToken,
+        IERC20 currencyToken,
+        uint256 currencyTokenAmount
+    ) external onlyWallet {
+        if (currencyTokenAmount == 0) {
             return;
         }
 
@@ -242,9 +246,9 @@ contract AssetVault is IAssetVault {
         uint256 amountLocked = distribution.yield.amount;
         while (amountLocked > 0) {
             if (distribution.yield.expiration > block.timestamp) {
-                uint256 yieldShare = (yieldTokenAmount * amountLocked) / amountTotal;
+                uint256 yieldShare = (currencyTokenAmount * amountLocked) / amountTotal;
                 // TODO: transfer yield from the user wallet to the beneficiary
-                emit YieldRedistributed(assetToken, distribution.beneficiary, yieldToken, yieldShare);
+                emit YieldRedistributed(assetToken, distribution.beneficiary, currencyToken, yieldShare);
             }
 
             distribution = distribution.next[0];

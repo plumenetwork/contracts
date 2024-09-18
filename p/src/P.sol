@@ -19,10 +19,10 @@ import { ERC20PermitUpgradeable } from
  */
 contract P is
     Initializable,
-    AccessControlUpgradeable,
     ERC20Upgradeable,
     ERC20BurnableUpgradeable,
     ERC20PausableUpgradeable,
+    AccessControlUpgradeable,
     ERC20PermitUpgradeable,
     UUPSUpgradeable
 {
@@ -42,7 +42,10 @@ contract P is
 
     // Initializer
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    /**
+     * @notice Prevent the implementation contract from being initialized or reinitialized
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
     constructor() {
         _disableInitializers();
     }
@@ -50,22 +53,22 @@ contract P is
     /**
      * @notice Initialize P
      * @dev Give all roles to the admin address passed into the constructor
-     * @param admin Address of the admin of P
+     * @param owner Address of the owner of P
      */
-    function initialize(address admin) public initializer {
+    function initialize(address owner) public initializer {
         __ERC20_init("Plume", "P");
         __ERC20Burnable_init();
         __ERC20Pausable_init();
         __AccessControl_init();
-        __UUPSUpgradeable_init();
         __ERC20Permit_init("Plume");
+        __UUPSUpgradeable_init();
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(ADMIN_ROLE, admin);
-        _grantRole(MINTER_ROLE, admin);
-        _grantRole(BURNER_ROLE, admin);
-        _grantRole(PAUSER_ROLE, admin);
-        _grantRole(UPGRADER_ROLE, admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(ADMIN_ROLE, owner);
+        _grantRole(MINTER_ROLE, owner);
+        _grantRole(BURNER_ROLE, owner);
+        _grantRole(PAUSER_ROLE, owner);
+        _grantRole(UPGRADER_ROLE, owner);
     }
 
     // Override Functions
@@ -77,7 +80,7 @@ contract P is
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
 
     /**
-     * @notice Update the balance of `from` and `to` before and after token transfer
+     * @notice Update the balance of `from` and `to` after token transfer
      * @param from Address to transfer tokens from
      * @param to Address to transfer tokens to
      * @param value Amount of tokens to transfer

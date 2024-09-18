@@ -2,14 +2,11 @@
 pragma solidity ^0.8.25;
 
 import { Proxy } from "@openzeppelin/contracts/proxy/Proxy.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import { WalletUtils } from "./WalletUtils.sol";
-
 import { AssetVault } from "./extensions/AssetVault.sol";
 import { SignedOperations } from "./extensions/SignedOperations.sol";
-
-import { IAssetVault } from "./interfaces/IAssetVault.sol";
 import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
 
 /**
@@ -78,7 +75,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
     }
 
     /// @notice AssetVault associated with the smart wallet
-    function getAssetVault() external view returns (IAssetVault assetVault) {
+    function getAssetVault() external view returns (AssetVault assetVault) {
         return _getSmartWalletStorage().assetVault;
     }
 
@@ -86,7 +83,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @notice Get the number of AssetTokens that are currently locked in the AssetVault
      * @param assetToken AssetToken from which the yield is to be redistributed
      */
-    function getBalanceLocked(IERC20 assetToken) public view returns (uint256 balanceLocked) {
+    function getBalanceLocked(ERC20 assetToken) public view returns (uint256 balanceLocked) {
         return _getSmartWalletStorage().assetVault.getBalanceLocked(assetToken);
     }
 
