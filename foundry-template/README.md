@@ -6,5 +6,6 @@ Copy this folder to start a new Foundry project, then run the following to initi
 $ vim README.md
 $ rm */.gitkeep
 $ forge install foundry-rs/forge-std
+$ forge install OpenZeppelin/openzeppelin-foundry-upgrades
 $ forge install OpenZeppelin/openzeppelin-contracts-upgradeable
 ```

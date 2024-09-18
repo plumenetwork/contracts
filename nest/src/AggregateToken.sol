@@ -19,9 +19,9 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  */
 contract AggregateToken is
     Initializable,
+    ERC20Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    ERC20Upgradeable,
     IAggregateToken
 {
 
@@ -58,7 +58,7 @@ contract AggregateToken is
     // Constants
 
     /// @notice Role for the upgrader of the AggregateToken
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADE_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     // Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 private constant _BASE = 1e18;
@@ -88,31 +88,31 @@ contract AggregateToken is
     );
 
     /**
-     * @notice Emitted when the admin buys ComponentToken using CurrencyToken
-     * @param admin Address of the admin who bought the ComponentToken
+     * @notice Emitted when the owner buys ComponentToken using CurrencyToken
+     * @param owner Address of the owner who bought the ComponentToken
      * @param currencyToken CurrencyToken used to buy the ComponentToken
      * @param currencyTokenAmount Amount of CurrencyToken paid
      * @param componentTokenAmount Amount of ComponentToken received
      */
     event ComponentTokenBought(
-        address indexed admin, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
+        address indexed owner, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
     );
 
     /**
-     * @notice Emitted when the admin sells ComponentToken to receive CurrencyToken
-     * @param admin Address of the admin who sold the ComponentToken
+     * @notice Emitted when the owner sells ComponentToken to receive CurrencyToken
+     * @param owner Address of the owner who sold the ComponentToken
      * @param currencyToken CurrencyToken received in exchange for the ComponentToken
      * @param currencyTokenAmount Amount of CurrencyToken received
      * @param componentTokenAmount Amount of ComponentToken sold
      */
     event ComponentTokenSold(
-        address indexed admin, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
+        address indexed owner, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
     );
 
     // Errors
 
     /**
-     * @notice Indicates a failure because the given CurrencyToken does not match actual CurrencyToken
+     * @notice Indicates a failure because the given CurrencyToken does not match the actual CurrencyToken
      * @param invalidCurrencyToken CurrencyToken that does not match the actual CurrencyToken
      * @param currencyToken Actual CurrencyToken used to mint and burn the AggregateToken
      */
@@ -134,6 +134,14 @@ contract AggregateToken is
     error UserCurrencyTokenInsufficientBalance(IERC20 currencyToken, address user, uint256 amount);
 
     // Initializer
+
+    /**
+     * @notice Prevent the implementation contract from being initialized or reinitialized
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor() {
+        _disableInitializers();
+    }
 
     /**
      * @notice Initialize the AggregateToken
@@ -283,6 +291,7 @@ contract AggregateToken is
 
     /**
      * @notice Set the CurrencyToken used to mint and burn the AggregateToken
+     * @dev Only the owner can call this setter
      * @param currencyToken New CurrencyToken
      */
     function setCurrencyToken(IERC20 currencyToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -291,6 +300,7 @@ contract AggregateToken is
 
     /**
      * @notice Set the price at which users can buy the AggregateToken using CurrencyToken
+     * @dev Only the owner can call this setter
      * @param askPrice New ask price
      */
     function setAskPrice(uint256 askPrice) public onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -299,6 +309,7 @@ contract AggregateToken is
 
     /**
      * @notice Set the price at which users can sell the AggregateToken to receive CurrencyToken
+     * @dev Only the owner can call this setter
      * @param bidPrice New bid price
      */
     function setBidPrice(uint256 bidPrice) public onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -307,6 +318,7 @@ contract AggregateToken is
 
     /**
      * @notice Set the URI for the AggregateToken metadata
+     * @dev Only the owner can call this setter
      * @param tokenURI New token URI
      */
     function setTokenURI(string memory tokenURI) public onlyRole(DEFAULT_ADMIN_ROLE) {
