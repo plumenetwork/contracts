@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import { IAssetVault } from "../interfaces/IAssetVault.sol";
+import { AssetToken } from "../token/AssetToken.sol";
 
 /**
  * @title AssetVault
@@ -42,9 +43,9 @@ contract AssetVault is IAssetVault {
     /// @custom:storage-location erc7201:plume.storage.AssetVault
     struct AssetVaultStorage {
         /// @dev Mapping of yield allowances for each asset token and beneficiary
-        mapping(IERC20 assetToken => mapping(address beneficiary => Yield allowance)) yieldAllowances;
+        mapping(AssetToken assetToken => mapping(address beneficiary => Yield allowance)) yieldAllowances;
         /// @dev Mapping of the yield distribution list for each asset token
-        mapping(IERC20 assetToken => YieldDistributionListItem distribution) yieldDistributions;
+        mapping(AssetToken assetToken => YieldDistributionListItem distribution) yieldDistributions;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AssetVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -79,7 +80,7 @@ contract AssetVault is IAssetVault {
      * @param expiration Timestamp at which the yield expires
      */
     event YieldAllowanceUpdated(
-        IERC20 indexed assetToken, address indexed beneficiary, uint256 amount, uint256 expiration
+        AssetToken indexed assetToken, address indexed beneficiary, uint256 amount, uint256 expiration
     );
 
     /**
@@ -90,7 +91,7 @@ contract AssetVault is IAssetVault {
      * @param yieldShare Amount of currencyToken that was redistributed to the beneficiary
      */
     event YieldRedistributed(
-        IERC20 indexed assetToken, address indexed beneficiary, IERC20 indexed currencyToken, uint256 yieldShare
+        AssetToken indexed assetToken, address indexed beneficiary, ERC20 indexed currencyToken, uint256 yieldShare
     );
 
     /**
@@ -101,7 +102,7 @@ contract AssetVault is IAssetVault {
      * @param expiration Timestamp at which the yield expires
      */
     event YieldDistributionCreated(
-        IERC20 indexed assetToken, address indexed beneficiary, uint256 amount, uint256 expiration
+        AssetToken indexed assetToken, address indexed beneficiary, uint256 amount, uint256 expiration
     );
 
     /**
@@ -110,14 +111,14 @@ contract AssetVault is IAssetVault {
      * @param beneficiary Address of the beneficiary of the yield distribution
      * @param amount Amount of AssetTokens that are renounced from the yield distributions of the beneficiary
      */
-    event YieldDistributionRenounced(IERC20 indexed assetToken, address indexed beneficiary, uint256 amount);
+    event YieldDistributionRenounced(AssetToken indexed assetToken, address indexed beneficiary, uint256 amount);
 
     /**
      * @notice Emitted when anyone clears expired yield distributions from the linked list
      * @param assetToken AssetToken from which the yield is to be redistributed
      * @param amountCleared Amount of AssetTokens that were cleared from the yield distributions
      */
-    event YieldDistributionsCleared(IERC20 indexed assetToken, uint256 amountCleared);
+    event YieldDistributionsCleared(AssetToken indexed assetToken, uint256 amountCleared);
 
     // Errors
 
@@ -148,7 +149,9 @@ contract AssetVault is IAssetVault {
      * @param allowanceAmount Amount of assetTokens included in this yield allowance
      * @param amount Amount of assetTokens that the beneficiary tried to accept the yield of
      */
-    error InsufficientYieldAllowance(IERC20 assetToken, address beneficiary, uint256 allowanceAmount, uint256 amount);
+    error InsufficientYieldAllowance(
+        AssetToken assetToken, address beneficiary, uint256 allowanceAmount, uint256 amount
+    );
 
     /**
      * @notice Indicates a failure because the beneficiary does not have enough yield distributions
@@ -158,7 +161,7 @@ contract AssetVault is IAssetVault {
      * @param amountRenounced Amount of assetTokens that the beneficiary tried to renounce the yield of
      */
     error InsufficientYieldDistributions(
-        IERC20 assetToken, address beneficiary, uint256 amount, uint256 amountRenounced
+        AssetToken assetToken, address beneficiary, uint256 amount, uint256 amountRenounced
     );
 
     /**
@@ -200,7 +203,7 @@ contract AssetVault is IAssetVault {
      * @param expiration Timestamp at which the yield expires
      */
     function updateYieldAllowance(
-        IERC20 assetToken,
+        AssetToken assetToken,
         address beneficiary,
         uint256 amount,
         uint256 expiration
@@ -231,8 +234,8 @@ contract AssetVault is IAssetVault {
      * @param currencyTokenAmount Amount of currencyToken to redistribute
      */
     function redistributeYield(
-        IERC20 assetToken,
-        IERC20 currencyToken,
+        AssetToken assetToken,
+        ERC20 currencyToken,
         uint256 currencyTokenAmount
     ) external onlyWallet {
         if (currencyTokenAmount == 0) {
@@ -262,7 +265,7 @@ contract AssetVault is IAssetVault {
      * @notice Get the number of AssetTokens that are currently locked in the AssetVault
      * @param assetToken AssetToken from which the yield is to be redistributed
      */
-    function getBalanceLocked(IERC20 assetToken) public view returns (uint256 balanceLocked) {
+    function getBalanceLocked(AssetToken assetToken) public view returns (uint256 balanceLocked) {
         // Iterate through the list and sum up the locked balance across all yield distributions
         YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
         uint256 amountLocked = distribution.yield.amount;
@@ -282,7 +285,7 @@ contract AssetVault is IAssetVault {
      * @param amount Amount of AssetTokens included in this yield allowance
      * @param expiration Timestamp at which the yield expires
      */
-    function acceptYieldAllowance(IERC20 assetToken, uint256 amount, uint256 expiration) external {
+    function acceptYieldAllowance(AssetToken assetToken, uint256 amount, uint256 expiration) external {
         AssetVaultStorage storage $ = _getAssetVaultStorage();
         address beneficiary = msg.sender;
         Yield storage allowance = $.yieldAllowances[assetToken][beneficiary];
@@ -324,7 +327,7 @@ contract AssetVault is IAssetVault {
      * @param expiration Timestamp at which the yield expires
      */
     function renounceYieldDistribution(
-        IERC20 assetToken,
+        AssetToken assetToken,
         uint256 amount,
         uint256 expiration
     ) external returns (uint256 amountRenounced) {
@@ -373,7 +376,7 @@ contract AssetVault is IAssetVault {
      *   reaching the gas limit, and the caller must call the function again to clear more.
      * @param assetToken AssetToken from which the yield is to be redistributed
      */
-    function clearYieldDistributions(IERC20 assetToken) external {
+    function clearYieldDistributions(AssetToken assetToken) external {
         uint256 amountCleared = 0;
 
         // Iterate through the list and delete all expired yield distributions

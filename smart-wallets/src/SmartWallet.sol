@@ -8,6 +8,7 @@ import { WalletUtils } from "./WalletUtils.sol";
 import { AssetVault } from "./extensions/AssetVault.sol";
 import { SignedOperations } from "./extensions/SignedOperations.sol";
 import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
+import { AssetToken } from "./token/AssetToken.sol";
 
 /**
  * @title SmartWallet
@@ -83,7 +84,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @notice Get the number of AssetTokens that are currently locked in the AssetVault
      * @param assetToken AssetToken from which the yield is to be redistributed
      */
-    function getBalanceLocked(ERC20 assetToken) public view returns (uint256 balanceLocked) {
+    function getBalanceLocked(AssetToken assetToken) public view returns (uint256 balanceLocked) {
         return _getSmartWalletStorage().assetVault.getBalanceLocked(assetToken);
     }
 
