@@ -46,7 +46,7 @@ contract FakeComponentToken is
     // Constants
 
     /// @notice Role for the upgrader of the FakeComponentToken
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADE_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     // Events
 
@@ -153,8 +153,9 @@ contract FakeComponentToken is
      * @dev The user must approve the contract to spend the CurrencyToken
      * @param currencyToken_ CurrencyToken used to buy the FakeComponentToken
      * @param amount Amount of CurrencyToken to pay to receive the same amount of FakeComponentToken
+     * @return componentTokenAmount Amount of FakeComponentToken received
      */
-    function buy(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
+    function buy(IERC20 currencyToken_, uint256 amount) public returns (uint256 componentTokenAmount) {
         IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
 
         if (currencyToken_ != currencyToken) {
@@ -165,18 +166,17 @@ contract FakeComponentToken is
         }
 
         _mint(msg.sender, amount);
-
         emit ComponentTokenBought(msg.sender, currencyToken, amount, amount);
-
-        return amount;
+        componentTokenAmount = amount;
     }
 
     /**
      * @notice Sell FakeComponentToken to receive CurrencyToken
      * @param currencyToken_ CurrencyToken received in exchange for the FakeComponentToken
      * @param amount Amount of CurrencyToken to receive in exchange for the FakeComponentToken
+     * @return componentTokenAmount Amount of FakeComponentToken sold
      */
-    function sell(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
+    function sell(IERC20 currencyToken_, uint256 amount) public returns (uint256 componentTokenAmount) {
         IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
 
         if (currencyToken_ != currencyToken) {
@@ -187,26 +187,25 @@ contract FakeComponentToken is
         }
 
         _burn(msg.sender, amount);
-
         emit ComponentTokenSold(msg.sender, currencyToken, amount, amount);
-
-        return amount;
+        componentTokenAmount = amount;
     }
 
     // Admin Setter Functions
 
     /**
      * @notice Set the CurrencyToken used to mint and burn the FakeComponentToken
+     * @dev Only the owner can call this setter
      * @param currencyToken New CurrencyToken
      */
-    function setCurrencyToken(IERC20 currencyToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setCurrencyToken(IERC20 currencyToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _getFakeComponentTokenStorage().currencyToken = currencyToken;
     }
 
     // Getter View Functions
 
     /// @notice CurrencyToken used to mint and burn the FakeComponentToken
-    function getCurrencyToken() public view returns (IERC20) {
+    function getCurrencyToken() external view returns (IERC20) {
         return _getFakeComponentTokenStorage().currencyToken;
     }
 
