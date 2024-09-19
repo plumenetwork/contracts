@@ -315,9 +315,14 @@ contract AssetVault is IAssetVault {
 
         allowance.amount -= amount;
 
-        // Append the newly created yield distribution to the end of the linked list
+        // Either update the existing distribution with the same expiration or append a new one
         YieldDistributionListItem storage distribution = $.yieldDistributions[assetToken];
         while (distribution.yield.amount > 0) {
+            if (distribution.beneficiary == beneficiary && distribution.yield.expiration == expiration) {
+                distribution.yield.amount += amount;
+                emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
+                return;
+            }
             distribution = distribution.next[0];
         }
         distribution.beneficiary = beneficiary;
