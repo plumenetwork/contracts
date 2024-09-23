@@ -5,6 +5,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
+
+import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { IYieldToken } from "../interfaces/IYieldToken.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
@@ -115,7 +117,8 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
      * @notice Make the SmartWallet redistribute yield from their AssetToken into this YieldToken
      * @param from Address of the SmartWallet to request the yield from
      */
-    function requestYield(address from) external {
+    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
+        // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
         ISmartWallet(payable(from)).claimAndRedistributeYield(_getYieldTokenStorage().assetToken);
     }
 

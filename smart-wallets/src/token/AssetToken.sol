@@ -3,9 +3,11 @@ pragma solidity ^0.8.25;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import { SmartWallet } from "../SmartWallet.sol";
 import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
+import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
+
+import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
 /**
@@ -241,6 +243,17 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         _depositYield(timestamp, currencyTokenAmount);
     }
 
+    // Permissionless Functions
+
+    /**
+     * @notice Make the SmartWallet redistribute yield from this token
+     * @param from Address of the SmartWallet to request the yield from
+     */
+    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
+        // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
+        ISmartWallet(payable(from)).claimAndRedistributeYield(this);
+    }
+
     // Getter View Functions
 
     /// @notice Total value of all circulating AssetTokens
@@ -294,7 +307,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
         if (isContract(user)) {
-            try SmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
+            try ISmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
                 return balanceOf(user) - lockedBalance;
             } catch {
                 revert SmartWalletCallFailed(user);
