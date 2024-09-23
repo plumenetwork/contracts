@@ -327,7 +327,14 @@ contract AssetVault is IAssetVault {
                 emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
                 return;
             }
-            distribution = distribution.next[0];
+            if (distribution.next.length > 0) {
+                distribution = distribution.next[0];
+            } else {
+                // Initialize the next distribution if the list ends
+                distribution.next.push();
+                distribution = distribution.next[0];
+                break;
+            }
         }
         distribution.beneficiary = beneficiary;
         distribution.yield.amount = amount;
