@@ -23,4 +23,19 @@ contract WalletUtils {
         _;
     }
 
+    /**
+     * @notice Checks if an address is a contract.
+     * @dev This function uses the `extcodesize` opcode to check if the target address contains contract code.
+     * It returns false for externally owned accounts (EOA) and true for contracts.
+     * @param addr The address to check.
+     * @return bool Returns true if the address is a contract, and false if it's an externally owned account (EOA).
+     */
+    function isContract(address addr) internal view returns (bool) {
+        uint32 size;
+        assembly {
+            size := extcodesize(addr)
+        }
+        return size > 0;
+    }
+
 }

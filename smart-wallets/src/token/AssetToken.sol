@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import { SmartWallet } from "../SmartWallet.sol";
+import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
@@ -13,7 +14,7 @@ import { YieldDistributionToken } from "./YieldDistributionToken.sol";
  * @notice ERC20 token that represents a tokenized real world asset
  *   and distributes yield proportionally to token holders
  */
-contract AssetToken is YieldDistributionToken, IAssetToken {
+contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     // Storage
 
@@ -85,6 +86,12 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
      * @param user Address of the user that is not whitelisted
      */
     error AddressNotWhitelisted(address user);
+
+    /**
+     * @notice Indicates a failure because the user's SmartWallet call failed
+     * @param user Address of the user whose SmartWallet call failed
+     */
+    error SmartWalletCallFailed(address user);
 
     // Constructor
 
@@ -281,11 +288,21 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
 
     /**
      * @notice Get the available unlocked AssetToken balance of a user
+     * @dev Attempts to call `getBalanceLocked` on the user if the user is a contract (SmartWallet).
+     * Reverts if the SmartWallet call fails. If the user is an EOA, it returns the balance directly.
      * @param user Address of the user to get the available balance of
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
-    function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
-        return balanceOf(user) - SmartWallet(payable(user)).getBalanceLocked(this);
+    function getBalanceAvailable(address user) public view returns (uint256) {
+        if (isContract(user)) {
+            try SmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
+                return balanceOf(user) - lockedBalance;
+            } catch {
+                revert SmartWalletCallFailed(user);
+            }
+        } else {
+            return balanceOf(user);
+        }
     }
 
     /// @notice Total yield distributed to all AssetTokens for all users
