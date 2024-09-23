@@ -72,4 +72,27 @@ contract AssetVaultTest is Test {
         assertEq(lockedBalance, 500_000);
     }
 
+    /// @dev Test accepting yield allowance with multiple holders
+    function testAcceptYieldAllowanceMultiple() public {
+        // OWNER updates allowance for HOLDER_1
+        vm.prank(OWNER);
+        assetVault.updateYieldAllowance(assetToken, HOLDER_1, 500_000, block.timestamp + 30 days);
+
+        // OWNER updates allowance for HOLDER_2
+        vm.prank(OWNER);
+        assetVault.updateYieldAllowance(assetToken, HOLDER_2, 300_000, block.timestamp + 30 days);
+
+        // HOLDER_1 accepts the yield allowance
+        vm.prank(HOLDER_1);
+        assetVault.acceptYieldAllowance(assetToken, 500_000, block.timestamp + 30 days);
+
+        // HOLDER_2 accepts the yield allowance
+        vm.prank(HOLDER_2);
+        assetVault.acceptYieldAllowance(assetToken, 300_000, block.timestamp + 30 days);
+
+        // Check locked balance after both allowances are accepted
+        uint256 lockedBalance = assetVault.getBalanceLocked(assetToken);
+        assertEq(lockedBalance, 800_000);
+    }
+
 }
