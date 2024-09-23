@@ -19,18 +19,17 @@ contract WalletUtils {
         if (msg.sender != address(this)) {
             revert UnauthorizedCall(msg.sender);
         }
-
         _;
     }
 
     /**
-     * @notice Checks if an address is a contract.
+     * @notice Checks if an address is a contract or smart wallet.
      * @dev This function uses the `extcodesize` opcode to check if the target address contains contract code.
-     * It returns false for externally owned accounts (EOA) and true for contracts.
-     * @param addr The address to check.
-     * @return bool Returns true if the address is a contract, and false if it's an externally owned account (EOA).
+     * It returns true for contracts and smart wallets, and false for EOAs that do not have smart wallets.
+     * @param addr Address to check
+     * @return hasCode True if the address is a contract or smart wallet, and false if it is not
      */
-    function isContract(address addr) internal view returns (bool) {
+    function isContract(address addr) internal view returns (bool hasCode) {
         uint32 size;
         assembly {
             size := extcodesize(addr)

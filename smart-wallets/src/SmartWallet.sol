@@ -90,6 +90,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
     /**
      * @notice Get the number of AssetTokens that are currently locked in the AssetVault
      * @param assetToken AssetToken from which the yield is to be redistributed
+     * @return balanceLocked Amount of the AssetToken that is currently locked
      */
     function getBalanceLocked(IAssetToken assetToken) public view returns (uint256 balanceLocked) {
         return _getSmartWalletStorage().assetVault.getBalanceLocked(assetToken);
@@ -110,9 +111,9 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
     /**
      * @notice Fallback function to the user wallet implementation if
      *   the function is not implemented in the base SmartWallet implementation
-     * @return Address of the user wallet implementation
+     * @return impl Address of the user wallet implementation
      */
-    function _implementation() internal view virtual override returns (address) {
+    function _implementation() internal view virtual override returns (address impl) {
         return _getSmartWalletStorage().userWallet;
     }
 
