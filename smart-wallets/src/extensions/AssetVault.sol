@@ -275,14 +275,18 @@ contract AssetVault is IAssetVault {
     function getBalanceLocked(IAssetToken assetToken) external view returns (uint256 balanceLocked) {
         // Iterate through the list and sum up the locked balance across all yield distributions
         YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
-        uint256 amountLocked = distribution.yield.amount;
-        while (amountLocked > 0) {
+        while (true) {
             if (distribution.yield.expiration > block.timestamp) {
-                balanceLocked += amountLocked;
+                balanceLocked += distribution.yield.amount;
             }
-            distribution = distribution.next[0];
-            amountLocked = distribution.yield.amount;
+            if (distribution.next.length > 0) {
+                distribution = distribution.next[0];
+            } else {
+                break;
+            }
         }
+
+        return balanceLocked;
     }
 
     /**
@@ -317,13 +321,19 @@ contract AssetVault is IAssetVault {
 
         // Either update the existing distribution with the same expiration or append a new one
         YieldDistributionListItem storage distribution = $.yieldDistributions[assetToken];
-        while (distribution.yield.amount > 0) {
+        while (true) {
             if (distribution.beneficiary == beneficiary && distribution.yield.expiration == expiration) {
                 distribution.yield.amount += amount;
                 emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
                 return;
             }
-            distribution = distribution.next[0];
+            if (distribution.next.length > 0) {
+                distribution = distribution.next[0];
+            } else {
+                distribution.next.push();
+                distribution = distribution.next[0];
+                break;
+            }
         }
         distribution.beneficiary = beneficiary;
         distribution.yield.amount = amount;
