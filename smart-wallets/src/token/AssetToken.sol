@@ -207,11 +207,13 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             if (!$.isWhitelisted[user]) {
                 revert AddressNotWhitelisted(user);
             }
-            uint256 length = $.whitelist.length;
+
+            address[] storage whitelist = $.whitelist;
+            uint256 length = whitelist.length;
             for (uint256 i = 0; i < length; ++i) {
-                if ($.whitelist[i] == user) {
-                    $.whitelist[i] = $.whitelist[length - 1];
-                    $.whitelist.pop();
+                if (whitelist[i] == user) {
+                    whitelist[i] = whitelist[length - 1];
+                    whitelist.pop();
                     break;
                 }
             }
@@ -314,9 +316,10 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     /// @notice Claimed yield across all AssetTokens for all users
     function claimedYield() public view returns (uint256 amount) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
-        uint256 length = $.whitelist.length;
+        address[] storage whitelist = $.whitelist;
+        uint256 length = whitelist.length;
         for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().yieldWithdrawn[$.whitelist[i]];
+            amount += _getYieldDistributionTokenStorage().yieldWithdrawn[whitelist[i]];
         }
     }
 

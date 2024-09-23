@@ -7,5 +7,11 @@ interface IComponentToken is IERC20 {
 
     function buy(IERC20 currencyToken, uint256 currencyTokenAmount) external returns (uint256 componentTokenAmount);
     function sell(IERC20 currencyToken, uint256 currencyTokenAmount) external returns (uint256 componentTokenAmount);
+    function totalYield() external view returns (uint256 amount);
+    function claimedYield() external view returns (uint256 amount);
+    function unclaimedYield() external view returns (uint256 amount);
+    function totalYield(address user) external view returns (uint256 amount);
+    function claimedYield(address user) external view returns (uint256 amount);
+    function unclaimedYield(address user) external view returns (uint256 amount);
 
 }

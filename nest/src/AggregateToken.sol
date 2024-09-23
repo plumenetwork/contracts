@@ -145,7 +145,7 @@ contract AggregateToken is
      * @notice Indicates a failure because the ComponentToken is the current CurrencyToken
      * @param componentToken ComponentToken that is the current CurrencyToken
      */
-    error ComponentTokenIsCurrencyTOken(IComponentToken componentToken);
+    error ComponentTokenIsCurrencyToken(IComponentToken componentToken);
 
     /**
      * @notice Indicates a failure because the given CurrencyToken does not match the actual CurrencyToken
@@ -283,7 +283,7 @@ contract AggregateToken is
 
     /**
      * @notice Add a ComponentToken to the component token list
-     * @dev Only the owner can call this function
+     * @dev Only the owner can call this function, and there is no way to remove a ComponentToken later
      * @param componentToken ComponentToken to add
      */
     function addComponentToken(IComponentToken componentToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -294,34 +294,6 @@ contract AggregateToken is
         $.componentTokenList.push(componentToken);
         $.componentTokenMap[componentToken] = true;
         emit ComponentTokenListed(componentToken);
-    }
-
-    /**
-     * @notice Remove a ComponentToken from the component token list
-     * @dev Only the owner can call this function
-     * @param componentToken ComponentToken to remove
-     */
-    function removeComponentToken(IComponentToken componentToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        if (!$.componentTokenMap[componentToken]) {
-            revert ComponentTokenNotListed(componentToken);
-        }
-        if (componentToken.balanceOf(address(this)) > 0) {
-            revert ComponentTokenBalanceNonZero(componentToken);
-        }
-        if (componentToken == $.currencyToken) {
-            revert ComponentTokenIsCurrencyTOken(componentToken);
-        }
-        uint256 length = $.componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            if ($.componentTokenList[i] == componentToken) {
-                $.componentTokenList[i] = $.componentTokenList[length - 1];
-                $.componentTokenList.pop();
-                break;
-            }
-        }
-        $.componentTokenMap[componentToken] = false;
-        emit ComponentTokenUnlisted(componentToken);
     }
 
     /**
@@ -441,6 +413,64 @@ contract AggregateToken is
      */
     function getComponentToken(IComponentToken componentToken) public view returns (bool isListed) {
         return _getAggregateTokenStorage().componentTokenMap[componentToken];
+    }
+
+    /// @notice Total yield distributed to all AggregateTokens for all users
+    function totalYield() public view returns (uint256 amount) {
+        IComponentTokenList[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
+        uint256 length = componentTokenList.length;
+        for (uint256 i = 0; i < length; ++i) {
+            amount += componentTokenList[i].totalYield();
+        }
+    }
+
+    /// @notice Claimed yield across all AggregateTokens for all users
+    function claimedYield() public view returns (uint256 amount) {
+        IComponentTokenList[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
+        uint256 length = componentTokenList.length;
+        for (uint256 i = 0; i < length; ++i) {
+            amount += componentTokenList[i].claimedYield();
+        }
+    }
+
+    /// @notice Unclaimed yield across all AggregateTokens for all users
+    function unclaimedYield() external view returns (uint256 amount) {
+        return totalYield() - claimedYield();
+    }
+
+    /**
+     * @notice Total yield distributed to a specific user
+     * @param user Address of the user for which to get the total yield
+     * @return amount Total yield distributed to the user
+     */
+    function totalYield(address user) public view returns (uint256 amount) {
+        IComponentTokenList[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
+        uint256 length = componentTokenList.length;
+        for (uint256 i = 0; i < length; ++i) {
+            amount += componentTokenList[i].totalYield(user);
+        }
+    }
+
+    /**
+     * @notice Amount of yield that a specific user has claimed
+     * @param user Address of the user for which to get the claimed yield
+     * @return amount Amount of yield that the user has claimed
+     */
+    function claimedYield(address user) public view returns (uint256 amount) {
+        IComponentTokenList[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
+        uint256 length = componentTokenList.length;
+        for (uint256 i = 0; i < length; ++i) {
+            amount += componentTokenList[i].claimedYield(user);
+        }
+    }
+
+    /**
+     * @notice Amount of yield that a specific user has not yet claimed
+     * @param user Address of the user for which to get the unclaimed yield
+     * @return amount Amount of yield that the user has not yet claimed
+     */
+    function unclaimedYield(address user) external view returns (uint256 amount) {
+        return totalYield(user) - claimedYield(user);
     }
 
 }
