@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import { SmartWallet } from "../SmartWallet.sol";
+import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
@@ -13,7 +14,7 @@ import { YieldDistributionToken } from "./YieldDistributionToken.sol";
  * @notice ERC20 token that represents a tokenized real world asset
  *   and distributes yield proportionally to token holders
  */
-contract AssetToken is YieldDistributionToken, IAssetToken {
+contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     // Storage
 
@@ -85,6 +86,12 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
      * @param user Address of the user that is not whitelisted
      */
     error AddressNotWhitelisted(address user);
+
+    /**
+     * @notice Indicates a failure because the user's SmartWallet call failed
+     * @param user Address of the user whose SmartWallet call failed
+     */
+    error SmartWalletCallFailed(address user);
 
     // Constructor
 
@@ -279,31 +286,24 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
         return _getAssetTokenStorage().totalValue / totalSupply();
     }
 
-    function isContract(address addr) internal view returns (bool) {
-        uint32 size;
-        assembly {
-            size := extcodesize(addr)
-        }
-        return size > 0;
-    }
-
     /**
      * @notice Get the available unlocked AssetToken balance of a user
+     * @dev Perform a low-level call to check for locked balance in the user's SmartWallet.
+     *     Decodes the returned locked balance and subtract it from the user's total balance.
+     *      Reverts if the call fails.
      * @param user Address of the user to get the available balance of
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
     function getBalanceAvailable(address user) public view returns (uint256) {
-        if (isContract(user)) {
-            // User is a contract, safe to call getBalanceLocked
-            try SmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
-                return balanceOf(user) - lockedBalance;
-            } catch {
-                // Handle the case where the call reverts
-                return balanceOf(user); // Fallback if contract fails for some reason
-            }
+        // Perform a low-level call to check for locked balance in the user's SmartWallet.
+        (bool success, bytes memory data) =
+            user.call(abi.encodeWithSignature("getBalanceLocked(address)", address(this)));
+
+        if (success) {
+            uint256 lockedBalance = abi.decode(data, (uint256));
+            return balanceOf(user) - lockedBalance;
         } else {
-            // User is an EOA, no locked balance
-            return balanceOf(user);
+            revert SmartWalletCallFailed(user);
         }
     }
 
