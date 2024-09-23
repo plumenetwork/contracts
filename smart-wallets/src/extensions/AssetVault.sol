@@ -280,8 +280,12 @@ contract AssetVault is IAssetVault {
             if (distribution.yield.expiration > block.timestamp) {
                 balanceLocked += amountLocked;
             }
-            distribution = distribution.next[0];
-            amountLocked = distribution.yield.amount;
+            // Check if there is a next item in the list
+            if (distribution.next.length > 0) {
+                distribution = distribution.next[0];
+            } else {
+                break;
+            }
         }
     }
 
