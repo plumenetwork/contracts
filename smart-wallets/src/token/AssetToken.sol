@@ -288,22 +288,20 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     /**
      * @notice Get the available unlocked AssetToken balance of a user
-     * @dev Perform a low-level call to check for locked balance in the user's SmartWallet.
-     *     Decodes the returned locked balance and subtract it from the user's total balance.
-     *      Reverts if the call fails.
+     * @dev Attempts to call `getBalanceLocked` on the user if the user is a contract (SmartWallet).
+     * Reverts if the SmartWallet call fails. If the user is an EOA, it returns the balance directly.
      * @param user Address of the user to get the available balance of
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
     function getBalanceAvailable(address user) public view returns (uint256) {
-        // Perform a low-level call to check for locked balance in the user's SmartWallet.
-        (bool success, bytes memory data) =
-            user.call(abi.encodeWithSignature("getBalanceLocked(address)", address(this)));
-
-        if (success) {
-            uint256 lockedBalance = abi.decode(data, (uint256));
-            return balanceOf(user) - lockedBalance;
+        if (isContract(user)) {
+            try SmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
+                return balanceOf(user) - lockedBalance;
+            } catch {
+                revert SmartWalletCallFailed(user);
+            }
         } else {
-            revert SmartWalletCallFailed(user);
+            return balanceOf(user);
         }
     }
 
