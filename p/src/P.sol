@@ -29,8 +29,6 @@ contract P is
 
     // Constants
 
-    /// @notice Role for the admin of P
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of P
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     /// @notice Role for the minter of P
@@ -64,7 +62,6 @@ contract P is
         __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
-        _grantRole(ADMIN_ROLE, owner);
         _grantRole(MINTER_ROLE, owner);
         _grantRole(BURNER_ROLE, owner);
         _grantRole(PAUSER_ROLE, owner);

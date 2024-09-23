@@ -208,7 +208,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
                 revert AddressNotWhitelisted(user);
             }
             uint256 length = $.whitelist.length;
-            for (uint256 i = 0; i < length; i++) {
+            for (uint256 i = 0; i < length; ++i) {
                 if ($.whitelist[i] == user) {
                     $.whitelist[i] = $.whitelist[length - 1];
                     $.whitelist.pop();

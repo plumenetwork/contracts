@@ -7,6 +7,7 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 
 import { AggregateToken } from "./AggregateToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
+import { IComponentToken } from "./interfaces/IAggregateToken.sol";
 import { AggregateTokenProxy } from "./proxy/AggregateTokenProxy.sol";
 
 /**
@@ -152,7 +153,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @param owner Address of the owner of the AggregateToken
      * @param name Name of the AggregateToken
      * @param symbol Symbol of the AggregateToken
-     * @param currencyAddress Address of the CurrencyToken used to mint and burn the AggregateToken
+     * @param currencyToken CurrencyToken used to mint and burn the AggregateToken
      * @param decimals_ Number of decimals of the AggregateToken
      * @param askPrice Price at which users can buy the AggregateToken using CurrencyToken, times the base
      * @param bidPrice Price at which users can sell the AggregateToken to receive CurrencyToken, times the base
@@ -163,7 +164,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         address owner,
         string memory name,
         string memory symbol,
-        address currencyAddress,
+        IComponentToken currencyToken,
         uint8 decimals_,
         uint256 askPrice,
         uint256 bidPrice,
@@ -175,8 +176,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateTokenImplementation),
             abi.encodeCall(
-                AggregateToken.initialize,
-                (owner, name, symbol, currencyAddress, decimals_, askPrice, bidPrice, tokenURI)
+                AggregateToken.initialize, (owner, name, symbol, currencyToken, decimals_, askPrice, bidPrice, tokenURI)
             )
         );
 

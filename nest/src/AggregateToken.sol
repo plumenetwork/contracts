@@ -184,7 +184,7 @@ contract AggregateToken is
      * @param owner Address of the owner of the AggregateToken
      * @param name Name of the AggregateToken
      * @param symbol Symbol of the AggregateToken
-     * @param currencyAddress Address of the CurrencyToken used to mint and burn the AggregateToken
+     * @param currencyToken CurrencyToken used to mint and burn the AggregateToken
      * @param decimals_ Number of decimals of the AggregateToken
      * @param askPrice Price at which users can buy the AggregateToken using CurrencyToken, times the base
      * @param bidPrice Price at which users can sell the AggregateToken to receive CurrencyToken, times the base
@@ -194,7 +194,7 @@ contract AggregateToken is
         address owner,
         string memory name,
         string memory symbol,
-        address currencyAddress,
+        IComponentToken currencyToken,
         uint8 decimals_,
         uint256 askPrice,
         uint256 bidPrice,
@@ -208,9 +208,9 @@ contract AggregateToken is
         _grantRole(UPGRADER_ROLE, owner);
 
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        $.componentTokenList.push(IComponentToken(currencyAddress));
-        $.componentTokenMap[IComponentToken(currencyAddress)] = true;
-        $.currencyToken = IERC20(currencyAddress);
+        $.componentTokenList.push(currencyToken);
+        $.componentTokenMap[currencyToken] = true;
+        $.currencyToken = IERC20(currencyToken);
         $.decimals = decimals_;
         $.askPrice = askPrice;
         $.bidPrice = bidPrice;
@@ -235,16 +235,15 @@ contract AggregateToken is
     /**
      * @notice Buy AggregateToken using CurrencyToken
      * @dev The user must approve the contract to spend the CurrencyToken
-     * @param currencyToken_ CurrencyToken used to buy the AggregateToken
+     * @param currencyToken CurrencyToken used to buy the AggregateToken
      * @param currencyTokenAmount Amount of CurrencyToken to pay for the AggregateToken
      * @return aggregateTokenAmount Amount of AggregateToken received
      */
-    function buy(IERC20 currencyToken_, uint256 currencyTokenAmount) public returns (uint256 aggregateTokenAmount) {
+    function buy(IERC20 currencyToken, uint256 currencyTokenAmount) public returns (uint256 aggregateTokenAmount) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
 
-        if (currencyToken_ != currencyToken) {
-            revert InvalidCurrencyToken(currencyToken_, currencyToken);
+        if (currencyToken != $.currencyToken) {
+            revert InvalidCurrencyToken(currencyToken, $.currencyToken);
         }
         if (!currencyToken.transferFrom(msg.sender, address(this), currencyTokenAmount)) {
             revert UserCurrencyTokenInsufficientBalance(currencyToken, msg.sender, currencyTokenAmount);
@@ -259,16 +258,15 @@ contract AggregateToken is
 
     /**
      * @notice Sell AggregateToken to receive CurrencyToken
-     * @param currencyToken_ CurrencyToken received in exchange for the AggregateToken
+     * @param currencyToken CurrencyToken received in exchange for the AggregateToken
      * @param currencyTokenAmount Amount of CurrencyToken to receive in exchange for the AggregateToken
      * @return aggregateTokenAmount Amount of AggregateToken sold
      */
-    function sell(IERC20 currencyToken_, uint256 currencyTokenAmount) public returns (uint256 aggregateTokenAmount) {
+    function sell(IERC20 currencyToken, uint256 currencyTokenAmount) public returns (uint256 aggregateTokenAmount) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
 
-        if (currencyToken_ != currencyToken) {
-            revert InvalidCurrencyToken(currencyToken_, currencyToken);
+        if (currencyToken != $.currencyToken) {
+            revert InvalidCurrencyToken(currencyToken, $.currencyToken);
         }
         if (!currencyToken.transfer(msg.sender, currencyTokenAmount)) {
             revert CurrencyTokenInsufficientBalance(currencyToken, currencyTokenAmount);

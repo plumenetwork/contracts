@@ -2,7 +2,6 @@
 pragma solidity ^0.8.25;
 
 import "forge-std/Script.sol";
-import { Upgrades } from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 import { pUSD } from "../src/pUSD.sol";
 
