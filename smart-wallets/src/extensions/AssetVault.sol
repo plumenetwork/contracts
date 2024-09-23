@@ -23,7 +23,7 @@ contract AssetVault is IAssetVault {
      * @dev Can be used to represent both yield allowances and yield distributions
      */
     struct Yield {
-        /// @dev Amount of asset tokens that are locked for this yield, must always be positive
+        /// @dev Amount of AssetTokens that are locked for this yield, must always be positive
         uint256 amount;
         /// @dev Timestamp at which the yield expires
         uint256 expiration;
@@ -43,9 +43,9 @@ contract AssetVault is IAssetVault {
 
     /// @custom:storage-location erc7201:plume.storage.AssetVault
     struct AssetVaultStorage {
-        /// @dev Mapping of yield allowances for each asset token and beneficiary
+        /// @dev Mapping of yield allowances for each AssetToken and beneficiary
         mapping(IAssetToken assetToken => mapping(address beneficiary => Yield allowance)) yieldAllowances;
-        /// @dev Mapping of the yield distribution list for each asset token
+        /// @dev Mapping of the yield distribution list for each AssetToken
         mapping(IAssetToken assetToken => YieldDistributionListItem distribution) yieldDistributions;
     }
 
@@ -89,7 +89,7 @@ contract AssetVault is IAssetVault {
      * @param assetToken AssetToken from which the yield was redistributed
      * @param beneficiary Address of the beneficiary that received the yield redistribution
      * @param currencyToken Token in which the yield was redistributed
-     * @param yieldShare Amount of currencyToken that was redistributed to the beneficiary
+     * @param yieldShare Amount of CurrencyToken that was redistributed to the beneficiary
      */
     event YieldRedistributed(
         IAssetToken indexed assetToken, address indexed beneficiary, IERC20 indexed currencyToken, uint256 yieldShare
@@ -233,12 +233,12 @@ contract AssetVault is IAssetVault {
     }
 
     /**
-     * @notice Redistribute yield to the beneficiaries of the asset token, using yield distributions
+     * @notice Redistribute yield to the beneficiaries of the AssetToken, using yield distributions
      * @dev Only the user wallet can initiate the yield redistribution. The yield redistributed
-     *   to each beneficiary is rounded down, and any remaining currencyTokens are kept in the vault.
+     *   to each beneficiary is rounded down, and any remaining CurrencyToken are kept in the vault.
      * @param assetToken AssetToken from which the yield is to be redistributed
      * @param currencyToken Token in which the yield is to be redistributed
-     * @param currencyTokenAmount Amount of currencyToken to redistribute
+     * @param currencyTokenAmount Amount of CurrencyToken to redistribute
      */
     function redistributeYield(
         IAssetToken assetToken,
@@ -257,7 +257,7 @@ contract AssetVault is IAssetVault {
         while (amountLocked > 0) {
             if (distribution.yield.expiration > block.timestamp) {
                 uint256 yieldShare = (currencyTokenAmount * amountLocked) / amountTotal;
-                // TODO transfer yield from the user wallet to the beneficiary
+                ISmartWallet(wallet).transferYield(assetToken, distribution.beneficiary, currencyToken, yieldShare);
                 emit YieldRedistributed(assetToken, distribution.beneficiary, currencyToken, yieldShare);
             }
 

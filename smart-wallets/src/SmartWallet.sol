@@ -10,6 +10,7 @@ import { SignedOperations } from "./extensions/SignedOperations.sol";
 import { IAssetToken } from "./interfaces/IAssetToken.sol";
 import { IAssetVault } from "./interfaces/IAssetVault.sol";
 import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
+import { IYieldReceiver } from "./interfaces/IYieldReceiver.sol";
 
 /**
  * @title SmartWallet
@@ -57,6 +58,13 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      */
     event UserWalletUpgraded(address indexed userWallet);
 
+    /**
+     * @notice Emitted when yield is received into the SmartWallet
+     * @param currencyToken CurrencyToken in which the yield is received and denominated
+     * @param currencyTokenAmount Amount of CurrencyToken received
+     */
+    event YieldReceived(IERC20 currencyToken, uint256 currencyTokenAmount);
+
     // Errors
 
     /**
@@ -70,6 +78,14 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @param assetVault Existing AssetVault for the user
      */
     error AssetVaultAlreadyExists(IAssetVault assetVault);
+
+    /**
+     * @notice Indicates a failure because the transfer of CurrencyToken failed
+     * @param from Address from which the CurrencyToken failed to transfer
+     * @param currencyToken CurrencyToken that failed to transfer
+     * @param currencyTokenAmount Amount of CurrencyToken that failed to transfer
+     */
+    error TransferFailed(address from, IERC20 currencyToken, uint256 currencyTokenAmount);
 
     // Base Smart Wallet Functions
 
@@ -92,8 +108,60 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @param assetToken AssetToken from which the yield is to be redistributed
      * @return balanceLocked Amount of the AssetToken that is currently locked
      */
-    function getBalanceLocked(IAssetToken assetToken) public view returns (uint256 balanceLocked) {
+    function getBalanceLocked(IAssetToken assetToken) external view returns (uint256 balanceLocked) {
         return _getSmartWalletStorage().assetVault.getBalanceLocked(assetToken);
+    }
+
+    /**
+     * @notice Claim the yield from the AssetToken, then redistribute it through the AssetVault
+     * @param assetToken AssetToken from which the yield is to be redistributed
+     */
+    function claimAndRedistributeYield(IAssetToken assetToken) external {
+        SmartWalletStorage storage $ = _getSmartWalletStorage();
+        IAssetVault assetVault = $.assetVault;
+        if (address(assetVault) == address(0)) {
+            assetVault = new AssetVault();
+            $.assetVault = assetVault;
+        }
+        (IERC20 currencyToken, uint256 currencyTokenAmount) = assetToken.claimYield();
+        assetVault.redistributeYield(assetToken, currencyToken, currencyTokenAmount);
+    }
+
+    /**
+     * @notice Transfer yield to the given beneficiary
+     * @dev Only the AssetVault can call this function
+     * @param assetToken AssetToken for which the yield is to be transferred
+     * @param beneficiary Address of the beneficiary to receive the yield transfer
+     * @param currencyToken CurrencyToken in which the yield is to be transferred
+     * @param currencyTokenAmount Amount of CurrencyToken that is to be transferred
+     */
+    function transferYield(
+        IAssetToken assetToken,
+        address beneficiary,
+        IERC20 currencyToken,
+        uint256 currencyTokenAmount
+    ) external {
+        IAssetVault assetVault = _getSmartWalletStorage().assetVault;
+        if (msg.sender != address(assetVault)) {
+            revert UnauthorizedAssetVault(msg.sender);
+        }
+        currencyToken.approve(beneficiary, currencyTokenAmount);
+        IYieldReceiver(beneficiary).receiveYield(assetToken, currencyToken, currencyTokenAmount);
+        currencyToken.approve(beneficiary, 0);
+    }
+
+    /**
+     * @notice Receive yield into the SmartWallet
+     * @dev Anyone can call this function to deposit yield into any SmartWallet.
+     *   The sender must have approved the CurrencyToken to spend the given amount.
+     * @param assetToken Unused parameter
+     * @param currencyToken CurrencyToken in which the yield is received and denominated
+     * @param currencyTokenAmount Amount of CurrencyToken to receive as yield
+     */
+    function receiveYield(IAssetToken assetToken, IERC20 currencyToken, uint256 currencyTokenAmount) external {
+        if (!currencyToken.transferFrom(msg.sender, address(this), currencyTokenAmount)) {
+            revert TransferFailed(msg.sender, currencyToken, currencyTokenAmount);
+        }
     }
 
     // User Wallet Functions
@@ -103,7 +171,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @dev Only the user can upgrade the implementation for their own wallet
      * @param userWallet Address of the new user wallet implementation
      */
-    function upgrade(address userWallet) public onlyWallet {
+    function upgrade(address userWallet) external onlyWallet {
         _getSmartWalletStorage().userWallet = userWallet;
         emit UserWalletUpgraded(userWallet);
     }

@@ -96,10 +96,10 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
 
     /**
      * @notice Receive yield into the YieldToken
-     * @dev Anyone can call this function to deposit yield from their AssetTokens into the YieldToken
+     * @dev Anyone can call this function to deposit yield from their AssetToken into the YieldToken
      * @param assetToken AssetToken that redistributes yield to the YieldToken
-     * @param currencyToken CurrencyToken in which the yield is deposited and denominated
-     * @param currencyTokenAmount Amount of CurrencyTokens to deposit as yield
+     * @param currencyToken CurrencyToken in which the yield is received and denominated
+     * @param currencyTokenAmount Amount of CurrencyToken to receive as yield
      */
     function receiveYield(IAssetToken assetToken, IERC20 currencyToken, uint256 currencyTokenAmount) external {
         if (assetToken != _getYieldTokenStorage().assetToken) {
@@ -109,6 +109,14 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
             revert InvalidCurrencyToken(currencyToken, _getYieldDistributionTokenStorage().currencyToken);
         }
         _depositYield(block.timestamp, currencyTokenAmount);
+    }
+
+    /**
+     * @notice Make the SmartWallet redistribute yield from their AssetToken into this YieldToken
+     * @param from Address of the SmartWallet to request the yield from
+     */
+    function requestYield(address from) external {
+        ISmartWallet(payable(from)).claimAndRedistributeYield(_getYieldTokenStorage().assetToken);
     }
 
 }
