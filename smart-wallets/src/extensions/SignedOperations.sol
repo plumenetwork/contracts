@@ -198,7 +198,7 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
             $.nonces[nonce] = 1;
         }
 
-        for (uint256 i = 0; i < length; i++) {
+        for (uint256 i = 0; i < length; ++i) {
             {
                 (bool success,) = targets[i].call{ value: values[i] }(calls[i]);
                 if (success) {

@@ -3,11 +3,10 @@ pragma solidity ^0.8.25;
 
 import "forge-std/Script.sol";
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import { AggregateToken } from "../src/AggregateToken.sol";
 import { FakeComponentToken } from "../src/FakeComponentToken.sol";
 import { NestStaking } from "../src/NestStaking.sol";
+import { IComponentToken } from "../src/interfaces/IComponentToken.sol";
 import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
 import { FakeComponentTokenProxy } from "../src/proxy/FakeComponentTokenProxy.sol";
 import { NestStakingProxy } from "../src/proxy/NestStakingProxy.sol";
@@ -21,12 +20,12 @@ contract DeployNestContracts is Script {
     function run() external {
         vm.startBroadcast(ARC_ADMIN_ADDRESS);
 
+        IComponentToken currencyToken = IComponentToken(USDC_ADDRESS);
+
         FakeComponentToken fakeComponentToken = new FakeComponentToken();
         FakeComponentTokenProxy fakeComponentTokenProxy = new FakeComponentTokenProxy(
             address(fakeComponentToken),
-            abi.encodeCall(
-                FakeComponentToken.initialize, (ARC_ADMIN_ADDRESS, "Banana", "BAN", IERC20(USDC_ADDRESS), 18)
-            )
+            abi.encodeCall(FakeComponentToken.initialize, (ARC_ADMIN_ADDRESS, "Banana", "BAN", currencyToken, 18))
         );
         console.log("FakeComponentTokenProxy deployed to:", address(fakeComponentTokenProxy));
 
@@ -39,7 +38,7 @@ contract DeployNestContracts is Script {
                     NEST_ADMIN_ADDRESS,
                     "Apple",
                     "AAPL",
-                    USDC_ADDRESS,
+                    currencyToken,
                     18,
                     15e17,
                     12e17,

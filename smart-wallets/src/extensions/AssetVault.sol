@@ -5,6 +5,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { IAssetVault } from "../interfaces/IAssetVault.sol";
+import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
 
 /**
  * @title AssetVault
@@ -184,7 +185,6 @@ contract AssetVault is IAssetVault {
         if (msg.sender != wallet) {
             revert UnauthorizedCall(msg.sender);
         }
-
         _;
     }
 
@@ -214,7 +214,7 @@ contract AssetVault is IAssetVault {
         address beneficiary,
         uint256 amount,
         uint256 expiration
-    ) public onlyWallet {
+    ) external onlyWallet {
         if (address(assetToken) == address(0) || beneficiary == address(0)) {
             revert ZeroAddress();
         }
@@ -257,7 +257,8 @@ contract AssetVault is IAssetVault {
         while (amountLocked > 0) {
             if (distribution.yield.expiration > block.timestamp) {
                 uint256 yieldShare = (currencyTokenAmount * amountLocked) / amountTotal;
-                // TODO: transfer yield from the user wallet to the beneficiary
+                // TODO                 ISmartWallet(wallet).transferYield(assetToken, distribution.beneficiary,
+                // currencyToken, yieldShare);
                 emit YieldRedistributed(assetToken, distribution.beneficiary, currencyToken, yieldShare);
             }
 
@@ -272,7 +273,7 @@ contract AssetVault is IAssetVault {
      * @notice Get the number of AssetTokens that are currently locked in the AssetVault
      * @param assetToken AssetToken from which the yield is to be redistributed
      */
-    function getBalanceLocked(IAssetToken assetToken) public view returns (uint256 balanceLocked) {
+    function getBalanceLocked(IAssetToken assetToken) external view returns (uint256 balanceLocked) {
         // Iterate through the list and sum up the locked balance across all yield distributions
         YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
         uint256 amountLocked = distribution.yield.amount;

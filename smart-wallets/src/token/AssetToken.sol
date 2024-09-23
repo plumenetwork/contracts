@@ -129,7 +129,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param to Address to transfer tokens to
      * @param value Amount of tokens to transfer
      */
-    function _update(address from, address to, uint256 value) internal override(YieldDistributionToken) {
+    function _update(address from, address to, uint256 value) internal override {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
         if ($.isWhitelistEnabled) {
             if (!$.isWhitelisted[from]) {
@@ -208,7 +208,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
                 revert AddressNotWhitelisted(user);
             }
             uint256 length = $.whitelist.length;
-            for (uint256 i = 0; i < length; i++) {
+            for (uint256 i = 0; i < length; ++i) {
                 if ($.whitelist[i] == user) {
                     $.whitelist[i] = $.whitelist[length - 1];
                     $.whitelist.pop();

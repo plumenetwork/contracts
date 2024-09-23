@@ -2,13 +2,14 @@
 pragma solidity ^0.8.25;
 
 import { Proxy } from "@openzeppelin/contracts/proxy/Proxy.sol";
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { WalletUtils } from "./WalletUtils.sol";
 import { AssetVault } from "./extensions/AssetVault.sol";
 import { SignedOperations } from "./extensions/SignedOperations.sol";
+import { IAssetToken } from "./interfaces/IAssetToken.sol";
+import { IAssetVault } from "./interfaces/IAssetVault.sol";
 import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
-import { AssetToken } from "./token/AssetToken.sol";
 
 /**
  * @title SmartWallet
@@ -35,7 +36,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
         /// @dev Address of the current user wallet implementation for each user
         address userWallet;
         /// @dev AssetVault associated with the smart wallet
-        AssetVault assetVault;
+        IAssetVault assetVault;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.SmartWallet")) - 1)) & ~bytes32(uint256(0xff))
@@ -59,10 +60,16 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
     // Errors
 
     /**
+     * @notice Indicates a failure because the sender is not the AssetVault
+     * @param sender Address of the sender that is not the AssetVault
+     */
+    error UnauthorizedAssetVault(address sender);
+
+    /**
      * @notice Indicates a failure because the AssetVault for the user already exists
      * @param assetVault Existing AssetVault for the user
      */
-    error AssetVaultAlreadyExists(AssetVault assetVault);
+    error AssetVaultAlreadyExists(IAssetVault assetVault);
 
     // Base Smart Wallet Functions
 
@@ -76,7 +83,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
     }
 
     /// @notice AssetVault associated with the smart wallet
-    function getAssetVault() external view returns (AssetVault assetVault) {
+    function getAssetVault() external view returns (IAssetVault assetVault) {
         return _getSmartWalletStorage().assetVault;
     }
 
@@ -84,8 +91,30 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @notice Get the number of AssetTokens that are currently locked in the AssetVault
      * @param assetToken AssetToken from which the yield is to be redistributed
      */
-    function getBalanceLocked(AssetToken assetToken) public view returns (uint256 balanceLocked) {
+    function getBalanceLocked(IAssetToken assetToken) public view returns (uint256 balanceLocked) {
         return _getSmartWalletStorage().assetVault.getBalanceLocked(assetToken);
+    }
+
+    /**
+     * @notice Transfer yield to the given beneficiary
+     * @dev Only the AssetVault can call this function
+     * @param assetToken AssetToken for which the yield is to be transferred
+     * @param beneficiary Address of the beneficiary to receive the yield transfer
+     * @param currencyToken Token in which the yield is to be transferred
+     * @param currencyTokenAmount Amount of currencyToken that is to be transferred
+     */
+    function transferYield(
+        IAssetToken assetToken,
+        address beneficiary,
+        IERC20 currencyToken,
+        uint256 currencyTokenAmount
+    ) public {
+        IAssetVault assetVault = _getSmartWalletStorage().assetVault;
+        if (msg.sender != address(assetVault)) {
+            revert UnauthorizedAssetVault(msg.sender);
+        }
+        currencyToken.approve(beneficiary, currencyTokenAmount);
+        // TODO
     }
 
     // User Wallet Functions
