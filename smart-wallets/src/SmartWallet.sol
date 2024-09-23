@@ -95,28 +95,6 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
         return _getSmartWalletStorage().assetVault.getBalanceLocked(assetToken);
     }
 
-    /**
-     * @notice Transfer yield to the given beneficiary
-     * @dev Only the AssetVault can call this function
-     * @param assetToken AssetToken for which the yield is to be transferred
-     * @param beneficiary Address of the beneficiary to receive the yield transfer
-     * @param currencyToken Token in which the yield is to be transferred
-     * @param currencyTokenAmount Amount of currencyToken that is to be transferred
-     */
-    function transferYield(
-        IAssetToken assetToken,
-        address beneficiary,
-        IERC20 currencyToken,
-        uint256 currencyTokenAmount
-    ) public {
-        IAssetVault assetVault = _getSmartWalletStorage().assetVault;
-        if (msg.sender != address(assetVault)) {
-            revert UnauthorizedAssetVault(msg.sender);
-        }
-        currencyToken.approve(beneficiary, currencyTokenAmount);
-        // TODO
-    }
-
     // User Wallet Functions
 
     /**

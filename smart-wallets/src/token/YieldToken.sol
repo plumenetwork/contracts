@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
 import { IYieldToken } from "../interfaces/IYieldToken.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title YieldToken
@@ -20,8 +21,6 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
     struct YieldTokenStorage {
         /// @dev AssetToken that redistributes yield to the YieldToken
         IAssetToken assetToken;
-        /// @dev CurrencyToken in which the yield is denominated
-        IERC20 currencyToken;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.YieldToken")) - 1)) & ~bytes32(uint256(0xff))

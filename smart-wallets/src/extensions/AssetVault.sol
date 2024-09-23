@@ -257,8 +257,7 @@ contract AssetVault is IAssetVault {
         while (amountLocked > 0) {
             if (distribution.yield.expiration > block.timestamp) {
                 uint256 yieldShare = (currencyTokenAmount * amountLocked) / amountTotal;
-                // TODO                 ISmartWallet(wallet).transferYield(assetToken, distribution.beneficiary,
-                // currencyToken, yieldShare);
+                // TODO transfer yield from the user wallet to the beneficiary
                 emit YieldRedistributed(assetToken, distribution.beneficiary, currencyToken, yieldShare);
             }
 

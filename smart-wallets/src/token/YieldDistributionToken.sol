@@ -244,7 +244,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Getter View Functions
 
     /// @notice CurrencyToken in which the yield is deposited and denominated
-    function getCurrencyToken() public view returns (IERC20) {
+    function getCurrencyToken() external view returns (IERC20) {
         return _getYieldDistributionTokenStorage().currencyToken;
     }
 

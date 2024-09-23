@@ -129,7 +129,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param to Address to transfer tokens to
      * @param value Amount of tokens to transfer
      */
-    function _update(address from, address to, uint256 value) internal override {
+    function _update(address from, address to, uint256 value) internal override(YieldDistributionToken) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
         if ($.isWhitelistEnabled) {
             if (!$.isWhitelisted[from]) {
