@@ -279,13 +279,32 @@ contract AssetToken is YieldDistributionToken, IAssetToken {
         return _getAssetTokenStorage().totalValue / totalSupply();
     }
 
+    function isContract(address addr) internal view returns (bool) {
+        uint32 size;
+        assembly {
+            size := extcodesize(addr)
+        }
+        return size > 0;
+    }
+
     /**
      * @notice Get the available unlocked AssetToken balance of a user
      * @param user Address of the user to get the available balance of
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
-    function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
-        return balanceOf(user) - SmartWallet(payable(user)).getBalanceLocked(this);
+    function getBalanceAvailable(address user) public view returns (uint256) {
+        if (isContract(user)) {
+            // User is a contract, safe to call getBalanceLocked
+            try SmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
+                return balanceOf(user) - lockedBalance;
+            } catch {
+                // Handle the case where the call reverts
+                return balanceOf(user); // Fallback if contract fails for some reason
+            }
+        } else {
+            // User is an EOA, no locked balance
+            return balanceOf(user);
+        }
     }
 
     /// @notice Total yield distributed to all AssetTokens for all users
