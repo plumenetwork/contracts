@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
@@ -45,7 +45,7 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
      * @param invalidCurrencyToken CurrencyToken that does not match the actual CurrencyToken
      * @param currencyToken Actual CurrencyToken used to mint and burn the AggregateToken
      */
-    error InvalidCurrencyToken(ERC20 invalidCurrencyToken, ERC20 currencyToken);
+    error InvalidCurrencyToken(IERC20 invalidCurrencyToken, IERC20 currencyToken);
 
     /**
      * @notice Indicates a failure because the given AssetToken does not match the actual AssetToken
@@ -71,7 +71,7 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
         address owner,
         string memory name,
         string memory symbol,
-        ERC20 currencyToken,
+        IERC20 currencyToken,
         uint8 decimals_,
         string memory tokenURI_,
         IAssetToken assetToken,
@@ -101,7 +101,7 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
      * @param currencyToken CurrencyToken in which the yield is deposited and denominated
      * @param currencyTokenAmount Amount of CurrencyTokens to deposit as yield
      */
-    function receiveYield(IAssetToken assetToken, ERC20 currencyToken, uint256 currencyTokenAmount) external {
+    function receiveYield(IAssetToken assetToken, IERC20 currencyToken, uint256 currencyTokenAmount) external {
         if (assetToken != _getYieldTokenStorage().assetToken) {
             revert InvalidAssetToken(assetToken, _getYieldTokenStorage().assetToken);
         }

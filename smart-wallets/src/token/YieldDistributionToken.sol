@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 
@@ -69,7 +70,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     /// @custom:storage-location erc7201:plume.storage.YieldDistributionToken
     struct YieldDistributionTokenStorage {
         /// @dev CurrencyToken in which the yield is deposited and denominated
-        ERC20 currencyToken;
+        IERC20 currencyToken;
         /// @dev Number of decimals of the YieldDistributionToken
         uint8 decimals;
         /// @dev URI for the YieldDistributionToken metadata
@@ -164,7 +165,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         address owner,
         string memory name,
         string memory symbol,
-        ERC20 currencyToken,
+        IERC20 currencyToken,
         uint8 decimals_,
         string memory tokenURI
     ) ERC20(name, symbol) Ownable(owner) {
@@ -243,7 +244,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Getter View Functions
 
     /// @notice CurrencyToken in which the yield is deposited and denominated
-    function getCurrencyToken() external view returns (ERC20) {
+    function getCurrencyToken() external view returns (IERC20) {
         return _getYieldDistributionTokenStorage().currencyToken;
     }
 
@@ -299,7 +300,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @return currencyToken CurrencyToken in which the yield is deposited and denominated
      * @return currencyTokenAmount Amount of CurrencyToken claimed as yield
      */
-    function claimYield(address user) public returns (ERC20 currencyToken, uint256 currencyTokenAmount) {
+    function claimYield(address user) public returns (IERC20 currencyToken, uint256 currencyTokenAmount) {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         currencyToken = $.currencyToken;
 

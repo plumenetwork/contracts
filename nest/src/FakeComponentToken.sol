@@ -151,15 +151,13 @@ contract FakeComponentToken is
     /**
      * @notice Buy FakeComponentToken using CurrencyToken
      * @dev The user must approve the contract to spend the CurrencyToken
-     * @param currencyToken_ CurrencyToken used to buy the FakeComponentToken
+     * @param currencyToken CurrencyToken used to buy the FakeComponentToken
      * @param amount Amount of CurrencyToken to pay to receive the same amount of FakeComponentToken
      * @return componentTokenAmount Amount of FakeComponentToken received
      */
-    function buy(IERC20 currencyToken_, uint256 amount) public returns (uint256 componentTokenAmount) {
-        IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
-
-        if (currencyToken_ != currencyToken) {
-            revert InvalidCurrencyToken(currencyToken_, currencyToken);
+    function buy(IERC20 currencyToken, uint256 amount) public returns (uint256 componentTokenAmount) {
+        if (currencyToken != _getFakeComponentTokenStorage().currencyToken) {
+            revert InvalidCurrencyToken(currencyToken, _getFakeComponentTokenStorage().currencyToken);
         }
         if (!currencyToken.transferFrom(msg.sender, address(this), amount)) {
             revert UserCurrencyTokenInsufficientBalance(currencyToken, msg.sender, amount);
@@ -172,15 +170,13 @@ contract FakeComponentToken is
 
     /**
      * @notice Sell FakeComponentToken to receive CurrencyToken
-     * @param currencyToken_ CurrencyToken received in exchange for the FakeComponentToken
+     * @param currencyToken CurrencyToken received in exchange for the FakeComponentToken
      * @param amount Amount of CurrencyToken to receive in exchange for the FakeComponentToken
      * @return componentTokenAmount Amount of FakeComponentToken sold
      */
-    function sell(IERC20 currencyToken_, uint256 amount) public returns (uint256 componentTokenAmount) {
-        IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
-
-        if (currencyToken_ != currencyToken) {
-            revert InvalidCurrencyToken(currencyToken_, currencyToken);
+    function sell(IERC20 currencyToken, uint256 amount) public returns (uint256 componentTokenAmount) {
+        if (currencyToken != _getFakeComponentTokenStorage().currencyToken) {
+            revert InvalidCurrencyToken(currencyToken, _getFakeComponentTokenStorage().currencyToken);
         }
         if (!currencyToken.transfer(msg.sender, amount)) {
             revert CurrencyTokenInsufficientBalance(currencyToken, amount);

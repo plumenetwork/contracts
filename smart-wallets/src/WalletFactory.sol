@@ -3,7 +3,7 @@ pragma solidity 0.8.25;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-import { SmartWallet } from "./SmartWallet.sol";
+import { ISmartWallet } from "./interfaces/ISmartWallet.sol";
 
 /**
  * @title WalletFactory
@@ -17,7 +17,7 @@ import { SmartWallet } from "./SmartWallet.sol";
 contract WalletFactory is Ownable {
 
     /// @notice Address of the current SmartWallet implementation
-    SmartWallet public smartWallet;
+    ISmartWallet public smartWallet;
 
     /**
      * @notice Construct the WalletFactory
@@ -25,7 +25,7 @@ contract WalletFactory is Ownable {
      * @param smartWallet_ Initial SmartWallet implementation
      * @dev The owner of the WalletFactory should be set to Plume Governance once ready
      */
-    constructor(address owner_, SmartWallet smartWallet_) Ownable(owner_) {
+    constructor(address owner_, ISmartWallet smartWallet_) Ownable(owner_) {
         smartWallet = smartWallet_;
     }
 
@@ -34,7 +34,7 @@ contract WalletFactory is Ownable {
      * @dev Only the WalletFactory owner can upgrade the SmartWallet implementation
      * @param smartWallet_ New SmartWallet implementation
      */
-    function upgrade(SmartWallet smartWallet_) public onlyOwner {
+    function upgrade(ISmartWallet smartWallet_) public onlyOwner {
         smartWallet = smartWallet_;
     }
 
