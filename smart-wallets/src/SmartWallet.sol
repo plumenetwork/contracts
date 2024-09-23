@@ -58,13 +58,6 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      */
     event UserWalletUpgraded(address indexed userWallet);
 
-    /**
-     * @notice Emitted when yield is received into the SmartWallet
-     * @param currencyToken CurrencyToken in which the yield is received and denominated
-     * @param currencyTokenAmount Amount of CurrencyToken received
-     */
-    event YieldReceived(IERC20 currencyToken, uint256 currencyTokenAmount);
-
     // Errors
 
     /**
@@ -123,7 +116,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
             assetVault = new AssetVault();
             $.assetVault = assetVault;
         }
-        (IERC20 currencyToken, uint256 currencyTokenAmount) = assetToken.claimYield();
+        (IERC20 currencyToken, uint256 currencyTokenAmount) = assetToken.claimYield(address(this));
         assetVault.redistributeYield(assetToken, currencyToken, currencyTokenAmount);
     }
 
@@ -154,11 +147,10 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @notice Receive yield into the SmartWallet
      * @dev Anyone can call this function to deposit yield into any SmartWallet.
      *   The sender must have approved the CurrencyToken to spend the given amount.
-     * @param assetToken Unused parameter
      * @param currencyToken CurrencyToken in which the yield is received and denominated
      * @param currencyTokenAmount Amount of CurrencyToken to receive as yield
      */
-    function receiveYield(IAssetToken assetToken, IERC20 currencyToken, uint256 currencyTokenAmount) external {
+    function receiveYield(IAssetToken, IERC20 currencyToken, uint256 currencyTokenAmount) external {
         if (!currencyToken.transferFrom(msg.sender, address(this), currencyTokenAmount)) {
             revert TransferFailed(msg.sender, currencyToken, currencyTokenAmount);
         }

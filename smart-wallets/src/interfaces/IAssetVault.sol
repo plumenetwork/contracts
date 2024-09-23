@@ -18,7 +18,11 @@ interface IAssetVault {
     function wallet() external view returns (address wallet);
     function getBalanceLocked(IAssetToken assetToken) external view returns (uint256 balanceLocked);
     function acceptYieldAllowance(IAssetToken assetToken, uint256 amount, uint256 expiration) external;
-    function renounceYieldDistribution(IAssetToken assetToken, uint256 amount, uint256 expiration) external returns (uint256 amountRenounced);
+    function renounceYieldDistribution(
+        IAssetToken assetToken,
+        uint256 amount,
+        uint256 expiration
+    ) external returns (uint256 amountRenounced);
     function clearYieldDistributions(IAssetToken assetToken) external;
 
 }

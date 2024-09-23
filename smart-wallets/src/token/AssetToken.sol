@@ -294,7 +294,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
         if (isContract(user)) {
-            try SmartWallet(payable(user)).getBalanceLocked(address(this)) returns (uint256 lockedBalance) {
+            try SmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
                 return balanceOf(user) - lockedBalance;
             } catch {
                 revert SmartWalletCallFailed(user);
