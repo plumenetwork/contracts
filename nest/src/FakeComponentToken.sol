@@ -14,13 +14,12 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  * @author Eugene Y. Q. Shen
  * @notice Fake example of a ComponentToken that could be used in an AggregateToken when testing.
  * Users can buy and sell one FakeComponentToken by exchanging it with one CurrencyToken at any time.
- * @custom:oz-upgrades-from FakeComponentToken
  */
 contract FakeComponentToken is
     Initializable,
+    ERC20Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    ERC20Upgradeable,
     IComponentToken
 {
 
@@ -47,7 +46,7 @@ contract FakeComponentToken is
     // Constants
 
     /// @notice Role for the upgrader of the FakeComponentToken
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADE_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     // Events
 
@@ -100,6 +99,14 @@ contract FakeComponentToken is
     // Initializer
 
     /**
+     * @notice Prevent the implementation contract from being initialized or reinitialized
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
      * @notice Initialize the FakeComponentToken
      * @param owner Address of the owner of the FakeComponentToken
      * @param name Name of the FakeComponentToken
@@ -136,8 +143,7 @@ contract FakeComponentToken is
 
     /// @notice Number of decimals of the FakeComponentToken
     function decimals() public view override returns (uint8) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        return $.decimals;
+        return _getFakeComponentTokenStorage().decimals;
     }
 
     // User Functions
@@ -145,67 +151,99 @@ contract FakeComponentToken is
     /**
      * @notice Buy FakeComponentToken using CurrencyToken
      * @dev The user must approve the contract to spend the CurrencyToken
-     * @param currencyToken_ CurrencyToken used to buy the FakeComponentToken
+     * @param currencyToken CurrencyToken used to buy the FakeComponentToken
      * @param amount Amount of CurrencyToken to pay to receive the same amount of FakeComponentToken
+     * @return componentTokenAmount Amount of FakeComponentToken received
      */
-    function buy(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
-
-        if (currencyToken_ != currencyToken) {
-            revert InvalidCurrencyToken(currencyToken_, currencyToken);
+    function buy(IERC20 currencyToken, uint256 amount) public returns (uint256 componentTokenAmount) {
+        if (currencyToken != _getFakeComponentTokenStorage().currencyToken) {
+            revert InvalidCurrencyToken(currencyToken, _getFakeComponentTokenStorage().currencyToken);
         }
         if (!currencyToken.transferFrom(msg.sender, address(this), amount)) {
             revert UserCurrencyTokenInsufficientBalance(currencyToken, msg.sender, amount);
         }
 
         _mint(msg.sender, amount);
-
         emit ComponentTokenBought(msg.sender, currencyToken, amount, amount);
-
-        return amount;
+        componentTokenAmount = amount;
     }
 
     /**
      * @notice Sell FakeComponentToken to receive CurrencyToken
-     * @param currencyToken_ CurrencyToken received in exchange for the FakeComponentToken
+     * @param currencyToken CurrencyToken received in exchange for the FakeComponentToken
      * @param amount Amount of CurrencyToken to receive in exchange for the FakeComponentToken
+     * @return componentTokenAmount Amount of FakeComponentToken sold
      */
-    function sell(IERC20 currencyToken_, uint256 amount) public returns (uint256) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
-
-        if (currencyToken_ != currencyToken) {
-            revert InvalidCurrencyToken(currencyToken_, currencyToken);
+    function sell(IERC20 currencyToken, uint256 amount) public returns (uint256 componentTokenAmount) {
+        if (currencyToken != _getFakeComponentTokenStorage().currencyToken) {
+            revert InvalidCurrencyToken(currencyToken, _getFakeComponentTokenStorage().currencyToken);
         }
         if (!currencyToken.transfer(msg.sender, amount)) {
             revert CurrencyTokenInsufficientBalance(currencyToken, amount);
         }
 
         _burn(msg.sender, amount);
-
         emit ComponentTokenSold(msg.sender, currencyToken, amount, amount);
-
-        return amount;
+        componentTokenAmount = amount;
     }
 
     // Admin Setter Functions
 
     /**
      * @notice Set the CurrencyToken used to mint and burn the FakeComponentToken
+     * @dev Only the owner can call this setter
      * @param currencyToken New CurrencyToken
      */
-    function setCurrencyToken(IERC20 currencyToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        $.currencyToken = currencyToken;
+    function setCurrencyToken(IERC20 currencyToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _getFakeComponentTokenStorage().currencyToken = currencyToken;
     }
 
     // Getter View Functions
 
     /// @notice CurrencyToken used to mint and burn the FakeComponentToken
-    function getCurrencyToken() public view returns (IERC20) {
-        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
-        return $.currencyToken;
+    function getCurrencyToken() external view returns (IERC20) {
+        return _getFakeComponentTokenStorage().currencyToken;
     }
 
+    /// @notice Total yield distributed to all FakeComponentTokens for all users
+    function totalYield() public view returns (uint256 amount) {
+        return 6;
+    }
+
+    /// @notice Claimed yield across all FakeComponentTokens for all users
+    function claimedYield() public view returns (uint256 amount) {
+        return 4;
+    }
+
+    /// @notice Unclaimed yield across all FakeComponentTokens for all users
+    function unclaimedYield() external view returns (uint256 amount) {
+        return totalYield() - claimedYield();
+    }
+
+    /**
+     * @notice Total yield distributed to a specific user
+     * @param user Address of the user for which to get the total yield
+     * @return amount Total yield distributed to the user
+     */
+    function totalYield(address user) public view returns (uint256 amount) {
+        return 3;
+    }
+
+    /**
+     * @notice Amount of yield that a specific user has claimed
+     * @param user Address of the user for which to get the claimed yield
+     * @return amount Amount of yield that the user has claimed
+     */
+    function claimedYield(address user) public view returns (uint256 amount) {
+        return 2;
+    }
+
+    /**
+     * @notice Amount of yield that a specific user has not yet claimed
+     * @param user Address of the user for which to get the unclaimed yield
+     * @return amount Amount of yield that the user has not yet claimed
+     */
+    function unclaimedYield(address user) external view returns (uint256 amount) {
+        return totalYield(user) - claimedYield(user);
+    }
 }
