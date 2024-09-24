@@ -234,11 +234,10 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @notice Deposit yield into the AssetToken
      * @dev Only the owner can call this function, and the owner must have
      *   approved the CurrencyToken to spend the given amount
-     * @param timestamp Timestamp of the deposit, must not be less than the previous deposit timestamp
      * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
      */
-    function depositYield(uint256 timestamp, uint256 currencyTokenAmount) external onlyOwner {
-        _depositYield(timestamp, currencyTokenAmount);
+    function depositYield(uint256 currencyTokenAmount) external onlyOwner {
+        _depositYield(currencyTokenAmount);
     }
 
     // Permissionless Functions
@@ -315,7 +314,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
         uint256 length = $.holders.length;
         for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().yieldAccrued[$.holders[i]];
+            amount += _getYieldDistributionTokenStorage().userStates[$.holders[i]].yieldAccrued;
         }
     }
 
@@ -325,7 +324,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         address[] storage holders = $.holders;
         uint256 length = holders.length;
         for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().yieldWithdrawn[holders[i]];
+            amount += _getYieldDistributionTokenStorage().userStates[$.holders[i]].yieldWithdrawn;
         }
     }
 
@@ -340,7 +339,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @return amount Total yield distributed to the user
      */
     function totalYield(address user) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().yieldAccrued[user];
+        return _getYieldDistributionTokenStorage().userStates[user].yieldAccrued;
     }
 
     /**
@@ -349,7 +348,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @return amount Amount of yield that the user has claimed
      */
     function claimedYield(address user) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().yieldWithdrawn[user];
+        return _getYieldDistributionTokenStorage().userStates[user].yieldWithdrawn;
     }
 
     /**
@@ -358,8 +357,8 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @return amount Amount of yield that the user has not yet claimed
      */
     function unclaimedYield(address user) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().yieldAccrued[user]
-            - _getYieldDistributionTokenStorage().yieldWithdrawn[user];
+        UserState memory userState = _getYieldDistributionTokenStorage().userStates[user];
+        return userState.yieldAccrued - userState.yieldWithdrawn;
     }
 
 }
