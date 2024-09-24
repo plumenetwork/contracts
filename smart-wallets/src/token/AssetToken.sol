@@ -3,9 +3,11 @@ pragma solidity ^0.8.25;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import { SmartWallet } from "../SmartWallet.sol";
 import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
+import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
+
+import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
 /**
@@ -207,7 +209,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             if (!$.isWhitelisted[user]) {
                 revert AddressNotWhitelisted(user);
             }
-
             address[] storage whitelist = $.whitelist;
             uint256 length = whitelist.length;
             for (uint256 i = 0; i < length; ++i) {
@@ -241,6 +242,17 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function depositYield(uint256 timestamp, uint256 currencyTokenAmount) external onlyOwner {
         _depositYield(timestamp, currencyTokenAmount);
+    }
+
+    // Permissionless Functions
+
+    /**
+     * @notice Make the SmartWallet redistribute yield from this token
+     * @param from Address of the SmartWallet to request the yield from
+     */
+    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
+        // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
+        ISmartWallet(payable(from)).claimAndRedistributeYield(this);
     }
 
     // Getter View Functions
@@ -290,41 +302,43 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     /**
      * @notice Get the available unlocked AssetToken balance of a user
-     * @dev Attempts to call `getBalanceLocked` on the user if the user is a contract (SmartWallet).
-     * Reverts if the SmartWallet call fails. If the user is an EOA, it returns the balance directly.
+     * @dev Calls `getBalanceLocked`, which reverts if the user is not a contract or a smart wallet
      * @param user Address of the user to get the available balance of
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
-    function getBalanceAvailable(address user) public view returns (uint256) {
+    function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
         if (isContract(user)) {
-            try SmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
+            try ISmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
                 return balanceOf(user) - lockedBalance;
             } catch {
                 revert SmartWalletCallFailed(user);
             }
         } else {
-            return balanceOf(user);
+            revert SmartWalletCallFailed(user);
         }
     }
 
     /// @notice Total yield distributed to all AssetTokens for all users
-    function totalYield() public view returns (uint256) {
-        // TODO: loop through yield deposit history
-        return 0;
+    function totalYield() public view returns (uint256 amount) {
+        AssetTokenStorage storage $ = _getAssetTokenStorage();
+        uint256 length = $.holders.length;
+        for (uint256 i = 0; i < length; ++i) {
+            amount += _getYieldDistributionTokenStorage().yieldAccrued[$.holders[i]];
+        }
     }
 
     /// @notice Claimed yield across all AssetTokens for all users
     function claimedYield() public view returns (uint256 amount) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
-        address[] storage whitelist = $.whitelist;
-        uint256 length = whitelist.length;
+        address[] storage holders = $.holders;
+        uint256 length = holders.length;
         for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().yieldWithdrawn[whitelist[i]];
+            amount += _getYieldDistributionTokenStorage().yieldWithdrawn[holders[i]];
         }
     }
 
     /// @notice Unclaimed yield across all AssetTokens for all users
-    function unclaimedYield() external view returns (uint256) {
+    function unclaimedYield() external view returns (uint256 amount) {
         return totalYield() - claimedYield();
     }
 

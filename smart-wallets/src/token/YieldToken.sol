@@ -5,6 +5,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
+
+import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { IYieldToken } from "../interfaces/IYieldToken.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
@@ -96,10 +98,10 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
 
     /**
      * @notice Receive yield into the YieldToken
-     * @dev Anyone can call this function to deposit yield from their AssetTokens into the YieldToken
+     * @dev Anyone can call this function to deposit yield from their AssetToken into the YieldToken
      * @param assetToken AssetToken that redistributes yield to the YieldToken
-     * @param currencyToken CurrencyToken in which the yield is deposited and denominated
-     * @param currencyTokenAmount Amount of CurrencyTokens to deposit as yield
+     * @param currencyToken CurrencyToken in which the yield is received and denominated
+     * @param currencyTokenAmount Amount of CurrencyToken to receive as yield
      */
     function receiveYield(IAssetToken assetToken, IERC20 currencyToken, uint256 currencyTokenAmount) external {
         if (assetToken != _getYieldTokenStorage().assetToken) {
@@ -109,6 +111,15 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
             revert InvalidCurrencyToken(currencyToken, _getYieldDistributionTokenStorage().currencyToken);
         }
         _depositYield(block.timestamp, currencyTokenAmount);
+    }
+
+    /**
+     * @notice Make the SmartWallet redistribute yield from their AssetToken into this YieldToken
+     * @param from Address of the SmartWallet to request the yield from
+     */
+    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
+        // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
+        ISmartWallet(payable(from)).claimAndRedistributeYield(_getYieldTokenStorage().assetToken);
     }
 
 }
