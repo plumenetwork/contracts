@@ -44,7 +44,8 @@ contract AssetVaultTest is Test {
             18, // Decimals for the asset token
             "uri://asset", // Token URI
             initialSupply, // Initial supply of AssetToken
-            1_000_000 // Total value of all AssetTokens
+            1_000_000, // Total value of all AssetTokens
+            false // Disable whitelist
         );
 
         vm.prank(OWNER);

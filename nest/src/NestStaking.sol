@@ -191,7 +191,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
     // Getter View Functions
 
     /// @notice List of featured AggregateTokens
-    function featuredList() external view returns (IAggregateToken[] memory) {
+    function getFeaturedList() external view returns (IAggregateToken[] memory) {
         return _getNestStakingStorage().featuredList;
     }
 
