@@ -246,4 +246,5 @@ contract FakeComponentToken is
     function unclaimedYield(address user) external view returns (uint256 amount) {
         return totalYield(user) - claimedYield(user);
     }
+
 }

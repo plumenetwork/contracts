@@ -417,7 +417,7 @@ contract AggregateToken is
 
     /// @notice Total yield distributed to all AggregateTokens for all users
     function totalYield() public view returns (uint256 amount) {
-        IComponentTokenList[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
+        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
         uint256 length = componentTokenList.length;
         for (uint256 i = 0; i < length; ++i) {
             amount += componentTokenList[i].totalYield();
@@ -426,7 +426,7 @@ contract AggregateToken is
 
     /// @notice Claimed yield across all AggregateTokens for all users
     function claimedYield() public view returns (uint256 amount) {
-        IComponentTokenList[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
+        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
         uint256 length = componentTokenList.length;
         for (uint256 i = 0; i < length; ++i) {
             amount += componentTokenList[i].claimedYield();
@@ -444,7 +444,7 @@ contract AggregateToken is
      * @return amount Total yield distributed to the user
      */
     function totalYield(address user) public view returns (uint256 amount) {
-        IComponentTokenList[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
+        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
         uint256 length = componentTokenList.length;
         for (uint256 i = 0; i < length; ++i) {
             amount += componentTokenList[i].totalYield(user);
@@ -457,7 +457,7 @@ contract AggregateToken is
      * @return amount Amount of yield that the user has claimed
      */
     function claimedYield(address user) public view returns (uint256 amount) {
-        IComponentTokenList[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
+        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
         uint256 length = componentTokenList.length;
         for (uint256 i = 0; i < length; ++i) {
             amount += componentTokenList[i].claimedYield(user);

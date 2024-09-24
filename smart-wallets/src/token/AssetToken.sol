@@ -20,12 +20,13 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     // Storage
 
+    /// @notice Boolean to enable whitelist for the AssetToken
+    bool public immutable isWhitelistEnabled;
+
     /// @custom:storage-location erc7201:plume.storage.AssetToken
     struct AssetTokenStorage {
         /// @dev Total value of all circulating AssetTokens
         uint256 totalValue;
-        /// @dev Boolean to enable whitelist for the AssetToken
-        bool isWhitelistEnabled;
         /// @dev Whitelist of users that are allowed to hold AssetTokens
         address[] whitelist;
         /// @dev Mapping of whitelisted users
@@ -107,6 +108,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param tokenURI_ URI of the AssetToken metadata
      * @param initialSupply Initial supply of the AssetToken
      * @param totalValue_ Total value of all circulating AssetTokens
+     * @param isWhitelistEnabled_ Boolean to enable whitelist for the AssetToken
      */
     constructor(
         address owner,
@@ -116,9 +118,12 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         uint8 decimals_,
         string memory tokenURI_,
         uint256 initialSupply,
-        uint256 totalValue_
+        uint256 totalValue_,
+        bool isWhitelistEnabled_
     ) YieldDistributionToken(owner, name, symbol, currencyToken, decimals_, tokenURI_) {
-        _getAssetTokenStorage().totalValue = totalValue_;
+        AssetTokenStorage storage $ = _getAssetTokenStorage();
+        $.totalValue = totalValue_;
+        isWhitelistEnabled = isWhitelistEnabled_;
         _mint(owner, initialSupply);
     }
 
@@ -133,7 +138,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function _update(address from, address to, uint256 value) internal override(YieldDistributionToken) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
-        if ($.isWhitelistEnabled) {
+        if (isWhitelistEnabled) {
             if (!$.isWhitelisted[from]) {
                 revert Unauthorized(from);
             }
@@ -166,14 +171,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     }
 
     /**
-     * @notice Enable the whitelist
-     * @dev Only the owner can call this function
-     */
-    function enableWhitelist() external onlyOwner {
-        _getAssetTokenStorage().isWhitelistEnabled = true;
-    }
-
-    /**
      * @notice Add a user to the whitelist
      * @dev Only the owner can call this function
      * @param user Address of the user to add to the whitelist
@@ -184,7 +181,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         }
 
         AssetTokenStorage storage $ = _getAssetTokenStorage();
-        if ($.isWhitelistEnabled) {
+        if (isWhitelistEnabled) {
             if ($.isWhitelisted[user]) {
                 revert AddressAlreadyWhitelisted(user);
             }
@@ -205,7 +202,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         }
 
         AssetTokenStorage storage $ = _getAssetTokenStorage();
-        if ($.isWhitelistEnabled) {
+        if (isWhitelistEnabled) {
             if (!$.isWhitelisted[user]) {
                 revert AddressNotWhitelisted(user);
             }
@@ -260,11 +257,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     /// @notice Total value of all circulating AssetTokens
     function getTotalValue() external view returns (uint256) {
         return _getAssetTokenStorage().totalValue;
-    }
-
-    /// @notice Check if the whitelist is enabled
-    function isWhitelistEnabled() external view returns (bool) {
-        return _getAssetTokenStorage().isWhitelistEnabled;
     }
 
     /// @notice Whitelist of users that are allowed to hold AssetTokens
