@@ -205,4 +205,45 @@ contract FakeComponentToken is
         return _getFakeComponentTokenStorage().currencyToken;
     }
 
+    /// @notice Total yield distributed to all FakeComponentTokens for all users
+    function totalYield() public view returns (uint256 amount) {
+        return 6;
+    }
+
+    /// @notice Claimed yield across all FakeComponentTokens for all users
+    function claimedYield() public view returns (uint256 amount) {
+        return 4;
+    }
+
+    /// @notice Unclaimed yield across all FakeComponentTokens for all users
+    function unclaimedYield() external view returns (uint256 amount) {
+        return totalYield() - claimedYield();
+    }
+
+    /**
+     * @notice Total yield distributed to a specific user
+     * @param user Address of the user for which to get the total yield
+     * @return amount Total yield distributed to the user
+     */
+    function totalYield(address user) public view returns (uint256 amount) {
+        return 3;
+    }
+
+    /**
+     * @notice Amount of yield that a specific user has claimed
+     * @param user Address of the user for which to get the claimed yield
+     * @return amount Amount of yield that the user has claimed
+     */
+    function claimedYield(address user) public view returns (uint256 amount) {
+        return 2;
+    }
+
+    /**
+     * @notice Amount of yield that a specific user has not yet claimed
+     * @param user Address of the user for which to get the unclaimed yield
+     * @return amount Amount of yield that the user has not yet claimed
+     */
+    function unclaimedYield(address user) external view returns (uint256 amount) {
+        return totalYield(user) - claimedYield(user);
+    }
 }
