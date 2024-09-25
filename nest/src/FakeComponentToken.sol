@@ -252,10 +252,6 @@ contract FakeComponentToken is
         _getFakeComponentTokenStorage().currencyToken = currencyToken;
     }
 
-    /**
-     * @notice
-     */
-
     // Getter View Functions
 
     /// @notice Version of the FakeComponentToken
