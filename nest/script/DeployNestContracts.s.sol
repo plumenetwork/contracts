@@ -15,12 +15,12 @@ contract DeployNestContracts is Script {
 
     address private constant ARC_ADMIN_ADDRESS = 0x1c9d94FAD4ccCd522804a955103899e0D6A4405a;
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
-    address private constant USDC_ADDRESS = 0x849c25e6cCB03cdc23ba91d92440dA7bC8486be2;
+    address private constant P_ADDRESS = 0xEa0c23A2411729073Ed52fF94b38FceffE82FDE3;
 
     function run() external {
         vm.startBroadcast(ARC_ADMIN_ADDRESS);
 
-        IComponentToken currencyToken = IComponentToken(USDC_ADDRESS);
+        IComponentToken currencyToken = IComponentToken(P_ADDRESS);
 
         FakeComponentToken fakeComponentToken = new FakeComponentToken();
         FakeComponentTokenProxy fakeComponentTokenProxy = new FakeComponentTokenProxy(
