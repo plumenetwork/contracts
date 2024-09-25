@@ -292,6 +292,18 @@ contract AggregateToken is
     }
 
     /**
+     * @notice Claim yield for all ComponentTokens into the AggregateToken
+     * @dev Anyone can call this function to claim yield for all ComponentTokens
+     */
+    function claimComponentsYield() external returns (uint256 amount) {
+        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
+        uint256 length = componentTokenList.length;
+        for (uint256 i = 0; i < length; ++i) {
+            amount += componentTokenList[i].claimYield(this);
+        }
+    }
+
+    /**
      * @notice Claim yield for the given user
      * @dev Anyone can call this function to claim yield for any user
      * @param user Address of the user for which to claim yield

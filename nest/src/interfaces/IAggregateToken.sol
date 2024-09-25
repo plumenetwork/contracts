@@ -7,5 +7,6 @@ interface IAggregateToken is IComponentToken {
 
     function buyComponentToken(IComponentToken componentToken, uint256 currencyTokenAmount) external;
     function sellComponentToken(IComponentToken componentToken, uint256 currencyTokenAmount) external;
+    function claimComponentsYield() external returns (uint256 amount);
 
 }
