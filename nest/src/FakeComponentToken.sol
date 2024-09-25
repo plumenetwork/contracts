@@ -31,6 +31,8 @@ contract FakeComponentToken is
         IERC20 currencyToken;
         /// @dev Number of decimals of the FakeComponentToken
         uint8 decimals;
+        /// @dev Version of the FakeComponentToken
+        uint256 version;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.FakeComponentToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -73,6 +75,13 @@ contract FakeComponentToken is
     );
 
     // Errors
+
+    /**
+     * @notice Indicates a failure because the given version is not higher than the current version
+     * @param invalidVersion Invalid version that is not higher than the current version
+     * @param version Current version of the FakeComponentToken
+     */
+    error InvalidVersion(uint256 invalidVersion, uint256 version);
 
     /**
      * @notice Indicates a failure because the given CurrencyToken does not match actual CurrencyToken
@@ -187,7 +196,30 @@ contract FakeComponentToken is
         componentTokenAmount = amount;
     }
 
+    /**
+     * @notice Claim yield for the given user
+     * @dev Anyone can call this function to claim yield for any user
+     * @param user Address of the user for which to claim yield
+     */
+    function claimYield(address user) external returns (uint256 amount) {
+        amount = unclaimedYield(user);
+        _getFakeComponentTokenStorage().currencyToken.transfer(user, amount);
+    }
+
     // Admin Setter Functions
+
+    /**
+     * @notice Set the version of the FakeComponentToken
+     * @dev Only the owner can call this setter
+     * @param version New version of the FakeComponentToken
+     */
+    function setVersion(uint256 version) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        if (version <= $.version) {
+            revert InvalidVersion(version, $.version);
+        }
+        $.version = version;
+    }
 
     /**
      * @notice Set the CurrencyToken used to mint and burn the FakeComponentToken
@@ -199,6 +231,11 @@ contract FakeComponentToken is
     }
 
     // Getter View Functions
+
+    /// @notice Version of the FakeComponentToken
+    function getVersion() external view returns (uint256) {
+        return _getFakeComponentTokenStorage().version;
+    }
 
     /// @notice CurrencyToken used to mint and burn the FakeComponentToken
     function getCurrencyToken() external view returns (IERC20) {
@@ -243,7 +280,7 @@ contract FakeComponentToken is
      * @param user Address of the user for which to get the unclaimed yield
      * @return amount Amount of yield that the user has not yet claimed
      */
-    function unclaimedYield(address user) external view returns (uint256 amount) {
+    function unclaimedYield(address user) public view returns (uint256 amount) {
         return totalYield(user) - claimedYield(user);
     }
 

@@ -43,6 +43,8 @@ contract AggregateToken is
         uint256 bidPrice;
         /// @dev URI for the AggregateToken metadata
         string tokenURI;
+        /// @dev Version of the AggregateToken
+        uint256 version;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AggregateToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -57,6 +59,8 @@ contract AggregateToken is
 
     // Constants
 
+    /// @notice Role for the admin of the AggregateToken
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the AggregateToken
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
@@ -169,6 +173,13 @@ contract AggregateToken is
      */
     error UserCurrencyTokenInsufficientBalance(IERC20 currencyToken, address user, uint256 amount);
 
+    /**
+     * @notice Indicates a failure because the given version is not higher than the current version
+     * @param invalidVersion Invalid version that is not higher than the current version
+     * @param version Current version of the AggregateToken
+     */
+    error InvalidVersion(uint256 invalidVersion, uint256 version);
+
     // Initializer
 
     /**
@@ -205,6 +216,7 @@ contract AggregateToken is
         __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(ADMIN_ROLE, owner);
         _grantRole(UPGRADER_ROLE, owner);
 
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
@@ -279,6 +291,21 @@ contract AggregateToken is
         emit AggregateTokenSold(msg.sender, currencyToken, currencyTokenAmount, aggregateTokenAmount);
     }
 
+    /**
+     * @notice Claim yield for the given user
+     * @dev Anyone can call this function to claim yield for any user
+     * @param user Address of the user for which to claim yield
+     */
+    function claimYield(address user) external returns (uint256 amount) {
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        IComponentToken[] storage componentTokenList = $.componentTokenList;
+        uint256 length = componentTokenList.length;
+        for (uint256 i = 0; i < length; ++i) {
+            amount += componentTokenList[i].unclaimedYield(user);
+        }
+        $.currencyToken.transfer(user, amount);
+    }
+
     // Admin Functions
 
     /**
@@ -286,7 +313,7 @@ contract AggregateToken is
      * @dev Only the owner can call this function, and there is no way to remove a ComponentToken later
      * @param componentToken ComponentToken to add
      */
-    function addComponentToken(IComponentToken componentToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function addComponentToken(IComponentToken componentToken) external onlyRole(ADMIN_ROLE) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
         if ($.componentTokenMap[componentToken]) {
             revert ComponentTokenAlreadyListed(componentToken);
@@ -306,7 +333,7 @@ contract AggregateToken is
     function buyComponentToken(
         IComponentToken componentToken,
         uint256 currencyTokenAmount
-    ) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) public onlyRole(ADMIN_ROLE) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
 
         if (!$.componentTokenMap[componentToken]) {
@@ -333,7 +360,7 @@ contract AggregateToken is
     function sellComponentToken(
         IComponentToken componentToken,
         uint256 currencyTokenAmount
-    ) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) public onlyRole(ADMIN_ROLE) {
         IERC20 currencyToken = _getAggregateTokenStorage().currencyToken;
 
         uint256 componentTokenAmount = componentToken.sell(currencyToken, currencyTokenAmount);
@@ -344,11 +371,24 @@ contract AggregateToken is
     // Admin Setter Functions
 
     /**
+     * @notice Set the version of the AggregateToken
+     * @dev Only the owner can call this setter
+     * @param version New version of the AggregateToken
+     */
+    function setVersion(uint256 version) external onlyRole(ADMIN_ROLE) {
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        if (version <= $.version) {
+            revert InvalidVersion(version, $.version);
+        }
+        $.version = version;
+    }
+
+    /**
      * @notice Set the CurrencyToken used to mint and burn the AggregateToken
      * @dev Only the owner can call this setter
      * @param currencyToken New CurrencyToken
      */
-    function setCurrencyToken(IERC20 currencyToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setCurrencyToken(IERC20 currencyToken) external onlyRole(ADMIN_ROLE) {
         _getAggregateTokenStorage().currencyToken = currencyToken;
     }
 
@@ -357,7 +397,7 @@ contract AggregateToken is
      * @dev Only the owner can call this setter
      * @param askPrice New ask price
      */
-    function setAskPrice(uint256 askPrice) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setAskPrice(uint256 askPrice) external onlyRole(ADMIN_ROLE) {
         _getAggregateTokenStorage().askPrice = askPrice;
     }
 
@@ -366,7 +406,7 @@ contract AggregateToken is
      * @dev Only the owner can call this setter
      * @param bidPrice New bid price
      */
-    function setBidPrice(uint256 bidPrice) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setBidPrice(uint256 bidPrice) external onlyRole(ADMIN_ROLE) {
         _getAggregateTokenStorage().bidPrice = bidPrice;
     }
 
@@ -375,11 +415,16 @@ contract AggregateToken is
      * @dev Only the owner can call this setter
      * @param tokenURI New token URI
      */
-    function setTokenURI(string memory tokenURI) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setTokenURI(string memory tokenURI) external onlyRole(ADMIN_ROLE) {
         _getAggregateTokenStorage().tokenURI = tokenURI;
     }
 
     // Getter View Functions
+
+    /// @notice Version of the AggregateToken
+    function getVersion() external view returns (uint256) {
+        return _getAggregateTokenStorage().version;
+    }
 
     /// @notice CurrencyToken used to mint and burn the AggregateToken
     function getCurrencyToken() external view returns (IERC20) {
@@ -469,7 +514,7 @@ contract AggregateToken is
      * @param user Address of the user for which to get the unclaimed yield
      * @return amount Amount of yield that the user has not yet claimed
      */
-    function unclaimedYield(address user) external view returns (uint256 amount) {
+    function unclaimedYield(address user) public view returns (uint256 amount) {
         return totalYield(user) - claimedYield(user);
     }
 
