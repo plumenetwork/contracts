@@ -33,6 +33,14 @@ contract FakeComponentToken is
         uint8 decimals;
         /// @dev Version of the FakeComponentToken
         uint256 version;
+        /// @dev Total amount of yield that has ever been accrued by all users
+        uint256 totalYieldAccrued;
+        /// @dev Total amount of yield that has ever been withdrawn by all users
+        uint256 totalYieldWithdrawn;
+        /// @dev Total amount of yield that has ever been accrued by each user
+        mapping(address user => uint256 currencyTokenAmount) yieldAccrued;
+        /// @dev Total amount of yield that has ever been withdrawn by each user
+        mapping(address user => uint256 currencyTokenAmount) yieldWithdrawn;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.FakeComponentToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -202,8 +210,22 @@ contract FakeComponentToken is
      * @param user Address of the user for which to claim yield
      */
     function claimYield(address user) external returns (uint256 amount) {
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
         amount = unclaimedYield(user);
-        _getFakeComponentTokenStorage().currencyToken.transfer(user, amount);
+        $.currencyToken.transfer(user, amount);
+        $.yieldWithdrawn[user] += amount;
+        $.totalYieldWithdrawn += amount;
+    }
+
+    /**
+     * @notice Accrue yield for the given user
+     * @dev Anyone can call this function to accrue yield for any user
+     * @param user Address of the user for which to accrue yield
+     */
+    function accrueYield(address user, uint256 amount) external {
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        $.yieldAccrued[user] += amount;
+        $.totalYieldAccrued += amount;
     }
 
     // Admin Setter Functions
@@ -230,6 +252,10 @@ contract FakeComponentToken is
         _getFakeComponentTokenStorage().currencyToken = currencyToken;
     }
 
+    /**
+     * @notice
+     */
+
     // Getter View Functions
 
     /// @notice Version of the FakeComponentToken
@@ -243,18 +269,19 @@ contract FakeComponentToken is
     }
 
     /// @notice Total yield distributed to all FakeComponentTokens for all users
-    function totalYield() public view returns (uint256 amount) {
-        return 6;
+    function totalYield() external view returns (uint256 amount) {
+        return _getFakeComponentTokenStorage().totalYieldAccrued;
     }
 
     /// @notice Claimed yield across all FakeComponentTokens for all users
-    function claimedYield() public view returns (uint256 amount) {
-        return 4;
+    function claimedYield() external view returns (uint256 amount) {
+        return _getFakeComponentTokenStorage().totalYieldWithdrawn;
     }
 
     /// @notice Unclaimed yield across all FakeComponentTokens for all users
     function unclaimedYield() external view returns (uint256 amount) {
-        return totalYield() - claimedYield();
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        return $.totalYieldAccrued - $.totalYieldWithdrawn;
     }
 
     /**
@@ -262,8 +289,8 @@ contract FakeComponentToken is
      * @param user Address of the user for which to get the total yield
      * @return amount Total yield distributed to the user
      */
-    function totalYield(address user) public view returns (uint256 amount) {
-        return 3;
+    function totalYield(address user) external view returns (uint256 amount) {
+        return _getFakeComponentTokenStorage().yieldAccrued[user];
     }
 
     /**
@@ -271,8 +298,8 @@ contract FakeComponentToken is
      * @param user Address of the user for which to get the claimed yield
      * @return amount Amount of yield that the user has claimed
      */
-    function claimedYield(address user) public view returns (uint256 amount) {
-        return 2;
+    function claimedYield(address user) external view returns (uint256 amount) {
+        return _getFakeComponentTokenStorage().yieldWithdrawn[user];
     }
 
     /**
@@ -281,7 +308,8 @@ contract FakeComponentToken is
      * @return amount Amount of yield that the user has not yet claimed
      */
     function unclaimedYield(address user) public view returns (uint256 amount) {
-        return totalYield(user) - claimedYield(user);
+        FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
+        return $.yieldAccrued[user] - $.yieldWithdrawn[user];
     }
 
 }
