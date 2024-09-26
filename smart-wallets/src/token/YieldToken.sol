@@ -100,8 +100,7 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
      * @notice Make the SmartWallet redistribute yield from their AssetToken into this YieldToken
      * @param from Address of the SmartWallet to request the yield from
      */
-    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
-        // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
+    function requestYield(address from) external {
         ISmartWallet(payable(from)).claimAndRedistributeYield(_getYieldTokenStorage().assetToken);
     }
 

@@ -46,7 +46,7 @@ contract pUSD is ERC20, ERC20Burnable, ERC20Pausable, AccessControl {
     }
 
     /// @notice Number of decimals of pUSD
-    function decimals() public pure override returns (uint8) {
+    function decimals() public pure override(ERC20) returns (uint8) {
         return 6;
     }
 

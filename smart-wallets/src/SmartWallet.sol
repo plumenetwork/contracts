@@ -173,7 +173,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      *   the function is not implemented in the base SmartWallet implementation
      * @return impl Address of the user wallet implementation
      */
-    function _implementation() internal view virtual override returns (address impl) {
+    function _implementation() internal view virtual override(Proxy) returns (address impl) {
         return _getSmartWalletStorage().userWallet;
     }
 

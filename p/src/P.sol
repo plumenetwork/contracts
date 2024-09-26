@@ -74,7 +74,7 @@ contract P is
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
 
     /**
      * @notice Update the balance of `from` and `to` after token transfer

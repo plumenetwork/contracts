@@ -36,7 +36,7 @@ contract WalletProxy is Proxy {
      *   delegates calls to the SmartWallet through the WalletFactory
      * @return impl Address of the SmartWallet implementation
      */
-    function _implementation() internal view virtual override returns (address impl) {
+    function _implementation() internal view virtual override(Proxy) returns (address impl) {
         return address(walletFactory.smartWallet());
     }
 

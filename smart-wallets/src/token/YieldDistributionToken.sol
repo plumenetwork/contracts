@@ -176,11 +176,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         $.depositHistory.lastTimestamp = block.timestamp;
     }
 
-    // Virtual Functions
-
-    /// @notice Request to receive yield from the given SmartWallet
-    function requestYield(address from) external virtual;
-
     // Override Functions
 
     /// @notice Number of decimals of the YieldDistributionToken
