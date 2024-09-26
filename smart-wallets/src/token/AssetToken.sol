@@ -160,15 +160,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         super._update(from, to, value);
     }
 
-    /**
-     * @notice Make the SmartWallet redistribute yield from this token
-     * @param from Address of the SmartWallet to request the yield from
-     */
-    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
-        // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
-        ISmartWallet(payable(from)).claimAndRedistributeYield(this);
-    }
-
     // Admin Functions
 
     /**
@@ -248,6 +239,17 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function depositYield(uint256 timestamp, uint256 currencyTokenAmount) external onlyOwner {
         _depositYield(timestamp, currencyTokenAmount);
+    }
+
+    // Permissionless Functions
+
+    /**
+     * @notice Make the SmartWallet redistribute yield from this token
+     * @param from Address of the SmartWallet to request the yield from
+     */
+    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
+        // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
+        ISmartWallet(payable(from)).claimAndRedistributeYield(this);
     }
 
     // Getter View Functions

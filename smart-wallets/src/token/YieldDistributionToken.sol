@@ -179,7 +179,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Virtual Functions
 
     /// @notice Request to receive yield from the given SmartWallet
-    function requestYield(address from) external virtual;
+    function requestYield(address from) external virtual override(IYieldDistributionToken);
 
     // Override Functions
 
