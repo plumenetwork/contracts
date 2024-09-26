@@ -45,6 +45,15 @@ contract AggregateToken is
         string tokenURI;
         /// @dev Version of the AggregateToken
         uint256 version;
+        // TODO: remove after merging with YieldDistributionToken
+        /// @dev Total amount of yield that has ever been accrued by all users
+        uint256 totalYieldAccrued;
+        /// @dev Total amount of yield that has ever been withdrawn by all users
+        uint256 totalYieldWithdrawn;
+        /// @dev Total amount of yield that has ever been accrued by each user
+        mapping(address user => uint256 currencyTokenAmount) yieldAccrued;
+        /// @dev Total amount of yield that has ever been withdrawn by each user
+        mapping(address user => uint256 currencyTokenAmount) yieldWithdrawn;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AggregateToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -235,10 +244,10 @@ contract AggregateToken is
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
 
     /// @notice Number of decimals of the AggregateToken
-    function decimals() public view override returns (uint8) {
+    function decimals() public view override(ERC20Upgradeable) returns (uint8) {
         return _getAggregateTokenStorage().decimals;
     }
 
@@ -292,14 +301,25 @@ contract AggregateToken is
     }
 
     /**
+     * @notice Claim yield for a ComponentToken into the AggregateToken
+     * @dev Anyone can call this function to claim yield for a ComponentToken
+     * @param componentToken ComponentToken for which to claim yield
+     * @return amount Amount of yield claimed
+     */
+    function claimComponentYield(IComponentToken componentToken) external returns (uint256 amount) {
+        amount += componentToken.claimYield(address(this));
+    }
+
+    /**
      * @notice Claim yield for all ComponentTokens into the AggregateToken
      * @dev Anyone can call this function to claim yield for all ComponentTokens
+     * @return amount Amount of yield claimed
      */
-    function claimComponentsYield() external returns (uint256 amount) {
+    function claimAllComponentsYield() external returns (uint256 amount) {
         IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
         uint256 length = componentTokenList.length;
         for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].claimYield(this);
+            amount += componentTokenList[i].claimYield(address(this));
         }
     }
 
@@ -309,13 +329,30 @@ contract AggregateToken is
      * @param user Address of the user for which to claim yield
      */
     function claimYield(address user) external returns (uint256 amount) {
+        // TODO: remove after merging with YieldDistributionToken
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        IComponentToken[] storage componentTokenList = $.componentTokenList;
-        uint256 length = componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].unclaimedYield(user);
+        amount = unclaimedYield(user);
+        if (!$.currencyToken.transfer(user, amount)) {
+            revert CurrencyTokenInsufficientBalance($.currencyToken, amount);
         }
-        $.currencyToken.transfer(user, amount);
+        $.yieldWithdrawn[user] += amount;
+        $.totalYieldWithdrawn += amount;
+    }
+
+    /**
+     * @notice Accrue yield for the given user
+     * @dev Anyone can call this function to accrue yield for any user
+     * @param user Address of the user for which to accrue yield
+     * @param amount Amount of yield to accrue
+     */
+    function accrueYield(address user, uint256 amount) external {
+        // TODO: remove after merging with YieldDistributionToken
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        if (!$.currencyToken.transfer(user, amount)) {
+            revert CurrencyTokenInsufficientBalance($.currencyToken, amount);
+        }
+        $.yieldAccrued[user] += amount;
+        $.totalYieldAccrued += amount;
     }
 
     // Admin Functions
@@ -472,27 +509,21 @@ contract AggregateToken is
         return _getAggregateTokenStorage().componentTokenMap[componentToken];
     }
 
+    // TODO: remove after merging with YieldDistributionToken
     /// @notice Total yield distributed to all AggregateTokens for all users
-    function totalYield() public view returns (uint256 amount) {
-        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
-        uint256 length = componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].totalYield();
-        }
+    function totalYield() external view returns (uint256 amount) {
+        return _getAggregateTokenStorage().totalYieldAccrued;
     }
 
     /// @notice Claimed yield across all AggregateTokens for all users
-    function claimedYield() public view returns (uint256 amount) {
-        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
-        uint256 length = componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].claimedYield();
-        }
+    function claimedYield() external view returns (uint256 amount) {
+        return _getAggregateTokenStorage().totalYieldWithdrawn;
     }
 
     /// @notice Unclaimed yield across all AggregateTokens for all users
     function unclaimedYield() external view returns (uint256 amount) {
-        return totalYield() - claimedYield();
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        return $.totalYieldAccrued - $.totalYieldWithdrawn;
     }
 
     /**
@@ -500,12 +531,8 @@ contract AggregateToken is
      * @param user Address of the user for which to get the total yield
      * @return amount Total yield distributed to the user
      */
-    function totalYield(address user) public view returns (uint256 amount) {
-        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
-        uint256 length = componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].totalYield(user);
-        }
+    function totalYield(address user) external view returns (uint256 amount) {
+        return _getAggregateTokenStorage().yieldAccrued[user];
     }
 
     /**
@@ -513,12 +540,8 @@ contract AggregateToken is
      * @param user Address of the user for which to get the claimed yield
      * @return amount Amount of yield that the user has claimed
      */
-    function claimedYield(address user) public view returns (uint256 amount) {
-        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
-        uint256 length = componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].claimedYield(user);
-        }
+    function claimedYield(address user) external view returns (uint256 amount) {
+        return _getAggregateTokenStorage().yieldWithdrawn[user];
     }
 
     /**
@@ -527,7 +550,8 @@ contract AggregateToken is
      * @return amount Amount of yield that the user has not yet claimed
      */
     function unclaimedYield(address user) public view returns (uint256 amount) {
-        return totalYield(user) - claimedYield(user);
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        return $.yieldAccrued[user] - $.yieldWithdrawn[user];
     }
 
 }

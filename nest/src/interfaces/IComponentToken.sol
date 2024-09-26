@@ -1,27 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { IComponentToken } from "./IComponentToken.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-interface IYieldDistributionToken is IERC20 {
-    /// @notice CurrencyToken in which yield is denominated and distributed
-    function getCurrencyToken() external returns (IERC20 currencyToken);
-
-    /**
-     * @notice Claim yield for the given user
-     * @dev Anyone can call this function to claim yield for any user
-     * @param user Address of the user for which to claim yield
-     * @return currencyToken CurrencyToken in which yield is denominated and distributed
-     * @return currencyTokenAmount Amount of yield claimed by the user
-     */
-    function claimYield(address user) external returns (IERC20 currencyToken, uint256 currencyTokenAmount);
-
-    function accrueYield(address user) external;
-    function requestYield(address from) external;
-}
-
-interface IComponentToken is IYieldDistributionToken {
+interface IComponentToken is IERC20 {
 
     /**
      * @notice Buy FakeComponentToken using CurrencyToken
@@ -40,8 +22,19 @@ interface IComponentToken is IYieldDistributionToken {
      */
     function sell(IERC20 currencyToken, uint256 currencyTokenAmount) external returns (uint256 componentTokenAmount);
 
+    /**
+     * @notice Claim yield for the given user
+     * @dev Anyone can call this function to claim yield for any user
+     * @param user Address of the user for which to claim yield
+     * @return currencyTokenAmount Amount of yield claimed by the user
+     */
+    function claimYield(address user) external returns (uint256 currencyTokenAmount);
+
     /// @notice Version of the FakeComponentToken
     function getVersion() external view returns (uint256 version);
+
+    /// @notice CurrencyToken in which yield is denominated and distributed
+    function getCurrencyToken() external returns (IERC20 currencyToken);
 
     /// @notice Total yield distributed to all FakeComponentTokens for all users
     function totalYield() external view returns (uint256 currencyTokenAmount);

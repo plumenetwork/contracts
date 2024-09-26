@@ -24,10 +24,18 @@ interface IAggregateToken is IComponentToken {
     function sellComponentToken(IComponentToken componentToken, uint256 currencyTokenAmount) external;
 
     /**
+     * @notice Claim yield for a ComponentToken into the AggregateToken
+     * @dev Anyone can call this function to claim yield for a ComponentToken
+     * @param componentToken ComponentToken for which to claim yield
+     * @return amount Amount of yield claimed
+     */
+    function claimComponentYield(IComponentToken componentToken) external returns (uint256 amount);
+
+    /**
      * @notice Claim yield for all ComponentTokens into the AggregateToken
      * @dev Anyone can call this function to claim yield for all ComponentTokens
+     * @return amount Amount of yield claimed
      */
-    function claimComponentsYield() external returns (uint256 amount);
-    function requestYield(address from) external;
+    function claimAllComponentsYield() external returns (uint256 amount);
 
 }
