@@ -156,10 +156,10 @@ contract FakeComponentToken is
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
 
     /// @notice Number of decimals of the FakeComponentToken
-    function decimals() public view override returns (uint8) {
+    function decimals() public view override(ERC20Upgradeable) returns (uint8) {
         return _getFakeComponentTokenStorage().decimals;
     }
 
@@ -212,7 +212,9 @@ contract FakeComponentToken is
     function claimYield(address user) external returns (uint256 amount) {
         FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
         amount = unclaimedYield(user);
-        $.currencyToken.transfer(user, amount);
+        if (!$.currencyToken.transfer(user, amount)) {
+            revert CurrencyTokenInsufficientBalance($.currencyToken, amount);
+        }
         $.yieldWithdrawn[user] += amount;
         $.totalYieldWithdrawn += amount;
     }
@@ -221,6 +223,7 @@ contract FakeComponentToken is
      * @notice Accrue yield for the given user
      * @dev Anyone can call this function to accrue yield for any user
      * @param user Address of the user for which to accrue yield
+     * @param amount Amount of yield to accrue
      */
     function accrueYield(address user, uint256 amount) external {
         FakeComponentTokenStorage storage $ = _getFakeComponentTokenStorage();
