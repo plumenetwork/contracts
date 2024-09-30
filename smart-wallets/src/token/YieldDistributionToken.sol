@@ -15,8 +15,6 @@ import { Deposit, UserState } from "./Types.sol";
 // - move errors, events to interface
 // - move storage related structs to YieldDistributionTokenStorage.sol library
 
-import "forge-std/console.sol";
-
 /**
  * @title YieldDistributionToken
  * @author Eugene Y. Q. Shen
@@ -160,11 +158,10 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         if (to != address(0)) {
             YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
 
-            //&& balanceOf(to) == 0
-            // TODO
-            // ATTENTION: WEIRD BEHAVIOUR
-            // REMOVED BALANCEOF CHECK AND RUN TESTS AT MARKED POINTS
-            if ($.userStates[to].lastDepositIndex == 0) {
+            // conditions checks that this is the first time a user receives tokens
+            // if so, the lastDepositIndex is set to index of the last deposit in deposits array
+            // to avoid needlessly accruing yield for previous deposits which the user has no claim to
+            if ($.userStates[to].lastDepositIndex == 0 && balanceOf(to) == 0) {
                 $.userStates[to].lastDepositIndex = $.deposits.length - 1;
             }
 
@@ -315,47 +312,59 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         address user
     ) public {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-        console.log("user at start: ", user);
         UserState memory userState = $.userStates[user];
 
         uint256 currentDepositIndex = $.deposits.length - 1;
         uint256 lastDepositIndex = userState.lastDepositIndex;
+        uint256 amountSecondsAccrued;
 
         if (lastDepositIndex != currentDepositIndex) {
             Deposit memory deposit;
-            // TODO: add comments that invariants of deductions stand here for lastYieldIndex
-            // all of yield that user has accrued until last yield index has laready been given out
+
+            // all the deposits up to and including the lastDepositIndex of the user have had their yield accrued, if any
+            // the loop iterates through all the remaining deposits and accrues yield from them, if any should be accrued
+            // all variables in `userState` are updated until `lastDepositIndex`
             while (lastDepositIndex != currentDepositIndex) {
                 ++lastDepositIndex;
 
                 deposit = $.deposits[lastDepositIndex];
 
-                userState.amountSeconds += balanceOf(user) * (deposit.timestamp - userState.lastUpdate);
+                amountSecondsAccrued = balanceOf(user) * (deposit.timestamp - userState.lastUpdate);
 
-                // add explanative comments around amoutnSecondsDeduction + reward calculation methodology
+                userState.amountSeconds += amountSecondsAccrued;
+
                 if (userState.amountSeconds > userState.amountSecondsDeduction) {
                     userState.yieldAccrued += deposit.scaledCurrencyTokenPerAmountSecond.mulDiv(
                         userState.amountSeconds - userState.amountSecondsDeduction, SCALE
                     );
+
+                    // the `amountSecondsDeduction` is updated to the value of `amountSeconds`
+                    // of the last yield accrual - therefore for the current yield accrual, it is updated
+                    // to the current value of `amountSeconds`, along with `lastUpdate` and `lastDepositIndex`
+                    // to avoid double counting yield
+                    userState.amountSecondsDeduction = userState.amountSeconds;
+                    userState.lastUpdate = deposit.timestamp;
+                    userState.lastDepositIndex = lastDepositIndex;
                 }
 
-                // TODO: add comments that invariants of deductions stand here for lastYieldIndex
-                // all yield until amountSecondsDeduction has already been given out
-                userState.amountSecondsDeduction = userState.amountSeconds;
-                userState.lastUpdate = deposit.timestamp;
-                userState.lastDepositIndex = lastDepositIndex;
+
+                // if amountSecondsAccrued is 0, then the either the balance of the user has been 0 for the entire deposit
+                // of the deposit timestamp is equal to the users last update, meaning yield has already been accrued
+                // the check ensures that the process terminates early if there are no more deposits from which to accrue yield
+                if (amountSecondsAccrued == 0) {
+                    userState.lastDepositIndex = currentDepositIndex;
+                    break;
+                }
 
                 if (gasleft() < 100_000) {
                     break;
                 }
             }
-            // TODO: add comments that invariants of deductions stand here for lastYieldIndex + 1
+
+            // at this stage, the `userState` along with any accrued rewards, has been updated until the current deposit index
             $.userStates[user] = userState;
 
-            console.log("user at end: ", user);
-            console.log("userState.yieldAccrued: ", userState.yieldAccrued);
-            console.log("userState.yieldAccrued storage: ", $.userStates[user].yieldAccrued);
-
+            // TODO: do we emit the portion of yield accrued from this action, or the entirey of the yield accrued?
             emit YieldAccrued(user, userState.yieldAccrued);
         }
 

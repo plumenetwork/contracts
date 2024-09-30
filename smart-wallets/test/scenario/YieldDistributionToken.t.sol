@@ -8,8 +8,6 @@ import { Test } from "forge-std/Test.sol";
 import { Deposit, UserState } from "../../src/token/Types.sol";
 import { YieldDistributionTokenHarness } from "../harness/YieldDistributionTokenHarness.sol";
 
-import "forge-std/console.sol";
-
 contract YieldDistributionTokenScenarioTest is Test {
 
     YieldDistributionTokenHarness token;
@@ -79,8 +77,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         assertEq(charlieState.yieldWithdrawn, 0);
     }
 
-    /// @dev Simulates a real world scenario
-    /// 1. Alice
+    /// @dev Simulates a simple real world scenario
     function test_scenario() public {
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
@@ -103,11 +100,9 @@ contract YieldDistributionTokenScenarioTest is Test {
         uint256 expectedBobYieldAccrued = expectedBobAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
         uint256 expectedCharlieYieldAccrued = expectedCharlieAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
 
+
         _transferFrom(alice, bob, MINT_AMOUNT);
         token.claimYield(charlie);
-
-        console.log("address(this): ", address(this));
-        console.log("msg.sender: ", msg.sender);
 
 
         assertEq(token.balanceOf(alice), 0);
@@ -120,58 +115,115 @@ contract YieldDistributionTokenScenarioTest is Test {
         assertEq(token.getUserState(bob).yieldAccrued, expectedBobYieldAccrued);
         assertEq(token.getUserState(charlie).yieldAccrued, expectedCharlieYieldAccrued);
 
-        // _timeskip();
+        _timeskip();
 
-        // token.exposed_mint(alice, MINT_AMOUNT);
+        token.exposed_mint(alice, MINT_AMOUNT);
 
-        // _timeskip();
+        _timeskip();
 
-        // token.exposed_burn(charlie, MINT_AMOUNT);
-        // _timeskip();
+        token.exposed_burn(charlie, MINT_AMOUNT);
+        _timeskip();
 
-        // _transferFrom(bob, alice, MINT_AMOUNT);
-        // _timeskip();
+        assertEq(token.balanceOf(charlie), 0);
 
-        // expectedAliceAmountSeconds = MINT_AMOUNT * skipDuration * 2 + (2 * MINT_AMOUNT) * skipDuration;
-        // expectedBobAmountSeconds = (2 * MINT_AMOUNT) * skipDuration * 3 + MINT_AMOUNT * skipDuration;
-        // expectedCharlieAmountSeconds = MINT_AMOUNT * skipDuration * 2;
-        // totalExpectedAmountSeconds =
-        //     expectedAliceAmountSeconds + expectedBobAmountSeconds + expectedCharlieAmountSeconds;
+        _transferFrom(bob, alice, MINT_AMOUNT);
+        _timeskip();
 
-        // _depositYield(YIELD_AMOUNT);
+        expectedAliceAmountSeconds = MINT_AMOUNT * skipDuration * 2 + (2 * MINT_AMOUNT) * skipDuration;
+        expectedBobAmountSeconds = (2 * MINT_AMOUNT) * skipDuration * 3 + MINT_AMOUNT * skipDuration;
+        expectedCharlieAmountSeconds = MINT_AMOUNT * skipDuration * 2;
+        totalExpectedAmountSeconds =
+            expectedAliceAmountSeconds + expectedBobAmountSeconds + expectedCharlieAmountSeconds;
 
-        // expectedAliceYieldAccrued += expectedAliceAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
-        // expectedBobYieldAccrued += expectedBobAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
-        // expectedCharlieYieldAccrued += expectedCharlieAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+        _depositYield(YIELD_AMOUNT);
 
-        // uint256 oldAliceDeduction = token.getUserState(alice).amountSecondsDeduction;
-        // uint256 oldBobDeduction = token.getUserState(bob).amountSecondsDeduction;
-        // uint256 oldCharlieDeduction = token.getUserState(charlie).amountSecondsDeduction;
+        expectedAliceYieldAccrued += expectedAliceAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+        expectedBobYieldAccrued += expectedBobAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+        expectedCharlieYieldAccrued += expectedCharlieAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
 
-        // token.accrueYield(alice);
-        // token.accrueYield(bob);
-        // token.accrueYield(charlie);
+        token.accrueYield(alice);
+        token.accrueYield(bob);
+        token.accrueYield(charlie);
 
-        // // rounding error; perhaps can fix by rounding direction?
-        // assertEq(token.getUserState(alice).yieldAccrued, expectedAliceYieldAccrued - 1);
-        // assertEq(token.getUserState(bob).yieldAccrued, expectedBobYieldAccrued);
-        // assertEq(token.getUserState(charlie).yieldAccrued, expectedCharlieYieldAccrued);
+        // rounding error; perhaps can fix by rounding direction?
+        assertEq(token.getUserState(alice).yieldAccrued, expectedAliceYieldAccrued - 1);
+        assertEq(token.getUserState(bob).yieldAccrued, expectedBobYieldAccrued);
+        assertEq(token.getUserState(charlie).yieldAccrued, expectedCharlieYieldAccrued);
 
-        // uint256 oldAliceBalance = currencyTokenMock.balanceOf(alice);
-        // uint256 oldBobBalance = currencyTokenMock.balanceOf(bob);
-        // uint256 oldCharlieBalance = currencyTokenMock.balanceOf(charlie);
-        // uint256 oldWithdrawnYieldAlice = token.getUserState(alice).yieldWithdrawn;
-        // uint256 oldWithdrawnYieldBob = token.getUserState(bob).yieldWithdrawn;
-        // uint256 oldWithdrawnYieldCharlie = token.getUserState(charlie).yieldWithdrawn;
+        uint256 oldAliceBalance = currencyTokenMock.balanceOf(alice);
+        uint256 oldBobBalance = currencyTokenMock.balanceOf(bob);
+        uint256 oldCharlieBalance = currencyTokenMock.balanceOf(charlie);
+        uint256 oldWithdrawnYieldAlice = token.getUserState(alice).yieldWithdrawn;
+        uint256 oldWithdrawnYieldBob = token.getUserState(bob).yieldWithdrawn;
+        uint256 oldWithdrawnYieldCharlie = token.getUserState(charlie).yieldWithdrawn;
 
-        // token.claimYield(alice);
-        // token.claimYield(bob);
-        // token.claimYield(charlie);
+        token.claimYield(alice);
+        token.claimYield(bob);
+        token.claimYield(charlie);
 
-        // // rounding error; perhaps can fix by rounding direction?
-        // assertEq(currencyTokenMock.balanceOf(alice) - oldAliceBalance, expectedAliceYieldAccrued - oldWithdrawnYieldAlice - 1);
-        // assertEq(currencyTokenMock.balanceOf(bob) - oldBobBalance, expectedBobYieldAccrued - oldWithdrawnYieldBob);
-        // assertEq(currencyTokenMock.balanceOf(charlie) - oldCharlieBalance, expectedCharlieYieldAccrued - oldWithdrawnYieldCharlie);
+        // rounding error; perhaps can fix by rounding direction?
+        assertEq(currencyTokenMock.balanceOf(alice) - oldAliceBalance, expectedAliceYieldAccrued - oldWithdrawnYieldAlice - 1);
+        assertEq(currencyTokenMock.balanceOf(bob) - oldBobBalance, expectedBobYieldAccrued - oldWithdrawnYieldBob);
+        assertEq(currencyTokenMock.balanceOf(charlie) - oldCharlieBalance, expectedCharlieYieldAccrued - oldWithdrawnYieldCharlie);
+    }
+    
+    /// @dev Simulates a scenario where a user returns, or claims, some deposits after accruing `amountSeconds`, ensuring that
+    /// yield is correctly distributed
+    function test_scenario_userBurnsTokensAfterAccruingSomeYield_andWaitsForAtLeastTwoDeposits_priorToClaimingYield() public {
+        token.exposed_mint(alice, MINT_AMOUNT);
+        _timeskip();
+
+        token.exposed_mint(bob, MINT_AMOUNT);
+        _timeskip();
+
+        token.exposed_mint(charlie, MINT_AMOUNT);
+        _timeskip();
+
+        token.exposed_burn(alice, MINT_AMOUNT);
+        _timeskip();
+        
+        uint256 expectedAliceAmountSeconds = MINT_AMOUNT * skipDuration * 3;
+        uint256 expectedBobAmountSeconds = MINT_AMOUNT * skipDuration * 3;
+        uint256 expectedCharlieAmountSeconds = MINT_AMOUNT * skipDuration * 2;
+        uint256 totalExpectedAmountSeconds = expectedAliceAmountSeconds + expectedBobAmountSeconds + expectedCharlieAmountSeconds;
+
+        _depositYield(YIELD_AMOUNT);
+
+        uint256 expectedAliceYieldAccrued = expectedAliceAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+        uint256 expectedBobYieldAccrued = expectedBobAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+        uint256 expectedCharlieYieldAccrued = expectedCharlieAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+
+
+        _timeskip();
+
+        expectedAliceAmountSeconds = 0;
+        expectedBobAmountSeconds = MINT_AMOUNT * skipDuration;
+        expectedCharlieAmountSeconds = MINT_AMOUNT * skipDuration;
+        totalExpectedAmountSeconds = expectedAliceAmountSeconds + expectedBobAmountSeconds + expectedCharlieAmountSeconds;
+
+        _depositYield(YIELD_AMOUNT);
+
+        expectedAliceYieldAccrued += expectedAliceAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+        expectedBobYieldAccrued += expectedBobAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+        expectedCharlieYieldAccrued += expectedCharlieAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+
+        uint256 oldAliceBalance = currencyTokenMock.balanceOf(alice);
+        uint256 oldBobBalance = currencyTokenMock.balanceOf(bob);
+        uint256 oldCharlieBalance = currencyTokenMock.balanceOf(charlie);
+        uint256 oldWithdrawnYieldAlice = token.getUserState(alice).yieldWithdrawn;
+        uint256 oldWithdrawnYieldBob = token.getUserState(bob).yieldWithdrawn;
+        uint256 oldWithdrawnYieldCharlie = token.getUserState(charlie).yieldWithdrawn;
+
+        token.claimYield(alice);
+        token.claimYield(bob);
+        token.claimYield(charlie);
+
+        // TODO: no rounding error here, why?
+        assertEq(currencyTokenMock.balanceOf(alice) - oldAliceBalance, expectedAliceYieldAccrued - oldWithdrawnYieldAlice);
+        assertEq(currencyTokenMock.balanceOf(bob) - oldBobBalance, expectedBobYieldAccrued - oldWithdrawnYieldBob);
+        assertEq(currencyTokenMock.balanceOf(charlie) - oldCharlieBalance, expectedCharlieYieldAccrued - oldWithdrawnYieldCharlie);
+        
+        
     }
 
     function _timeskip() internal {
@@ -189,8 +241,6 @@ contract YieldDistributionTokenScenarioTest is Test {
     }
 
     function _transferFrom(address from, address to, uint256 amount) internal {
-        console.log("transferring from: ", from);
-        console.log("transferring to: ", to);
         vm.startPrank(from);
         token.transfer(to, amount);
         vm.stopPrank();
