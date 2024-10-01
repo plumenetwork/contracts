@@ -11,7 +11,7 @@ interface IClaimableYieldToken is IERC20 {
      * @param user Address of the user to claim yield for
      * @return amount Amount of CurrencyToken claimed as yield
      */
-    function claimYield(address user) public returns (uint256 amount);
+    function claimYield(address user) external returns (uint256 amount);
 
     /// @notice CurrencyToken in which both the ClaimableYieldToken and yield are denominated
     function getCurrencyToken() external view returns (IERC20 currencyToken);

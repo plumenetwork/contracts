@@ -216,7 +216,7 @@ abstract contract ComponentToken is
      * @param currencyTokenAmount Amount of CurrencyToken to send
      * @return requestId Unique identifier for the buy request
      */
-    function requestBuy(uint256 currencyTokenAmount) external returns (uint256 requestId) {
+    function requestBuy(uint256 currencyTokenAmount) public virtual returns (uint256 requestId) {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         IERC20 currencyToken = $.currencyToken;
         requestId = $.requests.length;
@@ -234,7 +234,7 @@ abstract contract ComponentToken is
      * @param componentTokenAmount Amount of ComponentToken to send
      * @return requestId Unique identifier for the sell request
      */
-    function requestSell(uint256 componentTokenAmount) external returns (uint256 requestId) {
+    function requestSell(uint256 componentTokenAmount) public virtual returns (uint256 requestId) {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         IERC20 currencyToken = $.currencyToken;
         requestId = $.requests.length;
@@ -252,7 +252,7 @@ abstract contract ComponentToken is
      * @param currencyTokenAmount Amount of CurrencyToken to send
      * @param componentTokenAmount Amount of ComponentToken to receive
      */
-    function executeBuy(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) external {
+    function executeBuy(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public virtual {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if (requestId >= $.requests.length) {
             revert InvalidRequest(requestId, 0);
@@ -286,7 +286,7 @@ abstract contract ComponentToken is
      * @param currencyTokenAmount Amount of CurrencyToken to receive
      * @param componentTokenAmount Amount of ComponentToken to send
      */
-     function executeSell(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) external {
+     function executeSell(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public virtual {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if (requestId >= $.requests.length) {
             revert InvalidRequest(requestId, 0);

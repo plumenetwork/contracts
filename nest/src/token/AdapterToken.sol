@@ -7,7 +7,7 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import { IComponentToken } from "./interfaces/IComponentToken.sol";
+import { ComponentToken } from "../ComponentToken.sol";
 
 /// @notice Example of an interface for the Nest Staking contract
 interface IAggregateToken {
@@ -91,7 +91,7 @@ contract AdapterToken is ComponentToken {
         uint8 decimals_,
         IAggregateToken nestStakingContract,
         IExternalContract externalContract
-    ) public override(ComponentToken) initializer {
+    ) public initializer {
         super.initialize(owner, name, symbol, currencyToken, decimals_);
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         $.nestStakingContract = nestStakingContract;
@@ -105,13 +105,13 @@ contract AdapterToken is ComponentToken {
      * @param currencyTokenAmount Amount of CurrencyToken to send
      * @return requestId Unique identifier for the buy request
      */
-    function requestBuy(uint256 currencyTokenAmount) external override(ComponentToken) returns (uint256 requestId) {
+    function requestBuy(uint256 currencyTokenAmount) public override(ComponentToken) returns (uint256 requestId) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
-        if (msg.sender != $.nestStakingContract) {
-            revert Unauthorized(msg.sender, $.nestStakingContract);
+        if (msg.sender != address($.nestStakingContract)) {
+            revert Unauthorized(msg.sender, address($.nestStakingContract));
         }
         requestId = super.requestBuy(currencyTokenAmount);
-        externalContract.requestBuy(currencyTokenAmount, requestId);
+        $.externalContract.requestBuy(currencyTokenAmount, requestId);
     }
 
     /**
@@ -119,13 +119,13 @@ contract AdapterToken is ComponentToken {
      * @param componentTokenAmount Amount of ComponentToken to send
      * @return requestId Unique identifier for the sell request
      */
-    function requestSell(uint256 componentTokenAmount) external override(ComponentToken) returns (uint256 requestId) {
+    function requestSell(uint256 componentTokenAmount) public override(ComponentToken) returns (uint256 requestId) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
-        if (msg.sender != $.nestStakingContract) {
-            revert Unauthorized(msg.sender, $.nestStakingContract);
+        if (msg.sender != address($.nestStakingContract)) {
+            revert Unauthorized(msg.sender, address($.nestStakingContract));
         }
         requestId = super.requestSell(componentTokenAmount);
-        externalContract.requestSell(componentTokenAmount, requestId);
+        $.externalContract.requestSell(componentTokenAmount, requestId);
     }
 
     /**
@@ -135,16 +135,16 @@ contract AdapterToken is ComponentToken {
      * @param currencyTokenAmount Amount of CurrencyToken to send
      * @param componentTokenAmount Amount of ComponentToken to receive
      */
-    function executeBuy(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) external override(ComponentToken) {
-        if (requestor != $.nestStakingContract) {
-            revert Unauthorized(requestor, $.nestStakingContract);
-        }
+    function executeBuy(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public override(ComponentToken) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
-        if (msg.sender != $.externalContract) {
-            revert Unauthorized(msg.sender, $.externalContract);
+        if (msg.sender != address($.nestStakingContract)) {
+            revert Unauthorized(requestor, address($.nestStakingContract));
         }
-        super.executeBuy($.nestStakingContract, requestId, currencyTokenAmount, componentTokenAmount);
-        $.nestStakingContract.notifyBuy(_getComponentTokenStorage().currencyToken, address(this), currencyTokenAmount, componentTokenAmount);
+        if (msg.sender != address($.externalContract)) {
+            revert Unauthorized(msg.sender, address($.externalContract));
+        }
+        super.executeBuy(address($.nestStakingContract), requestId, currencyTokenAmount, componentTokenAmount);
+        $.nestStakingContract.notifyBuy(_getComponentTokenStorage().currencyToken, this, currencyTokenAmount, componentTokenAmount);
     }
 
     /**
@@ -154,24 +154,24 @@ contract AdapterToken is ComponentToken {
      * @param currencyTokenAmount Amount of CurrencyToken to receive
      * @param componentTokenAmount Amount of ComponentToken to send
      */
-    function executeSell(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) external override(ComponentToken) {
-        if (requestor != $.nestStakingContract) {
-            revert Unauthorized(requestor, $.nestStakingContract);
-        }
+    function executeSell(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public override(ComponentToken) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
-        if (msg.sender != $.externalContract) {
-            revert Unauthorized(msg.sender, $.externalContract);
+        if (requestor != address($.nestStakingContract)) {
+            revert Unauthorized(requestor, address($.nestStakingContract));
         }
-        super.executeSell($.nestStakingContract, requestId, currencyTokenAmount, componentTokenAmount);
-        $.nestStakingContract.notifySell(_getComponentTokenStorage().currencyToken, address(this), currencyTokenAmount, componentTokenAmount);
+        if (msg.sender != address($.externalContract)) {
+            revert Unauthorized(msg.sender, address($.externalContract));
+        }
+        super.executeSell(address($.nestStakingContract), requestId, currencyTokenAmount, componentTokenAmount);
+        $.nestStakingContract.notifySell(_getComponentTokenStorage().currencyToken, this, currencyTokenAmount, componentTokenAmount);
     }
 
     // Admin Functions
 
     function distributeYield(address user, uint256 amount) external {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
-        if (msg.sender != $.nestStakingContract) {
-            revert Unauthorized(msg.sender, $.nestStakingContract);
+        if (msg.sender != address($.nestStakingContract)) {
+            revert Unauthorized(msg.sender, address($.nestStakingContract));
         }
 
         ComponentTokenStorage storage cs = _getComponentTokenStorage();
