@@ -41,7 +41,7 @@ interface IExternalContract {
 
 /**
  * @title pUSD
- * @author Eugene Y. Q. Shen
+ * @author Chunda McCain, Jun Kim, Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that interfaces with external assets.
  */
 contract pUSD is ComponentToken {

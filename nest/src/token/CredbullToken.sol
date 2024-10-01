@@ -41,7 +41,7 @@ interface IExternalContract {
 
 /**
  * @title CredbullToken
- * @author Eugene Y. Q. Shen
+ * @author Ian Lucas, Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that interfaces with external assets.
  */
 contract CredbullToken is ComponentToken {

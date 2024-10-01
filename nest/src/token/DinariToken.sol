@@ -40,7 +40,7 @@ interface IExternalContract {
 
 /**
  * @title DinariToken
- * @author Eugene Y. Q. Shen
+ * @author Jake Timothy, Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that interfaces with external assets.
  */
 contract DinariToken is ComponentToken {
