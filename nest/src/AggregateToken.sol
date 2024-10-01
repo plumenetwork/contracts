@@ -344,10 +344,10 @@ contract AggregateToken is
 
         IERC20 currencyToken = $.currencyToken;
         currencyToken.approve(address(componentToken), currencyTokenAmount);
-        uint256 componentTokenAmount = componentToken.buy(currencyToken, currencyTokenAmount);
+        componentToken.executeBuy(address(this), 0, currencyTokenAmount, 0);
         componentToken.approve(address(componentToken), 0);
 
-        emit ComponentTokenBought(msg.sender, $.currencyToken, currencyTokenAmount, componentTokenAmount);
+        emit ComponentTokenBought(msg.sender, $.currencyToken, currencyTokenAmount, 0);
     }
 
     /**
@@ -363,9 +363,9 @@ contract AggregateToken is
     ) public onlyRole(ADMIN_ROLE) {
         IERC20 currencyToken = _getAggregateTokenStorage().currencyToken;
 
-        uint256 componentTokenAmount = componentToken.sell(currencyToken, currencyTokenAmount);
+        componentToken.executeSell(address(this), 0, currencyTokenAmount, 0);
 
-        emit ComponentTokenSold(msg.sender, currencyToken, currencyTokenAmount, componentTokenAmount);
+        emit ComponentTokenSold(msg.sender, currencyToken, currencyTokenAmount, 0);
     }
 
     // Admin Setter Functions

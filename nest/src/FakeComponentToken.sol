@@ -165,17 +165,24 @@ contract FakeComponentToken is
 
     // User Functions
 
+    function requestBuy(uint256 currencyTokenAmount) external returns (uint256 requestId) { }
+    function requestSell(uint256 currencyTokenAmount) external returns (uint256 requestId) { }
+
     /**
-     * @notice Buy FakeComponentToken using CurrencyToken
-     * @dev The user must approve the contract to spend the CurrencyToken
-     * @param currencyToken CurrencyToken used to buy the FakeComponentToken
-     * @param amount Amount of CurrencyToken to pay to receive the same amount of FakeComponentToken
-     * @return componentTokenAmount Amount of FakeComponentToken received
+     * @notice Executes a request to buy ComponentToken with CurrencyToken
+     * @param requestor Address of the user or smart contract that requested the buy
+     * @param requestId Unique identifier for the request
+     * @param currencyTokenAmount Amount of CurrencyToken to send
+     * @param componentTokenAmount Amount of ComponentToken to receive
      */
-    function buy(IERC20 currencyToken, uint256 amount) public returns (uint256 componentTokenAmount) {
-        if (currencyToken != _getFakeComponentTokenStorage().currencyToken) {
-            revert InvalidCurrencyToken(currencyToken, _getFakeComponentTokenStorage().currencyToken);
-        }
+    function executeBuy(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) public {
+        IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
+        uint256 amount = currencyTokenAmount;
         if (!currencyToken.transferFrom(msg.sender, address(this), amount)) {
             revert UserCurrencyTokenInsufficientBalance(currencyToken, msg.sender, amount);
         }
@@ -186,15 +193,20 @@ contract FakeComponentToken is
     }
 
     /**
-     * @notice Sell FakeComponentToken to receive CurrencyToken
-     * @param currencyToken CurrencyToken received in exchange for the FakeComponentToken
-     * @param amount Amount of CurrencyToken to receive in exchange for the FakeComponentToken
-     * @return componentTokenAmount Amount of FakeComponentToken sold
+     * @notice Executes a request to sell ComponentToken for CurrencyToken
+     * @param requestor Address of the user or smart contract that requested the sell
+     * @param requestId Unique identifier for the request
+     * @param currencyTokenAmount Amount of CurrencyToken to receive
+     * @param componentTokenAmount Amount of ComponentToken to send
      */
-    function sell(IERC20 currencyToken, uint256 amount) public returns (uint256 componentTokenAmount) {
-        if (currencyToken != _getFakeComponentTokenStorage().currencyToken) {
-            revert InvalidCurrencyToken(currencyToken, _getFakeComponentTokenStorage().currencyToken);
-        }
+    function executeSell(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) public {
+        IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
+        uint256 amount = currencyTokenAmount;
         if (!currencyToken.transfer(msg.sender, amount)) {
             revert CurrencyTokenInsufficientBalance(currencyToken, amount);
         }
