@@ -84,9 +84,7 @@ abstract contract ComponentToken is
      * @param currencyToken CurrencyToken to be used to buy the ComponentToken
      * @param currencyTokenAmount Amount of CurrencyToken offered to be paid
      */
-    event BuyRequested(
-        address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount
-    );
+    event BuyRequested(address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount);
 
     /**
      * @notice Emitted when a user requests to sell ComponentToken to receive CurrencyToken
@@ -94,9 +92,7 @@ abstract contract ComponentToken is
      * @param currencyToken CurrencyToken to be received in exchange for the ComponentToken
      * @param componentTokenAmount Amount of ComponentToken offered to be sold
      */
-    event SellRequested(
-        address indexed user, IERC20 indexed currencyToken, uint256 componentTokenAmount
-    );
+    event SellRequested(address indexed user, IERC20 indexed currencyToken, uint256 componentTokenAmount);
 
     /**
      * @notice Emitted when a user buys ComponentToken using CurrencyToken
@@ -252,7 +248,12 @@ abstract contract ComponentToken is
      * @param currencyTokenAmount Amount of CurrencyToken to send
      * @param componentTokenAmount Amount of ComponentToken to receive
      */
-    function executeBuy(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public virtual {
+    function executeBuy(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) public virtual {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if (requestId >= $.requests.length) {
             revert InvalidRequest(requestId, 0);
@@ -286,7 +287,12 @@ abstract contract ComponentToken is
      * @param currencyTokenAmount Amount of CurrencyToken to receive
      * @param componentTokenAmount Amount of ComponentToken to send
      */
-     function executeSell(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public virtual {
+    function executeSell(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) public virtual {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if (requestId >= $.requests.length) {
             revert InvalidRequest(requestId, 0);
@@ -313,7 +319,7 @@ abstract contract ComponentToken is
         request.isExecuted = true;
 
         emit SellExecuted(requestor, currencyToken, currencyTokenAmount, componentTokenAmount);
-     }
+    }
 
     /**
      * @notice Claim all the remaining yield that has been accrued to a user

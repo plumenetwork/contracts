@@ -164,9 +164,9 @@ contract FakeComponentToken is
     }
 
     // User Functions
-    
-    function requestBuy(uint256 currencyTokenAmount) external returns (uint256 requestId) {}
-    function requestSell(uint256 currencyTokenAmount) external returns (uint256 requestId) {}
+
+    function requestBuy(uint256 currencyTokenAmount) external returns (uint256 requestId) { }
+    function requestSell(uint256 currencyTokenAmount) external returns (uint256 requestId) { }
 
     /**
      * @notice Executes a request to buy ComponentToken with CurrencyToken
@@ -175,7 +175,12 @@ contract FakeComponentToken is
      * @param currencyTokenAmount Amount of CurrencyToken to send
      * @param componentTokenAmount Amount of ComponentToken to receive
      */
-    function executeBuy(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public {
+    function executeBuy(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) public {
         IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
         uint256 amount = currencyTokenAmount;
         if (!currencyToken.transferFrom(msg.sender, address(this), amount)) {
@@ -194,7 +199,12 @@ contract FakeComponentToken is
      * @param currencyTokenAmount Amount of CurrencyToken to receive
      * @param componentTokenAmount Amount of ComponentToken to send
      */
-    function executeSell(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public {
+    function executeSell(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) public {
         IERC20 currencyToken = _getFakeComponentTokenStorage().currencyToken;
         uint256 amount = currencyTokenAmount;
         if (!currencyToken.transfer(msg.sender, amount)) {

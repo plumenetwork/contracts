@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IClaimableYieldToken } from "./IClaimableYieldToken.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IComponentToken is IClaimableYieldToken {
 
@@ -27,7 +27,12 @@ interface IComponentToken is IClaimableYieldToken {
      * @param currencyTokenAmount Amount of CurrencyToken to send
      * @param componentTokenAmount Amount of ComponentToken to receive
      */
-    function executeBuy(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) external;
+    function executeBuy(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) external;
 
     /**
      * @notice Executes a request to sell ComponentToken for CurrencyToken
@@ -36,7 +41,12 @@ interface IComponentToken is IClaimableYieldToken {
      * @param currencyTokenAmount Amount of CurrencyToken to receive
      * @param componentTokenAmount Amount of ComponentToken to send
      */
-    function executeSell(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) external;
+    function executeSell(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) external;
 
     /// @notice Returns the version of the ComponentToken interface
     function getVersion() external view returns (uint256 version);

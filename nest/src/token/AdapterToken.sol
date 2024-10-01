@@ -11,18 +11,32 @@ import { ComponentToken } from "../ComponentToken.sol";
 
 /// @notice Example of an interface for the Nest Staking contract
 interface IAggregateToken {
+
     /// @notice Notify the Nest Staking contract that a buy has been executed
-    function notifyBuy(IERC20 currencyToken, IERC20 componentToken, uint256 currencyTokenAmount, uint256 componentTokenAmount) external;
+    function notifyBuy(
+        IERC20 currencyToken,
+        IERC20 componentToken,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) external;
     /// @notice Notify the Nest Staking contract that a sell has been executed
-    function notifySell(IERC20 currencyToken, IERC20 componentToken, uint256 currencyTokenAmount, uint256 componentTokenAmount) external;
+    function notifySell(
+        IERC20 currencyToken,
+        IERC20 componentToken,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) external;
+
 }
 
 /// @notice Example of an interface for the external contract that manages the external asset
 interface IExternalContract {
+
     /// @notice Notify the external contract that a buy has been requested
     function requestBuy(uint256 currencyTokenAmount, uint256 requestId) external;
     /// @notice Notify the external contract that a sell has been requested
     function requestSell(uint256 componentTokenAmount, uint256 requestId) external;
+
 }
 
 /**
@@ -135,7 +149,12 @@ contract AdapterToken is ComponentToken {
      * @param currencyTokenAmount Amount of CurrencyToken to send
      * @param componentTokenAmount Amount of ComponentToken to receive
      */
-    function executeBuy(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public override(ComponentToken) {
+    function executeBuy(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) public override(ComponentToken) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         if (msg.sender != address($.nestStakingContract)) {
             revert Unauthorized(requestor, address($.nestStakingContract));
@@ -144,7 +163,9 @@ contract AdapterToken is ComponentToken {
             revert Unauthorized(msg.sender, address($.externalContract));
         }
         super.executeBuy(address($.nestStakingContract), requestId, currencyTokenAmount, componentTokenAmount);
-        $.nestStakingContract.notifyBuy(_getComponentTokenStorage().currencyToken, this, currencyTokenAmount, componentTokenAmount);
+        $.nestStakingContract.notifyBuy(
+            _getComponentTokenStorage().currencyToken, this, currencyTokenAmount, componentTokenAmount
+        );
     }
 
     /**
@@ -154,7 +175,12 @@ contract AdapterToken is ComponentToken {
      * @param currencyTokenAmount Amount of CurrencyToken to receive
      * @param componentTokenAmount Amount of ComponentToken to send
      */
-    function executeSell(address requestor, uint256 requestId, uint256 currencyTokenAmount, uint256 componentTokenAmount) public override(ComponentToken) {
+    function executeSell(
+        address requestor,
+        uint256 requestId,
+        uint256 currencyTokenAmount,
+        uint256 componentTokenAmount
+    ) public override(ComponentToken) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         if (requestor != address($.nestStakingContract)) {
             revert Unauthorized(requestor, address($.nestStakingContract));
@@ -163,7 +189,9 @@ contract AdapterToken is ComponentToken {
             revert Unauthorized(msg.sender, address($.externalContract));
         }
         super.executeSell(address($.nestStakingContract), requestId, currencyTokenAmount, componentTokenAmount);
-        $.nestStakingContract.notifySell(_getComponentTokenStorage().currencyToken, this, currencyTokenAmount, componentTokenAmount);
+        $.nestStakingContract.notifySell(
+            _getComponentTokenStorage().currencyToken, this, currencyTokenAmount, componentTokenAmount
+        );
     }
 
     // Admin Functions
