@@ -22,9 +22,9 @@ contract WalletFactoryTest is Test {
     }
 
     function test_constructor() public {
-        WalletFactory walletFactoryConstructor = new WalletFactory(owner, smartWallet);
-        assertEq(walletFactoryConstructor.owner(), owner);
-        assertEq(address(walletFactoryConstructor.smartWallet()), address(smartWallet));
+        WalletFactory newWalletFactory = new WalletFactory(owner, smartWallet);
+        assertEq(newWalletFactory.owner(), owner);
+        assertEq(address(newWalletFactory.smartWallet()), address(smartWallet));
     }
 
     function test_upgradeFail() public {
