@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title SBTCStaking
@@ -18,12 +18,12 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     /**
-    * @notice State of a user that deposits into the SBTCStaking contract
-    * @param amountSeconds Cumulative sum of the amount of SBTC staked by the user,
-    *   multiplied by the number of seconds that the user has staked this amount for
-    * @param amountStaked Total amount of SBTC staked by the user
-    * @param lastUpdate Timestamp of the most recent update to amountSeconds
-    */
+     * @notice State of a user that deposits into the SBTCStaking contract
+     * @param amountSeconds Cumulative sum of the amount of SBTC staked by the user,
+     *   multiplied by the number of seconds that the user has staked this amount for
+     * @param amountStaked Total amount of SBTC staked by the user
+     * @param lastUpdate Timestamp of the most recent update to amountSeconds
+     */
     struct UserState {
         uint256 amountSeconds;
         uint256 amountStaked;
@@ -69,11 +69,7 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param amount Amount of SBTC staked
      * @param timestamp Timestamp of the stake
      */
-    event Staked(
-        address indexed user,
-        uint256 amount,
-        uint256 timestamp
-    );
+    event Staked(address indexed user, uint256 amount, uint256 timestamp);
 
     // Initializer
 
@@ -90,10 +86,7 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param owner Address of the owner of the SBTCStaking contract
      * @param sbtc SBTC token contract address
      */
-    function initialize(
-        address owner,
-        IERC20 sbtc
-    ) public initializer {
+    function initialize(address owner, IERC20 sbtc) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
 
@@ -157,4 +150,5 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
     function getUserState(address user) external view returns (UserState memory) {
         return _getSBTCStakingStorage().userStates[user];
     }
+
 }
