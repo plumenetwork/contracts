@@ -6,25 +6,14 @@ import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC7575 } from "./IERC7575.sol";
 
 interface IERC7540 is IERC4626, IERC7575 {
+
     event DepositRequest(
-        address indexed controller,
-        address indexed owner,
-        uint256 indexed requestId,
-        address sender,
-        uint256 assets
+        address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 assets
     );
     event RedeemRequest(
-        address indexed controller,
-        address indexed owner,
-        uint256 indexed requestId,
-        address sender,
-        uint256 shares
+        address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 shares
     );
-    event OperatorSet(
-        address indexed controller,
-        address indexed operator,
-        bool approved
-    );
+    event OperatorSet(address indexed controller, address indexed operator, bool approved);
 
     function requestDeposit(uint256 assets, address controller, address owner) external returns (uint256 requestId);
     function pendingDepositRequest(uint256 requestId, address controller) external view returns (uint256 assets);

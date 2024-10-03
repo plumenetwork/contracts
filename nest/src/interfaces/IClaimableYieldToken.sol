@@ -9,12 +9,12 @@ interface IClaimableYieldToken is IERC20 {
      * @notice Claim all the remaining yield that has been accrued to a user
      * @dev Anyone can call this function to claim yield for any user
      * @param user Address of the user to claim yield for
-     * @return amount Amount of CurrencyToken claimed as yield
+     * @return assets Amount of assets claimed as yield
      */
-    function claimYield(address user) external returns (uint256 amount);
+    function claimYield(address user) external returns (uint256 assets);
 
-    /// @notice CurrencyToken in which both the ClaimableYieldToken and yield are denominated
-    function getCurrencyToken() external view returns (IERC20 currencyToken);
+    /// @notice Asset in which both the ClaimableYieldToken and yield are denominated
+    function asset() external view returns (address asset);
 
     /// @notice Total yield distributed to the ClaimableYieldToken for all users
     function totalYield() external view returns (uint256 amount);

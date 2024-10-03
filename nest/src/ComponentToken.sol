@@ -25,11 +25,11 @@ abstract contract ComponentToken is
 
     // Storage
 
-    /// @notice Represents a request to buy or sell ComponentToken using CurrencyToken
+    /// @notice Represents a request to buy or sell ComponentToken using assets
     struct Request {
         /// @dev Unique identifier for the request
         uint256 requestId;
-        /// @dev CurrencyTokenAmount for a buy; ComponentTokenAmount for a sell
+        /// @dev Amount of assets for a buy; amount of shares for a sell
         uint256 amount;
         /// @dev Address of the user or smart contract who requested the buy or sell
         address requestor;
@@ -41,22 +41,22 @@ abstract contract ComponentToken is
 
     /// @custom:storage-location erc7201:plume.storage.ComponentToken
     struct ComponentTokenStorage {
-        /// @dev CurrencyToken used to mint and burn the ComponentToken
-        IERC20 currencyToken;
+        /// @dev Asset used to mint and burn the ComponentToken
+        IERC20 asset;
         /// @dev Number of decimals of the ComponentToken
         uint8 decimals;
         /// @dev Version of the ComponentToken interface
         uint256 version;
-        /// @dev Requests to buy or sell ComponentToken using CurrencyToken
+        /// @dev Requests to buy or sell ComponentToken using assets
         Request[] requests;
         /// @dev Total amount of yield that has ever been accrued by all users
         uint256 totalYieldAccrued;
         /// @dev Total amount of yield that has ever been withdrawn by all users
         uint256 totalYieldWithdrawn;
         /// @dev Total amount of yield that has ever been accrued by each user
-        mapping(address user => uint256 currencyTokenAmount) yieldAccrued;
+        mapping(address user => uint256 assets) yieldAccrued;
         /// @dev Total amount of yield that has ever been withdrawn by each user
-        mapping(address user => uint256 currencyTokenAmount) yieldWithdrawn;
+        mapping(address user => uint256 assets) yieldWithdrawn;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.ComponentToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -79,50 +79,46 @@ abstract contract ComponentToken is
     // Events
 
     /**
-     * @notice Emitted when a user requests to buy ComponentToken using CurrencyToken
+     * @notice Emitted when a user requests to buy ComponentToken using assets
      * @param user Address of the user who requested to buy the ComponentToken
-     * @param currencyToken CurrencyToken to be used to buy the ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken offered to be paid
+     * @param asset Asset to be used to buy the ComponentToken
+     * @param assets Amount of assets offered to be paid
      */
-    event BuyRequested(address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount);
+    event BuyRequested(address indexed user, IERC20 indexed asset, uint256 assets);
 
     /**
-     * @notice Emitted when a user requests to sell ComponentToken to receive CurrencyToken
+     * @notice Emitted when a user requests to sell ComponentToken to receive assets
      * @param user Address of the user who requested to sell the ComponentToken
-     * @param currencyToken CurrencyToken to be received in exchange for the ComponentToken
-     * @param componentTokenAmount Amount of ComponentToken offered to be sold
+     * @param asset Asset to be received in exchange for the ComponentToken
+     * @param shares Amount of ComponentToken offered to be sold
      */
-    event SellRequested(address indexed user, IERC20 indexed currencyToken, uint256 componentTokenAmount);
+    event SellRequested(address indexed user, IERC20 indexed asset, uint256 shares);
 
     /**
-     * @notice Emitted when a user buys ComponentToken using CurrencyToken
+     * @notice Emitted when a user buys ComponentToken using assets
      * @param user Address of the user who bought the ComponentToken
-     * @param currencyToken CurrencyToken used to buy the ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken paid
-     * @param componentTokenAmount Amount of ComponentToken received
+     * @param asset Asset used to buy the ComponentToken
+     * @param assets Amount of assets paid
+     * @param shares Amount of shares received
      */
-    event BuyExecuted(
-        address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
-    );
+    event BuyExecuted(address indexed user, IERC20 indexed asset, uint256 asset, uint256 shares);
 
     /**
-     * @notice Emitted when a user sells ComponentToken to receive CurrencyToken
+     * @notice Emitted when a user sells ComponentToken to receive assets
      * @param user Address of the user who sold the ComponentToken
-     * @param currencyToken CurrencyToken received in exchange for the ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken received
-     * @param componentTokenAmount Amount of ComponentToken sold
+     * @param asset Asset received in exchange for the ComponentToken
+     * @param assets Amount of assets received
+     * @param shares Amount of shares sold
      */
-    event SellExecuted(
-        address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
-    );
+    event SellExecuted(address indexed user, IERC20 indexed asset, uint256 assets, uint256 shares);
 
     /**
      * @notice Emitted when anyone claims yield that has accrued to a user
      * @param user Address of the user who receives the claimed yield
-     * @param currencyToken CurrencyToken used to denominate the claimed yield
-     * @param amount Amount of CurrencyToken claimed as yield
+     * @param asset Asset used to denominate the claimed yield
+     * @param assets Amount of assets claimed as yield
      */
-    event YieldClaimed(address indexed user, IERC20 indexed currencyToken, uint256 amount);
+    event YieldClaimed(address indexed user, IERC20 indexed asset, uint256 assets);
 
     // Errors
 
@@ -147,12 +143,12 @@ abstract contract ComponentToken is
     error InvalidVersion(uint256 invalidVersion, uint256 version);
 
     /**
-     * @notice Indicates a failure because the user does not have enough CurrencyToken
-     * @param currencyToken CurrencyToken used to mint and burn the ComponentToken
-     * @param user Address of the user who is selling the CurrencyToken
-     * @param amount Amount of CurrencyToken required in the failed transfer
+     * @notice Indicates a failure because the user does not have enough assets
+     * @param asset Asset used to mint and burn the ComponentToken
+     * @param user Address of the user who is selling the assets
+     * @param assets Amount of assets required in the failed transfer
      */
-    error InsufficientBalance(IERC20 currencyToken, address user, uint256 amount);
+    error InsufficientBalance(IERC20 asset, address user, uint256 assets);
 
     // Initializer
 
@@ -169,14 +165,14 @@ abstract contract ComponentToken is
      * @param owner Address of the owner of the ComponentToken
      * @param name Name of the ComponentToken
      * @param symbol Symbol of the ComponentToken
-     * @param currencyToken CurrencyToken used to mint and burn the ComponentToken
+     * @param asset Asset used to mint and burn the ComponentToken
      * @param decimals_ Number of decimals of the ComponentToken
      */
     function initialize(
         address owner,
         string memory name,
         string memory symbol,
-        IERC20 currencyToken,
+        IERC20 asset,
         uint8 decimals_
     ) public initializer {
         __ERC20_init(name, symbol);
@@ -188,7 +184,7 @@ abstract contract ComponentToken is
         _grantRole(UPGRADER_ROLE, owner);
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        $.currencyToken = currencyToken;
+        $.asset = asset;
         $.decimals = decimals_;
     }
 
@@ -325,18 +321,18 @@ abstract contract ComponentToken is
      * @notice Claim all the remaining yield that has been accrued to a user
      * @dev Anyone can call this function to claim yield for any user
      * @param user Address of the user to claim yield for
-     * @return amount Amount of CurrencyToken claimed as yield
+     * @return assets Amount of assets claimed as yield
      */
-    function claimYield(address user) external returns (uint256 amount) {
+    function claimYield(address user) external returns (uint256 assets) {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
+        IERC20 asset = $.asset;
 
-        amount = unclaimedYield(user);
-        currencyToken.transfer(user, amount);
-        $.yieldWithdrawn[user] += amount;
-        $.totalYieldWithdrawn += amount;
+        assets = unclaimedYield(user);
+        asset.transfer(user, assets);
+        $.yieldWithdrawn[user] += assets;
+        $.totalYieldWithdrawn += assets;
 
-        emit YieldClaimed(user, currencyToken, amount);
+        emit YieldClaimed(user, asset, assets);
     }
 
     // Admin Setter Functions
@@ -355,12 +351,12 @@ abstract contract ComponentToken is
     }
 
     /**
-     * @notice Set the CurrencyToken used to mint and burn the ComponentToken
+     * @notice Set the asset used to mint and burn the ComponentToken
      * @dev Only the owner can call this setter
-     * @param currencyToken New CurrencyToken
+     * @param asset New asset token to be used
      */
-    function setCurrencyToken(IERC20 currencyToken) external onlyRole(ADMIN_ROLE) {
-        _getComponentTokenStorage().currencyToken = currencyToken;
+    function setAsset(IERC20 asset) external onlyRole(ADMIN_ROLE) {
+        _getComponentTokenStorage().asset = asset;
     }
 
     // Getter View Functions
@@ -370,9 +366,9 @@ abstract contract ComponentToken is
         return _getComponentTokenStorage().version;
     }
 
-    /// @notice CurrencyToken used to buy and sell the ComponentToken
-    function getCurrencyToken() external view returns (IERC20) {
-        return _getComponentTokenStorage().currencyToken;
+    /// @notice Asset used to buy and sell the ComponentToken
+    function asset() external view returns (address) {
+        return address(_getComponentTokenStorage().asset);
     }
 
     /// @notice Total yield distributed to the ComponentToken for all users
