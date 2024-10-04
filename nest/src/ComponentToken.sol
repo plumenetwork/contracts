@@ -57,6 +57,10 @@ abstract contract ComponentToken is
         mapping(address user => uint256 assets) yieldAccrued;
         /// @dev Total amount of yield that has ever been withdrawn by each user
         mapping(address user => uint256 assets) yieldWithdrawn;
+        /// @dev True if deposits are asynchronous; false otherwise
+        bool asyncDeposit;
+        /// @dev True if redemptions are asynchronous; false otherwise
+        bool asyncRedeem;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.ComponentToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -122,6 +126,9 @@ abstract contract ComponentToken is
 
     // Errors
 
+    /// @notice Indicates a failure because the user tried to call an unimplemented function
+    error Unimplemented();
+
     /**
      * @notice Indicates a failure because the given request ID is invalid
      * @param invalidRequestId Request ID that is invalid
@@ -167,13 +174,17 @@ abstract contract ComponentToken is
      * @param symbol Symbol of the ComponentToken
      * @param asset Asset used to mint and burn the ComponentToken
      * @param decimals_ Number of decimals of the ComponentToken
+     * @param asyncDeposit True if deposits are asynchronous; false otherwise
+     * @param asyncRedeem True if redemptions are asynchronous; false otherwise
      */
     function initialize(
         address owner,
         string memory name,
         string memory symbol,
         IERC20 asset,
-        uint8 decimals_
+        uint8 decimals_,
+        bool asyncDeposit,
+        bool asyncRedeem
     ) public initializer {
         __ERC20_init(name, symbol);
         __AccessControl_init();
@@ -186,6 +197,8 @@ abstract contract ComponentToken is
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         $.asset = asset;
         $.decimals = decimals_;
+        $.asyncDeposit = asyncDeposit;
+        $.asyncRedeem = asyncRedeem;
     }
 
     // Override Functions
@@ -202,6 +215,50 @@ abstract contract ComponentToken is
     }
 
     // User Functions
+
+    /**
+     * @inheritdoc IComponentToken
+     * @dev Must revert for all callers and inputs for asynchronous deposit vaults
+     */
+    function previewDeposit(uint256 assets) external view returns (uint256 shares) {
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if ($.asyncDeposit) {
+            revert Unimplemented();
+        }
+    }
+
+    /**
+     * @inheritdoc IComponentToken
+     * @dev Must revert for all callers and inputs for asynchronous deposit vaults
+     */
+    function previewMint(uint256 shares) external view returns (uint256 assets) {
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if ($.asyncDeposit) {
+            revert Unimplemented();
+        }
+    }
+
+    /**
+     * @inheritdoc IComponentToken
+     * @dev Must revert for all callers and inputs for asynchronous redeem vaults
+     */
+    function previewRedeem(uint256 shares) external view returns (uint256 assets) {
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if ($.asyncRedeem) {
+            revert Unimplemented();
+        }
+    }
+
+    /**
+     * @inheritdoc IComponentToken
+     * @dev Must revert for all callers and inputs for asynchronous redeem vaults
+     */
+    function previewWithdraw(uint256 assets) external view returns (uint256 shares) {
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if ($.asyncRedeem) {
+            revert Unimplemented();
+        }
+    }
 
     /**
      * @notice Submit a request to send currencyTokenAmount of CurrencyToken to buy ComponentToken
