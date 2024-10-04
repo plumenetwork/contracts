@@ -61,6 +61,10 @@ abstract contract ComponentToken is
         bool asyncDeposit;
         /// @dev True if redemptions are asynchronous; false otherwise
         bool asyncRedeem;
+        /// @dev Amount of assets deposited by each controller and not ready to claim
+        mapping(address controller => uint256 assets) pendingDepositRequest;
+        /// @dev Amount of assets deposited by each controller and ready to claim
+        mapping(address controller => uint256 assets) claimableDepositRequest;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.ComponentToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -75,6 +79,8 @@ abstract contract ComponentToken is
 
     // Constants
 
+    /// @notice All ComponentToken requests are fungible and all have ID = 0
+    uint256 private constant REQUEST_ID = 0;
     /// @notice Role for the admin of the ComponentToken
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the ComponentToken
@@ -128,6 +134,16 @@ abstract contract ComponentToken is
 
     /// @notice Indicates a failure because the user tried to call an unimplemented function
     error Unimplemented();
+
+    /// @notice Indicates a failure because the given amount is 0
+    error ZeroAmount();
+
+    /**
+     * @notice Indicates a failure because the sender is not authorized to perform the action
+     * @param sender Address of the sender that is not authorized
+     * @param authorizedUser Address of the authorized user who can perform the action
+     */
+    error Unauthorized(address sender, address authorizedUser);
 
     /**
      * @notice Indicates a failure because the given request ID is invalid
@@ -260,38 +276,52 @@ abstract contract ComponentToken is
         }
     }
 
-    /**
-     * @notice Submit a request to send currencyTokenAmount of CurrencyToken to buy ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken to send
-     * @return requestId Unique identifier for the buy request
-     */
-    function requestBuy(uint256 currencyTokenAmount) public virtual returns (uint256 requestId) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
-        requestId = $.requests.length;
-
-        if (!currencyToken.transferFrom(msg.sender, address(this), currencyTokenAmount)) {
-            revert InsufficientBalance(currencyToken, msg.sender, currencyTokenAmount);
+    /// @inheritdoc IComponentToken
+    function requestDeposit(
+        uint256 assets,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {
+        if (assets == 0) {
+            revert ZeroAmount();
         }
-        $.requests.push(Request(requestId, currencyTokenAmount, msg.sender, true, false));
+        if (msg.sender != owner) {
+            revert Unauthorized(msg.sender, owner);
+        }
 
-        emit BuyRequested(msg.sender, currencyToken, currencyTokenAmount);
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        IERC20 asset = $.asset;
+
+        if (!asset.transferFrom(owner, address(this), assets)) {
+            revert InsufficientBalance(asset, owner, assets);
+        }
+        $.pendingDepositRequest[controller] += assets;
+
+        emit DepositRequest(controller, owner, REQUEST_ID, owner, assets);
+        return REQUEST_ID;
     }
 
-    /**
-     * @notice Submit a request to send componentTokenAmount of ComponentToken to sell for CurrencyToken
-     * @param componentTokenAmount Amount of ComponentToken to send
-     * @return requestId Unique identifier for the sell request
-     */
-    function requestSell(uint256 componentTokenAmount) public virtual returns (uint256 requestId) {
+    /// @inheritdoc IComponentToken
+    function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != owner) {
+            revert Unauthorized(msg.sender, owner);
+        }
+
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
-        requestId = $.requests.length;
+        IERC20 asset = $.asset;
 
-        _burn(msg.sender, componentTokenAmount);
-        $.requests.push(Request(requestId, componentTokenAmount, msg.sender, false, false));
+        _burn(msg.sender, shares);
+        $.pendingRedeemRequest[controller] += assets;
 
-        emit SellRequested(msg.sender, currencyToken, componentTokenAmount);
+        emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
+        return REQUEST_ID;
     }
 
     /**
