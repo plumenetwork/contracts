@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { SBTCStaking } from "../src/SBTCStaking.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Test } from "forge-std/Test.sol";
+
+import { SBTCStaking } from "../src/SBTCStaking.sol";
 
 contract SBTCStakingTest is Test {
 
@@ -32,6 +32,23 @@ contract SBTCStakingTest is Test {
         sbtcStaking = SBTCStaking(address(sbtcStakingProxy));
     }
 
+    function helper_initialStake(address user, uint256 stakeAmount) public {
+        vm.startPrank(user);
+        sbtc.approve(address(sbtcStaking), stakeAmount);
+        sbtcStaking.stake(stakeAmount);
+        vm.stopPrank();
+
+        assertEq(sbtc.balanceOf(address(sbtcStaking)), stakeAmount);
+        assertEq(sbtcStaking.getTotalAmountStaked(), stakeAmount);
+        assertEq(sbtcStaking.getUsers().length, 1);
+    }
+
+    function test_constructor() public {
+        SBTCStaking sbtcStakingImpl = new SBTCStaking();
+        vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
+        sbtcStakingImpl.initialize(owner, sbtc);
+    }
+
     function test_initialize() public view {
         assertEq(address(sbtcStaking.getSBTC()), address(sbtc));
         assertEq(sbtcStaking.getTotalAmountStaked(), 0);
@@ -55,18 +72,12 @@ contract SBTCStakingTest is Test {
         uint256 timestamp = block.timestamp;
 
         // Stake 100 SBTC from user1
-        vm.startPrank(user1);
-        sbtc.approve(address(sbtcStaking), stakeAmount);
-        sbtcStaking.stake(stakeAmount);
-        vm.stopPrank();
+        helper_initialStake(user1, stakeAmount);
 
-        assertEq(sbtc.balanceOf(address(sbtcStaking)), stakeAmount);
         (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = sbtcStaking.getUserState(user1);
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, stakeAmount);
         assertEq(lastUpdate, timestamp);
-        assertEq(sbtcStaking.getTotalAmountStaked(), stakeAmount);
-        assertEq(sbtcStaking.getUsers().length, 1);
 
         // Skip ahead in time by 300 seconds
         vm.warp(timestamp + timeskipAmount);
@@ -112,6 +123,36 @@ contract SBTCStakingTest is Test {
         assertEq(sbtc.balanceOf(address(sbtcStaking)), stakeAmount * 3);
         assertEq(sbtcStaking.getTotalAmountStaked(), stakeAmount * 3);
         assertEq(sbtcStaking.getUsers().length, 2);
+    }
+
+    function test_upgradeFail() public {
+        address newImplementation = address(new SBTCStaking());
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", user1, sbtcStaking.UPGRADER_ROLE()
+            )
+        );
+        vm.startPrank(user1);
+        sbtcStaking.upgradeToAndCall(newImplementation, "");
+        vm.stopPrank();
+    }
+
+    function test_upgrade() public {
+        uint256 stakeAmount = 100 ether;
+        helper_initialStake(user1, stakeAmount);
+
+        address newImplementation = address(new SBTCStaking());
+        vm.startPrank(owner);
+        sbtcStaking.upgradeToAndCall(newImplementation, "");
+        vm.stopPrank();
+
+        assertEq(address(sbtcStaking.getSBTC()), address(sbtc));
+        assertEq(sbtcStaking.getTotalAmountStaked(), stakeAmount);
+        assertEq(sbtcStaking.getUsers().length, 1);
+        (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = sbtcStaking.getUserState(user1);
+        assertEq(amountSeconds, 0);
+        assertEq(amountStaked, stakeAmount);
+        assertEq(lastUpdate, block.timestamp);
     }
 
 }
