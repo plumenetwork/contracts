@@ -176,8 +176,13 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice State of a user who has staked into the RWAStaking contract
-    function getUserState(address user) external view returns (UserState memory) {
-        return _getRWAStakingStorage().userStates[user];
+    function getUserState(address user) external view returns (uint256, uint256, uint256) {
+        UserState memory userState = _getRWAStakingStorage().userStates[user];
+        return (
+            userState.amountSeconds + userState.amountStaked * (block.timestamp - userState.lastUpdate),
+            userState.amountStaked,
+            userState.lastUpdate
+        );
     }
 
     /// @notice List of stablecoins allowed to be staked in the RWAStaking contract

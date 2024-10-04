@@ -147,8 +147,13 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice State of a user who has staked into the SBTCStaking contract
-    function getUserState(address user) external view returns (UserState memory) {
-        return _getSBTCStakingStorage().userStates[user];
+    function getUserState(address user) external view returns (uint256, uint256, uint256) {
+        UserState memory userState = _getSBTCStakingStorage().userStates[user];
+        return (
+            userState.amountSeconds + userState.amountStaked * (block.timestamp - userState.lastUpdate),
+            userState.amountStaked,
+            userState.lastUpdate
+        );
     }
 
 }
