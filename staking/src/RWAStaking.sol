@@ -68,10 +68,11 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
     /**
      * @notice Emitted when a user stakes stablecoins into the RWAStaking contract
      * @param user Address of the user who staked stablecoins
+     * @param stablecoin Stablecoin token contract address
      * @param amount Amount of stablecoins staked
      * @param timestamp Timestamp of the stake
      */
-    event Staked(address indexed user, uint256 amount, uint256 timestamp);
+    event Staked(address indexed user, IERC20 indexed stablecoin, uint256 amount, uint256 timestamp);
 
     // Errors
 
@@ -160,7 +161,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
         userState.lastUpdate = timestamp;
         $.totalAmountStaked += amount;
 
-        emit Staked(msg.sender, amount, timestamp);
+        emit Staked(msg.sender, stablecoin, amount, timestamp);
     }
 
     // Getter View Functions
