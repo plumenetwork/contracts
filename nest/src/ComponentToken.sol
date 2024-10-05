@@ -6,6 +6,7 @@ import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/I
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
 
@@ -20,7 +21,8 @@ abstract contract ComponentToken is
     ERC20Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    IComponentToken
+    IComponentToken,
+    ERC165
 {
 
     // Storage
@@ -407,6 +409,28 @@ abstract contract ComponentToken is
     /// @inheritdoc IComponentToken
     function withdraw(uint256 assets, address receiver, address controller) public virtual {
         revert Unimplemented();
+    }
+
+    /// @inheritdoc IComponentToken
+    function isOperator(address controller, address operator) public view returns (bool status) {
+        return false;
+    }
+
+    /// @inheritdoc IComponentToken
+    function setOperator(address controller, bool approved) public returns (bool success) {
+        revert Unimplemented();
+    }
+
+    /// @inheritdoc IComponentToken
+    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool supported) {
+        if (
+            super.supportsInterface(interfaceId) || interfaceId == type(IERC7575).interfaceId
+                || interfaceId == "0xe3bc4e65"
+        ) {
+            return true;
+        }
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        return ($.asyncDeposit && interfaceId == 0xce3bbe50) || ($.asyncRedeem && interfaceId == 0x620ee8e4);
     }
 
     /**
