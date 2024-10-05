@@ -324,6 +324,31 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IComponentToken
+    function deposit(uint256 assets, address receiver, address controller) public virtual {
+        if (assets == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if ($.claimableDepositRequest[controller] < assets) {
+            revert InsufficientRequestBalance(controller, assets, 1);
+        }
+
+        _mint(receiver, shares);
+        $.claimableDepositRequest[controller] -= assets;
+
+        emit Deposit(controller, receiver, assets, shares);
+    }
+
+    /// @inheritdoc IComponentToken
+    function mint(uint256 shares, address receiver, address controller) public virtual {
+        revert Unimplemented();
+    }
+
+    /// @inheritdoc IComponentToken
     function requestRedeem(
         uint256 shares,
         address controller,
@@ -356,84 +381,32 @@ abstract contract ComponentToken is
         return _getComponentTokenStorage().claimableRedeemRequest[controller];
     }
 
-    /**
-     * @notice Executes a request to buy ComponentToken with CurrencyToken
-     * @param requestor Address of the user or smart contract that requested the buy
-     * @param requestId Unique identifier for the request
-     * @param currencyTokenAmount Amount of CurrencyToken to send
-     * @param componentTokenAmount Amount of ComponentToken to receive
-     */
-    function executeBuy(
-        address requestor,
-        uint256 requestId,
-        uint256 currencyTokenAmount,
-        uint256 componentTokenAmount
-    ) public virtual {
+    /// @inheritdoc IComponentToken
+    function redeem(uint256 shares, address receiver, address controller) public virtual {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if (requestId >= $.requests.length) {
-            revert InvalidRequest(requestId, 0);
+        if ($.claimableRedeemRequest[controller] < shares) {
+            revert InsufficientRequestBalance(controller, shares, 1);
         }
 
-        IERC20 currencyToken = $.currencyToken;
-        Request storage request = $.requests[requestId];
-        if (request.amount != currencyTokenAmount) {
-            revert InvalidRequest(requestId, 1);
+        IERC20 asset = $.asset;
+        if (!asset.transfer(receiver, assets)) {
+            revert InsufficientBalance(asset, address(this), assets);
         }
-        if (request.requestor != requestor) {
-            revert InvalidRequest(requestId, 2);
-        }
-        if (!request.isBuy) {
-            revert InvalidRequest(requestId, 3);
-        }
-        if (request.isExecuted) {
-            revert InvalidRequest(requestId, 5);
-        }
+        $.claimableRedeemRequest[controller] -= shares;
 
-        _mint(requestor, componentTokenAmount);
-        request.isExecuted = true;
-
-        emit BuyExecuted(requestor, currencyToken, currencyTokenAmount, componentTokenAmount);
+        emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
 
-    /**
-     * @notice Executes a request to sell ComponentToken for CurrencyToken
-     * @param requestor Address of the user or smart contract that requested the sell
-     * @param requestId Unique identifier for the request
-     * @param currencyTokenAmount Amount of CurrencyToken to receive
-     * @param componentTokenAmount Amount of ComponentToken to send
-     */
-    function executeSell(
-        address requestor,
-        uint256 requestId,
-        uint256 currencyTokenAmount,
-        uint256 componentTokenAmount
-    ) public virtual {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if (requestId >= $.requests.length) {
-            revert InvalidRequest(requestId, 0);
-        }
-
-        IERC20 currencyToken = $.currencyToken;
-        Request storage request = $.requests[requestId];
-        if (request.amount != componentTokenAmount) {
-            revert InvalidRequest(requestId, 1);
-        }
-        if (request.requestor != requestor) {
-            revert InvalidRequest(requestId, 2);
-        }
-        if (request.isBuy) {
-            revert InvalidRequest(requestId, 4);
-        }
-        if (request.isExecuted) {
-            revert InvalidRequest(requestId, 5);
-        }
-
-        if (!currencyToken.transfer(requestor, currencyTokenAmount)) {
-            revert InsufficientBalance(currencyToken, requestor, currencyTokenAmount);
-        }
-        request.isExecuted = true;
-
-        emit SellExecuted(requestor, currencyToken, currencyTokenAmount, componentTokenAmount);
+    /// @inheritdoc IComponentToken
+    function withdraw(uint256 assets, address receiver, address controller) public virtual {
+        revert Unimplemented();
     }
 
     /**
