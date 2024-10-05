@@ -146,6 +146,18 @@ abstract contract ComponentToken is
     error Unauthorized(address sender, address authorizedUser);
 
     /**
+     * @notice Indicates a failure because the controller does not have enough requested
+     * @param controller Address of the controller who does not have enough requested
+     * @param amount Amount of assets or shares to be subtracted from the request
+     * @param requestType Type of request that is insufficient
+     *   0: Pending deposit request
+     *   1: Claimable deposit request
+     *   2: Pending redeem request
+     *   3: Claimable redeem request
+     */
+    error InsufficientRequestBalance(address controller, uint256 amount, uint256 requestType);
+
+    /**
      * @notice Indicates a failure because the given request ID is invalid
      * @param invalidRequestId Request ID that is invalid
      * @param errorType Type of error that occurred
@@ -302,6 +314,16 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IComponentToken
+    function pendingDepositRequest(uint256 requestId, address controller) public view returns (uint256 assets) {
+        return _getComponentTokenStorage().pendingDepositRequest[controller];
+    }
+
+    /// @inheritdoc IComponentToken
+    function claimableDepositRequest(uint256 requestId, address controller) public view returns (uint256 assets) {
+        return _getComponentTokenStorage().claimableDepositRequest[controller];
+    }
+
+    /// @inheritdoc IComponentToken
     function requestRedeem(
         uint256 shares,
         address controller,
@@ -322,6 +344,16 @@ abstract contract ComponentToken is
 
         emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
         return REQUEST_ID;
+    }
+
+    /// @inheritdoc IComponentToken
+    function pendingRedeemRequest(uint256 requestId, address controller) public view returns (uint256 shares) {
+        return _getComponentTokenStorage().pendingRedeemRequest[controller];
+    }
+
+    /// @inheritdoc IComponentToken
+    function claimableRedeemRequest(uint256 requestId, address controller) public view returns (uint256 shares) {
+        return _getComponentTokenStorage().claimableRedeemRequest[controller];
     }
 
     /**
