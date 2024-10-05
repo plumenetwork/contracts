@@ -217,7 +217,7 @@ contract RWAStakingTest is Test {
         assertEq(lastUpdate, startTime + timeskipAmount * 2);
         (amountSeconds, amountStaked, lastUpdate) = rwaStaking.getUserState(user2);
         assertEq(amountSeconds, stakeAmount * timeskipAmount * 4);
-        assertEq(amountStaked, stakeAmount);
+        assertEq(amountStaked, stakeAmount * 2);
         assertEq(lastUpdate, startTime + timeskipAmount);
 
         assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount * 2);
