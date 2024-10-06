@@ -23,7 +23,7 @@ contract WalletFactoryTest is Test {
 
     function test_constructor() public {
         WalletFactory newWalletFactory = new WalletFactory(OWNER, smartWallet);
-        assertEq(newWalletFactory.OWNER(), OWNER);
+        assertEq(newWalletFactory.owner(), OWNER);
         assertEq(address(newWalletFactory.smartWallet()), address(smartWallet));
     }
 
@@ -41,7 +41,7 @@ contract WalletFactoryTest is Test {
         walletFactory.upgrade(newImplementation);
         vm.stopPrank();
 
-        assertEq(walletFactory.OWNER(), OWNER);
+        assertEq(walletFactory.owner(), OWNER);
         assertEq(address(walletFactory.smartWallet()), address(newImplementation));
     }
 
