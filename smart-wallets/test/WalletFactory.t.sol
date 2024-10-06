@@ -13,35 +13,35 @@ contract WalletFactoryTest is Test {
     SmartWallet smartWallet;
     WalletFactory walletFactory;
 
-    address owner = address(0x1234);
-    address user1 = address(0xBEEF);
+    address private constant OWNER = address(0x1234);
+    address private constant USER1 = address(0xBEEF);
 
     function setUp() public {
         smartWallet = new SmartWallet();
-        walletFactory = new WalletFactory(owner, smartWallet);
+        walletFactory = new WalletFactory(OWNER, smartWallet);
     }
 
     function test_constructor() public {
-        WalletFactory newWalletFactory = new WalletFactory(owner, smartWallet);
-        assertEq(newWalletFactory.owner(), owner);
+        WalletFactory newWalletFactory = new WalletFactory(OWNER, smartWallet);
+        assertEq(newWalletFactory.OWNER(), OWNER);
         assertEq(address(newWalletFactory.smartWallet()), address(smartWallet));
     }
 
     function test_upgradeFail() public {
         ISmartWallet newImplementation = new SmartWallet();
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user1));
-        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, USER1));
+        vm.startPrank(USER1);
         walletFactory.upgrade(newImplementation);
         vm.stopPrank();
     }
 
     function test_upgrade() public {
         ISmartWallet newImplementation = new SmartWallet();
-        vm.startPrank(owner);
+        vm.startPrank(OWNER);
         walletFactory.upgrade(newImplementation);
         vm.stopPrank();
 
-        assertEq(walletFactory.owner(), owner);
+        assertEq(walletFactory.OWNER(), OWNER);
         assertEq(address(walletFactory.smartWallet()), address(newImplementation));
     }
 

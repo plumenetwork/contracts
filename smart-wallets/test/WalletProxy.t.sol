@@ -14,11 +14,11 @@ contract WalletProxyTest is Test {
     WalletFactory walletFactory;
     WalletProxy walletProxy;
 
-    address owner = address(0x1234);
+    address private constant OWNER = address(0x1234);
 
     function setUp() public {
         smartWallet = new SmartWallet();
-        walletFactory = new WalletFactory(owner, smartWallet);
+        walletFactory = new WalletFactory(OWNER, smartWallet);
         walletProxy = new WalletProxy(walletFactory);
     }
 
