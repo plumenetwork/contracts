@@ -13,19 +13,19 @@ import { ISmartWallet } from "../src/interfaces/ISmartWallet.sol";
 
 contract TestWalletImplementationTest is Test {
 
-    address private constant ADMIN_ADDRESS = 0xDE1509CC56D740997c70E1661BA687e950B4a241;
-    bytes32 private constant DEPLOY_SALT = keccak256("PlumeSmartWallets");
+    address constant ADMIN_ADDRESS = 0xDE1509CC56D740997c70E1661BA687e950B4a241;
+    bytes32 constant DEPLOY_SALT = keccak256("PlumeSmartWallets");
 
     /* forge coverage --ir-minimum
-    address private constant EMPTY_ADDRESS = 0x0Ab1C3d2cCB7c314666185b317900a614e516feB;
-    address private constant WALLET_FACTORY_ADDRESS = 0xA7eB06B26a7b5Bb247b3f14AD0832c038be58fA7;
-    address private constant WALLET_PROXY_ADDRESS = 0x1C6Cbc0D20d77DAf72ae34E1e2b36233efBc5c96;
+    address constant EMPTY_ADDRESS = 0x0Ab1C3d2cCB7c314666185b317900a614e516feB;
+    address constant WALLET_FACTORY_ADDRESS = 0xA7eB06B26a7b5Bb247b3f14AD0832c038be58fA7;
+    address constant WALLET_PROXY_ADDRESS = 0x1C6Cbc0D20d77DAf72ae34E1e2b36233efBc5c96;
     */
 
     /* forge test */
-    address private constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
-    address private constant WALLET_FACTORY_ADDRESS = 0xB2eF86dCEeB95B4f11EB26c77a296fc40CB62062;
-    address private constant WALLET_PROXY_ADDRESS = 0x19edC0A2cA9fC66F0e3922ac78bE5928E96B84bC;
+    address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
+    address constant WALLET_FACTORY_ADDRESS = 0xB2eF86dCEeB95B4f11EB26c77a296fc40CB62062;
+    address constant WALLET_PROXY_ADDRESS = 0x19edC0A2cA9fC66F0e3922ac78bE5928E96B84bC;
 
     TestWalletImplementation testWalletImplementation;
 

@@ -13,8 +13,8 @@ contract WalletFactoryTest is Test {
     SmartWallet smartWallet;
     WalletFactory walletFactory;
 
-    address private constant OWNER = address(0x1234);
-    address private constant USER1 = address(0xBEEF);
+    address constant OWNER = address(0x1234);
+    address constant USER1 = address(0xBEEF);
 
     function setUp() public {
         smartWallet = new SmartWallet();
