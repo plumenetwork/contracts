@@ -21,7 +21,7 @@ contract WalletFactory is Ownable {
 
     /**
      * @notice Emitted when the SmartWallet implementation is upgraded
-     * @param smartWallet New SmartWallet implementation
+     * @param smartWallet_ New SmartWallet implementation
      */
     event Upgraded(ISmartWallet smartWallet_);
 
