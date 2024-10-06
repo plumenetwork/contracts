@@ -308,7 +308,7 @@ contract AssetVault is IAssetVault {
             revert InvalidExpiration(expiration, block.timestamp);
         }
         if (allowance.expiration != expiration) {
-            revert MismatchedExpiration(allowance.expiration, expiration);
+            revert MismatchedExpiration(expiration, allowance.expiration);
         }
         if (allowance.amount < amount) {
             revert InsufficientYieldAllowance(assetToken, beneficiary, allowance.amount, amount);
