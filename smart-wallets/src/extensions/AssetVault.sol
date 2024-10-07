@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { IAssetVault } from "../interfaces/IAssetVault.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
@@ -14,7 +15,7 @@ import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
  *   in a vault, then take the yield distributed to those locked yield-bearing assets
  *   and manage the redistribution of that yield to multiple beneficiaries.
  */
-contract AssetVault is IAssetVault {
+contract AssetVault is WalletUtils, IAssetVault {
 
     // Types
 
@@ -172,16 +173,10 @@ contract AssetVault is IAssetVault {
         IAssetToken assetToken, address beneficiary, uint256 amount, uint256 amountRenounced
     );
 
-    /**
-     * @notice Indicates a failure because the caller is not the user wallet
-     * @param invalidUser Address of the caller who tried to call a wallet-only function
-     */
-    error UnauthorizedCall(address invalidUser);
-
     // Modifiers
 
     /// @notice Only the user wallet can call this function
-    modifier onlyWallet() {
+    modifier onlyUserWallet() {
         if (msg.sender != wallet) {
             revert UnauthorizedCall(msg.sender);
         }
@@ -214,7 +209,7 @@ contract AssetVault is IAssetVault {
         address beneficiary,
         uint256 amount,
         uint256 expiration
-    ) external onlyWallet {
+    ) external onlyUserWallet {
         if (address(assetToken) == address(0) || beneficiary == address(0)) {
             revert ZeroAddress();
         }
@@ -236,6 +231,8 @@ contract AssetVault is IAssetVault {
      * @notice Redistribute yield to the beneficiaries of the AssetToken, using yield distributions
      * @dev Only the user wallet can initiate the yield redistribution. The yield redistributed
      *   to each beneficiary is rounded down, and any remaining CurrencyToken are kept in the vault.
+     *   The Solidity compiler adds a check that the target address has `extcodesize > 0`
+     *   and otherwise reverts for high-level calls, so we have to use a low-level call here
      * @param assetToken AssetToken from which the yield is to be redistributed
      * @param currencyToken Token in which the yield is to be redistributed
      * @param currencyTokenAmount Amount of CurrencyToken to redistribute
@@ -244,7 +241,7 @@ contract AssetVault is IAssetVault {
         IAssetToken assetToken,
         IERC20 currencyToken,
         uint256 currencyTokenAmount
-    ) external onlyWallet {
+    ) external onlyUserWallet {
         if (currencyTokenAmount == 0) {
             return;
         }
@@ -257,7 +254,18 @@ contract AssetVault is IAssetVault {
         while (amountLocked > 0) {
             if (distribution.yield.expiration > block.timestamp) {
                 uint256 yieldShare = (currencyTokenAmount * amountLocked) / amountTotal;
-                ISmartWallet(wallet).transferYield(assetToken, distribution.beneficiary, currencyToken, yieldShare);
+                (bool success,) = wallet.call(
+                    abi.encodeWithSelector(
+                        ISmartWallet(wallet).transferYield.selector,
+                        assetToken,
+                        distribution.beneficiary,
+                        currencyToken,
+                        yieldShare
+                    )
+                );
+                if (!success) {
+                    revert SmartWalletCallFailed(wallet);
+                }
                 emit YieldRedistributed(assetToken, distribution.beneficiary, currencyToken, yieldShare);
             }
 
@@ -285,8 +293,6 @@ contract AssetVault is IAssetVault {
                 break;
             }
         }
-
-        return balanceLocked;
     }
 
     /**
@@ -308,12 +314,12 @@ contract AssetVault is IAssetVault {
             revert InvalidExpiration(expiration, block.timestamp);
         }
         if (allowance.expiration != expiration) {
-            revert MismatchedExpiration(allowance.expiration, expiration);
+            revert MismatchedExpiration(expiration, allowance.expiration);
         }
         if (allowance.amount < amount) {
             revert InsufficientYieldAllowance(assetToken, beneficiary, allowance.amount, amount);
         }
-        if (assetToken.getBalanceAvailable(address(this)) < amount) {
+        if (assetToken.getBalanceAvailable(wallet) < amount) {
             revert InsufficientBalance(assetToken, amount);
         }
 
