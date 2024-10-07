@@ -4,7 +4,6 @@ pragma solidity ^0.8.25;
 import { Test } from "forge-std/Test.sol";
 
 import { Empty } from "../src/Empty.sol";
-
 import { SmartWallet } from "../src/SmartWallet.sol";
 import { TestWalletImplementation } from "../src/TestWalletImplementation.sol";
 import { WalletFactory } from "../src/WalletFactory.sol";
@@ -18,14 +17,14 @@ contract TestWalletImplementationTest is Test {
 
     /* forge coverage --ir-minimum
     address constant EMPTY_ADDRESS = 0x0Ab1C3d2cCB7c314666185b317900a614e516feB;
-    address constant WALLET_FACTORY_ADDRESS = 0xA7eB06B26a7b5Bb247b3f14AD0832c038be58fA7;
-    address constant WALLET_PROXY_ADDRESS = 0x1C6Cbc0D20d77DAf72ae34E1e2b36233efBc5c96;
+    address constant WALLET_FACTORY_ADDRESS = 0xf0533fC1183cf6006b0dCF943AB011c8aD58459D;
+    address constant WALLET_PROXY_ADDRESS = 0xaefD16513881Ad9Ad869bf2Bd028F4D441FF2B40;
     */
 
     /* forge test */
     address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
-    address constant WALLET_FACTORY_ADDRESS = 0xB2eF86dCEeB95B4f11EB26c77a296fc40CB62062;
-    address constant WALLET_PROXY_ADDRESS = 0x19edC0A2cA9fC66F0e3922ac78bE5928E96B84bC;
+    address constant WALLET_FACTORY_ADDRESS = 0x5F26233a11D5148aeEa71d54D9D102992F8d73E2;
+    address constant WALLET_PROXY_ADDRESS = 0xCd49AC437b7e0b73D403e2fF339429330166feE0;
 
     TestWalletImplementation testWalletImplementation;
 
@@ -46,18 +45,21 @@ contract TestWalletImplementationTest is Test {
         WalletFactory walletFactory =
             new WalletFactory{ salt: DEPLOY_SALT }(ADMIN_ADDRESS, ISmartWallet(address(empty)));
         WalletProxy walletProxy = new WalletProxy{ salt: DEPLOY_SALT }(walletFactory);
-        SmartWallet smartWallet = new SmartWallet();
 
         assertEq(address(empty), EMPTY_ADDRESS);
         assertEq(address(walletFactory), WALLET_FACTORY_ADDRESS);
         assertEq(address(walletProxy), WALLET_PROXY_ADDRESS);
 
+        SmartWallet smartWallet = new SmartWallet();
+        vm.expectEmit(false, false, false, true, address(walletFactory));
+        emit WalletFactory.Upgraded(smartWallet);
         walletFactory.upgrade(smartWallet);
         assertEq(address(walletFactory.smartWallet()), address(smartWallet));
 
-        /* TODO: Reverts because Foundry can't simulate smart wallets
-        SmartWallet(payable(ADMIN_ADDRESS)).upgrade(address(testWalletImplementation));
-        */
+        // Must use low-level calls for smart wallets
+        (bool success,) =
+            ADMIN_ADDRESS.call(abi.encodeWithSelector(ISmartWallet.upgrade.selector, address(testWalletImplementation)));
+        assertEq(success, true);
 
         vm.stopPrank();
     }

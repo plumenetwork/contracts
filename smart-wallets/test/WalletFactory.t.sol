@@ -38,6 +38,8 @@ contract WalletFactoryTest is Test {
     function test_upgrade() public {
         ISmartWallet newImplementation = new SmartWallet();
         vm.startPrank(OWNER);
+        vm.expectEmit(false, false, false, true, address(walletFactory));
+        emit WalletFactory.Upgraded(newImplementation);
         walletFactory.upgrade(newImplementation);
         vm.stopPrank();
 

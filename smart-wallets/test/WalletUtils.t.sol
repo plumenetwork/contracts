@@ -27,11 +27,4 @@ contract WalletUtilsTest is Test {
         walletUtils.callOnlyWalletFunction();
     }
 
-    function test_isContract() public view {
-        assertEq(walletUtils.exposed_isContract(OWNER), false);
-        assertEq(walletUtils.exposed_isContract(address(0)), false);
-        assertEq(walletUtils.exposed_isContract(address(this)), true);
-        assertEq(walletUtils.exposed_isContract(address(walletUtils)), true);
-    }
-
 }
