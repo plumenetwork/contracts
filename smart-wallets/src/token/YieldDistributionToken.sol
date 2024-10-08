@@ -18,38 +18,34 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Types
 
     /**
-     * @notice Balance of one user at one point in time
-     * @param amount Amount of YieldDistributionTokens held by the user at that time
-     * @param previousTimestamp Timestamp of the previous balance for that user
+     * @notice State of a holder of the YieldDistributionToken
+     * @param amount Amount of YieldDistributionTokens currently held by the user
+     * @param amountSeconds Cumulative sum of the amount of YieldDistributionTokens held by
+     *   the user, multiplied by the number of seconds that the user has had each balance for
+     * @param yieldAccrued Total amount of yield that has ever been accrued to the user
+     * @param yieldWithdrawn Total amount of yield that has ever been withdrawn by the user
+     * @param lastBalanceTimestamp Timestamp of the most recent balance update for the user
+     * @param lastDepositAmountSeconds AmountSeconds of the user at the time of the
+     *   most recent deposit that was successfully processed by calling accrueYield
      */
-    struct Balance {
+    struct UserState {
         uint256 amount;
-        uint256 previousTimestamp;
-    }
-
-    /**
-     * @notice Linked list of balances for one user
-     * @dev Invariant: the user has at most one balance at each timestamp,
-     *   i.e. balanceHistory[timestamp].previousTimestamp < timestamp.
-     *   Invariant: there is at most one balance whose timestamp is older or equal
-     *   to than the most recent deposit whose yield was accrued to each user.
-     * @param lastTimestamp Timestamp of the last balance for that user
-     * @param balances Mapping of timestamps to balances
-     */
-    struct BalanceHistory {
-        uint256 lastTimestamp;
-        mapping(uint256 timestamp => Balance balance) balances;
+        uint256 amountSeconds;
+        uint256 yieldAccrued;
+        uint256 yieldWithdrawn;
+        uint256 lastBalanceTimestamp;
+        uint256 lastDepositAmountSeconds;
     }
 
     /**
      * @notice Amount of yield deposited into the YieldDistributionToken at one point in time
      * @param currencyTokenAmount Amount of CurrencyToken deposited as yield
-     * @param totalSupply Total supply of the YieldDistributionToken at that time
+     * @param totalAmountSeconds Sum of amountSeconds for all users at that time
      * @param previousTimestamp Timestamp of the previous deposit
      */
     struct Deposit {
         uint256 currencyTokenAmount;
-        uint256 totalSupply;
+        uint256 totalAmountSeconds;
         uint256 previousTimestamp;
     }
 
@@ -57,7 +53,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @notice Linked list of deposits into the YieldDistributionToken
      * @dev Invariant: the YieldDistributionToken has at most one deposit at each timestamp
      *   i.e. depositHistory[timestamp].previousTimestamp < timestamp
-     * @param lastTimestamp Timestamp of the last deposit
+     * @param lastTimestamp Timestamp of the most recent deposit
      * @param deposits Mapping of timestamps to deposits
      */
     struct DepositHistory {
@@ -77,12 +73,12 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         string tokenURI;
         /// @dev History of deposits into the YieldDistributionToken
         DepositHistory depositHistory;
-        /// @dev History of balances for each user
-        mapping(address user => BalanceHistory balanceHistory) balanceHistory;
-        /// @dev Total amount of yield that has ever been accrued by each user
-        mapping(address user => uint256 currencyTokenAmount) yieldAccrued;
-        /// @dev Total amount of yield that has ever been withdrawn by each user
-        mapping(address user => uint256 currencyTokenAmount) yieldWithdrawn;
+        /// @dev Current sum of all amountSeconds for all users
+        uint256 totalAmountSeconds;
+        /// @dev Timestamp of the last change in totalSupply()
+        uint256 lastSupplyTimestamp;
+        /// @dev State for each user
+        mapping(address user => UserState userState) userStates;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.YieldDistributionToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -127,23 +123,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Errors
 
     /**
-     * @notice Indicates a failure because the given timestamp is in the future
-     * @param timestamp Timestamp that was in the future
-     * @param currentTimestamp Current block.timestamp
-     */
-    error InvalidTimestamp(uint256 timestamp, uint256 currentTimestamp);
-
-    /// @notice Indicates a failure because the given amount is 0
-    error ZeroAmount();
-
-    /**
-     * @notice Indicates a failure because the given deposit timestamp is less than the last one
-     * @param timestamp Deposit timestamp that was too old
-     * @param lastTimestamp Last deposit timestamp
-     */
-    error InvalidDepositTimestamp(uint256 timestamp, uint256 lastTimestamp);
-
-    /**
      * @notice Indicates a failure because the transfer of CurrencyToken failed
      * @param user Address of the user who tried to transfer CurrencyToken
      * @param currencyTokenAmount Amount of CurrencyToken that failed to transfer
@@ -174,6 +153,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         $.decimals = decimals_;
         $.tokenURI = tokenURI;
         $.depositHistory.lastTimestamp = block.timestamp;
+        _updateSupply();
     }
 
     // Virtual Functions
@@ -190,7 +170,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
     /**
      * @notice Update the balance of `from` and `to` after token transfer and accrue yield
-     * @dev Invariant: the user has at most one balance at each timestamp
      * @param from Address to transfer tokens from
      * @param to Address to transfer tokens to
      * @param value Amount of tokens to transfer
@@ -200,39 +179,70 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         uint256 timestamp = block.timestamp;
         super._update(from, to, value);
 
-        // If the token is not being minted, then accrue yield to the sender
-        //   and append a new balance to the sender balance history
+        _updateSupply();
+
         if (from != address(0)) {
             accrueYield(from);
-
-            BalanceHistory storage fromBalanceHistory = $.balanceHistory[from];
-            uint256 balance = balanceOf(from);
-            uint256 lastTimestamp = fromBalanceHistory.lastTimestamp;
-
-            if (timestamp == lastTimestamp) {
-                fromBalanceHistory.balances[timestamp].amount = balance;
-            } else {
-                fromBalanceHistory.balances[timestamp] = Balance(balance, lastTimestamp);
-                fromBalanceHistory.lastTimestamp = timestamp;
-            }
+            UserState memory fromState = $.userStates[from];
+            fromState.amountSeconds += fromState.amount * (timestamp - fromState.lastBalanceTimestamp);
+            fromState.amount = balanceOf(from);
+            fromState.lastBalanceTimestamp = timestamp;
+            $.userStates[from] = fromState;
         }
 
-        // If the token is not being burned, then accrue yield to the receiver
-        //   and append a new balance to the receiver balance history
         if (to != address(0)) {
             accrueYield(to);
-
-            BalanceHistory storage toBalanceHistory = $.balanceHistory[to];
-            uint256 balance = balanceOf(to);
-            uint256 lastTimestamp = toBalanceHistory.lastTimestamp;
-
-            if (timestamp == lastTimestamp) {
-                toBalanceHistory.balances[timestamp].amount = balance;
-            } else {
-                toBalanceHistory.balances[timestamp] = Balance(balance, lastTimestamp);
-                toBalanceHistory.lastTimestamp = timestamp;
-            }
+            UserState memory toState = $.userStates[to];
+            toState.amountSeconds += toState.amount * (timestamp - toState.lastBalanceTimestamp);
+            toState.amount = balanceOf(to);
+            toState.lastBalanceTimestamp = timestamp;
+            $.userStates[to] = toState;
         }
+    }
+
+    // Internal Functions
+
+    /// @notice Update the totalAmountSeconds and lastSupplyTimestamp when supply or time changes
+    function _updateSupply() internal {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        uint256 timestamp = block.timestamp;
+        if (timestamp > $.lastSupplyTimestamp) {
+            $.totalAmountSeconds += totalSupply() * (timestamp - $.lastSupplyTimestamp);
+            $.lastSupplyTimestamp = timestamp;
+        }
+    }
+
+    /**
+     * @notice Deposit yield into the YieldDistributionToken
+     * @dev The sender must have approved the CurrencyToken to spend the given amount
+     * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
+     */
+    function _depositYield(uint256 currencyTokenAmount) internal {
+        if (currencyTokenAmount == 0) {
+            return;
+        }
+
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        uint256 lastTimestamp = $.depositHistory.lastTimestamp;
+        uint256 timestamp = block.timestamp;
+
+        _updateSupply();
+
+        // If the deposit is in the same block as the last one, add to the previous deposit
+        //  Otherwise, append a new deposit to the token deposit history
+        Deposit memory deposit = $.depositHistory.deposits[timestamp];
+        deposit.currencyTokenAmount += currencyTokenAmount;
+        deposit.totalAmountSeconds = $.totalAmountSeconds;
+        if (timestamp != lastTimestamp) {
+            deposit.previousTimestamp = lastTimestamp;
+            $.depositHistory.lastTimestamp = timestamp;
+        }
+        $.depositHistory.deposits[timestamp] = deposit;
+
+        if (!$.currencyToken.transferFrom(msg.sender, address(this), currencyTokenAmount)) {
+            revert TransferFailed(msg.sender, currencyTokenAmount);
+        }
+        emit Deposited(msg.sender, timestamp, currencyTokenAmount);
     }
 
     // Admin Setter Functions
@@ -258,44 +268,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         return _getYieldDistributionTokenStorage().tokenURI;
     }
 
-    // Internal Functions
-
-    /**
-     * @notice Deposit yield into the YieldDistributionToken
-     * @dev The sender must have approved the CurrencyToken to spend the given amount
-     * @param timestamp Timestamp of the deposit, must not be less than the previous deposit timestamp
-     * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
-     */
-    function _depositYield(uint256 timestamp, uint256 currencyTokenAmount) internal {
-        if (timestamp > block.timestamp) {
-            revert InvalidTimestamp(timestamp, block.timestamp);
-        }
-        if (currencyTokenAmount == 0) {
-            revert ZeroAmount();
-        }
-
-        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-        uint256 lastTimestamp = $.depositHistory.lastTimestamp;
-
-        if (timestamp < lastTimestamp) {
-            revert InvalidDepositTimestamp(timestamp, lastTimestamp);
-        }
-
-        // If the deposit is in the same block as the last one, add to the previous deposit
-        //  Otherwise, append a new deposit to the token deposit history
-        if (timestamp == lastTimestamp) {
-            $.depositHistory.deposits[timestamp].currencyTokenAmount += currencyTokenAmount;
-        } else {
-            $.depositHistory.deposits[timestamp] = Deposit(currencyTokenAmount, totalSupply(), lastTimestamp);
-            $.depositHistory.lastTimestamp = timestamp;
-        }
-
-        if (!$.currencyToken.transferFrom(msg.sender, address(this), currencyTokenAmount)) {
-            revert TransferFailed(msg.sender, currencyTokenAmount);
-        }
-        emit Deposited(msg.sender, timestamp, currencyTokenAmount);
-    }
-
     // Permissionless Functions
 
     /**
@@ -311,10 +283,11 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
         accrueYield(user);
 
-        uint256 amountAccrued = $.yieldAccrued[user];
-        currencyTokenAmount = amountAccrued - $.yieldWithdrawn[user];
+        UserState storage userState = $.userStates[user];
+        uint256 amountAccrued = userState.yieldAccrued;
+        currencyTokenAmount = amountAccrued - userState.yieldWithdrawn;
         if (currencyTokenAmount != 0) {
-            $.yieldWithdrawn[user] = amountAccrued;
+            userState.yieldWithdrawn = amountAccrued;
             if (!currencyToken.transfer(user, currencyTokenAmount)) {
                 revert TransferFailed(user, currencyTokenAmount);
             }
@@ -326,16 +299,15 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @notice Accrue yield to a user, which can later be claimed
      * @dev Anyone can call this function to accrue yield to any user.
      *   The function does not do anything if it is called in the same block that a deposit is made.
-     *   This function accrues all the yield up until the most recent deposit and creates
-     *   a new balance at that deposit timestamp. All balances before that are then deleted.
+     *   This function accrues all the yield up until the most recent deposit and updates the user state.
      * @param user Address of the user to accrue yield to
      */
     function accrueYield(address user) public {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         DepositHistory storage depositHistory = $.depositHistory;
-        BalanceHistory storage balanceHistory = $.balanceHistory[user];
+        UserState memory userState = $.userStates[user];
         uint256 depositTimestamp = depositHistory.lastTimestamp;
-        uint256 balanceTimestamp = balanceHistory.lastTimestamp;
+        uint256 lastBalanceTimestamp = userState.lastBalanceTimestamp;
 
         /**
          * There is a race condition in the current implementation that occurs when
@@ -345,115 +317,51 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
          * anything when the deposit timestamp is the same as the current block timestamp.
          * Users can call `accrueYield` again on the next block.
          */
-        if (depositTimestamp == block.timestamp) {
+        if (
+            depositTimestamp == block.timestamp
+            // If the user has never had any balances, then there is no yield to accrue
+            || lastBalanceTimestamp == 0
+            // If this deposit is before the user's last balance update, then they already accrued yield
+            || depositTimestamp < lastBalanceTimestamp
+        ) {
             return;
         }
 
-        // If the user has never had any balances, then there is no yield to accrue
-        if (balanceTimestamp == 0) {
-            return;
-        }
-
+        // Iterate through depositHistory and accrue yield for the user at each deposit timestamp
         Deposit storage deposit = depositHistory.deposits[depositTimestamp];
-        Balance storage balance = balanceHistory.balances[balanceTimestamp];
-        uint256 previousBalanceTimestamp = balance.previousTimestamp;
-        Balance storage previousBalance = balanceHistory.balances[previousBalanceTimestamp];
-
-        // Iterate through the balanceHistory list until depositTimestamp >= previousBalanceTimestamp
-        while (depositTimestamp < previousBalanceTimestamp) {
-            balanceTimestamp = previousBalanceTimestamp;
-            balance = previousBalance;
-            previousBalanceTimestamp = balance.previousTimestamp;
-            previousBalance = balanceHistory.balances[previousBalanceTimestamp];
-        }
-
-        /**
-         * At this point, either:
-         *   (a) depositTimestamp >= balanceTimestamp > previousBalanceTimestamp
-         *   (b) balanceTimestamp > depositTimestamp >= previousBalanceTimestamp
-         * Create a new balance at the moment of depositTimestamp, whose amount is
-         *   either case (a) balance.amount or case (b) previousBalance.amount.
-         *   Then ignore the most recent balance in case (b) because it is in the future.
-         */
-        uint256 preserveBalanceTimestamp;
-        if (balanceTimestamp < depositTimestamp) {
-            balanceHistory.lastTimestamp = depositTimestamp;
-            balanceHistory.balances[depositTimestamp].amount = balance.amount;
-            delete balanceHistory.balances[depositTimestamp].previousTimestamp;
-        } else if (balanceTimestamp > depositTimestamp) {
-            if (previousBalanceTimestamp != 0) {
-                balance.previousTimestamp = depositTimestamp;
-                balanceHistory.balances[depositTimestamp].amount = previousBalance.amount;
-                delete balanceHistory.balances[depositTimestamp].previousTimestamp;
-            }
-            balance = previousBalance;
-            balanceTimestamp = previousBalanceTimestamp;
-        } else {
-            // Do not delete this balance if its timestamp is the same as the deposit timestamp
-            preserveBalanceTimestamp = balanceTimestamp;
-        }
-
-        /**
-         * At this point: depositTimestamp >= balanceTimestamp
-         * We will keep this as an invariant throughout the rest of the function.
-         * Double while loop: in the outer while loop, we iterate through the depositHistory list and
-         *   calculate the yield to be accrued to the user based on their balance at that time.
-         *   This outer loop ends after we go through all deposits or all of the user's balance history.
-         */
         uint256 yieldAccrued = 0;
+        uint256 amountSeconds = userState.amountSeconds;
         uint256 depositAmount = deposit.currencyTokenAmount;
-        while (depositAmount > 0 && balanceTimestamp > 0) {
+        while (depositAmount > 0 && depositTimestamp > lastBalanceTimestamp) {
             uint256 previousDepositTimestamp = deposit.previousTimestamp;
-            uint256 timeBetweenDeposits = depositTimestamp - previousDepositTimestamp;
-
-            /**
-             * If the balance of the user remained unchanged between both deposits,
-             *   then we can easily calculate the yield proportional to the balance.
-             */
-            if (previousDepositTimestamp >= balanceTimestamp) {
-                yieldAccrued += _BASE * depositAmount * balance.amount / deposit.totalSupply;
+            uint256 intervalTotalAmountSeconds =
+                deposit.totalAmountSeconds - depositHistory.deposits[previousDepositTimestamp].totalAmountSeconds;
+            if (previousDepositTimestamp > lastBalanceTimestamp) {
+                /**
+                 * There can be a sequence of deposits made while the user balance remains the same throughout.
+                 * Subtract the amountSeconds in this interval to get the total amountSeconds at the previous deposit.
+                 */
+                uint256 intervalAmountSeconds = userState.amount * (depositTimestamp - previousDepositTimestamp);
+                amountSeconds -= intervalAmountSeconds;
+                yieldAccrued += _BASE * depositAmount * intervalAmountSeconds / intervalTotalAmountSeconds;
             } else {
                 /**
-                 * If the balance of the user changed between the deposits, then we need to iterate through
-                 *   the balanceHistory list and calculate the prorated yield that accrued to the user.
-                 *   The prorated yield is the proportion of tokens the user holds (balance.amount /
-                 * deposit.totalSupply)
-                 *   multiplied by the time interval ((nextBalanceTimestamp - balanceTimestamp) / timeBetweenDeposits).
+                 * At the very end, there can be a sequence of balance updates made right after
+                 * the most recent previously processed deposit and before any other deposits.
                  */
-                uint256 nextBalanceTimestamp = depositTimestamp;
-                while (balanceTimestamp >= previousDepositTimestamp) {
-                    yieldAccrued += _BASE * depositAmount * balance.amount * (nextBalanceTimestamp - balanceTimestamp)
-                        / deposit.totalSupply / timeBetweenDeposits;
-
-                    nextBalanceTimestamp = balanceTimestamp;
-                    balanceTimestamp = balance.previousTimestamp;
-                    balance = balanceHistory.balances[balanceTimestamp];
-
-                    /**
-                     * Delete the old balance since it has already been processed by some deposit,
-                     *   unless the timestamp is the same as the deposit timestamp, in which case
-                     *   we need to preserve the balance for the next iteration.
-                     */
-                    if (nextBalanceTimestamp != preserveBalanceTimestamp) {
-                        delete balanceHistory.balances[nextBalanceTimestamp].amount;
-                        delete balanceHistory.balances[nextBalanceTimestamp].previousTimestamp;
-                    }
-                }
-
-                /**
-                 * At this point: nextBalanceTimestamp >= previousDepositTimestamp > balanceTimestamp
-                 * Accrue yield from previousDepositTimestamp up until nextBalanceTimestamp
-                 */
-                yieldAccrued += _BASE * depositAmount * balance.amount
-                    * (nextBalanceTimestamp - previousDepositTimestamp) / deposit.totalSupply / timeBetweenDeposits;
+                yieldAccrued += _BASE * depositAmount * (amountSeconds - userState.lastDepositAmountSeconds)
+                    / intervalTotalAmountSeconds;
             }
-
             depositTimestamp = previousDepositTimestamp;
             deposit = depositHistory.deposits[depositTimestamp];
             depositAmount = deposit.currencyTokenAmount;
         }
 
-        $.yieldAccrued[user] += yieldAccrued / _BASE;
+        userState.lastDepositAmountSeconds = userState.amountSeconds;
+        userState.amountSeconds += userState.amount * (depositHistory.lastTimestamp - lastBalanceTimestamp);
+        userState.lastBalanceTimestamp = depositHistory.lastTimestamp;
+        userState.yieldAccrued += yieldAccrued / _BASE;
+        $.userStates[user] = userState;
         emit YieldAccrued(user, yieldAccrued / _BASE);
     }
 
