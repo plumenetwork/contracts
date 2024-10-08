@@ -21,8 +21,8 @@ abstract contract ComponentToken is
     ERC20Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
+    ERC165,
     IComponentToken,
-    ERC165
 {
 
     // Storage
@@ -485,6 +485,11 @@ abstract contract ComponentToken is
     /// @notice Asset used to buy and sell the ComponentToken
     function asset() external view returns (address) {
         return address(_getComponentTokenStorage().asset);
+    }
+
+    /// @inheritdoc IComponentToken
+    function share() external view returns (address shareTokenAddress) {
+        return address(this);
     }
 
     /// @notice Total yield distributed to the ComponentToken for all users
