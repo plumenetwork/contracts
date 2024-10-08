@@ -75,6 +75,7 @@ contract RWAStakingTest is Test {
         assertEq(lastUpdate, 0);
         assertEq(rwaStaking.getAllowedStablecoins().length, 0);
         assertEq(rwaStaking.isAllowedStablecoin(usdc), false);
+        assertEq(rwaStaking.getEndTime(), 0);
 
         assertTrue(rwaStaking.hasRole(rwaStaking.DEFAULT_ADMIN_ROLE(), owner));
         assertTrue(rwaStaking.hasRole(rwaStaking.ADMIN_ROLE(), owner));
@@ -196,6 +197,7 @@ contract RWAStakingTest is Test {
         assertEq(pusd.balanceOf(address(rwaStaking)), 0);
         assertEq(rwaStaking.getTotalAmountStaked(), stakeAmount + pusdStakeAmount);
         assertEq(rwaStaking.getUsers().length, 1);
+        assertEq(rwaStaking.getEndTime(), startTime + timeskipAmount);
     }
 
     function test_stakeFail() public {

@@ -59,6 +59,8 @@ contract SBTCStakingTest is Test {
         assertEq(address(sbtcStaking.getSBTC()), address(sbtc));
         assertEq(sbtcStaking.getTotalAmountStaked(), 0);
         assertEq(sbtcStaking.getUsers().length, 0);
+        assertEq(sbtcStaking.getEndTime(), 0);
+
         (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = sbtcStaking.getUserState(user1);
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, 0);
@@ -132,6 +134,7 @@ contract SBTCStakingTest is Test {
         assertEq(sbtc.balanceOf(address(sbtcStaking)), 0);
         assertEq(sbtcStaking.getTotalAmountStaked(), stakeAmount);
         assertEq(sbtcStaking.getUsers().length, 1);
+        assertEq(sbtcStaking.getEndTime(), startTime + timeskipAmount);
     }
 
     function test_stakeFail() public {

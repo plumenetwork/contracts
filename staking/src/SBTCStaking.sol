@@ -194,4 +194,9 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
         );
     }
 
+    /// @notice Timestamp of when pre-staking ends, when the admin withdraws all SBTC
+    function getEndTime() external view returns (uint256) {
+        return _getSBTCStakingStorage().endTime;
+    }
+
 }

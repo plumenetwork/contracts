@@ -234,4 +234,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
         return _getRWAStakingStorage().allowedStablecoins[stablecoin];
     }
 
+    /// @notice Timestamp of when pre-staking ends, when the admin withdraws all stablecoins
+    function getEndTime() external view returns (uint256) {
+        return _getRWAStakingStorage().endTime;
+    }
+
 }
