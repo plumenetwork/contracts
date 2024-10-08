@@ -27,38 +27,12 @@ abstract contract ComponentToken is
 
     // Storage
 
-    /// @notice Represents a request to buy or sell ComponentToken using assets
-    struct Request {
-        /// @dev Unique identifier for the request
-        uint256 requestId;
-        /// @dev Amount of assets for a buy; amount of shares for a sell
-        uint256 amount;
-        /// @dev Address of the user or smart contract who requested the buy or sell
-        address requestor;
-        /// @dev True for a buy request; false for a sell request
-        bool isBuy;
-        /// @dev True if the request has been executed; false otherwise
-        bool isExecuted;
-    }
-
     /// @custom:storage-location erc7201:plume.storage.ComponentToken
     struct ComponentTokenStorage {
         /// @dev Asset used to mint and burn the ComponentToken
         IERC20 asset;
         /// @dev Number of decimals of the ComponentToken
         uint8 decimals;
-        /// @dev Version of the ComponentToken interface
-        uint256 version;
-        /// @dev Requests to buy or sell ComponentToken using assets
-        Request[] requests;
-        /// @dev Total amount of yield that has ever been accrued by all users
-        uint256 totalYieldAccrued;
-        /// @dev Total amount of yield that has ever been withdrawn by all users
-        uint256 totalYieldWithdrawn;
-        /// @dev Total amount of yield that has ever been accrued by each user
-        mapping(address user => uint256 assets) yieldAccrued;
-        /// @dev Total amount of yield that has ever been withdrawn by each user
-        mapping(address user => uint256 assets) yieldWithdrawn;
         /// @dev True if deposits are asynchronous; false otherwise
         bool asyncDeposit;
         /// @dev True if redemptions are asynchronous; false otherwise
@@ -88,50 +62,6 @@ abstract contract ComponentToken is
     /// @notice Role for the upgrader of the ComponentToken
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
-    // Events
-
-    /**
-     * @notice Emitted when a user requests to buy ComponentToken using assets
-     * @param user Address of the user who requested to buy the ComponentToken
-     * @param asset Asset to be used to buy the ComponentToken
-     * @param assets Amount of assets offered to be paid
-     */
-    event BuyRequested(address indexed user, IERC20 indexed asset, uint256 assets);
-
-    /**
-     * @notice Emitted when a user requests to sell ComponentToken to receive assets
-     * @param user Address of the user who requested to sell the ComponentToken
-     * @param asset Asset to be received in exchange for the ComponentToken
-     * @param shares Amount of ComponentToken offered to be sold
-     */
-    event SellRequested(address indexed user, IERC20 indexed asset, uint256 shares);
-
-    /**
-     * @notice Emitted when a user buys ComponentToken using assets
-     * @param user Address of the user who bought the ComponentToken
-     * @param asset Asset used to buy the ComponentToken
-     * @param assets Amount of assets paid
-     * @param shares Amount of shares received
-     */
-    event BuyExecuted(address indexed user, IERC20 indexed asset, uint256 asset, uint256 shares);
-
-    /**
-     * @notice Emitted when a user sells ComponentToken to receive assets
-     * @param user Address of the user who sold the ComponentToken
-     * @param asset Asset received in exchange for the ComponentToken
-     * @param assets Amount of assets received
-     * @param shares Amount of shares sold
-     */
-    event SellExecuted(address indexed user, IERC20 indexed asset, uint256 assets, uint256 shares);
-
-    /**
-     * @notice Emitted when anyone claims yield that has accrued to a user
-     * @param user Address of the user who receives the claimed yield
-     * @param asset Asset used to denominate the claimed yield
-     * @param assets Amount of assets claimed as yield
-     */
-    event YieldClaimed(address indexed user, IERC20 indexed asset, uint256 assets);
-
     // Errors
 
     /// @notice Indicates a failure because the user tried to call an unimplemented function
@@ -158,26 +88,6 @@ abstract contract ComponentToken is
      *   3: Claimable redeem request
      */
     error InsufficientRequestBalance(address controller, uint256 amount, uint256 requestType);
-
-    /**
-     * @notice Indicates a failure because the given request ID is invalid
-     * @param invalidRequestId Request ID that is invalid
-     * @param errorType Type of error that occurred
-     *   0: Request ID does not exist
-     *   1: Request amount does not match the amount the user is trying to execute
-     *   2: Requestor is not the user trying to execute the request
-     *   3: Request is not a buy request, but the user is trying to execute a buy
-     *   4: Request is not a sell request, but the user is trying to execute a sell
-     *   5: Request has already been executed
-     */
-    error InvalidRequest(uint256 invalidRequestId, uint256 errorType);
-
-    /**
-     * @notice Indicates a failure because the given version is not higher than the current version
-     * @param invalidVersion Invalid version that is not higher than the current version
-     * @param version Current version of the ComponentToken
-     */
-    error InvalidVersion(uint256 invalidVersion, uint256 version);
 
     /**
      * @notice Indicates a failure because the user does not have enough assets
@@ -433,54 +343,7 @@ abstract contract ComponentToken is
         return ($.asyncDeposit && interfaceId == 0xce3bbe50) || ($.asyncRedeem && interfaceId == 0x620ee8e4);
     }
 
-    /**
-     * @notice Claim all the remaining yield that has been accrued to a user
-     * @dev Anyone can call this function to claim yield for any user
-     * @param user Address of the user to claim yield for
-     * @return assets Amount of assets claimed as yield
-     */
-    function claimYield(address user) external returns (uint256 assets) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 asset = $.asset;
-
-        assets = unclaimedYield(user);
-        asset.transfer(user, assets);
-        $.yieldWithdrawn[user] += assets;
-        $.totalYieldWithdrawn += assets;
-
-        emit YieldClaimed(user, asset, assets);
-    }
-
-    // Admin Setter Functions
-
-    /**
-     * @notice Set the version of the ComponentToken
-     * @dev Only the owner can call this setter
-     * @param version New version of the ComponentToken
-     */
-    function setVersion(uint256 version) external onlyRole(ADMIN_ROLE) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if (version <= $.version) {
-            revert InvalidVersion(version, $.version);
-        }
-        $.version = version;
-    }
-
-    /**
-     * @notice Set the asset used to mint and burn the ComponentToken
-     * @dev Only the owner can call this setter
-     * @param asset New asset token to be used
-     */
-    function setAsset(IERC20 asset) external onlyRole(ADMIN_ROLE) {
-        _getComponentTokenStorage().asset = asset;
-    }
-
     // Getter View Functions
-
-    /// @notice Returns the version of the ComponentToken interface
-    function getVersion() external view returns (uint256) {
-        return _getComponentTokenStorage().version;
-    }
 
     /// @notice Asset used to buy and sell the ComponentToken
     function asset() external view returns (address assetTokenAddress) {
