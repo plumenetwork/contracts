@@ -22,7 +22,7 @@ abstract contract ComponentToken is
     AccessControlUpgradeable,
     UUPSUpgradeable,
     ERC165,
-    IComponentToken,
+    IComponentToken
 {
 
     // Storage
@@ -483,57 +483,13 @@ abstract contract ComponentToken is
     }
 
     /// @notice Asset used to buy and sell the ComponentToken
-    function asset() external view returns (address) {
+    function asset() external view returns (address assetTokenAddress) {
         return address(_getComponentTokenStorage().asset);
     }
 
     /// @inheritdoc IComponentToken
     function share() external view returns (address shareTokenAddress) {
         return address(this);
-    }
-
-    /// @notice Total yield distributed to the ComponentToken for all users
-    function totalYield() external view returns (uint256 amount) {
-        return _getComponentTokenStorage().totalYieldAccrued;
-    }
-
-    /// @notice Claimed yield across the ComponentToken for all users
-    function claimedYield() external view returns (uint256 amount) {
-        return _getComponentTokenStorage().totalYieldWithdrawn;
-    }
-
-    /// @notice Unclaimed yield across the ComponentToken for all users
-    function unclaimedYield() external view returns (uint256 amount) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        return $.totalYieldAccrued - $.totalYieldWithdrawn;
-    }
-
-    /**
-     * @notice Total yield distributed to a specific user
-     * @param user Address of the user for which to get the total yield
-     * @return amount Total yield distributed to the user
-     */
-    function totalYield(address user) external view returns (uint256 amount) {
-        return _getComponentTokenStorage().yieldAccrued[user];
-    }
-
-    /**
-     * @notice Amount of yield that a specific user has claimed
-     * @param user Address of the user for which to get the claimed yield
-     * @return amount Amount of yield that the user has claimed
-     */
-    function claimedYield(address user) external view returns (uint256 amount) {
-        return _getComponentTokenStorage().yieldWithdrawn[user];
-    }
-
-    /**
-     * @notice Amount of yield that a specific user has not yet claimed
-     * @param user Address of the user for which to get the unclaimed yield
-     * @return amount Amount of yield that the user has not yet claimed
-     */
-    function unclaimedYield(address user) public view returns (uint256 amount) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        return $.yieldAccrued[user] - $.yieldWithdrawn[user];
     }
 
 }

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { IClaimableYieldToken } from "./IClaimableYieldToken.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-interface IComponentToken is IClaimableYieldToken {
+interface IComponentToken is IERC20 {
 
     /**
      * @notice Submit a request to send currencyTokenAmount of CurrencyToken to buy ComponentToken
