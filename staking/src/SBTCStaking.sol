@@ -42,6 +42,8 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
         address[] users;
         /// @dev Mapping of users to their state in the SBTCStaking contract
         mapping(address user => UserState userState) userStates;
+        /// @dev Timestamp of when pre-staking ends, when the admin withdraws all SBTC
+        uint256 endTime;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.SBTCStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -64,12 +66,24 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
     // Events
 
     /**
+     * @notice Emitted when an admin withdraws SBTC from the SBTCStaking contract
+     * @param user Address of the admin who withdrew stablecoins
+     * @param amount Amount of SBTC withdrawn
+     */
+    event Withdrawn(address indexed user, uint256 amount);
+
+    /**
      * @notice Emitted when a user stakes SBTC into the SBTCStaking contract
      * @param user Address of the user who staked SBTC
      * @param amount Amount of SBTC staked
      * @param timestamp Timestamp of the stake
      */
     event Staked(address indexed user, uint256 amount, uint256 timestamp);
+
+    // Errors
+
+    /// @notice Indicates a failure because the pre-staking period has ended
+    error StakingEnded();
 
     // Initializer
 
@@ -105,6 +119,25 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
 
+    // Admin Functions
+
+    /**
+     * @notice Stop the SBTCStaking contract by withdrawing all SBTC
+     * @dev Only the admin can withdraw SBTC from the SBTCStaking contract
+     */
+    function withdraw() external onlyRole(ADMIN_ROLE) {
+        SBTCStakingStorage storage $ = _getSBTCStakingStorage();
+        if ($.endTime != 0) {
+            revert StakingEnded();
+        }
+
+        uint256 amount = $.sbtc.balanceOf(address(this));
+        $.sbtc.safeTransfer(msg.sender, amount);
+        $.endTime = block.timestamp;
+
+        emit Withdrawn(msg.sender, amount);
+    }
+
     // User Functions
 
     /**
@@ -113,6 +146,9 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
      */
     function stake(uint256 amount) external {
         SBTCStakingStorage storage $ = _getSBTCStakingStorage();
+        if ($.endTime != 0) {
+            revert StakingEnded();
+        }
 
         $.sbtc.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -148,12 +184,19 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
 
     /// @notice State of a user who has staked into the SBTCStaking contract
     function getUserState(address user) external view returns (uint256, uint256, uint256) {
-        UserState memory userState = _getSBTCStakingStorage().userStates[user];
+        SBTCStakingStorage storage $ = _getSBTCStakingStorage();
+        UserState memory userState = $.userStates[user];
         return (
-            userState.amountSeconds + userState.amountStaked * (block.timestamp - userState.lastUpdate),
+            userState.amountSeconds
+                + userState.amountStaked * (($.endTime > 0 ? $.endTime : block.timestamp) - userState.lastUpdate),
             userState.amountStaked,
             userState.lastUpdate
         );
+    }
+
+    /// @notice Timestamp of when pre-staking ends, when the admin withdraws all SBTC
+    function getEndTime() external view returns (uint256) {
+        return _getSBTCStakingStorage().endTime;
     }
 
 }

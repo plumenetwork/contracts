@@ -59,6 +59,8 @@ contract SBTCStakingTest is Test {
         assertEq(address(sbtcStaking.getSBTC()), address(sbtc));
         assertEq(sbtcStaking.getTotalAmountStaked(), 0);
         assertEq(sbtcStaking.getUsers().length, 0);
+        assertEq(sbtcStaking.getEndTime(), 0);
+
         (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = sbtcStaking.getUserState(user1);
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, 0);
@@ -72,6 +74,67 @@ contract SBTCStakingTest is Test {
         assertEq(sbtc.balanceOf(owner), 0);
         assertEq(sbtc.balanceOf(user1), INITIAL_BALANCE);
         assertEq(sbtc.balanceOf(user2), INITIAL_BALANCE);
+    }
+
+    function test_stakingEnded() public {
+        vm.startPrank(owner);
+        sbtcStaking.withdraw();
+
+        vm.expectRevert(abi.encodeWithSelector(SBTCStaking.StakingEnded.selector));
+        sbtcStaking.stake(100 ether);
+        vm.expectRevert(abi.encodeWithSelector(SBTCStaking.StakingEnded.selector));
+        sbtcStaking.withdraw();
+
+        vm.stopPrank();
+    }
+
+    function test_withdrawFail() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, sbtcStaking.ADMIN_ROLE()
+            )
+        );
+        vm.startPrank(user1);
+        sbtcStaking.withdraw();
+        vm.stopPrank();
+    }
+
+    function test_withdraw() public {
+        uint256 stakeAmount = 100 ether;
+        uint256 timeskipAmount = 300;
+        uint256 startTime = block.timestamp;
+        helper_initialStake(user1, stakeAmount);
+
+        (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = sbtcStaking.getUserState(user1);
+        assertEq(amountSeconds, 0);
+        assertEq(amountStaked, stakeAmount);
+        assertEq(lastUpdate, startTime);
+
+        // Skip ahead in time by 300 seconds and check that amountSeconds has changed
+        vm.warp(startTime + timeskipAmount);
+        (amountSeconds, amountStaked, lastUpdate) = sbtcStaking.getUserState(user1);
+        assertEq(amountSeconds, stakeAmount * timeskipAmount);
+        assertEq(amountStaked, stakeAmount);
+        assertEq(lastUpdate, startTime);
+        assertEq(sbtc.balanceOf(address(sbtcStaking)), stakeAmount);
+
+        vm.startPrank(owner);
+        vm.expectEmit(true, false, false, true, address(sbtcStaking));
+        emit SBTCStaking.Withdrawn(owner, stakeAmount);
+        sbtcStaking.withdraw();
+        vm.stopPrank();
+
+        // Skip ahead in time by 300 seconds and check that amountSeconds is fixed
+        vm.warp(startTime + timeskipAmount * 2);
+        (amountSeconds, amountStaked, lastUpdate) = sbtcStaking.getUserState(user1);
+        assertEq(amountSeconds, stakeAmount * timeskipAmount);
+        assertEq(amountStaked, stakeAmount);
+        assertEq(lastUpdate, startTime);
+
+        assertEq(sbtc.balanceOf(address(sbtcStaking)), 0);
+        assertEq(sbtcStaking.getTotalAmountStaked(), stakeAmount);
+        assertEq(sbtcStaking.getUsers().length, 1);
+        assertEq(sbtcStaking.getEndTime(), startTime + timeskipAmount);
     }
 
     function test_stakeFail() public {

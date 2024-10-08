@@ -75,6 +75,7 @@ contract RWAStakingTest is Test {
         assertEq(lastUpdate, 0);
         assertEq(rwaStaking.getAllowedStablecoins().length, 0);
         assertEq(rwaStaking.isAllowedStablecoin(usdc), false);
+        assertEq(rwaStaking.getEndTime(), 0);
 
         assertTrue(rwaStaking.hasRole(rwaStaking.DEFAULT_ADMIN_ROLE(), owner));
         assertTrue(rwaStaking.hasRole(rwaStaking.ADMIN_ROLE(), owner));
@@ -88,6 +89,18 @@ contract RWAStakingTest is Test {
         assertEq(pusd.balanceOf(owner), 0);
         assertEq(pusd.balanceOf(user1), INITIAL_BALANCE);
         assertEq(pusd.balanceOf(user2), INITIAL_BALANCE);
+    }
+
+    function test_stakingEnded() public {
+        vm.startPrank(owner);
+        rwaStaking.withdraw();
+
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.StakingEnded.selector));
+        rwaStaking.stake(100 ether, usdc);
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.StakingEnded.selector));
+        rwaStaking.withdraw();
+
+        vm.stopPrank();
     }
 
     function test_allowStablecoinFail() public {
@@ -121,6 +134,70 @@ contract RWAStakingTest is Test {
         assertEq(rwaStaking.isAllowedStablecoin(pusd), true);
 
         vm.stopPrank();
+    }
+
+    function test_withdrawFail() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, rwaStaking.ADMIN_ROLE()
+            )
+        );
+        vm.startPrank(user1);
+        rwaStaking.withdraw();
+        vm.stopPrank();
+    }
+
+    function test_withdraw() public {
+        uint256 stakeAmount = 100 ether;
+        uint256 pusdStakeAmount = 30 ether;
+        uint256 timeskipAmount = 300;
+        uint256 startTime = block.timestamp;
+        helper_initialStake(user1, stakeAmount);
+
+        (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = rwaStaking.getUserState(user1);
+        assertEq(amountSeconds, 0);
+        assertEq(amountStaked, stakeAmount);
+        assertEq(lastUpdate, startTime);
+
+        // Skip ahead in time by 300 seconds and check that amountSeconds has changed
+        vm.warp(startTime + timeskipAmount);
+        (amountSeconds, amountStaked, lastUpdate) = rwaStaking.getUserState(user1);
+        assertEq(amountSeconds, stakeAmount * timeskipAmount);
+        assertEq(amountStaked, stakeAmount);
+        assertEq(lastUpdate, startTime);
+
+        vm.startPrank(owner);
+        rwaStaking.allowStablecoin(pusd);
+        vm.stopPrank();
+
+        vm.startPrank(user1);
+        pusd.approve(address(rwaStaking), pusdStakeAmount);
+        rwaStaking.stake(pusdStakeAmount, pusd);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount);
+        assertEq(pusd.balanceOf(address(rwaStaking)), pusdStakeAmount);
+
+        vm.startPrank(owner);
+        vm.expectEmit(true, true, false, true, address(rwaStaking));
+        emit RWAStaking.Withdrawn(owner, usdc, stakeAmount);
+        vm.expectEmit(true, true, false, true, address(rwaStaking));
+        emit RWAStaking.Withdrawn(owner, pusd, pusdStakeAmount);
+        rwaStaking.withdraw();
+        vm.stopPrank();
+
+        // Skip ahead in time by 300 seconds and check that amountSeconds is fixed
+        vm.warp(startTime + timeskipAmount * 2);
+        (amountSeconds, amountStaked, lastUpdate) = rwaStaking.getUserState(user1);
+        assertEq(amountSeconds, stakeAmount * timeskipAmount);
+        assertEq(amountStaked, stakeAmount + pusdStakeAmount);
+        assertEq(lastUpdate, startTime + timeskipAmount);
+
+        assertEq(usdc.balanceOf(address(rwaStaking)), 0);
+        assertEq(pusd.balanceOf(address(rwaStaking)), 0);
+        assertEq(rwaStaking.getTotalAmountStaked(), stakeAmount + pusdStakeAmount);
+        assertEq(rwaStaking.getUsers().length, 1);
+        assertEq(rwaStaking.getEndTime(), startTime + timeskipAmount);
     }
 
     function test_stakeFail() public {
