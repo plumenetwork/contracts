@@ -5,10 +5,16 @@ import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/ac
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
+import { IERC7540 } from "./interfaces/IERC7540.sol";
+import { IERC7575 } from "./interfaces/IERC7575.sol";
 
 /**
  * @title ComponentToken
@@ -116,7 +122,7 @@ abstract contract ComponentToken is
      * @param owner Address of the owner of the ComponentToken
      * @param name Name of the ComponentToken
      * @param symbol Symbol of the ComponentToken
-     * @param asset Asset used to mint and burn the ComponentToken
+     * @param asset_ Asset used to mint and burn the ComponentToken
      * @param decimals_ Number of decimals of the ComponentToken
      * @param asyncDeposit True if deposits are asynchronous; false otherwise
      * @param asyncRedeem True if redemptions are asynchronous; false otherwise
@@ -125,7 +131,7 @@ abstract contract ComponentToken is
         address owner,
         string memory name,
         string memory symbol,
-        IERC20 asset,
+        IERC20 asset_,
         uint8 decimals_,
         bool asyncDeposit,
         bool asyncRedeem
@@ -139,7 +145,7 @@ abstract contract ComponentToken is
         _grantRole(UPGRADER_ROLE, owner);
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        $.asset = asset;
+        $.asset = asset_;
         $.decimals = decimals_;
         $.asyncDeposit = asyncDeposit;
         $.asyncRedeem = asyncRedeem;
@@ -154,15 +160,21 @@ abstract contract ComponentToken is
     function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
 
     /// @notice Number of decimals of the ComponentToken
-    function decimals() public view override returns (uint8) {
+    function decimals() public view override(ERC20Upgradeable, IERC20Metadata) returns (uint8) {
         return _getComponentTokenStorage().decimals;
     }
 
-    /// @inheritdoc IComponentToken
-    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool supported) {
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(AccessControlUpgradeable, ERC165, IERC165)
+        returns (bool supported)
+    {
         if (
             super.supportsInterface(interfaceId) || interfaceId == type(IERC7575).interfaceId
-                || interfaceId == "0xe3bc4e65"
+                || interfaceId == 0xe3bc4e65
         ) {
             return true;
         }
@@ -172,12 +184,8 @@ abstract contract ComponentToken is
 
     // User Functions
 
-    /// @inheritdoc IComponentToken
-    function requestDeposit(
-        uint256 assets,
-        address controller,
-        address owner
-    ) public virtual returns (uint256 requestId) {
+    /// @inheritdoc IERC7540
+    function requestDeposit(uint256 assets, address controller, address owner) public virtual returns (uint256) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -186,10 +194,8 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 asset = $.asset;
-
-        if (!asset.transferFrom(owner, address(this), assets)) {
-            revert InsufficientBalance(asset, owner, assets);
+        if (!$.asset.transferFrom(owner, address(this), assets)) {
+            revert InsufficientBalance($.asset, owner, assets);
         }
         $.pendingDepositRequest[controller] += assets;
 
@@ -197,8 +203,8 @@ abstract contract ComponentToken is
         return REQUEST_ID;
     }
 
-    /// @inheritdoc IComponentToken
-    function deposit(uint256 assets, address receiver, address controller) public virtual {
+    /// @inheritdoc IERC7540
+    function deposit(uint256 assets, address receiver, address controller) public virtual returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -211,18 +217,16 @@ abstract contract ComponentToken is
             revert InsufficientRequestBalance(controller, assets, 1);
         }
 
+        // TODO: implement conversion
+        shares = assets;
         _mint(receiver, shares);
         $.claimableDepositRequest[controller] -= assets;
 
         emit Deposit(controller, receiver, assets, shares);
     }
 
-    /// @inheritdoc IComponentToken
-    function requestRedeem(
-        uint256 shares,
-        address controller,
-        address owner
-    ) public virtual returns (uint256 requestId) {
+    /// @inheritdoc IERC7540
+    function requestRedeem(uint256 shares, address controller, address owner) public virtual returns (uint256) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -230,18 +234,15 @@ abstract contract ComponentToken is
             revert Unauthorized(msg.sender, owner);
         }
 
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 asset = $.asset;
-
         _burn(msg.sender, shares);
-        $.pendingRedeemRequest[controller] += assets;
+        _getComponentTokenStorage().pendingRedeemRequest[controller] += shares;
 
         emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
         return REQUEST_ID;
     }
 
-    /// @inheritdoc IComponentToken
-    function redeem(uint256 shares, address receiver, address controller) public virtual {
+    /// @inheritdoc IERC7540
+    function redeem(uint256 shares, address receiver, address controller) public virtual returns (uint256 assets) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -254,9 +255,10 @@ abstract contract ComponentToken is
             revert InsufficientRequestBalance(controller, shares, 1);
         }
 
-        IERC20 asset = $.asset;
-        if (!asset.transfer(receiver, assets)) {
-            revert InsufficientBalance(asset, address(this), assets);
+        // TODO: implement conversion
+        assets = shares;
+        if (!$.asset.transfer(receiver, assets)) {
+            revert InsufficientBalance($.asset, address(this), assets);
         }
         $.claimableRedeemRequest[controller] -= shares;
 
@@ -265,99 +267,103 @@ abstract contract ComponentToken is
 
     // Getter View Functions
 
-    /// @notice Asset used to buy and sell the ComponentToken
+    /// @inheritdoc IERC4626
     function asset() external view returns (address assetTokenAddress) {
         return address(_getComponentTokenStorage().asset);
     }
 
-    /// @inheritdoc IComponentToken
+    /// @inheritdoc IERC7575
     function share() external view returns (address shareTokenAddress) {
         return address(this);
     }
 
-    /// @inheritdoc IComponentToken
-    function isOperator(address controller, address operator) public view returns (bool status) {
+    /// @inheritdoc IERC7540
+    function isOperator(address, address) public pure returns (bool status) {
         return false;
     }
 
-    /// @inheritdoc IComponentToken
-    function pendingDepositRequest(uint256 requestId, address controller) public view returns (uint256 assets) {
+    /// @inheritdoc IERC7540
+    function pendingDepositRequest(uint256, address controller) public view returns (uint256 assets) {
         return _getComponentTokenStorage().pendingDepositRequest[controller];
     }
 
-    /// @inheritdoc IComponentToken
-    function claimableDepositRequest(uint256 requestId, address controller) public view returns (uint256 assets) {
+    /// @inheritdoc IERC7540
+    function claimableDepositRequest(uint256, address controller) public view returns (uint256 assets) {
         return _getComponentTokenStorage().claimableDepositRequest[controller];
     }
 
-    /// @inheritdoc IComponentToken
-    function pendingRedeemRequest(uint256 requestId, address controller) public view returns (uint256 shares) {
+    /// @inheritdoc IERC7540
+    function pendingRedeemRequest(uint256, address controller) public view returns (uint256 shares) {
         return _getComponentTokenStorage().pendingRedeemRequest[controller];
     }
 
-    /// @inheritdoc IComponentToken
-    function claimableRedeemRequest(uint256 requestId, address controller) public view returns (uint256 shares) {
+    /// @inheritdoc IERC7540
+    function claimableRedeemRequest(uint256, address controller) public view returns (uint256 shares) {
         return _getComponentTokenStorage().claimableRedeemRequest[controller];
     }
 
     /**
-     * @inheritdoc IComponentToken
+     * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous deposit vaults
      */
-    function previewDeposit(uint256 assets) external view returns (uint256 shares) {
+    function previewDeposit(uint256) public view virtual returns (uint256) {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if ($.asyncDeposit) {
             revert Unimplemented();
         }
+        return 0;
     }
 
     /**
-     * @inheritdoc IComponentToken
+     * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous deposit vaults
      */
-    function previewMint(uint256 shares) external view returns (uint256 assets) {
+    function previewMint(uint256) public view virtual returns (uint256) {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if ($.asyncDeposit) {
             revert Unimplemented();
         }
+        return 0;
     }
 
     /**
-     * @inheritdoc IComponentToken
+     * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous redeem vaults
      */
-    function previewRedeem(uint256 shares) external view returns (uint256 assets) {
+    function previewRedeem(uint256) public view virtual returns (uint256) {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if ($.asyncRedeem) {
             revert Unimplemented();
         }
+        return 0;
     }
 
     /**
-     * @inheritdoc IComponentToken
+     * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous redeem vaults
      */
-    function previewWithdraw(uint256 assets) external view returns (uint256 shares) {
+    function previewWithdraw(uint256) public view virtual returns (uint256) {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if ($.asyncRedeem) {
             revert Unimplemented();
         }
+        return 0;
     }
 
     // Unimplemented Functions
 
-    /// @inheritdoc IComponentToken
-    function mint(uint256 shares, address receiver, address controller) public virtual {
+    /// @inheritdoc IERC7540
+    function mint(uint256, address, address) public pure returns (uint256) {
         revert Unimplemented();
     }
 
-    /// @inheritdoc IComponentToken
-    function withdraw(uint256 assets, address receiver, address controller) public virtual {
+    /// @inheritdoc IERC7540
+    function withdraw(uint256, address, address) public pure returns (uint256) {
         revert Unimplemented();
     }
 
-    /// @inheritdoc IComponentToken
-    function setOperator(address controller, bool approved) public returns (bool success) {
+    /// @inheritdoc IERC7540
+    function setOperator(address, bool) public pure returns (bool) {
         revert Unimplemented();
     }
 
