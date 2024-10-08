@@ -44,6 +44,8 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
         IERC20[] stablecoins;
         /// @dev Mapping of stablecoins to whether they are allowed to be staked
         mapping(IERC20 stablecoin => bool allowed) allowedStablecoins;
+        /// @dev Timestamp of when pre-staking ends, when the admin withdraws all stablecoins
+        uint256 endTime;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.RWAStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -84,14 +86,17 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
 
     // Errors
 
+    /// @notice Indicates a failure because the pre-staking period has ended
+    error StakingEnded();
+
     /**
-     * @notice Emitted when a stablecoin is already allowed to be staked
+     * @notice Indicates a failure because the stablecoin is already allowed to be staked
      * @param stablecoin Stablecoin token contract address
      */
     error AlreadyAllowedStablecoin(IERC20 stablecoin);
 
     /**
-     * @notice Emitted when a stablecoin is not allowed to be staked
+     * @notice Indicates a failure because the stablecoin is not allowed to be staked
      * @param stablecoin Stablecoin token contract address
      */
     error NotAllowedStablecoin(IERC20 stablecoin);
@@ -144,14 +149,24 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     /**
-     * @notice Withdraw stablecoins from the RWAStaking contract
+     * @notice Stop the RWAStaking contract by withdrawing all stablecoins
      * @dev Only the admin can withdraw stablecoins from the RWAStaking contract
-     * @param stablecoin Stablecoin token contract address
-     * @param amount Amount of stablecoins to withdraw
      */
-    function withdraw(IERC20 stablecoin, uint256 amount) external onlyRole(ADMIN_ROLE) {
-        stablecoin.safeTransfer(msg.sender, amount);
-        emit Withdrawn(msg.sender, stablecoin, amount);
+    function withdraw() external onlyRole(ADMIN_ROLE) {
+        RWAStakingStorage storage $ = _getRWAStakingStorage();
+        if ($.endTime != 0) {
+            revert StakingEnded();
+        }
+
+        IERC20[] storage stablecoins = $.stablecoins;
+        uint256 length = stablecoins.length;
+        for (uint256 i = 0; i < length; ++i) {
+            IERC20 stablecoin = stablecoins[i];
+            uint256 amount = stablecoin.balanceOf(address(this));
+            stablecoin.safeTransfer(msg.sender, amount);
+            emit Withdrawn(msg.sender, stablecoin, amount);
+        }
+        $.endTime = block.timestamp;
     }
 
     // User Functions
@@ -163,7 +178,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      */
     function stake(uint256 amount, IERC20 stablecoin) external {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
-
+        if ($.endTime != 0) {
+            revert StakingEnded();
+        }
         if (!$.allowedStablecoins[stablecoin]) {
             revert NotAllowedStablecoin(stablecoin);
         }
@@ -197,9 +214,11 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
 
     /// @notice State of a user who has staked into the RWAStaking contract
     function getUserState(address user) external view returns (uint256, uint256, uint256) {
-        UserState memory userState = _getRWAStakingStorage().userStates[user];
+        RWAStakingStorage storage $ = _getRWAStakingStorage();
+        UserState memory userState = $.userStates[user];
         return (
-            userState.amountSeconds + userState.amountStaked * (block.timestamp - userState.lastUpdate),
+            userState.amountSeconds
+                + userState.amountStaked * (($.endTime > 0 ? $.endTime : block.timestamp) - userState.lastUpdate),
             userState.amountStaked,
             userState.lastUpdate
         );
