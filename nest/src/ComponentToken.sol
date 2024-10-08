@@ -41,6 +41,10 @@ abstract contract ComponentToken is
         mapping(address controller => uint256 assets) pendingDepositRequest;
         /// @dev Amount of assets deposited by each controller and ready to claim
         mapping(address controller => uint256 assets) claimableDepositRequest;
+        /// @dev Amount of shares redeemed by each controller and not ready to claim
+        mapping(address controller => uint256 shares) pendingRedeemRequest;
+        /// @dev Amount of shares redeemed by each controller and ready to claim
+        mapping(address controller => uint256 shares) claimableRedeemRequest;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.ComponentToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -154,7 +158,147 @@ abstract contract ComponentToken is
         return _getComponentTokenStorage().decimals;
     }
 
+    /// @inheritdoc IComponentToken
+    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool supported) {
+        if (
+            super.supportsInterface(interfaceId) || interfaceId == type(IERC7575).interfaceId
+                || interfaceId == "0xe3bc4e65"
+        ) {
+            return true;
+        }
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        return ($.asyncDeposit && interfaceId == 0xce3bbe50) || ($.asyncRedeem && interfaceId == 0x620ee8e4);
+    }
+
     // User Functions
+
+    /// @inheritdoc IComponentToken
+    function requestDeposit(
+        uint256 assets,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {
+        if (assets == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != owner) {
+            revert Unauthorized(msg.sender, owner);
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        IERC20 asset = $.asset;
+
+        if (!asset.transferFrom(owner, address(this), assets)) {
+            revert InsufficientBalance(asset, owner, assets);
+        }
+        $.pendingDepositRequest[controller] += assets;
+
+        emit DepositRequest(controller, owner, REQUEST_ID, owner, assets);
+        return REQUEST_ID;
+    }
+
+    /// @inheritdoc IComponentToken
+    function deposit(uint256 assets, address receiver, address controller) public virtual {
+        if (assets == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if ($.claimableDepositRequest[controller] < assets) {
+            revert InsufficientRequestBalance(controller, assets, 1);
+        }
+
+        _mint(receiver, shares);
+        $.claimableDepositRequest[controller] -= assets;
+
+        emit Deposit(controller, receiver, assets, shares);
+    }
+
+    /// @inheritdoc IComponentToken
+    function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != owner) {
+            revert Unauthorized(msg.sender, owner);
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        IERC20 asset = $.asset;
+
+        _burn(msg.sender, shares);
+        $.pendingRedeemRequest[controller] += assets;
+
+        emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
+        return REQUEST_ID;
+    }
+
+    /// @inheritdoc IComponentToken
+    function redeem(uint256 shares, address receiver, address controller) public virtual {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if ($.claimableRedeemRequest[controller] < shares) {
+            revert InsufficientRequestBalance(controller, shares, 1);
+        }
+
+        IERC20 asset = $.asset;
+        if (!asset.transfer(receiver, assets)) {
+            revert InsufficientBalance(asset, address(this), assets);
+        }
+        $.claimableRedeemRequest[controller] -= shares;
+
+        emit Withdraw(msg.sender, receiver, controller, assets, shares);
+    }
+
+    // Getter View Functions
+
+    /// @notice Asset used to buy and sell the ComponentToken
+    function asset() external view returns (address assetTokenAddress) {
+        return address(_getComponentTokenStorage().asset);
+    }
+
+    /// @inheritdoc IComponentToken
+    function share() external view returns (address shareTokenAddress) {
+        return address(this);
+    }
+
+    /// @inheritdoc IComponentToken
+    function isOperator(address controller, address operator) public view returns (bool status) {
+        return false;
+    }
+
+    /// @inheritdoc IComponentToken
+    function pendingDepositRequest(uint256 requestId, address controller) public view returns (uint256 assets) {
+        return _getComponentTokenStorage().pendingDepositRequest[controller];
+    }
+
+    /// @inheritdoc IComponentToken
+    function claimableDepositRequest(uint256 requestId, address controller) public view returns (uint256 assets) {
+        return _getComponentTokenStorage().claimableDepositRequest[controller];
+    }
+
+    /// @inheritdoc IComponentToken
+    function pendingRedeemRequest(uint256 requestId, address controller) public view returns (uint256 shares) {
+        return _getComponentTokenStorage().pendingRedeemRequest[controller];
+    }
+
+    /// @inheritdoc IComponentToken
+    function claimableRedeemRequest(uint256 requestId, address controller) public view returns (uint256 shares) {
+        return _getComponentTokenStorage().claimableRedeemRequest[controller];
+    }
 
     /**
      * @inheritdoc IComponentToken
@@ -200,120 +344,11 @@ abstract contract ComponentToken is
         }
     }
 
-    /// @inheritdoc IComponentToken
-    function requestDeposit(
-        uint256 assets,
-        address controller,
-        address owner
-    ) public virtual returns (uint256 requestId) {
-        if (assets == 0) {
-            revert ZeroAmount();
-        }
-        if (msg.sender != owner) {
-            revert Unauthorized(msg.sender, owner);
-        }
-
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 asset = $.asset;
-
-        if (!asset.transferFrom(owner, address(this), assets)) {
-            revert InsufficientBalance(asset, owner, assets);
-        }
-        $.pendingDepositRequest[controller] += assets;
-
-        emit DepositRequest(controller, owner, REQUEST_ID, owner, assets);
-        return REQUEST_ID;
-    }
-
-    /// @inheritdoc IComponentToken
-    function pendingDepositRequest(uint256 requestId, address controller) public view returns (uint256 assets) {
-        return _getComponentTokenStorage().pendingDepositRequest[controller];
-    }
-
-    /// @inheritdoc IComponentToken
-    function claimableDepositRequest(uint256 requestId, address controller) public view returns (uint256 assets) {
-        return _getComponentTokenStorage().claimableDepositRequest[controller];
-    }
-
-    /// @inheritdoc IComponentToken
-    function deposit(uint256 assets, address receiver, address controller) public virtual {
-        if (assets == 0) {
-            revert ZeroAmount();
-        }
-        if (msg.sender != controller) {
-            revert Unauthorized(msg.sender, controller);
-        }
-
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if ($.claimableDepositRequest[controller] < assets) {
-            revert InsufficientRequestBalance(controller, assets, 1);
-        }
-
-        _mint(receiver, shares);
-        $.claimableDepositRequest[controller] -= assets;
-
-        emit Deposit(controller, receiver, assets, shares);
-    }
+    // Unimplemented Functions
 
     /// @inheritdoc IComponentToken
     function mint(uint256 shares, address receiver, address controller) public virtual {
         revert Unimplemented();
-    }
-
-    /// @inheritdoc IComponentToken
-    function requestRedeem(
-        uint256 shares,
-        address controller,
-        address owner
-    ) public virtual returns (uint256 requestId) {
-        if (shares == 0) {
-            revert ZeroAmount();
-        }
-        if (msg.sender != owner) {
-            revert Unauthorized(msg.sender, owner);
-        }
-
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 asset = $.asset;
-
-        _burn(msg.sender, shares);
-        $.pendingRedeemRequest[controller] += assets;
-
-        emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
-        return REQUEST_ID;
-    }
-
-    /// @inheritdoc IComponentToken
-    function pendingRedeemRequest(uint256 requestId, address controller) public view returns (uint256 shares) {
-        return _getComponentTokenStorage().pendingRedeemRequest[controller];
-    }
-
-    /// @inheritdoc IComponentToken
-    function claimableRedeemRequest(uint256 requestId, address controller) public view returns (uint256 shares) {
-        return _getComponentTokenStorage().claimableRedeemRequest[controller];
-    }
-
-    /// @inheritdoc IComponentToken
-    function redeem(uint256 shares, address receiver, address controller) public virtual {
-        if (shares == 0) {
-            revert ZeroAmount();
-        }
-        if (msg.sender != controller) {
-            revert Unauthorized(msg.sender, controller);
-        }
-
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if ($.claimableRedeemRequest[controller] < shares) {
-            revert InsufficientRequestBalance(controller, shares, 1);
-        }
-
-        IERC20 asset = $.asset;
-        if (!asset.transfer(receiver, assets)) {
-            revert InsufficientBalance(asset, address(this), assets);
-        }
-        $.claimableRedeemRequest[controller] -= shares;
-
-        emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
 
     /// @inheritdoc IComponentToken
@@ -322,37 +357,8 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IComponentToken
-    function isOperator(address controller, address operator) public view returns (bool status) {
-        return false;
-    }
-
-    /// @inheritdoc IComponentToken
     function setOperator(address controller, bool approved) public returns (bool success) {
         revert Unimplemented();
-    }
-
-    /// @inheritdoc IComponentToken
-    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool supported) {
-        if (
-            super.supportsInterface(interfaceId) || interfaceId == type(IERC7575).interfaceId
-                || interfaceId == "0xe3bc4e65"
-        ) {
-            return true;
-        }
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        return ($.asyncDeposit && interfaceId == 0xce3bbe50) || ($.asyncRedeem && interfaceId == 0x620ee8e4);
-    }
-
-    // Getter View Functions
-
-    /// @notice Asset used to buy and sell the ComponentToken
-    function asset() external view returns (address assetTokenAddress) {
-        return address(_getComponentTokenStorage().asset);
-    }
-
-    /// @inheritdoc IComponentToken
-    function share() external view returns (address shareTokenAddress) {
-        return address(this);
     }
 
 }
