@@ -131,8 +131,7 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
             revert StakingEnded();
         }
 
-        uint256 amount = $.totalAmountStaked;
-
+        uint256 amount = $.sbtc.balanceOf(address(this));
         $.sbtc.safeTransfer(msg.sender, amount);
         $.endTime = block.timestamp;
 
