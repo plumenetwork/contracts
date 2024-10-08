@@ -66,6 +66,14 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
     // Events
 
     /**
+     * @notice Emitted when an admin withdraws stablecoins from the RWAStaking contract
+     * @param user Address of the admin who withdrew stablecoins
+     * @param stablecoin Stablecoin token contract address
+     * @param amount Amount of stablecoins withdrawn
+     */
+    event Withdrawn(address indexed user, IERC20 indexed stablecoin, uint256 amount);
+
+    /**
      * @notice Emitted when a user stakes stablecoins into the RWAStaking contract
      * @param user Address of the user who staked stablecoins
      * @param stablecoin Stablecoin token contract address
@@ -133,6 +141,17 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
         }
         $.stablecoins.push(stablecoin);
         $.allowedStablecoins[stablecoin] = true;
+    }
+
+    /**
+     * @notice Withdraw stablecoins from the RWAStaking contract
+     * @dev Only the admin can withdraw stablecoins from the RWAStaking contract
+     * @param stablecoin Stablecoin token contract address
+     * @param amount Amount of stablecoins to withdraw
+     */
+    function withdraw(IERC20 stablecoin, uint256 amount) external onlyRole(ADMIN_ROLE) {
+        stablecoin.safeTransfer(msg.sender, amount);
+        emit Withdrawn(msg.sender, stablecoin, amount);
     }
 
     // User Functions

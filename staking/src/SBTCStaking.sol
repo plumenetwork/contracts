@@ -64,6 +64,13 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
     // Events
 
     /**
+     * @notice Emitted when an admin withdraws SBTC from the SBTCStaking contract
+     * @param user Address of the admin who withdrew stablecoins
+     * @param amount Amount of SBTC withdrawn
+     */
+    event Withdrawn(address indexed user, uint256 amount);
+
+    /**
      * @notice Emitted when a user stakes SBTC into the SBTCStaking contract
      * @param user Address of the user who staked SBTC
      * @param amount Amount of SBTC staked
@@ -104,6 +111,18 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param newImplementation Address of the new implementation
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+
+    // Admin Functions
+
+    /**
+     * @notice Withdraw SBTC from the SBTCStaking contract
+     * @dev Only the admin can withdraw SBTC from the SBTCStaking contract
+     * @param amount Amount of SBTC to withdraw
+     */
+    function withdraw(uint256 amount) external onlyRole(ADMIN_ROLE) {
+        _getSBTCStakingStorage().sbtc.safeTransfer(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount);
+    }
 
     // User Functions
 
