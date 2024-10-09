@@ -20,6 +20,12 @@ contract WalletFactory is Ownable {
     ISmartWallet public smartWallet;
 
     /**
+     * @notice Emitted when the SmartWallet implementation is upgraded
+     * @param smartWallet_ New SmartWallet implementation
+     */
+    event Upgraded(ISmartWallet smartWallet_);
+
+    /**
      * @notice Construct the WalletFactory
      * @param owner_ Address of the owner of the WalletFactory
      * @param smartWallet_ Initial SmartWallet implementation
@@ -36,6 +42,7 @@ contract WalletFactory is Ownable {
      */
     function upgrade(ISmartWallet smartWallet_) public onlyOwner {
         smartWallet = smartWallet_;
+        emit Upgraded(smartWallet_);
     }
 
 }
