@@ -371,22 +371,22 @@ abstract contract ComponentToken is
     }
 
     /// @notice CurrencyToken used to buy and sell the ComponentToken
-    function getCurrencyToken() public view returns (IERC20) {
+    function getCurrencyToken() external view returns (IERC20) {
         return _getComponentTokenStorage().currencyToken;
     }
 
     /// @notice Total yield distributed to the ComponentToken for all users
-    function totalYield() public view returns (uint256 amount) {
+    function totalYield() external view returns (uint256 amount) {
         return _getComponentTokenStorage().totalYieldAccrued;
     }
 
     /// @notice Claimed yield across the ComponentToken for all users
-    function claimedYield() public view returns (uint256 amount) {
+    function claimedYield() external view returns (uint256 amount) {
         return _getComponentTokenStorage().totalYieldWithdrawn;
     }
 
     /// @notice Unclaimed yield across the ComponentToken for all users
-    function unclaimedYield() public view returns (uint256 amount) {
+    function unclaimedYield() external view returns (uint256 amount) {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         return $.totalYieldAccrued - $.totalYieldWithdrawn;
     }
@@ -396,7 +396,7 @@ abstract contract ComponentToken is
      * @param user Address of the user for which to get the total yield
      * @return amount Total yield distributed to the user
      */
-    function totalYield(address user) public view returns (uint256 amount) {
+    function totalYield(address user) external view returns (uint256 amount) {
         return _getComponentTokenStorage().yieldAccrued[user];
     }
 
@@ -405,7 +405,7 @@ abstract contract ComponentToken is
      * @param user Address of the user for which to get the claimed yield
      * @return amount Amount of yield that the user has claimed
      */
-    function claimedYield(address user) public view returns (uint256 amount) {
+    function claimedYield(address user) external view returns (uint256 amount) {
         return _getComponentTokenStorage().yieldWithdrawn[user];
     }
 
