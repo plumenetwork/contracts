@@ -170,58 +170,14 @@ abstract contract ComponentToken is
         return ($.asyncDeposit && interfaceId == 0xce3bbe50) || ($.asyncRedeem && interfaceId == 0x620ee8e4);
     }
 
-    /**
-     * @inheritdoc IERC4626
-     * @dev Must revert for all callers and inputs for asynchronous deposit vaults
-     */
-    function previewDeposit(uint256) public view virtual override(ERC4626Upgradeable, IERC4626) returns (uint256) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if ($.asyncDeposit) {
-            revert Unimplemented();
-        }
-        return 0;
-    }
-
-    /**
-     * @inheritdoc IERC4626
-     * @dev Must revert for all callers and inputs for asynchronous deposit vaults
-     */
-    function previewMint(uint256) public view virtual override(ERC4626Upgradeable, IERC4626) returns (uint256) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if ($.asyncDeposit) {
-            revert Unimplemented();
-        }
-        return 0;
-    }
-
-    /**
-     * @inheritdoc IERC4626
-     * @dev Must revert for all callers and inputs for asynchronous redeem vaults
-     */
-    function previewRedeem(uint256) public view virtual override(ERC4626Upgradeable, IERC4626) returns (uint256) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if ($.asyncRedeem) {
-            revert Unimplemented();
-        }
-        return 0;
-    }
-
-    /**
-     * @inheritdoc IERC4626
-     * @dev Must revert for all callers and inputs for asynchronous redeem vaults
-     */
-    function previewWithdraw(uint256) public view virtual override(ERC4626Upgradeable, IERC4626) returns (uint256) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if ($.asyncRedeem) {
-            revert Unimplemented();
-        }
-        return 0;
-    }
-
     // User Functions
 
     /// @inheritdoc IERC7540
-    function requestDeposit(uint256 assets, address controller, address owner) public virtual returns (uint256) {
+    function requestDeposit(
+        uint256 assets,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -229,10 +185,15 @@ abstract contract ComponentToken is
             revert Unauthorized(msg.sender, owner);
         }
 
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if (!$.asyncDeposit) {
+            revert Unimplemented();
+        }
+
         if (!IERC20(asset()).transferFrom(owner, address(this), assets)) {
             revert InsufficientBalance(IERC20(asset()), owner, assets);
         }
-        _getComponentTokenStorage().pendingDepositRequest[controller] += assets;
+        $.pendingDepositRequest[controller] += assets;
 
         emit DepositRequest(controller, owner, REQUEST_ID, owner, assets);
         return REQUEST_ID;
@@ -248,12 +209,14 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if (!$.asyncDeposit) {
+            revert Unimplemented();
+        }
         if ($.claimableDepositRequest[controller] < assets) {
             revert InsufficientRequestBalance(controller, assets, 1);
         }
 
-        // TODO: implement conversion
-        shares = assets;
+        shares = convertToShares(assets);
         _mint(receiver, shares);
         $.claimableDepositRequest[controller] -= assets;
 
@@ -261,7 +224,25 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IERC7540
-    function requestRedeem(uint256 shares, address controller, address owner) public virtual returns (uint256) {
+    function mint(uint256 shares, address receiver, address controller) public returns (uint256 assets) {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+        if (_getComponentTokenStorage().asyncDeposit) {
+            revert Unimplemented();
+        }
+        return mint(shares, receiver);
+    }
+
+    /// @inheritdoc IERC7540
+    function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -269,8 +250,13 @@ abstract contract ComponentToken is
             revert Unauthorized(msg.sender, owner);
         }
 
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if (!$.asyncRedeem) {
+            revert Unimplemented();
+        }
+
         _burn(msg.sender, shares);
-        _getComponentTokenStorage().pendingRedeemRequest[controller] += shares;
+        $.pendingRedeemRequest[controller] += shares;
 
         emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
         return REQUEST_ID;
@@ -290,18 +276,38 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if (!$.asyncRedeem) {
+            revert Unimplemented();
+        }
         if ($.claimableRedeemRequest[controller] < shares) {
             revert InsufficientRequestBalance(controller, shares, 1);
         }
 
-        // TODO: implement conversion
-        assets = shares;
+        assets = convertToAssets(shares);
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
         }
         $.claimableRedeemRequest[controller] -= shares;
 
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
+    }
+
+    /// @inheritdoc IERC7540
+    function withdraw(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
+        if (assets == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+        if (_getComponentTokenStorage().asyncRedeem) {
+            revert Unimplemented();
+        }
+        return withdraw(assets, receiver, controller);
     }
 
     // Getter View Functions
@@ -336,16 +342,72 @@ abstract contract ComponentToken is
         return _getComponentTokenStorage().claimableRedeemRequest[controller];
     }
 
-    // Unimplemented Functions
-
-    /// @inheritdoc IERC7540
-    function mint(uint256, address, address) public pure returns (uint256) {
-        revert Unimplemented();
+    /**
+     * @inheritdoc IERC4626
+     * @dev Must revert for all callers and inputs for asynchronous deposit vaults
+     */
+    function previewDeposit(uint256 assets)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 shares)
+    {
+        if (_getComponentTokenStorage().asyncDeposit) {
+            revert Unimplemented();
+        }
+        shares = super.previewDeposit(assets);
     }
 
-    /// @inheritdoc IERC7540
-    function withdraw(uint256, address, address) public pure override(ERC4626Upgradeable, IERC7540) returns (uint256) {
-        revert Unimplemented();
+    /**
+     * @inheritdoc IERC4626
+     * @dev Must revert for all callers and inputs for asynchronous deposit vaults
+     */
+    function previewMint(uint256 shares)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 assets)
+    {
+        if (_getComponentTokenStorage().asyncDeposit) {
+            revert Unimplemented();
+        }
+        assets = super.previewDeposit(shares);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     * @dev Must revert for all callers and inputs for asynchronous redeem vaults
+     */
+    function previewRedeem(uint256 shares)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 assets)
+    {
+        if (_getComponentTokenStorage().asyncRedeem) {
+            revert Unimplemented();
+        }
+        assets = super.previewRedeem(shares);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     * @dev Must revert for all callers and inputs for asynchronous redeem vaults
+     */
+    function previewWithdraw(uint256 assets)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 shares)
+    {
+        if (_getComponentTokenStorage().asyncRedeem) {
+            revert Unimplemented();
+        }
+        shares = super.previewWithdraw(assets);
     }
 
     /// @inheritdoc IERC7540
