@@ -4,7 +4,6 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -28,7 +27,7 @@ abstract contract ComponentToken is
     AccessControlUpgradeable,
     UUPSUpgradeable,
     ERC165,
-    IComponentToken
+    IERC7540
 {
 
     // Storage
@@ -71,6 +70,24 @@ abstract contract ComponentToken is
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the ComponentToken
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+
+    // Events
+
+    /**
+     * @notice Emitted when the vault has been notified of the completion of a deposit request
+     * @param controller Controller of the request
+     * @param assets Amount of `asset` that has been deposited
+     * @param shares Amount of shares that to receive in exchange
+     */
+    event DepositNotified(address indexed controller, uint256 assets, uint256 shares);
+
+    /**
+     * @notice Emitted when the vault has been notified of the completion of a redeem request
+     * @param controller Controller of the request
+     * @param assets Amount of `asset` to receive in exchange
+     * @param shares Amount of shares that has been redeemed
+     */
+    event RedeemNotified(address indexed controller, uint256 assets, uint256 shares);
 
     // Errors
 
@@ -174,9 +191,29 @@ abstract contract ComponentToken is
         return ($.asyncDeposit && interfaceId == 0xce3bbe50) || ($.asyncRedeem && interfaceId == 0x620ee8e4);
     }
 
+    /// @inheritdoc IERC4626
+    function asset() public view virtual override(ERC4626Upgradeable, IERC7540) returns (address assetTokenAddress) {
+        return super.asset();
+    }
+
+    /// @inheritdoc IERC4626
+    function totalAssets() public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 totalManagedAssets) {
+        return super.totalAssets();
+    }
+
+    /// @inheritdoc IERC4626
+    function convertToShares(uint256 assets) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
+        return super.convertToShares(assets);
+    }
+
+    /// @inheritdoc IERC4626
+    function convertToAssets(uint256 shares) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
+        return super.convertToAssets(shares);
+    }
+
     // User Functions
 
-    /// @inheritdoc IERC7540
+    /// @inheritdoc IComponentToken
     function requestDeposit(
         uint256 assets,
         address controller,
@@ -203,7 +240,12 @@ abstract contract ComponentToken is
         return REQUEST_ID;
     }
 
-    /// @inheritdoc IComponentToken
+    /**
+     * @notice Notify the vault that the async request to buy shares has been completed
+     * @param assets Amount of `asset` that was deposited by `requestDeposit`
+     * @param shares Amount of shares to receive in exchange
+     * @param controller Controller of the request
+     */
     function notifyDeposit(uint256 assets, uint256 shares, address controller) public virtual {
         if (assets == 0) {
             revert ZeroAmount();
@@ -221,7 +263,7 @@ abstract contract ComponentToken is
         emit DepositNotified(controller, assets, shares);
     }
 
-    /// @inheritdoc IERC7540
+    /// @inheritdoc IComponentToken
     function deposit(uint256 assets, address receiver, address controller) public virtual returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
@@ -260,7 +302,7 @@ abstract contract ComponentToken is
         return mint(shares, receiver);
     }
 
-    /// @inheritdoc IERC7540
+    /// @inheritdoc IComponentToken
     function requestRedeem(
         uint256 shares,
         address controller,
@@ -285,7 +327,12 @@ abstract contract ComponentToken is
         return REQUEST_ID;
     }
 
-    /// @inheritdoc IComponentToken
+    /**
+     * @notice Notify the vault that the async request to redeem assets has been completed
+     * @param assets Amount of `asset` to receive in exchange
+     * @param shares Amount of shares that was redeemed by `requestRedeem`
+     * @param controller Controller of the request
+     */
     function notifyRedeem(uint256 assets, uint256 shares, address controller) public virtual {
         if (shares == 0) {
             revert ZeroAmount();
@@ -364,22 +411,22 @@ abstract contract ComponentToken is
         return false;
     }
 
-    /// @inheritdoc IERC7540
+    /// @inheritdoc IComponentToken
     function pendingDepositRequest(uint256, address controller) public view returns (uint256 assets) {
         return _getComponentTokenStorage().pendingDepositRequest[controller];
     }
 
-    /// @inheritdoc IERC7540
+    /// @inheritdoc IComponentToken
     function claimableDepositRequest(uint256, address controller) public view returns (uint256 assets) {
         return _getComponentTokenStorage().claimableDepositRequest[controller];
     }
 
-    /// @inheritdoc IERC7540
+    /// @inheritdoc IComponentToken
     function pendingRedeemRequest(uint256, address controller) public view returns (uint256 shares) {
         return _getComponentTokenStorage().pendingRedeemRequest[controller];
     }
 
-    /// @inheritdoc IERC7540
+    /// @inheritdoc IComponentToken
     function claimableRedeemRequest(uint256, address controller) public view returns (uint256 shares) {
         return _getComponentTokenStorage().claimableRedeemRequest[controller];
     }
