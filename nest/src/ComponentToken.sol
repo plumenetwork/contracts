@@ -43,10 +43,14 @@ abstract contract ComponentToken is
         mapping(address controller => uint256 assets) pendingDepositRequest;
         /// @dev Amount of assets deposited by each controller and ready to claim
         mapping(address controller => uint256 assets) claimableDepositRequest;
+        /// @dev Amount of shares to send to the vault for each controller that deposited assets
+        mapping(address controller => uint256 shares) sharesDepositRequest;
         /// @dev Amount of shares redeemed by each controller and not ready to claim
         mapping(address controller => uint256 shares) pendingRedeemRequest;
         /// @dev Amount of shares redeemed by each controller and ready to claim
         mapping(address controller => uint256 shares) claimableRedeemRequest;
+        /// @dev Amount of assets to send to the controller for each controller that redeemed shares
+        mapping(address controller => uint256 assets) assetsRedeemRequest;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.ComponentToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -199,6 +203,24 @@ abstract contract ComponentToken is
         return REQUEST_ID;
     }
 
+    /// @inheritdoc IComponentToken
+    function notifyDeposit(uint256 assets, uint256 shares, address controller) public virtual {
+        if (assets == 0) {
+            revert ZeroAmount();
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if ($.pendingDepositRequest[controller] < assets) {
+            revert InsufficientRequestBalance(controller, assets, 0);
+        }
+
+        $.pendingDepositRequest[controller] -= assets;
+        $.claimableDepositRequest[controller] += assets;
+        $.sharesDepositRequest[controller] += shares;
+
+        emit DepositNotified(controller, assets, shares);
+    }
+
     /// @inheritdoc IERC7540
     function deposit(uint256 assets, address receiver, address controller) public virtual returns (uint256 shares) {
         if (assets == 0) {
@@ -216,9 +238,10 @@ abstract contract ComponentToken is
             revert InsufficientRequestBalance(controller, assets, 1);
         }
 
-        shares = convertToShares(assets);
+        shares = $.sharesDepositRequest[controller];
         _mint(receiver, shares);
         $.claimableDepositRequest[controller] -= assets;
+        $.sharesDepositRequest[controller] -= shares;
 
         emit Deposit(controller, receiver, assets, shares);
     }
@@ -262,6 +285,24 @@ abstract contract ComponentToken is
         return REQUEST_ID;
     }
 
+    /// @inheritdoc IComponentToken
+    function notifyRedeem(uint256 assets, uint256 shares, address controller) public virtual {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if ($.pendingRedeemRequest[controller] < shares) {
+            revert InsufficientRequestBalance(controller, shares, 2);
+        }
+
+        $.pendingRedeemRequest[controller] -= shares;
+        $.claimableRedeemRequest[controller] += shares;
+        $.assetsRedeemRequest[controller] += assets;
+
+        emit RedeemNotified(controller, assets, shares);
+    }
+
     /// @inheritdoc IERC7540
     function redeem(
         uint256 shares,
@@ -283,11 +324,12 @@ abstract contract ComponentToken is
             revert InsufficientRequestBalance(controller, shares, 1);
         }
 
-        assets = convertToAssets(shares);
+        assets = $.assetsRedeemRequest[controller];
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
         }
         $.claimableRedeemRequest[controller] -= shares;
+        $.assetsRedeemRequest[controller] -= assets;
 
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
