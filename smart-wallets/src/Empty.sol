@@ -11,6 +11,9 @@ pragma solidity 0.8.25;
  */
 contract Empty {
 
+    /// @dev The empty contract must have some code in it to get 100% test coverage
+    uint256 immutable value = 0;
+
     /// @notice Construct the Empty contract
     constructor() { }
 
