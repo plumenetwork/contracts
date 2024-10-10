@@ -4,8 +4,8 @@ pragma solidity ^0.8.25;
 import { IERC165 } from "@openzeppelin/contracts/interfaces/IERC165.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
-import { IERC7575 } from "./IERC7575.sol";
 import { IComponentToken } from "./IComponentToken.sol";
+import { IERC7575 } from "./IERC7575.sol";
 
 interface IERC7540 is IERC165, IERC4626, IERC7575, IComponentToken {
 
@@ -22,7 +22,11 @@ interface IERC7540 is IERC165, IERC4626, IERC7575, IComponentToken {
     // User Functions
 
     /// @inheritdoc IComponentToken
-    function redeem(uint256 shares, address receiver, address controller) external override(IComponentToken, IERC4626) returns (uint256 assets);
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) external override(IComponentToken, IERC4626) returns (uint256 assets);
 
     // Getter View Functions
 
@@ -33,10 +37,18 @@ interface IERC7540 is IERC165, IERC4626, IERC7575, IComponentToken {
     function totalAssets() external view override(IComponentToken, IERC4626) returns (uint256 totalManagedAssets);
 
     /// @inheritdoc IComponentToken
-    function convertToShares(uint256 assets) external view override(IComponentToken, IERC4626) returns (uint256 shares);
+    function convertToShares(uint256 assets)
+        external
+        view
+        override(IComponentToken, IERC4626)
+        returns (uint256 shares);
 
     /// @inheritdoc IComponentToken
-    function convertToAssets(uint256 shares) external view override(IComponentToken, IERC4626) returns (uint256 assets);
+    function convertToAssets(uint256 shares)
+        external
+        view
+        override(IComponentToken, IERC4626)
+        returns (uint256 assets);
 
     /**
      * @notice Check if an operator has permissions to manage requests for a controller

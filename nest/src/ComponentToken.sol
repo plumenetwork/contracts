@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -197,17 +198,35 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IERC4626
-    function totalAssets() public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 totalManagedAssets) {
+    function totalAssets()
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC7540)
+        returns (uint256 totalManagedAssets)
+    {
         return super.totalAssets();
     }
 
     /// @inheritdoc IERC4626
-    function convertToShares(uint256 assets) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
+    function convertToShares(uint256 assets)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC7540)
+        returns (uint256 shares)
+    {
         return super.convertToShares(assets);
     }
 
     /// @inheritdoc IERC4626
-    function convertToAssets(uint256 shares) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
+    function convertToAssets(uint256 shares)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC7540)
+        returns (uint256 assets)
+    {
         return super.convertToAssets(shares);
     }
 

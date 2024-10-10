@@ -36,7 +36,7 @@ interface IComponentToken {
      * @param assets Amount of `asset` that has been deposited
      * @param shares Amount of shares that has been received in exchange
      */
-    event Deposit(address indexed sender, address indexed owner, uint256 assets, uint256 shares);
+    // event Deposit(address indexed sender, address indexed owner, uint256 assets, uint256 shares);
 
     /**
      * @notice Emitted when a redeem request is complete
@@ -46,9 +46,8 @@ interface IComponentToken {
      * @param assets Amount of `asset` that has been received in exchange
      * @param shares Amount of shares that has been redeemed
      */
-    event Withdraw(
-        address indexed sender, address indexed receiver, address indexed owner, uint256 assets, uint256 shares
-    );
+    // event Withdraw(address indexed sender, address indexed receiver, address indexed owner, uint256 assets, uint256
+    // shares);
 
     // User Functions
 
