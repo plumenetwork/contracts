@@ -4,10 +4,17 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+
+import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
+import { IERC7540 } from "./interfaces/IERC7540.sol";
+import { IERC7575 } from "./interfaces/IERC7575.sol";
 
 /**
  * @title ComponentToken
@@ -17,46 +24,33 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  */
 abstract contract ComponentToken is
     Initializable,
-    ERC20Upgradeable,
+    ERC4626Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    IComponentToken
+    ERC165,
+    IERC7540
 {
 
     // Storage
 
-    /// @notice Represents a request to buy or sell ComponentToken using CurrencyToken
-    struct Request {
-        /// @dev Unique identifier for the request
-        uint256 requestId;
-        /// @dev CurrencyTokenAmount for a buy; ComponentTokenAmount for a sell
-        uint256 amount;
-        /// @dev Address of the user or smart contract who requested the buy or sell
-        address requestor;
-        /// @dev True for a buy request; false for a sell request
-        bool isBuy;
-        /// @dev True if the request has been executed; false otherwise
-        bool isExecuted;
-    }
-
     /// @custom:storage-location erc7201:plume.storage.ComponentToken
     struct ComponentTokenStorage {
-        /// @dev CurrencyToken used to mint and burn the ComponentToken
-        IERC20 currencyToken;
-        /// @dev Number of decimals of the ComponentToken
-        uint8 decimals;
-        /// @dev Version of the ComponentToken interface
-        uint256 version;
-        /// @dev Requests to buy or sell ComponentToken using CurrencyToken
-        Request[] requests;
-        /// @dev Total amount of yield that has ever been accrued by all users
-        uint256 totalYieldAccrued;
-        /// @dev Total amount of yield that has ever been withdrawn by all users
-        uint256 totalYieldWithdrawn;
-        /// @dev Total amount of yield that has ever been accrued by each user
-        mapping(address user => uint256 currencyTokenAmount) yieldAccrued;
-        /// @dev Total amount of yield that has ever been withdrawn by each user
-        mapping(address user => uint256 currencyTokenAmount) yieldWithdrawn;
+        /// @dev True if deposits are asynchronous; false otherwise
+        bool asyncDeposit;
+        /// @dev True if redemptions are asynchronous; false otherwise
+        bool asyncRedeem;
+        /// @dev Amount of assets deposited by each controller and not ready to claim
+        mapping(address controller => uint256 assets) pendingDepositRequest;
+        /// @dev Amount of assets deposited by each controller and ready to claim
+        mapping(address controller => uint256 assets) claimableDepositRequest;
+        /// @dev Amount of shares to send to the vault for each controller that deposited assets
+        mapping(address controller => uint256 shares) sharesDepositRequest;
+        /// @dev Amount of shares redeemed by each controller and not ready to claim
+        mapping(address controller => uint256 shares) pendingRedeemRequest;
+        /// @dev Amount of shares redeemed by each controller and ready to claim
+        mapping(address controller => uint256 shares) claimableRedeemRequest;
+        /// @dev Amount of assets to send to the controller for each controller that redeemed shares
+        mapping(address controller => uint256 assets) assetsRedeemRequest;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.ComponentToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -71,6 +65,8 @@ abstract contract ComponentToken is
 
     // Constants
 
+    /// @notice All ComponentToken requests are fungible and all have ID = 0
+    uint256 private constant REQUEST_ID = 0;
     /// @notice Role for the admin of the ComponentToken
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the ComponentToken
@@ -79,80 +75,55 @@ abstract contract ComponentToken is
     // Events
 
     /**
-     * @notice Emitted when a user requests to buy ComponentToken using CurrencyToken
-     * @param user Address of the user who requested to buy the ComponentToken
-     * @param currencyToken CurrencyToken to be used to buy the ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken offered to be paid
+     * @notice Emitted when the vault has been notified of the completion of a deposit request
+     * @param controller Controller of the request
+     * @param assets Amount of `asset` that has been deposited
+     * @param shares Amount of shares that to receive in exchange
      */
-    event BuyRequested(address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount);
+    event DepositNotified(address indexed controller, uint256 assets, uint256 shares);
 
     /**
-     * @notice Emitted when a user requests to sell ComponentToken to receive CurrencyToken
-     * @param user Address of the user who requested to sell the ComponentToken
-     * @param currencyToken CurrencyToken to be received in exchange for the ComponentToken
-     * @param componentTokenAmount Amount of ComponentToken offered to be sold
+     * @notice Emitted when the vault has been notified of the completion of a redeem request
+     * @param controller Controller of the request
+     * @param assets Amount of `asset` to receive in exchange
+     * @param shares Amount of shares that has been redeemed
      */
-    event SellRequested(address indexed user, IERC20 indexed currencyToken, uint256 componentTokenAmount);
-
-    /**
-     * @notice Emitted when a user buys ComponentToken using CurrencyToken
-     * @param user Address of the user who bought the ComponentToken
-     * @param currencyToken CurrencyToken used to buy the ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken paid
-     * @param componentTokenAmount Amount of ComponentToken received
-     */
-    event BuyExecuted(
-        address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
-    );
-
-    /**
-     * @notice Emitted when a user sells ComponentToken to receive CurrencyToken
-     * @param user Address of the user who sold the ComponentToken
-     * @param currencyToken CurrencyToken received in exchange for the ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken received
-     * @param componentTokenAmount Amount of ComponentToken sold
-     */
-    event SellExecuted(
-        address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
-    );
-
-    /**
-     * @notice Emitted when anyone claims yield that has accrued to a user
-     * @param user Address of the user who receives the claimed yield
-     * @param currencyToken CurrencyToken used to denominate the claimed yield
-     * @param amount Amount of CurrencyToken claimed as yield
-     */
-    event YieldClaimed(address indexed user, IERC20 indexed currencyToken, uint256 amount);
+    event RedeemNotified(address indexed controller, uint256 assets, uint256 shares);
 
     // Errors
 
-    /**
-     * @notice Indicates a failure because the given request ID is invalid
-     * @param invalidRequestId Request ID that is invalid
-     * @param errorType Type of error that occurred
-     *   0: Request ID does not exist
-     *   1: Request amount does not match the amount the user is trying to execute
-     *   2: Requestor is not the user trying to execute the request
-     *   3: Request is not a buy request, but the user is trying to execute a buy
-     *   4: Request is not a sell request, but the user is trying to execute a sell
-     *   5: Request has already been executed
-     */
-    error InvalidRequest(uint256 invalidRequestId, uint256 errorType);
+    /// @notice Indicates a failure because the user tried to call an unimplemented function
+    error Unimplemented();
+
+    /// @notice Indicates a failure because the given amount is 0
+    error ZeroAmount();
 
     /**
-     * @notice Indicates a failure because the given version is not higher than the current version
-     * @param invalidVersion Invalid version that is not higher than the current version
-     * @param version Current version of the ComponentToken
+     * @notice Indicates a failure because the sender is not authorized to perform the action
+     * @param sender Address of the sender that is not authorized
+     * @param authorizedUser Address of the authorized user who can perform the action
      */
-    error InvalidVersion(uint256 invalidVersion, uint256 version);
+    error Unauthorized(address sender, address authorizedUser);
 
     /**
-     * @notice Indicates a failure because the user does not have enough CurrencyToken
-     * @param currencyToken CurrencyToken used to mint and burn the ComponentToken
-     * @param user Address of the user who is selling the CurrencyToken
-     * @param amount Amount of CurrencyToken required in the failed transfer
+     * @notice Indicates a failure because the controller does not have enough requested
+     * @param controller Address of the controller who does not have enough requested
+     * @param amount Amount of assets or shares to be subtracted from the request
+     * @param requestType Type of request that is insufficient
+     *   0: Pending deposit request
+     *   1: Claimable deposit request
+     *   2: Pending redeem request
+     *   3: Claimable redeem request
      */
-    error InsufficientBalance(IERC20 currencyToken, address user, uint256 amount);
+    error InsufficientRequestBalance(address controller, uint256 amount, uint256 requestType);
+
+    /**
+     * @notice Indicates a failure because the user does not have enough assets
+     * @param asset Asset used to mint and burn the ComponentToken
+     * @param user Address of the user who is selling the assets
+     * @param assets Amount of assets required in the failed transfer
+     */
+    error InsufficientBalance(IERC20 asset, address user, uint256 assets);
 
     // Initializer
 
@@ -169,17 +140,20 @@ abstract contract ComponentToken is
      * @param owner Address of the owner of the ComponentToken
      * @param name Name of the ComponentToken
      * @param symbol Symbol of the ComponentToken
-     * @param currencyToken CurrencyToken used to mint and burn the ComponentToken
-     * @param decimals_ Number of decimals of the ComponentToken
+     * @param asset_ Asset used to mint and burn the ComponentToken
+     * @param asyncDeposit True if deposits are asynchronous; false otherwise
+     * @param asyncRedeem True if redemptions are asynchronous; false otherwise
      */
     function initialize(
         address owner,
         string memory name,
         string memory symbol,
-        IERC20 currencyToken,
-        uint8 decimals_
+        IERC20 asset_,
+        bool asyncDeposit,
+        bool asyncRedeem
     ) public initializer {
         __ERC20_init(name, symbol);
+        __ERC4626_init(asset_);
         __AccessControl_init();
         __UUPSUpgradeable_init();
 
@@ -188,8 +162,8 @@ abstract contract ComponentToken is
         _grantRole(UPGRADER_ROLE, owner);
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        $.currencyToken = currencyToken;
-        $.decimals = decimals_;
+        $.asyncDeposit = asyncDeposit;
+        $.asyncRedeem = asyncRedeem;
     }
 
     // Override Functions
@@ -200,223 +174,353 @@ abstract contract ComponentToken is
      */
     function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
 
-    /// @notice Number of decimals of the ComponentToken
-    function decimals() public view override returns (uint8) {
-        return _getComponentTokenStorage().decimals;
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(AccessControlUpgradeable, ERC165, IERC165)
+        returns (bool supported)
+    {
+        if (
+            super.supportsInterface(interfaceId) || interfaceId == type(IERC7575).interfaceId
+                || interfaceId == 0xe3bc4e65
+        ) {
+            return true;
+        }
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        return ($.asyncDeposit && interfaceId == 0xce3bbe50) || ($.asyncRedeem && interfaceId == 0x620ee8e4);
+    }
+
+    /// @inheritdoc IERC4626
+    function asset() public view virtual override(ERC4626Upgradeable, IERC7540) returns (address assetTokenAddress) {
+        return super.asset();
+    }
+
+    /// @inheritdoc IERC4626
+    function totalAssets()
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC7540)
+        returns (uint256 totalManagedAssets)
+    {
+        return super.totalAssets();
+    }
+
+    /// @inheritdoc IERC4626
+    function convertToShares(uint256 assets)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC7540)
+        returns (uint256 shares)
+    {
+        return super.convertToShares(assets);
+    }
+
+    /// @inheritdoc IERC4626
+    function convertToAssets(uint256 shares)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC7540)
+        returns (uint256 assets)
+    {
+        return super.convertToAssets(shares);
     }
 
     // User Functions
 
-    /**
-     * @notice Submit a request to send currencyTokenAmount of CurrencyToken to buy ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken to send
-     * @return requestId Unique identifier for the buy request
-     */
-    function requestBuy(uint256 currencyTokenAmount) public virtual returns (uint256 requestId) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
-        requestId = $.requests.length;
-
-        if (!currencyToken.transferFrom(msg.sender, address(this), currencyTokenAmount)) {
-            revert InsufficientBalance(currencyToken, msg.sender, currencyTokenAmount);
+    /// @inheritdoc IComponentToken
+    function requestDeposit(
+        uint256 assets,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {
+        if (assets == 0) {
+            revert ZeroAmount();
         }
-        $.requests.push(Request(requestId, currencyTokenAmount, msg.sender, true, false));
+        if (msg.sender != owner) {
+            revert Unauthorized(msg.sender, owner);
+        }
 
-        emit BuyRequested(msg.sender, currencyToken, currencyTokenAmount);
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if (!$.asyncDeposit) {
+            revert Unimplemented();
+        }
+
+        if (!IERC20(asset()).transferFrom(owner, address(this), assets)) {
+            revert InsufficientBalance(IERC20(asset()), owner, assets);
+        }
+        $.pendingDepositRequest[controller] += assets;
+
+        emit DepositRequest(controller, owner, REQUEST_ID, owner, assets);
+        return REQUEST_ID;
     }
 
     /**
-     * @notice Submit a request to send componentTokenAmount of ComponentToken to sell for CurrencyToken
-     * @param componentTokenAmount Amount of ComponentToken to send
-     * @return requestId Unique identifier for the sell request
+     * @notice Notify the vault that the async request to buy shares has been completed
+     * @param assets Amount of `asset` that was deposited by `requestDeposit`
+     * @param shares Amount of shares to receive in exchange
+     * @param controller Controller of the request
      */
-    function requestSell(uint256 componentTokenAmount) public virtual returns (uint256 requestId) {
+    function notifyDeposit(uint256 assets, uint256 shares, address controller) public virtual {
+        if (assets == 0) {
+            revert ZeroAmount();
+        }
+
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
-        requestId = $.requests.length;
+        if ($.pendingDepositRequest[controller] < assets) {
+            revert InsufficientRequestBalance(controller, assets, 0);
+        }
 
-        _burn(msg.sender, componentTokenAmount);
-        $.requests.push(Request(requestId, componentTokenAmount, msg.sender, false, false));
+        $.pendingDepositRequest[controller] -= assets;
+        $.claimableDepositRequest[controller] += assets;
+        $.sharesDepositRequest[controller] += shares;
 
-        emit SellRequested(msg.sender, currencyToken, componentTokenAmount);
+        emit DepositNotified(controller, assets, shares);
+    }
+
+    /// @inheritdoc IComponentToken
+    function deposit(uint256 assets, address receiver, address controller) public virtual returns (uint256 shares) {
+        if (assets == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if (!$.asyncDeposit) {
+            revert Unimplemented();
+        }
+        if ($.claimableDepositRequest[controller] < assets) {
+            revert InsufficientRequestBalance(controller, assets, 1);
+        }
+
+        shares = $.sharesDepositRequest[controller];
+        _mint(receiver, shares);
+        $.claimableDepositRequest[controller] -= assets;
+        $.sharesDepositRequest[controller] -= shares;
+
+        emit Deposit(controller, receiver, assets, shares);
+    }
+
+    /// @inheritdoc IERC7540
+    function mint(uint256 shares, address receiver, address controller) public returns (uint256 assets) {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+        if (_getComponentTokenStorage().asyncDeposit) {
+            revert Unimplemented();
+        }
+        return mint(shares, receiver);
+    }
+
+    /// @inheritdoc IComponentToken
+    function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != owner) {
+            revert Unauthorized(msg.sender, owner);
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if (!$.asyncRedeem) {
+            revert Unimplemented();
+        }
+
+        _burn(msg.sender, shares);
+        $.pendingRedeemRequest[controller] += shares;
+
+        emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
+        return REQUEST_ID;
     }
 
     /**
-     * @notice Executes a request to buy ComponentToken with CurrencyToken
-     * @param requestor Address of the user or smart contract that requested the buy
-     * @param requestId Unique identifier for the request
-     * @param currencyTokenAmount Amount of CurrencyToken to send
-     * @param componentTokenAmount Amount of ComponentToken to receive
+     * @notice Notify the vault that the async request to redeem assets has been completed
+     * @param assets Amount of `asset` to receive in exchange
+     * @param shares Amount of shares that was redeemed by `requestRedeem`
+     * @param controller Controller of the request
      */
-    function executeBuy(
-        address requestor,
-        uint256 requestId,
-        uint256 currencyTokenAmount,
-        uint256 componentTokenAmount
-    ) public virtual {
+    function notifyRedeem(uint256 assets, uint256 shares, address controller) public virtual {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if (requestId >= $.requests.length) {
-            revert InvalidRequest(requestId, 0);
+        if ($.pendingRedeemRequest[controller] < shares) {
+            revert InsufficientRequestBalance(controller, shares, 2);
         }
 
-        IERC20 currencyToken = $.currencyToken;
-        Request storage request = $.requests[requestId];
-        if (request.amount != currencyTokenAmount) {
-            revert InvalidRequest(requestId, 1);
-        }
-        if (request.requestor != requestor) {
-            revert InvalidRequest(requestId, 2);
-        }
-        if (!request.isBuy) {
-            revert InvalidRequest(requestId, 3);
-        }
-        if (request.isExecuted) {
-            revert InvalidRequest(requestId, 5);
-        }
+        $.pendingRedeemRequest[controller] -= shares;
+        $.claimableRedeemRequest[controller] += shares;
+        $.assetsRedeemRequest[controller] += assets;
 
-        _mint(requestor, componentTokenAmount);
-        request.isExecuted = true;
-
-        emit BuyExecuted(requestor, currencyToken, currencyTokenAmount, componentTokenAmount);
+        emit RedeemNotified(controller, assets, shares);
     }
 
-    /**
-     * @notice Executes a request to sell ComponentToken for CurrencyToken
-     * @param requestor Address of the user or smart contract that requested the sell
-     * @param requestId Unique identifier for the request
-     * @param currencyTokenAmount Amount of CurrencyToken to receive
-     * @param componentTokenAmount Amount of ComponentToken to send
-     */
-    function executeSell(
-        address requestor,
-        uint256 requestId,
-        uint256 currencyTokenAmount,
-        uint256 componentTokenAmount
-    ) public virtual {
+    /// @inheritdoc IERC7540
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if (requestId >= $.requests.length) {
-            revert InvalidRequest(requestId, 0);
+        if (!$.asyncRedeem) {
+            revert Unimplemented();
+        }
+        if ($.claimableRedeemRequest[controller] < shares) {
+            revert InsufficientRequestBalance(controller, shares, 1);
         }
 
-        IERC20 currencyToken = $.currencyToken;
-        Request storage request = $.requests[requestId];
-        if (request.amount != componentTokenAmount) {
-            revert InvalidRequest(requestId, 1);
+        assets = $.assetsRedeemRequest[controller];
+        if (!IERC20(asset()).transfer(receiver, assets)) {
+            revert InsufficientBalance(IERC20(asset()), address(this), assets);
         }
-        if (request.requestor != requestor) {
-            revert InvalidRequest(requestId, 2);
-        }
-        if (request.isBuy) {
-            revert InvalidRequest(requestId, 4);
-        }
-        if (request.isExecuted) {
-            revert InvalidRequest(requestId, 5);
-        }
+        $.claimableRedeemRequest[controller] -= shares;
+        $.assetsRedeemRequest[controller] -= assets;
 
-        if (!currencyToken.transfer(requestor, currencyTokenAmount)) {
-            revert InsufficientBalance(currencyToken, requestor, currencyTokenAmount);
-        }
-        request.isExecuted = true;
-
-        emit SellExecuted(requestor, currencyToken, currencyTokenAmount, componentTokenAmount);
+        emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
 
-    /**
-     * @notice Claim all the remaining yield that has been accrued to a user
-     * @dev Anyone can call this function to claim yield for any user
-     * @param user Address of the user to claim yield for
-     * @return amount Amount of CurrencyToken claimed as yield
-     */
-    function claimYield(address user) external returns (uint256 amount) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        IERC20 currencyToken = $.currencyToken;
-
-        amount = unclaimedYield(user);
-        currencyToken.transfer(user, amount);
-        $.yieldWithdrawn[user] += amount;
-        $.totalYieldWithdrawn += amount;
-
-        emit YieldClaimed(user, currencyToken, amount);
-    }
-
-    // Admin Setter Functions
-
-    /**
-     * @notice Set the version of the ComponentToken
-     * @dev Only the owner can call this setter
-     * @param version New version of the ComponentToken
-     */
-    function setVersion(uint256 version) external onlyRole(ADMIN_ROLE) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        if (version <= $.version) {
-            revert InvalidVersion(version, $.version);
+    /// @inheritdoc IERC7540
+    function withdraw(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
+        if (assets == 0) {
+            revert ZeroAmount();
         }
-        $.version = version;
-    }
-
-    /**
-     * @notice Set the CurrencyToken used to mint and burn the ComponentToken
-     * @dev Only the owner can call this setter
-     * @param currencyToken New CurrencyToken
-     */
-    function setCurrencyToken(IERC20 currencyToken) external onlyRole(ADMIN_ROLE) {
-        _getComponentTokenStorage().currencyToken = currencyToken;
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+        if (_getComponentTokenStorage().asyncRedeem) {
+            revert Unimplemented();
+        }
+        return withdraw(assets, receiver, controller);
     }
 
     // Getter View Functions
 
-    /// @notice Returns the version of the ComponentToken interface
-    function getVersion() external view returns (uint256) {
-        return _getComponentTokenStorage().version;
+    /// @inheritdoc IERC7575
+    function share() external view returns (address shareTokenAddress) {
+        return address(this);
     }
 
-    /// @notice CurrencyToken used to buy and sell the ComponentToken
-    function getCurrencyToken() external view returns (IERC20) {
-        return _getComponentTokenStorage().currencyToken;
+    /// @inheritdoc IERC7540
+    function isOperator(address, address) public pure returns (bool status) {
+        return false;
     }
 
-    /// @notice Total yield distributed to the ComponentToken for all users
-    function totalYield() external view returns (uint256 amount) {
-        return _getComponentTokenStorage().totalYieldAccrued;
+    /// @inheritdoc IComponentToken
+    function pendingDepositRequest(uint256, address controller) public view returns (uint256 assets) {
+        return _getComponentTokenStorage().pendingDepositRequest[controller];
     }
 
-    /// @notice Claimed yield across the ComponentToken for all users
-    function claimedYield() external view returns (uint256 amount) {
-        return _getComponentTokenStorage().totalYieldWithdrawn;
+    /// @inheritdoc IComponentToken
+    function claimableDepositRequest(uint256, address controller) public view returns (uint256 assets) {
+        return _getComponentTokenStorage().claimableDepositRequest[controller];
     }
 
-    /// @notice Unclaimed yield across the ComponentToken for all users
-    function unclaimedYield() external view returns (uint256 amount) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        return $.totalYieldAccrued - $.totalYieldWithdrawn;
+    /// @inheritdoc IComponentToken
+    function pendingRedeemRequest(uint256, address controller) public view returns (uint256 shares) {
+        return _getComponentTokenStorage().pendingRedeemRequest[controller];
     }
 
-    /**
-     * @notice Total yield distributed to a specific user
-     * @param user Address of the user for which to get the total yield
-     * @return amount Total yield distributed to the user
-     */
-    function totalYield(address user) external view returns (uint256 amount) {
-        return _getComponentTokenStorage().yieldAccrued[user];
+    /// @inheritdoc IComponentToken
+    function claimableRedeemRequest(uint256, address controller) public view returns (uint256 shares) {
+        return _getComponentTokenStorage().claimableRedeemRequest[controller];
     }
 
     /**
-     * @notice Amount of yield that a specific user has claimed
-     * @param user Address of the user for which to get the claimed yield
-     * @return amount Amount of yield that the user has claimed
+     * @inheritdoc IERC4626
+     * @dev Must revert for all callers and inputs for asynchronous deposit vaults
      */
-    function claimedYield(address user) external view returns (uint256 amount) {
-        return _getComponentTokenStorage().yieldWithdrawn[user];
+    function previewDeposit(uint256 assets)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 shares)
+    {
+        if (_getComponentTokenStorage().asyncDeposit) {
+            revert Unimplemented();
+        }
+        shares = super.previewDeposit(assets);
     }
 
     /**
-     * @notice Amount of yield that a specific user has not yet claimed
-     * @param user Address of the user for which to get the unclaimed yield
-     * @return amount Amount of yield that the user has not yet claimed
+     * @inheritdoc IERC4626
+     * @dev Must revert for all callers and inputs for asynchronous deposit vaults
      */
-    function unclaimedYield(address user) public view returns (uint256 amount) {
-        ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        return $.yieldAccrued[user] - $.yieldWithdrawn[user];
+    function previewMint(uint256 shares)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 assets)
+    {
+        if (_getComponentTokenStorage().asyncDeposit) {
+            revert Unimplemented();
+        }
+        assets = super.previewDeposit(shares);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     * @dev Must revert for all callers and inputs for asynchronous redeem vaults
+     */
+    function previewRedeem(uint256 shares)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 assets)
+    {
+        if (_getComponentTokenStorage().asyncRedeem) {
+            revert Unimplemented();
+        }
+        assets = super.previewRedeem(shares);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     * @dev Must revert for all callers and inputs for asynchronous redeem vaults
+     */
+    function previewWithdraw(uint256 assets)
+        public
+        view
+        virtual
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 shares)
+    {
+        if (_getComponentTokenStorage().asyncRedeem) {
+            revert Unimplemented();
+        }
+        shares = super.previewWithdraw(assets);
+    }
+
+    /// @inheritdoc IERC7540
+    function setOperator(address, bool) public pure returns (bool) {
+        revert Unimplemented();
     }
 
 }
