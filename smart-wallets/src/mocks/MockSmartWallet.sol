@@ -1,3 +1,5 @@
+pragma solidity ^0.8.25;
+
 import "../interfaces/ISmartWallet.sol";
 import "forge-std/console.sol";
 

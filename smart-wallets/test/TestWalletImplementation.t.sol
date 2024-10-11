@@ -16,9 +16,9 @@ contract TestWalletImplementationTest is Test {
     bytes32 constant DEPLOY_SALT = keccak256("PlumeSmartWallets");
 
     /* forge coverage --ir-minimum */
-    address constant EMPTY_ADDRESS = 0x0Ab1C3d2cCB7c314666185b317900a614e516feB;
-    address constant WALLET_FACTORY_ADDRESS = 0xf0533fC1183cf6006b0dCF943AB011c8aD58459D;
-    address constant WALLET_PROXY_ADDRESS = 0xaefD16513881Ad9Ad869bf2Bd028F4D441FF2B40;
+    address constant EMPTY_ADDRESS = 0x4A8efF824790cB98cb65c8b62166965C128d49b6;
+    address constant WALLET_FACTORY_ADDRESS = 0xD1d536BbA8F794A5B69Ea7Da15828Ea6cf5f122E;
+    address constant WALLET_PROXY_ADDRESS = 0x2440fD2C42EbABBBC7e86765339d8a742CB2993e;
    
 
     /* forge test 
