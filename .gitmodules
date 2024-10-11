@@ -34,3 +34,6 @@
 [submodule "staking/lib/openzeppelin-contracts-upgradeable"]
 	path = staking/lib/openzeppelin-contracts-upgradeable
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable
+[submodule "smart-wallets/lib/openzeppelin-foundry-upgrades"]
+	path = smart-wallets/lib/openzeppelin-foundry-upgrades
+	url = https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades
