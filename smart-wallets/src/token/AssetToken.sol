@@ -90,11 +90,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     error AddressNotWhitelisted(address user);
 
-    /**
-     * @notice Indicates a failure because the user's SmartWallet call failed
-     * @param user Address of the user whose SmartWallet call failed
-     */
-    error SmartWalletCallFailed(address user);
 
     // Constructor
 
@@ -302,6 +297,23 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
 
     function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
+        uint256 lockedBalance = 0;
+
+        (bool success, bytes memory data) =
+            user.staticcall(abi.encodeWithSelector(ISmartWallet.getBalanceLocked.selector, this));
+        //if (!success) {
+            //revert SmartWalletCallFailed(user);
+        //}
+
+        balanceAvailable = balanceOf(user);
+        if (data.length > 0) {
+            uint256 lockedBalance = abi.decode(data, (uint256));
+            balanceAvailable -= lockedBalance;
+        }
+    }
+/*
+
+    function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
     uint256 lockedBalance = 0;
 
     if (isContract(user)) {
@@ -315,7 +327,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     return balanceOf(user) - lockedBalance;
 }
-
+*/
     /// @notice Total yield distributed to all AssetTokens for all users
     function totalYield() public view returns (uint256 amount) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();

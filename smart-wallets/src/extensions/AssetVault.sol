@@ -7,6 +7,7 @@ import {IAssetToken} from "../interfaces/IAssetToken.sol";
 import {IAssetVault} from "../interfaces/IAssetVault.sol";
 import {ISmartWallet} from "../interfaces/ISmartWallet.sol";
 import {console} from "forge-std/console.sol";
+import { WalletUtils } from "../WalletUtils.sol";
 
 /**
  * @title AssetVault
@@ -15,7 +16,8 @@ import {console} from "forge-std/console.sol";
  *   in a vault, then take the yield distributed to those locked yield-bearing assets
  *   and manage the redistribution of that yield to multiple beneficiaries.
  */
-contract AssetVault is IAssetVault {
+contract AssetVault is WalletUtils, IAssetVault {
+
     // Types
 
     /**
@@ -198,16 +200,10 @@ contract AssetVault is IAssetVault {
         uint256 amountRenounced
     );
 
-    /**
-     * @notice Indicates a failure because the caller is not the user wallet
-     * @param invalidUser Address of the caller who tried to call a wallet-only function
-     */
-    error UnauthorizedCall(address invalidUser);
-
     // Modifiers
 
     /// @notice Only the user wallet can call this function
-    modifier onlyWallet() {
+    modifier onlyUserWallet() {
         if (msg.sender != wallet) {
             revert UnauthorizedCall(msg.sender);
         }
@@ -240,7 +236,7 @@ contract AssetVault is IAssetVault {
         address beneficiary,
         uint256 amount,
         uint256 expiration
-    ) external onlyWallet {
+    ) external onlyUserWallet {
         if (address(assetToken) == address(0) || beneficiary == address(0)) {
             revert ZeroAddress();
         }
@@ -264,6 +260,8 @@ contract AssetVault is IAssetVault {
      * @notice Redistribute yield to the beneficiaries of the AssetToken, using yield distributions
      * @dev Only the user wallet can initiate the yield redistribution. The yield redistributed
      *   to each beneficiary is rounded down, and any remaining CurrencyToken are kept in the vault.
+     *   The Solidity compiler adds a check that the target address has `extcodesize > 0`
+     *   and otherwise reverts for high-level calls, so we have to use a low-level call here
      * @param assetToken AssetToken from which the yield is to be redistributed
      * @param currencyToken Token in which the yield is to be redistributed
      * @param currencyTokenAmount Amount of CurrencyToken to redistribute
@@ -382,8 +380,6 @@ contract AssetVault is IAssetVault {
                 break;
             }
         }
-
-        return balanceLocked;
     }
 
     /**
@@ -409,7 +405,7 @@ contract AssetVault is IAssetVault {
             revert InvalidExpiration(expiration, block.timestamp);
         }
         if (allowance.expiration != expiration) {
-            revert MismatchedExpiration(allowance.expiration, expiration);
+            revert MismatchedExpiration(expiration, allowance.expiration);
         }
         if (allowance.amount < amount) {
             revert InsufficientYieldAllowance(
@@ -419,7 +415,7 @@ contract AssetVault is IAssetVault {
                 amount
             );
         }
-        if (assetToken.getBalanceAvailable(address(this)) < amount) {
+        if (assetToken.getBalanceAvailable(wallet) < amount) {
             revert InsufficientBalance(assetToken, amount);
         }
 
