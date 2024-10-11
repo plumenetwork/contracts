@@ -9,7 +9,7 @@ import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.s
 
 /**
  * @title YieldDistributionToken
- * @author Eugene Y. Q. Shen
+ * @author ...
  * @notice ERC20 token that receives yield deposits and distributes yield
  *   to token holders proportionally based on how long they have held the token
  */
@@ -38,7 +38,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      */
     struct BalanceHistory {
         uint256 lastTimestamp;
-        mapping(uint256 timestamp => Balance balance) balances;
+        mapping(uint256 => Balance) balances;
     }
 
     /**
@@ -62,7 +62,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      */
     struct DepositHistory {
         uint256 lastTimestamp;
-        mapping(uint256 timestamp => Deposit deposit) deposits;
+        mapping(uint256 => Deposit) deposits;
     }
 
     // Storage
@@ -78,11 +78,17 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         /// @dev History of deposits into the YieldDistributionToken
         DepositHistory depositHistory;
         /// @dev History of balances for each user
-        mapping(address user => BalanceHistory balanceHistory) balanceHistory;
+        mapping(address => BalanceHistory) balanceHistory;
         /// @dev Total amount of yield that has ever been accrued by each user
-        mapping(address user => uint256 currencyTokenAmount) yieldAccrued;
+        mapping(address => uint256) yieldAccrued;
         /// @dev Total amount of yield that has ever been withdrawn by each user
-        mapping(address user => uint256 currencyTokenAmount) yieldWithdrawn;
+        mapping(address => uint256) yieldWithdrawn;
+        /// @dev Mapping of DEX addresses
+        mapping(address => bool) isDEX;
+        /// @dev Mapping of DEX addresses to maker addresses for pending orders
+        mapping(address => mapping(address => address)) dexToMakerAddress;
+        /// @dev Tokens held on DEXs on behalf of each maker
+        mapping(address => uint256) tokensHeldOnDEXs;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.YieldDistributionToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -97,7 +103,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
     // Constants
 
-    // Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 private constant _BASE = 1e18;
 
     // Events
@@ -123,6 +128,10 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @param currencyTokenAmount Amount of CurrencyToken accrued as yield
      */
     event YieldAccrued(address indexed user, uint256 currencyTokenAmount);
+
+    // remove this, for debug purposes
+    event Debug(string message, uint256 value);
+
 
     // Errors
 
@@ -197,41 +206,80 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      */
     function _update(address from, address to, uint256 value) internal virtual override {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-        uint256 timestamp = block.timestamp;
-        super._update(from, to, value);
 
-        // If the token is not being minted, then accrue yield to the sender
-        //   and append a new balance to the sender balance history
+        // Accrue yield before the transfer
         if (from != address(0)) {
             accrueYield(from);
-
-            BalanceHistory storage fromBalanceHistory = $.balanceHistory[from];
-            uint256 balance = balanceOf(from);
-            uint256 lastTimestamp = fromBalanceHistory.lastTimestamp;
-
-            if (timestamp == lastTimestamp) {
-                fromBalanceHistory.balances[timestamp].amount = balance;
-            } else {
-                fromBalanceHistory.balances[timestamp] = Balance(balance, lastTimestamp);
-                fromBalanceHistory.lastTimestamp = timestamp;
-            }
         }
-
-        // If the token is not being burned, then accrue yield to the receiver
-        //   and append a new balance to the receiver balance history
         if (to != address(0)) {
             accrueYield(to);
+        }
 
-            BalanceHistory storage toBalanceHistory = $.balanceHistory[to];
-            uint256 balance = balanceOf(to);
-            uint256 lastTimestamp = toBalanceHistory.lastTimestamp;
+        // Adjust balances if transferring to a DEX
+        if (from != address(0) && $.isDEX[to]) {
+            // Register the maker
+            $.dexToMakerAddress[to][address(this)] = from;
 
-            if (timestamp == lastTimestamp) {
-                toBalanceHistory.balances[timestamp].amount = balance;
-            } else {
-                toBalanceHistory.balances[timestamp] = Balance(balance, lastTimestamp);
-                toBalanceHistory.lastTimestamp = timestamp;
-            }
+            // Adjust maker's tokensHeldOnDEXs balance
+            _adjustMakerBalance(from, value, true);
+        }
+
+        // Adjust balances if transferring from a DEX
+        if ($.isDEX[from]) {
+            // Get the maker
+            address maker = $.dexToMakerAddress[from][address(this)];
+
+            // Adjust maker's tokensHeldOnDEXs balance
+            _adjustMakerBalance(maker, value, false);
+        }
+
+        // Perform the transfer
+        super._update(from, to, value);
+
+        // Update balance histories
+        if (from != address(0)) {
+            _updateBalanceHistory(from);
+        }
+        if (to != address(0)) {
+            _updateBalanceHistory(to);
+        }
+    }
+
+    function _adjustMakerBalance(address maker, uint256 amount, bool increase) internal {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+
+        // Accrue yield for the maker before adjusting balance
+        accrueYield(maker);
+
+        if (increase) {
+            $.tokensHeldOnDEXs[maker] += amount;
+        } else {
+            require($.tokensHeldOnDEXs[maker] >= amount, "Insufficient tokens held on DEXs");
+            $.tokensHeldOnDEXs[maker] -= amount;
+        }
+
+        // Update the maker's balance history
+        _updateBalanceHistory(maker);
+    }
+
+    // Helper function to update balance history
+    function _updateBalanceHistory(address user) private {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        BalanceHistory storage balanceHistory = $.balanceHistory[user];
+        uint256 balance = balanceOf(user);
+
+        // Include tokens held on DEXs if the user is a maker
+        uint256 tokensOnDEXs = $.tokensHeldOnDEXs[user];
+        balance += tokensOnDEXs;
+
+        uint256 timestamp = block.timestamp;
+        uint256 lastTimestamp = balanceHistory.lastTimestamp;
+
+        if (timestamp == lastTimestamp) {
+            balanceHistory.balances[timestamp].amount = balance;
+        } else {
+            balanceHistory.balances[timestamp] = Balance(balance, lastTimestamp);
+            balanceHistory.lastTimestamp = timestamp;
         }
     }
 
@@ -274,6 +322,11 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             revert ZeroAmount();
         }
 
+    uint256 totalSupply_ = totalSupply();
+    if (totalSupply_ == 0) {
+        revert("Cannot deposit yield when total supply is zero");
+    }
+
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         uint256 lastTimestamp = $.depositHistory.lastTimestamp;
 
@@ -294,6 +347,61 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             revert TransferFailed(msg.sender, currencyTokenAmount);
         }
         emit Deposited(msg.sender, timestamp, currencyTokenAmount);
+    }
+
+    // Functions to manage DEXs and maker orders
+
+    /**
+     * @notice Register a DEX address
+     * @dev Only the owner can call this function
+     * @param dexAddress Address of the DEX to register
+     */
+    function registerDEX(address dexAddress) external onlyOwner {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        $.isDEX[dexAddress] = true;
+    }
+
+    /**
+     * @notice Unregister a DEX address
+     * @dev Only the owner can call this function
+     * @param dexAddress Address of the DEX to unregister
+     */
+    function unregisterDEX(address dexAddress) external onlyOwner {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        $.isDEX[dexAddress] = false;
+    }
+
+    /**
+     * @notice Register a maker's pending order on a DEX
+     * @dev Only registered DEXs can call this function
+     * @param maker Address of the maker
+     * @param amount Amount of tokens in the order
+     */
+    function registerMakerOrder(address maker, uint256 amount) external {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        require($.isDEX[msg.sender], "Caller is not a registered DEX");
+        $.dexToMakerAddress[msg.sender][address(this)] = maker;
+        _transfer(maker, msg.sender, amount);
+    }
+
+    /**
+     * @notice Unregister a maker's completed or cancelled order on a DEX
+     * @dev Only registered DEXs can call this function
+     * @param maker Address of the maker
+     * @param amount Amount of tokens to return (if any)
+     */
+function unregisterMakerOrder(address maker, uint256 amount) external {
+    YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+    require($.isDEX[msg.sender], "Caller is not a registered DEX");
+    if (amount > 0) {
+        _transfer(msg.sender, maker, amount);
+    }
+    $.dexToMakerAddress[msg.sender][address(this)] = address(0);
+}
+
+    function isDexAddressWhitelisted(address addr) public view returns (bool) {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        return $.isDEX[addr];
     }
 
     // Permissionless Functions
@@ -337,19 +445,10 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         uint256 depositTimestamp = depositHistory.lastTimestamp;
         uint256 balanceTimestamp = balanceHistory.lastTimestamp;
 
-        /**
-         * There is a race condition in the current implementation that occurs when
-         * we deposit yield, then accrue yield for some users, then deposit more yield
-         * in the same block. The users whose yield was accrued in this block would
-         * not receive the yield from the second deposit. Therefore, we do not accrue
-         * anything when the deposit timestamp is the same as the current block timestamp.
-         * Users can call `accrueYield` again on the next block.
-         */
         if (depositTimestamp == block.timestamp) {
             return;
         }
 
-        // If the user has never had any balances, then there is no yield to accrue
         if (balanceTimestamp == 0) {
             return;
         }
@@ -359,7 +458,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         uint256 previousBalanceTimestamp = balance.previousTimestamp;
         Balance storage previousBalance = balanceHistory.balances[previousBalanceTimestamp];
 
-        // Iterate through the balanceHistory list until depositTimestamp >= previousBalanceTimestamp
         while (depositTimestamp < previousBalanceTimestamp) {
             balanceTimestamp = previousBalanceTimestamp;
             balance = previousBalance;
@@ -367,14 +465,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             previousBalance = balanceHistory.balances[previousBalanceTimestamp];
         }
 
-        /**
-         * At this point, either:
-         *   (a) depositTimestamp >= balanceTimestamp > previousBalanceTimestamp
-         *   (b) balanceTimestamp > depositTimestamp >= previousBalanceTimestamp
-         * Create a new balance at the moment of depositTimestamp, whose amount is
-         *   either case (a) balance.amount or case (b) previousBalance.amount.
-         *   Then ignore the most recent balance in case (b) because it is in the future.
-         */
         uint256 preserveBalanceTimestamp;
         if (balanceTimestamp < depositTimestamp) {
             balanceHistory.lastTimestamp = depositTimestamp;
@@ -389,38 +479,46 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             balance = previousBalance;
             balanceTimestamp = previousBalanceTimestamp;
         } else {
-            // Do not delete this balance if its timestamp is the same as the deposit timestamp
             preserveBalanceTimestamp = balanceTimestamp;
         }
 
-        /**
-         * At this point: depositTimestamp >= balanceTimestamp
-         * We will keep this as an invariant throughout the rest of the function.
-         * Double while loop: in the outer while loop, we iterate through the depositHistory list and
-         *   calculate the yield to be accrued to the user based on their balance at that time.
-         *   This outer loop ends after we go through all deposits or all of the user's balance history.
-         */
         uint256 yieldAccrued = 0;
         uint256 depositAmount = deposit.currencyTokenAmount;
         while (depositAmount > 0 && balanceTimestamp > 0) {
             uint256 previousDepositTimestamp = deposit.previousTimestamp;
             uint256 timeBetweenDeposits = depositTimestamp - previousDepositTimestamp;
 
-            /**
-             * If the balance of the user remained unchanged between both deposits,
-             *   then we can easily calculate the yield proportional to the balance.
-             */
+            // Log deposit totalSupply and timeBetweenDeposits
+            emit Debug("deposit.totalSupply", deposit.totalSupply);
+            emit Debug("timeBetweenDeposits", timeBetweenDeposits);
+
             if (previousDepositTimestamp >= balanceTimestamp) {
-                yieldAccrued += _BASE * depositAmount * balance.amount / deposit.totalSupply;
+                            // Log balance.amount
+            emit Debug("balance.amount", balance.amount);
+            // Check for division by zero
+            if (deposit.totalSupply == 0) {
+                emit Debug("Division by zero error: deposit.totalSupply is zero", deposit.totalSupply);
+            }
+            yieldAccrued += _BASE * depositAmount * balance.amount / deposit.totalSupply;
+
             } else {
-                /**
-                 * If the balance of the user changed between the deposits, then we need to iterate through
-                 *   the balanceHistory list and calculate the prorated yield that accrued to the user.
-                 *   The prorated yield is the proportion of tokens the user holds (balance.amount /
-                 * deposit.totalSupply)
-                 *   multiplied by the time interval ((nextBalanceTimestamp - balanceTimestamp) / timeBetweenDeposits).
-                 */
+                            // Log balance.amount and time intervals
+    
+            // Check for division by zero
+            if (deposit.totalSupply == 0 || timeBetweenDeposits == 0) {
+                emit Debug("Division by zero error", 0);
+                emit Debug("deposit.totalSupply", deposit.totalSupply);
+                emit Debug("timeBetweenDeposits", timeBetweenDeposits);
+            }
+
                 uint256 nextBalanceTimestamp = depositTimestamp;
+
+        emit Debug("balance.amount", balance.amount);
+            emit Debug("nextBalanceTimestamp - balanceTimestamp", nextBalanceTimestamp - balanceTimestamp);
+
+
+
+
                 while (balanceTimestamp >= previousDepositTimestamp) {
                     yieldAccrued += _BASE * depositAmount * balance.amount * (nextBalanceTimestamp - balanceTimestamp)
                         / deposit.totalSupply / timeBetweenDeposits;
@@ -429,21 +527,12 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                     balanceTimestamp = balance.previousTimestamp;
                     balance = balanceHistory.balances[balanceTimestamp];
 
-                    /**
-                     * Delete the old balance since it has already been processed by some deposit,
-                     *   unless the timestamp is the same as the deposit timestamp, in which case
-                     *   we need to preserve the balance for the next iteration.
-                     */
                     if (nextBalanceTimestamp != preserveBalanceTimestamp) {
                         delete balanceHistory.balances[nextBalanceTimestamp].amount;
                         delete balanceHistory.balances[nextBalanceTimestamp].previousTimestamp;
                     }
                 }
 
-                /**
-                 * At this point: nextBalanceTimestamp >= previousDepositTimestamp > balanceTimestamp
-                 * Accrue yield from previousDepositTimestamp up until nextBalanceTimestamp
-                 */
                 yieldAccrued += _BASE * depositAmount * balance.amount
                     * (nextBalanceTimestamp - previousDepositTimestamp) / deposit.totalSupply / timeBetweenDeposits;
             }
@@ -453,8 +542,26 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             depositAmount = deposit.currencyTokenAmount;
         }
 
-        $.yieldAccrued[user] += yieldAccrued / _BASE;
-        emit YieldAccrued(user, yieldAccrued / _BASE);
+        if ($.isDEX[user]) {
+            // Redirect yield to the maker
+            address maker = $.dexToMakerAddress[user][address(this)];
+            $.yieldAccrued[maker] += yieldAccrued / _BASE;
+            emit YieldAccrued(maker, yieldAccrued / _BASE);
+        } else {
+            // Regular yield accrual
+            $.yieldAccrued[user] += yieldAccrued / _BASE;
+            emit YieldAccrued(user, yieldAccrued / _BASE);
+        }
     }
 
+
+        /**
+     * @notice Getter function to access tokensHeldOnDEXs for a user
+     * @param user Address of the user
+     * @return amount of tokens held on DEXs on behalf of the user
+     */
+    function tokensHeldOnDEXs(address user) public view returns (uint256) {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        return $.tokensHeldOnDEXs[user];
+    }
 }

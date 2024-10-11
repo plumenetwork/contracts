@@ -228,6 +228,8 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function mint(address user, uint256 assetTokenAmount) external onlyOwner {
         _mint(user, assetTokenAmount);
+        
+
     }
 
     /**
@@ -298,17 +300,21 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user to get the available balance of
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
+
     function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
-        if (isContract(user)) {
-            try ISmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
-                return balanceOf(user) - lockedBalance;
-            } catch {
-                revert SmartWalletCallFailed(user);
-            }
-        } else {
-            revert SmartWalletCallFailed(user);
+    uint256 lockedBalance = 0;
+
+    if (isContract(user)) {
+        try ISmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lb) {
+            lockedBalance = lb;
+        } catch {
+            // If the call fails, assume lockedBalance is zero
+            // Do not revert
         }
     }
+
+    return balanceOf(user) - lockedBalance;
+}
 
     /// @notice Total yield distributed to all AssetTokens for all users
     function totalYield() public view returns (uint256 amount) {
@@ -361,5 +367,8 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         return _getYieldDistributionTokenStorage().yieldAccrued[user]
             - _getYieldDistributionTokenStorage().yieldWithdrawn[user];
     }
+
+
+
 
 }
