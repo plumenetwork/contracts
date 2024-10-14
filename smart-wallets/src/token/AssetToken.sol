@@ -6,7 +6,6 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
-
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
@@ -89,7 +88,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user that is not whitelisted
      */
     error AddressNotWhitelisted(address user);
-
 
     // Constructor
 
@@ -223,30 +221,32 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function mint(address user, uint256 assetTokenAmount) external onlyOwner {
         _mint(user, assetTokenAmount);
-        
-
     }
 
     /**
      * @notice Deposit yield into the AssetToken
      * @dev Only the owner can call this function, and the owner must have
      *   approved the CurrencyToken to spend the given amount
-     * @param timestamp Timestamp of the deposit, must not be less than the previous deposit timestamp
      * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
      */
-    function depositYield(uint256 timestamp, uint256 currencyTokenAmount) external onlyOwner {
-        _depositYield(timestamp, currencyTokenAmount);
+    function depositYield(uint256 currencyTokenAmount) external onlyOwner {
+        _depositYield(currencyTokenAmount);
     }
 
     // Permissionless Functions
 
     /**
      * @notice Make the SmartWallet redistribute yield from this token
+     * @dev The Solidity compiler adds a check that the target address has `extcodesize > 0`
+     *   and otherwise reverts for high-level calls, so we have to use a low-level call here
      * @param from Address of the SmartWallet to request the yield from
      */
     function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
         // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
-        ISmartWallet(payable(from)).claimAndRedistributeYield(this);
+        (bool success,) = from.call(abi.encodeWithSelector(ISmartWallet.claimAndRedistributeYield.selector, this));
+        if (!success) {
+            revert SmartWalletCallFailed(from);
+        }
     }
 
     // Getter View Functions
@@ -291,19 +291,17 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     /**
      * @notice Get the available unlocked AssetToken balance of a user
-     * @dev Calls `getBalanceLocked`, which reverts if the user is not a contract or a smart wallet
+     * @dev The Solidity compiler adds a check that the target address has `extcodesize > 0`
+     *   and otherwise reverts for high-level calls, so we have to use a low-level call here
      * @param user Address of the user to get the available balance of
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
-
     function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
-        uint256 lockedBalance = 0;
-
         (bool success, bytes memory data) =
             user.staticcall(abi.encodeWithSelector(ISmartWallet.getBalanceLocked.selector, this));
-        //if (!success) {
-            //revert SmartWalletCallFailed(user);
-        //}
+        if (!success) {
+            revert SmartWalletCallFailed(user);
+        }
 
         balanceAvailable = balanceOf(user);
         if (data.length > 0) {
@@ -311,29 +309,13 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             balanceAvailable -= lockedBalance;
         }
     }
-/*
 
-    function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
-    uint256 lockedBalance = 0;
-
-    if (isContract(user)) {
-        try ISmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lb) {
-            lockedBalance = lb;
-        } catch {
-            // If the call fails, assume lockedBalance is zero
-            // Do not revert
-        }
-    }
-
-    return balanceOf(user) - lockedBalance;
-}
-*/
     /// @notice Total yield distributed to all AssetTokens for all users
     function totalYield() public view returns (uint256 amount) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
         uint256 length = $.holders.length;
         for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().yieldAccrued[$.holders[i]];
+            amount += _getYieldDistributionTokenStorage().userStates[$.holders[i]].yieldAccrued;
         }
     }
 
@@ -343,7 +325,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         address[] storage holders = $.holders;
         uint256 length = holders.length;
         for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().yieldWithdrawn[holders[i]];
+            amount += _getYieldDistributionTokenStorage().userStates[$.holders[i]].yieldWithdrawn;
         }
     }
 
@@ -358,7 +340,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @return amount Total yield distributed to the user
      */
     function totalYield(address user) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().yieldAccrued[user];
+        return _getYieldDistributionTokenStorage().userStates[user].yieldAccrued;
     }
 
     /**
@@ -367,7 +349,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @return amount Amount of yield that the user has claimed
      */
     function claimedYield(address user) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().yieldWithdrawn[user];
+        return _getYieldDistributionTokenStorage().userStates[user].yieldWithdrawn;
     }
 
     /**
@@ -376,11 +358,8 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @return amount Amount of yield that the user has not yet claimed
      */
     function unclaimedYield(address user) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().yieldAccrued[user]
-            - _getYieldDistributionTokenStorage().yieldWithdrawn[user];
+        UserState memory userState = _getYieldDistributionTokenStorage().userStates[user];
+        return userState.yieldAccrued - userState.yieldWithdrawn;
     }
-
-
-
 
 }

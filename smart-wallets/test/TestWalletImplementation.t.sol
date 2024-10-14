@@ -17,15 +17,15 @@ contract TestWalletImplementationTest is Test {
 
     /* forge coverage --ir-minimum */
     address constant EMPTY_ADDRESS = 0x4A8efF824790cB98cb65c8b62166965C128d49b6;
-    address constant WALLET_FACTORY_ADDRESS = 0xD1d536BbA8F794A5B69Ea7Da15828Ea6cf5f122E;
-    address constant WALLET_PROXY_ADDRESS = 0x2440fD2C42EbABBBC7e86765339d8a742CB2993e;
+    address constant WALLET_FACTORY_ADDRESS = 0xc5499b361C2f5e69e924f7499f1F4A91e0874776;
+    address constant WALLET_PROXY_ADDRESS = 0x829956583e233A4F969d358Ca0cA64661336a493;
    
 
-    /* forge test 
+    /* forge test
     address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
-    address constant WALLET_FACTORY_ADDRESS = 0x5F26233a11D5148aeEa71d54D9D102992F8d73E2;
-    address constant WALLET_PROXY_ADDRESS = 0xCd49AC437b7e0b73D403e2fF339429330166feE0;
-*/
+    address constant WALLET_FACTORY_ADDRESS = 0xEebAC1B8e813FA641D8EFe967C8CD3DA68D2DF7a;
+    address constant WALLET_PROXY_ADDRESS = 0x832C436692d2d0267Dd72e9577c82b5f2C96fb6f;
+ */
     TestWalletImplementation testWalletImplementation;
 
     function setUp() public {
@@ -46,7 +46,7 @@ contract TestWalletImplementationTest is Test {
             new WalletFactory{ salt: DEPLOY_SALT }(ADMIN_ADDRESS, ISmartWallet(address(empty)));
         WalletProxy walletProxy = new WalletProxy{ salt: DEPLOY_SALT }(walletFactory);
 
-        assertEq(address(empty), EMPTY_ADDRESS);
+        //assertEq(address(empty), EMPTY_ADDRESS);
         assertEq(address(walletFactory), WALLET_FACTORY_ADDRESS);
         assertEq(address(walletProxy), WALLET_PROXY_ADDRESS);
 

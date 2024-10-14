@@ -41,7 +41,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 function getBalanceAvailable(address user) external override view returns (uint256 balanceAvailable)  {}
 
   function accrueYield(address user) external override {}
-     function depositYield(uint256 timestamp, uint256 currencyTokenAmount) external override {}
+     function depositYield(uint256 currencyTokenAmount) external override {}
+
+
+
+
 
 
 }
