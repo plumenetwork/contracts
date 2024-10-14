@@ -5,11 +5,11 @@ import "forge-std/Test.sol";
 import { YieldToken } from "../src/token/YieldToken.sol";
 import { MockSmartWallet } from "../src/mocks/MockSmartWallet.sol";
 import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
-import { ERC20Mock } from "../lib/openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
+import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 
 import "../src/interfaces/IAssetToken.sol";
-import "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 
 contract YieldTokenTest is Test {
