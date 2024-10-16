@@ -613,8 +613,9 @@ contract AssetVault is WalletUtils, IAssetVault {
      *   reaching the gas limit, and the caller must call the function again to clear more.
      * @param assetToken AssetToken from which the yield is to be redistributed
      */
-
-    function clearYieldDistributions(IAssetToken assetToken) external {
+    function clearYieldDistributions(
+        IAssetToken assetToken
+    ) external {
         uint256 amountCleared = 0;
         AssetVaultStorage storage s = _getAssetVaultStorage();
         YieldDistributionListItem storage head = s.yieldDistributions[
