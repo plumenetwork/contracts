@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import { ERC20Pausable } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /**
  * @title Faucet
@@ -14,6 +14,7 @@ import { ERC20Pausable } from "@openzeppelin/contracts/token/ERC20/extensions/ER
  * @notice Contract that mints tokens to users that submit a signed message from the owner
  */
 contract Faucet is Initializable, UUPSUpgradeable {
+
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
@@ -52,9 +53,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @notice Emitted when the recipient has received tokens from the faucet
      * @param recipient Address of the recipient
      * @param amount Amount of tokens received
-     * @param token Name of the token received
+     * @param tokenAddress Address of the token received
      */
-    event TokenSent(address indexed recipient, uint256 amount, string token);
+    event TokenSent(address indexed recipient, uint256 amount, address tokenAddress);
 
     /**
      * @notice Emitted when the owner withdraws tokens from the faucet
@@ -73,15 +74,12 @@ contract Faucet is Initializable, UUPSUpgradeable {
 
     // Errors
 
-    /// @notice Indicates a failure because the initialization parameters are invalid
-    error InvalidInitialization();
-
     /// @notice Indicates a failure because the requested token is not supported
     error InvalidToken();
 
     /// @notice Indicates a failure because the hashed signed message has already been used
     error InvalidNonce();
-    
+
     /// @notice Indicates a failure because the signature is invalid
     error InvalidSignature();
 
@@ -105,9 +103,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
     /**
      * @notice Indicates a failure because the transfer failed
      * @param amount Amount of tokens requested
-     * @param token Name of the token requested
+     * @param tokenAddress Address of the token requested
      */
-    error TransferFailed(uint256 amount, string token);
+    error TransferFailed(uint256 amount, address tokenAddress);
 
     // Modifiers
 
@@ -132,6 +130,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
         }
 
         $.usedNonces[message] = true;
+        _;
     }
 
     // Initializer
@@ -150,11 +149,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param tokens Names of the tokens to add to the faucet
      * @param tokenAddresses Addresses of the tokens to add to the faucet
      */
-    function initialize(
-        address owner,
-        string[] memory tokens,
-        address[] memory tokenAddresses
-    ) public initializer {
+    function initialize(address owner, string[] memory tokens, address[] memory tokenAddresses) public initializer {
         if (owner == address(0) || tokens.length == 0 || tokens.length != tokenAddresses.length) {
             revert InvalidInitialization();
         }
@@ -183,7 +178,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyOwner { }
 
     // User Functions
 
@@ -193,7 +188,11 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param salt Random value to prevent replay attacks
      * @param signature Signature of the message signed by the owner
      */
-    function getToken(string calldata token, bytes32 salt, bytes calldata signature) external onlySignedByOwner(token, salt, signature) {
+    function getToken(
+        string calldata token,
+        bytes32 salt,
+        bytes calldata signature
+    ) external onlySignedByOwner(token, salt, signature) {
         FaucetStorage storage $ = _getFaucetStorage();
         address tokenAddress = $.tokens[token];
         uint256 amount = $.dripAmounts[tokenAddress];
@@ -205,17 +204,17 @@ contract Faucet is Initializable, UUPSUpgradeable {
             if (address(this).balance < amount) {
                 revert InsufficientBalance(amount, token);
             }
-            (bool success,) = msg.sender.call{value: amount, gas: 2300}("");
+            (bool success,) = msg.sender.call{ value: amount, gas: 2300 }("");
             if (!success) {
-                revert TransferFailed(amount, token);
+                revert TransferFailed(amount, tokenAddress);
             }
         } else {
             if (!IERC20Metadata(tokenAddress).transfer(msg.sender, amount)) {
-                revert TransferFailed(amount, token);
+                revert TransferFailed(amount, tokenAddress);
             }
         }
 
-        emit TokenSent(msg.sender, amount, token);
+        emit TokenSent(msg.sender, amount, tokenAddress);
     }
 
     // Admin Functions
@@ -238,13 +237,13 @@ contract Faucet is Initializable, UUPSUpgradeable {
             if (address(this).balance < amount) {
                 revert InsufficientBalance(amount, token);
             }
-            (bool success,) = recipient.call{value: amount, gas: 2300}("");
+            (bool success,) = recipient.call{ value: amount, gas: 2300 }("");
             if (!success) {
-                revert TransferFailed(amount, token);
+                revert TransferFailed(amount, tokenAddress);
             }
         } else {
             if (!IERC20Metadata(tokenAddress).transfer(recipient, amount)) {
-                revert TransferFailed(amount, token);
+                revert TransferFailed(amount, tokenAddress);
             }
         }
 
@@ -254,7 +253,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
     /**
      * @notice Set ownership of the faucet contract to the given address
      * @dev Only the owner can call this function
-     * @param address New owner of the faucet
+     * @param newOwner New owner of the faucet
      */
     function setOwner(address newOwner) external onlyOwner {
         FaucetStorage storage $ = _getFaucetStorage();
@@ -327,5 +326,6 @@ contract Faucet is Initializable, UUPSUpgradeable {
 
     // Fallback Functions
 
-    receive() external payable {}
+    receive() external payable { }
+
 }
