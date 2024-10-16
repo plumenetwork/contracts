@@ -50,7 +50,7 @@ contract AssetTokenTest is Test {
             "http://example.com/token",
             1000 * 10**18,
             10000 * 10**18,
-            false // Whitelist enabled
+            true // Whitelist enabled
         ) returns (AssetToken _assetToken) {
             assetToken = _assetToken;
             console.log("AssetToken deployed successfully at:", address(assetToken));
@@ -90,7 +90,7 @@ contract AssetTokenTest is Test {
     }
 
         // TODO: Look into whitelist
-/*
+
     function testWhitelistManagement() public {
         assetToken.addToWhitelist(user1);
         assertTrue(assetToken.isAddressWhitelisted(user1));
@@ -104,7 +104,6 @@ contract AssetTokenTest is Test {
         vm.expectRevert(abi.encodeWithSelector(AssetToken.AddressNotWhitelisted.selector, user2));
         assetToken.removeFromWhitelist(user2);
     }
-*/
 
     function testMinting() public {
         vm.startPrank(owner);

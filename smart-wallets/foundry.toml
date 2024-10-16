@@ -9,6 +9,12 @@ ast = true
 build_info = true
 extra_output = ["storageLayout"]
 
+[profile.coverage]
+solc-version = "0.8.25"
+via_ir = true
+optimizer = false
+
+
 [fmt]
 single_line_statement_blocks = "multi"
 multiline_func_header = "params_first"
@@ -21,6 +27,9 @@ number_underscore = "thousands"
 wrap_comments = true
 
 remappings = [
-  "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/",
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
   "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
 ]
+
+
+#"@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/",
