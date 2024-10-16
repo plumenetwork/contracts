@@ -25,7 +25,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
         address owner;
         /// @dev Amount of tokens to mint to each user per faucet call
         mapping(address tokenAddress => uint256 dripAmount) dripAmounts;
-        /// @dev Mapping of token names to their addresses
+        /// @dev Mapping of token names to their addresses, or to 0x1 for ETH
         mapping(string tokenName => address tokenAddress) tokens;
         /// @dev True if the nonce has been used; false otherwise
         mapping(bytes32 nonce => bool used) usedNonces;
@@ -54,7 +54,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param amount Amount of tokens received
      * @param token Name of the token received
      */
-    event TokenSent(address indexed recipient, uint256 amount, string tokenName);
+    event TokenSent(address indexed recipient, uint256 amount, string token);
 
     /**
      * @notice Emitted when the owner withdraws tokens from the faucet
@@ -62,7 +62,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param amount Amount of tokens received
      * @param token Name of the token received
      */
-    event Withdrawn(address indexed recipient, uint256 amount, string tokenName);
+    event Withdrawn(address indexed recipient, uint256 amount, string token);
 
     /**
      * @notice Emitted when the owner of the faucet changes
@@ -76,6 +76,18 @@ contract Faucet is Initializable, UUPSUpgradeable {
     /// @notice Indicates a failure because the initialization parameters are invalid
     error InvalidInitialization();
 
+    /// @notice Indicates a failure because the requested token is not supported
+    error InvalidToken();
+
+    /// @notice Indicates a failure because the hashed signed message has already been used
+    error InvalidNonce();
+    
+    /// @notice Indicates a failure because the signature is invalid
+    error InvalidSignature();
+
+    /// @notice Indicates a failure because the address is invalid
+    error InvalidAddress();
+
     /**
      * @notice Indicates a failure because the sender is not authorized to perform the action
      * @param sender Address of the sender that is not authorized
@@ -85,11 +97,17 @@ contract Faucet is Initializable, UUPSUpgradeable {
 
     /**
      * @notice Indicates a failure because the faucet does not have enough tokens
-     * @param asset Asset used to mint and burn the ComponentToken
-     * @param user Address of the user who is selling the assets
-     * @param assets Amount of assets required in the failed transfer
+     * @param amount Amount of tokens requested
+     * @param token Name of the token requested
      */
-    error InsufficientBalance(IERC20 asset, address user, uint256 assets);
+    error InsufficientBalance(uint256 amount, string token);
+
+    /**
+     * @notice Indicates a failure because the transfer failed
+     * @param amount Amount of tokens requested
+     * @param token Name of the token requested
+     */
+    error TransferFailed(uint256 amount, string token);
 
     // Modifiers
 
@@ -99,6 +117,21 @@ contract Faucet is Initializable, UUPSUpgradeable {
             revert Unauthorized(msg.sender, _getFaucetStorage().owner);
         }
         _;
+    }
+
+    /// @notice Must pass in a message signed by the owner to call this function
+    modifier onlySignedByOwner(string calldata token, bytes32 salt, bytes calldata signature) {
+        FaucetStorage storage $ = _getFaucetStorage();
+        bytes32 message = keccak256(abi.encodePacked(msg.sender, token, salt));
+
+        if ($.usedNonces[message]) {
+            revert InvalidNonce();
+        }
+        if (message.toEthSignedMessageHash().recover(signature) != $.owner) {
+            revert InvalidSignature();
+        }
+
+        $.usedNonces[message] = true;
     }
 
     // Initializer
@@ -114,31 +147,31 @@ contract Faucet is Initializable, UUPSUpgradeable {
     /**
      * @notice Initialize the Faucet
      * @param owner Address of the owner of the Faucet
-     * @param tokenNames Names of the tokens to add to the faucet
+     * @param tokens Names of the tokens to add to the faucet
      * @param tokenAddresses Addresses of the tokens to add to the faucet
      */
     function initialize(
         address owner,
-        string[] memory tokenNames,
+        string[] memory tokens,
         address[] memory tokenAddresses
     ) public initializer {
-        if (owner == address(0) || tokenNames.length == 0 || tokenNames.length != tokenAddresses.length) {
+        if (owner == address(0) || tokens.length == 0 || tokens.length != tokenAddresses.length) {
             revert InvalidInitialization();
         }
 
         __UUPSUpgradeable_init();
 
-        ComponentTokenStorage storage $ = _getFaucetStorage();
+        FaucetStorage storage $ = _getFaucetStorage();
         $.owner = owner;
 
         bytes32 ethHash = keccak256(abi.encodePacked("ETH"));
-        uint256 length = tokenNames.length;
+        uint256 length = tokens.length;
         for (uint256 i = 0; i < length; ++i) {
-            if (keccak256(bytes(tokenNames[i])) == ethHash) {
-                $.tokens[tokenNames[i]] = ETH_ADDRESS;
+            if (keccak256(bytes(tokens[i])) == ethHash) {
+                $.tokens[tokens[i]] = ETH_ADDRESS;
                 $.dripAmounts[ETH_ADDRESS] = 0.001 ether;
             } else {
-                $.tokens[tokenNames[i]] = tokenAddresses[i];
+                $.tokens[tokens[i]] = tokenAddresses[i];
                 $.dripAmounts[tokenAddresses[i]] = 1e9; // $1000 USDT (6 decimals)
             }
         }
@@ -151,6 +184,146 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param newImplementation Address of the new implementation
      */
     function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyOwner {}
+
+    // User Functions
+
+    /**
+     * @notice Get tokens from the faucet
+     * @param token Name of the token requested
+     * @param salt Random value to prevent replay attacks
+     * @param signature Signature of the message signed by the owner
+     */
+    function getToken(string calldata token, bytes32 salt, bytes calldata signature) external onlySignedByOwner(token, salt, signature) {
+        FaucetStorage storage $ = _getFaucetStorage();
+        address tokenAddress = $.tokens[token];
+        uint256 amount = $.dripAmounts[tokenAddress];
+        if (tokenAddress == address(0) || amount == 0) {
+            revert InvalidToken();
+        }
+
+        if (tokenAddress == ETH_ADDRESS) {
+            if (address(this).balance < amount) {
+                revert InsufficientBalance(amount, token);
+            }
+            (bool success,) = msg.sender.call{value: amount, gas: 2300}("");
+            if (!success) {
+                revert TransferFailed(amount, token);
+            }
+        } else {
+            if (!IERC20Metadata(tokenAddress).transfer(msg.sender, amount)) {
+                revert TransferFailed(amount, token);
+            }
+        }
+
+        emit TokenSent(msg.sender, amount, token);
+    }
+
+    // Admin Functions
+
+    /**
+     * @notice Withdraw tokens from the faucet
+     * @dev Only the owner can call this function
+     * @param token Name of the token to withdraw
+     * @param amount Amount of tokens to withdraw
+     * @param recipient Address to receive the tokens
+     */
+    function withdrawToken(string calldata token, uint256 amount, address payable recipient) external onlyOwner {
+        FaucetStorage storage $ = _getFaucetStorage();
+        address tokenAddress = $.tokens[token];
+        if (tokenAddress == address(0) || amount == 0) {
+            revert InvalidToken();
+        }
+
+        if (tokenAddress == ETH_ADDRESS) {
+            if (address(this).balance < amount) {
+                revert InsufficientBalance(amount, token);
+            }
+            (bool success,) = recipient.call{value: amount, gas: 2300}("");
+            if (!success) {
+                revert TransferFailed(amount, token);
+            }
+        } else {
+            if (!IERC20Metadata(tokenAddress).transfer(recipient, amount)) {
+                revert TransferFailed(amount, token);
+            }
+        }
+
+        emit Withdrawn(recipient, amount, token);
+    }
+
+    /**
+     * @notice Set ownership of the faucet contract to the given address
+     * @dev Only the owner can call this function
+     * @param address New owner of the faucet
+     */
+    function setOwner(address newOwner) external onlyOwner {
+        FaucetStorage storage $ = _getFaucetStorage();
+        if (newOwner == address(0)) {
+            revert InvalidAddress();
+        }
+
+        emit OwnerChanged($.owner, newOwner);
+        $.owner = newOwner;
+    }
+
+    /**
+     * @notice Set the amount of tokens to mint per faucet call
+     * @dev Only the owner can call this function
+     * @param token Name of the token to set the amount for
+     * @param amount Amount of tokens to mint per faucet call
+     */
+    function setDripAmount(string calldata token, uint256 amount) external onlyOwner {
+        FaucetStorage storage $ = _getFaucetStorage();
+        $.dripAmounts[$.tokens[token]] = amount;
+    }
+
+    /**
+     * @notice Add a new supported token to the faucet
+     * @dev Only the owner can call this function
+     * @param token Name of the token to add
+     * @param tokenAddress Address of the token to add
+     * @param amount Amount of tokens to mint per faucet call
+     */
+    function addToken(string calldata token, address tokenAddress, uint256 amount) external onlyOwner {
+        FaucetStorage storage $ = _getFaucetStorage();
+        $.tokens[token] = tokenAddress;
+        $.dripAmounts[tokenAddress] = amount;
+    }
+
+    // Getter View Functions
+
+    /// @notice Get the owner of the faucet
+    function getOwner() public view returns (address) {
+        return _getFaucetStorage().owner;
+    }
+
+    /**
+     * @notice Get the amount of tokens to mint per faucet call for the given token
+     * @param token Name of the token to get the amount for
+     * @return dripAmount Amount of tokens to mint per faucet call
+     */
+    function getDripAmount(string calldata token) public view returns (uint256 dripAmount) {
+        FaucetStorage storage $ = _getFaucetStorage();
+        return $.dripAmounts[$.tokens[token]];
+    }
+
+    /**
+     * @notice Get the address of the given token
+     * @param token Name of the token to get the address for
+     * @return tokenAddress Address of the token
+     */
+    function getTokenAddress(string calldata token) public view returns (address tokenAddress) {
+        return _getFaucetStorage().tokens[token];
+    }
+
+    /**
+     * @notice Check if the given nonce has been used
+     * @param nonce Nonce to check
+     * @return used True if the nonce has been used; false otherwise
+     */
+    function isNonceUsed(bytes32 nonce) public view returns (bool used) {
+        return _getFaucetStorage().usedNonces[nonce];
+    }
 
     // Fallback Functions
 
