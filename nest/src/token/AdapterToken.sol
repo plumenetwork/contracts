@@ -1,41 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 import { ComponentToken } from "../ComponentToken.sol";
-
-/// @notice Example of an interface for the Nest Staking contract
-interface IAggregateToken {
-
-    /// @notice Notify the Nest Staking contract that a buy has been executed
-    function notifyBuy(
-        IERC20 currencyToken,
-        IERC20 componentToken,
-        uint256 currencyTokenAmount,
-        uint256 componentTokenAmount
-    ) external;
-    /// @notice Notify the Nest Staking contract that a sell has been executed
-    function notifySell(
-        IERC20 currencyToken,
-        IERC20 componentToken,
-        uint256 currencyTokenAmount,
-        uint256 componentTokenAmount
-    ) external;
-
-}
+import { IComponentToken } from "../interfaces/IComponentToken.sol";
+import { IAggregateToken } from "../interfaces/IAggregateToken.sol";
 
 /// @notice Example of an interface for the external contract that manages the external asset
 interface IExternalContract {
 
-    /// @notice Notify the external contract that a buy has been requested
-    function requestBuy(uint256 currencyTokenAmount, uint256 requestId) external;
-    /// @notice Notify the external contract that a sell has been requested
-    function requestSell(uint256 componentTokenAmount, uint256 requestId) external;
+    /// @notice Notify the external contract that a deposit has been requested
+    function requestDeposit(uint256 assets) external;
+    /// @notice Notify the external contract that a redeem has been requested
+    function requestRedeem(uint256 shares) external;
+    /// @notice Convert from quantity of assets to quantity of shares
+    function convertToShares(uint256 assets) external pure returns (uint256 shares);
+    /// @notice Convert from quantity of shares to quantity of assets
+    function convertToAssets(uint256 shares) external pure returns (uint256 assets);
 
 }
 
@@ -44,7 +27,7 @@ interface IExternalContract {
  * @author Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that interfaces with external assets.
  */
-contract AdapterToken is ComponentToken {
+contract USDT is ComponentToken {
 
     // Storage
 
@@ -54,8 +37,6 @@ contract AdapterToken is ComponentToken {
         IAggregateToken nestStakingContract;
         /// @dev Address of the external contract that manages the external asset
         IExternalContract externalContract;
-        /// @dev Mapping from request IDs to external request UUIDs
-        mapping(uint256 requestId => bytes16 externalUuid) requestMap;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AdapterToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -67,15 +48,6 @@ contract AdapterToken is ComponentToken {
             $.slot := ADAPTER_TOKEN_STORAGE_LOCATION
         }
     }
-
-    // Errors
-
-    /**
-     * @notice Indicates a failure because the caller is not the authorized caller
-     * @param invalidCaller Address of the caller that is not the authorized caller
-     * @param caller Address of the authorized caller
-     */
-    error Unauthorized(address invalidCaller, address caller);
 
     // Initializer
 
@@ -92,8 +64,7 @@ contract AdapterToken is ComponentToken {
      * @param owner Address of the owner of the AdapterToken
      * @param name Name of the AdapterToken
      * @param symbol Symbol of the AdapterToken
-     * @param currencyToken CurrencyToken used to mint and burn the AdapterToken
-     * @param decimals_ Number of decimals of the AdapterToken
+     * @param asset_ Asset used to mint and burn the AdapterToken
      * @param nestStakingContract Address of the Nest Staking contract
      * @param externalContract Address of the external contract that manages the external asset
      */
@@ -101,12 +72,11 @@ contract AdapterToken is ComponentToken {
         address owner,
         string memory name,
         string memory symbol,
-        IERC20 currencyToken,
-        uint8 decimals_,
+        IERC20 asset_,
         IAggregateToken nestStakingContract,
         IExternalContract externalContract
     ) public initializer {
-        super.initialize(owner, name, symbol, currencyToken, decimals_);
+        super.initialize(owner, name, symbol, asset_, true, true);
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         $.nestStakingContract = nestStakingContract;
         $.externalContract = externalContract;
@@ -114,97 +84,58 @@ contract AdapterToken is ComponentToken {
 
     // Override Functions
 
-    /**
-     * @notice Submit a request to send currencyTokenAmount of CurrencyToken to buy ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken to send
-     * @return requestId Unique identifier for the buy request
-     */
-    function requestBuy(uint256 currencyTokenAmount) public override(ComponentToken) returns (uint256 requestId) {
+    /// @inheritdoc IERC4626
+    function convertToShares(uint256 assets) public view override(ComponentToken) returns (uint256 shares) {
+        return _getAdapterTokenStorage().externalContract.convertToShares(assets);
+    }
+
+    /// @inheritdoc IERC4626
+    function convertToAssets(uint256 shares) public view override(ComponentToken) returns (uint256 assets) {
+        return _getAdapterTokenStorage().externalContract.convertToAssets(shares);
+    }
+
+    /// @inheritdoc IComponentToken
+    function requestDeposit(uint256 assets, address controller, address owner) public override(ComponentToken) returns (uint256 requestId) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         if (msg.sender != address($.nestStakingContract)) {
             revert Unauthorized(msg.sender, address($.nestStakingContract));
         }
-        requestId = super.requestBuy(currencyTokenAmount);
-        $.externalContract.requestBuy(currencyTokenAmount, requestId);
+        requestId = super.requestDeposit(assets, controller, owner);
+        $.externalContract.requestDeposit(assets);
     }
 
-    /**
-     * @notice Submit a request to send componentTokenAmount of ComponentToken to sell for CurrencyToken
-     * @param componentTokenAmount Amount of ComponentToken to send
-     * @return requestId Unique identifier for the sell request
-     */
-    function requestSell(uint256 componentTokenAmount) public override(ComponentToken) returns (uint256 requestId) {
+    /// @inheritdoc IComponentToken
+    function requestRedeem(uint256 shares, address controller, address owner) public override(ComponentToken) returns (uint256 requestId) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         if (msg.sender != address($.nestStakingContract)) {
             revert Unauthorized(msg.sender, address($.nestStakingContract));
         }
-        requestId = super.requestSell(componentTokenAmount);
-        $.externalContract.requestSell(componentTokenAmount, requestId);
+        requestId = super.requestRedeem(shares, controller, owner);
+        $.externalContract.requestRedeem(shares);
     }
 
-    /**
-     * @notice Executes a request to buy ComponentToken with CurrencyToken
-     * @param requestor Address of the user or smart contract that requested the buy
-     * @param requestId Unique identifier for the request
-     * @param currencyTokenAmount Amount of CurrencyToken to send
-     * @param componentTokenAmount Amount of ComponentToken to receive
-     */
-    function executeBuy(
-        address requestor,
-        uint256 requestId,
-        uint256 currencyTokenAmount,
-        uint256 componentTokenAmount
-    ) public override(ComponentToken) {
+    /// @inheritdoc IComponentToken
+    function deposit(uint256 assets, address receiver, address controller) public override(ComponentToken) returns (uint256 shares) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
-        if (msg.sender != address($.nestStakingContract)) {
-            revert Unauthorized(requestor, address($.nestStakingContract));
-        }
         if (msg.sender != address($.externalContract)) {
             revert Unauthorized(msg.sender, address($.externalContract));
         }
-        super.executeBuy(address($.nestStakingContract), requestId, currencyTokenAmount, componentTokenAmount);
-        $.nestStakingContract.notifyBuy(
-            _getComponentTokenStorage().currencyToken, this, currencyTokenAmount, componentTokenAmount
-        );
+        if (receiver != address($.nestStakingContract)) {
+            revert Unauthorized(receiver, address($.nestStakingContract));
+        }
+        return super.deposit(assets, receiver, controller);
     }
 
-    /**
-     * @notice Executes a request to sell ComponentToken for CurrencyToken
-     * @param requestor Address of the user or smart contract that requested the sell
-     * @param requestId Unique identifier for the request
-     * @param currencyTokenAmount Amount of CurrencyToken to receive
-     * @param componentTokenAmount Amount of ComponentToken to send
-     */
-    function executeSell(
-        address requestor,
-        uint256 requestId,
-        uint256 currencyTokenAmount,
-        uint256 componentTokenAmount
-    ) public override(ComponentToken) {
+    /// @inheritdoc IComponentToken
+    function redeem(uint256 shares, address receiver, address controller) public override(ComponentToken) returns (uint256 assets) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
-        if (requestor != address($.nestStakingContract)) {
-            revert Unauthorized(requestor, address($.nestStakingContract));
-        }
         if (msg.sender != address($.externalContract)) {
             revert Unauthorized(msg.sender, address($.externalContract));
         }
-        super.executeSell(address($.nestStakingContract), requestId, currencyTokenAmount, componentTokenAmount);
-        $.nestStakingContract.notifySell(
-            _getComponentTokenStorage().currencyToken, this, currencyTokenAmount, componentTokenAmount
-        );
-    }
-
-    // Admin Functions
-
-    function distributeYield(address user, uint256 amount) external {
-        AdapterTokenStorage storage $ = _getAdapterTokenStorage();
-        if (msg.sender != address($.nestStakingContract)) {
-            revert Unauthorized(msg.sender, address($.nestStakingContract));
+        if (receiver != address($.nestStakingContract)) {
+            revert Unauthorized(receiver, address($.nestStakingContract));
         }
-
-        ComponentTokenStorage storage cs = _getComponentTokenStorage();
-        cs.currencyToken.transfer(user, amount);
-        cs.yieldAccrued[user] += amount;
+        return super.redeem(shares, receiver, controller);
     }
 
 }
