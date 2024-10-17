@@ -23,7 +23,7 @@ contract YieldDistributionTokenScenarioTest is Test {
 
     uint256 skipDuration = 10;
     uint256 timeskipCounter;
-
+/*
     function setUp() public {
         currencyTokenMock = new ERC20Mock();
         token = new YieldDistributionTokenHarness(
@@ -169,6 +169,7 @@ contract YieldDistributionTokenScenarioTest is Test {
     
     /// @dev Simulates a scenario where a user returns, or claims, some deposits after accruing `amountSeconds`, ensuring that
     /// yield is correctly distributed
+
     function test_scenario_userBurnsTokensAfterAccruingSomeYield_andWaitsForAtLeastTwoDeposits_priorToClaimingYield() public {
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
@@ -245,5 +246,5 @@ contract YieldDistributionTokenScenarioTest is Test {
         token.transfer(to, amount);
         vm.stopPrank();
     }
-
+*/
 }

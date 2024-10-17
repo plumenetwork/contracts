@@ -242,13 +242,9 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      *   approved the CurrencyToken to spend the given amount
      * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
      */
-<<<<<<< HEAD
-    function depositYield(uint256 currencyTokenAmount) external onlyOwner {
-=======
     function depositYield(
         uint256 currencyTokenAmount
     ) external onlyOwner {
->>>>>>> feat/amount-seconds
         _depositYield(currencyTokenAmount);
     }
 
@@ -321,12 +317,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user to get the available balance of
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
-<<<<<<< HEAD
-    function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
-        (bool success, bytes memory data) =
-            user.staticcall(abi.encodeWithSelector(ISmartWallet.getBalanceLocked.selector, this));
-        if (!success) {
-=======
     function getBalanceAvailable(
         address user
     ) public view returns (uint256 balanceAvailable) {
@@ -337,14 +327,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
                 revert SmartWalletCallFailed(user);
             }
         } else {
->>>>>>> feat/amount-seconds
             revert SmartWalletCallFailed(user);
-        }
-
-        balanceAvailable = balanceOf(user);
-        if (data.length > 0) {
-            uint256 lockedBalance = abi.decode(data, (uint256));
-            balanceAvailable -= lockedBalance;
         }
     }
 
@@ -377,13 +360,9 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user for which to get the total yield
      * @return amount Total yield distributed to the user
      */
-<<<<<<< HEAD
-    function totalYield(address user) external view returns (uint256 amount) {
-=======
     function totalYield(
         address user
     ) external view returns (uint256 amount) {
->>>>>>> feat/amount-seconds
         return _getYieldDistributionTokenStorage().userStates[user].yieldAccrued;
     }
 
@@ -392,13 +371,9 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user for which to get the claimed yield
      * @return amount Amount of yield that the user has claimed
      */
-<<<<<<< HEAD
-    function claimedYield(address user) external view returns (uint256 amount) {
-=======
     function claimedYield(
         address user
     ) external view returns (uint256 amount) {
->>>>>>> feat/amount-seconds
         return _getYieldDistributionTokenStorage().userStates[user].yieldWithdrawn;
     }
 
@@ -407,13 +382,9 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user for which to get the unclaimed yield
      * @return amount Amount of yield that the user has not yet claimed
      */
-<<<<<<< HEAD
-    function unclaimedYield(address user) external view returns (uint256 amount) {
-=======
     function unclaimedYield(
         address user
     ) external view returns (uint256 amount) {
->>>>>>> feat/amount-seconds
         UserState memory userState = _getYieldDistributionTokenStorage().userStates[user];
         return userState.yieldAccrued - userState.yieldWithdrawn;
     }

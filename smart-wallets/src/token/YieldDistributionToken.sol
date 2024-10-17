@@ -42,7 +42,12 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         uint256 lastSupplyUpdate;
         /// @dev State for each user
         mapping(address user => UserState userState) userStates;
-        /// @dev History of yield deposits into the YieldDistributionToken
+         /// @dev Mapping to track registered DEX addresses
+        mapping(address => bool) isDEX;
+        /// @dev Mapping to associate DEX addresses with maker addresses
+        mapping(address => mapping(address => address)) dexToMakerAddress;
+        /// @dev Mapping to track tokens held on DEXs for each user
+        mapping(address => uint256) tokensHeldOnDEXs;
         Deposit[] deposits;
     }
 
@@ -128,6 +133,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         );
     }
 
+
     // Virtual Functions
 
     /// @notice Request to receive yield from the given SmartWallet
@@ -149,14 +155,24 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @param value Amount of tokens to transfer
      */
     function _update(address from, address to, uint256 value) internal virtual override {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         _updateGlobalAmountSeconds();
 
         if (from != address(0)) {
             accrueYield(from);
+
+            // Adjust balances if transferring to a DEX
+            if ($.isDEX[to]) {
+                $.dexToMakerAddress[to][address(this)] = from;
+                _adjustMakerBalance(from, value, true);
+            }
+
+
+
+            
         }
 
         if (to != address(0)) {
-            YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
 
             // conditions checks that this is the first time a user receives tokens
             // if so, the lastDepositIndex is set to index of the last deposit in deposits array
@@ -166,6 +182,15 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             }
 
             accrueYield(to);
+
+
+    
+            // Adjust balances if transferring from a DEX
+            if ($.isDEX[from]) {
+                address maker = $.dexToMakerAddress[from][address(this)];
+                _adjustMakerBalance(maker, value, false);
+            }
+
         }
 
         super._update(from, to, value);
@@ -364,11 +389,104 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             // at this stage, the `userState` along with any accrued rewards, has been updated until the current deposit index
             $.userStates[user] = userState;
 
+            if ($.isDEX[user]) {
+                // Redirect yield to the maker
+                address maker = $.dexToMakerAddress[user][address(this)];
+                $.userStates[maker].yieldAccrued += userState.yieldAccrued;
+                emit YieldAccrued(maker, userState.yieldAccrued);
+            } else {
+                // Regular yield accrual
+                emit YieldAccrued(user, userState.yieldAccrued);
+            }
+
+
+
+
             // TODO: do we emit the portion of yield accrued from this action, or the entirey of the yield accrued?
-            emit YieldAccrued(user, userState.yieldAccrued);
+            //emit YieldAccrued(user, userState.yieldAccrued);
         }
 
         _updateUserAmountSeconds(user);
+    }
+
+
+    /**
+     * @notice Register a DEX address
+     * @dev Only the owner can call this function
+     * @param dexAddress Address of the DEX to register
+     */
+    function registerDEX(address dexAddress) external onlyOwner {
+        _getYieldDistributionTokenStorage().isDEX[dexAddress] = true;
+    }
+
+    /**
+     * @notice Unregister a DEX address
+     * @dev Only the owner can call this function
+     * @param dexAddress Address of the DEX to unregister
+     */
+    function unregisterDEX(address dexAddress) external onlyOwner {
+        _getYieldDistributionTokenStorage().isDEX[dexAddress] = false;
+    }
+
+
+
+  /**
+     * @notice Register a maker's pending order on a DEX
+     * @dev Only registered DEXs can call this function
+     * @param maker Address of the maker
+     * @param amount Amount of tokens in the order
+     */
+function registerMakerOrder(address maker, uint256 amount) external {
+    YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+    require($.isDEX[msg.sender], "Caller is not a registered DEX");
+    $.dexToMakerAddress[msg.sender][address(this)] = maker;
+    $.tokensHeldOnDEXs[maker] += amount;
+}
+
+    /**
+     * @notice Unregister a maker's completed or cancelled order on a DEX
+     * @dev Only registered DEXs can call this function
+     * @param maker Address of the maker
+     * @param amount Amount of tokens to return (if any)
+     */
+function unregisterMakerOrder(address maker, uint256 amount) external {
+    YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+    require($.isDEX[msg.sender], "Caller is not a registered DEX");
+    require($.tokensHeldOnDEXs[maker] >= amount, "Insufficient tokens held on DEX");
+    $.tokensHeldOnDEXs[maker] -= amount;
+    if ($.tokensHeldOnDEXs[maker] == 0) {
+        $.dexToMakerAddress[msg.sender][address(this)] = address(0);
+    }
+}
+
+
+    /**
+     * @notice Check if an address is a registered DEX
+     * @param addr Address to check
+     * @return bool True if the address is a registered DEX, false otherwise
+     */
+    function isDexAddressWhitelisted(address addr) public view returns (bool) {
+        return _getYieldDistributionTokenStorage().isDEX[addr];
+    }
+
+    /**
+     * @notice Get the amount of tokens held on DEXs for a user
+     * @param user Address of the user
+     * @return amount of tokens held on DEXs on behalf of the user
+     */
+    function tokensHeldOnDEXs(address user) public view returns (uint256) {
+        return _getYieldDistributionTokenStorage().tokensHeldOnDEXs[user];
+    }
+
+
+        function _adjustMakerBalance(address maker, uint256 amount, bool increase) internal {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        if (increase) {
+            $.tokensHeldOnDEXs[maker] += amount;
+        } else {
+            require($.tokensHeldOnDEXs[maker] >= amount, "Insufficient tokens held on DEXs");
+            $.tokensHeldOnDEXs[maker] -= amount;
+        }
     }
 
 }
