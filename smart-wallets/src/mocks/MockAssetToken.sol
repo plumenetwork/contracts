@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
+import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
@@ -11,6 +12,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @dev A simplified mock version of the AssetToken contract for testing purposes.
  */
 contract MockAssetToken is IAssetToken, ERC20Upgradeable, OwnableUpgradeable {
+
     IERC20 private _currencyToken;
     bool public isWhitelistEnabled;
     mapping(address => bool) private _whitelist;
@@ -89,10 +91,15 @@ contract MockAssetToken is IAssetToken, ERC20Upgradeable, OwnableUpgradeable {
     }
 
     // Updated transferFrom function with explicit override
-    function transferFrom(address from, address to, uint256 amount) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
         if (isWhitelistEnabled) {
             require(_whitelist[from] && _whitelist[to], "Transfer not allowed: address not whitelisted");
         }
         return super.transferFrom(from, to, amount);
     }
+
 }

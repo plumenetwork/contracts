@@ -23,12 +23,11 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     /// @notice Boolean to enable whitelist for the AssetToken
     bool public immutable isWhitelistEnabled;
-    
+
     // Suggestions:
     // - Can replace whitelist array + mapping with enumerable set
     // - Can replace holders array + mapping with enumerable set
 
-    
     /// @custom:storage-location erc7201:plume.storage.AssetToken
     struct AssetTokenStorage {
         /// @dev Total value of all circulating AssetTokens
@@ -166,9 +165,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @notice Update the total value of all circulating AssetTokens
      * @dev Only the owner can call this function
      */
-    function setTotalValue(
-        uint256 totalValue
-    ) external onlyOwner {
+    function setTotalValue(uint256 totalValue) external onlyOwner {
         _getAssetTokenStorage().totalValue = totalValue;
     }
 
@@ -177,9 +174,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @dev Only the owner can call this function
      * @param user Address of the user to add to the whitelist
      */
-    function addToWhitelist(
-        address user
-    ) external onlyOwner {
+    function addToWhitelist(address user) external onlyOwner {
         if (user == address(0)) {
             revert InvalidAddress();
         }
@@ -200,9 +195,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @dev Only the owner can call this function
      * @param user Address of the user to remove from the whitelist
      */
-    function removeFromWhitelist(
-        address user
-    ) external onlyOwner {
+    function removeFromWhitelist(address user) external onlyOwner {
         if (user == address(0)) {
             revert InvalidAddress();
         }
@@ -242,9 +235,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      *   approved the CurrencyToken to spend the given amount
      * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
      */
-    function depositYield(
-        uint256 currencyTokenAmount
-    ) external onlyOwner {
+    function depositYield(uint256 currencyTokenAmount) external onlyOwner {
         _depositYield(currencyTokenAmount);
     }
 
@@ -256,9 +247,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      *   and otherwise reverts for high-level calls, so we have to use a low-level call here
      * @param from Address of the SmartWallet to request the yield from
      */
-    function requestYield(
-        address from
-    ) external override(YieldDistributionToken, IYieldDistributionToken) {
+    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
         // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
         (bool success,) = from.call(abi.encodeWithSelector(ISmartWallet.claimAndRedistributeYield.selector, this));
         if (!success) {
@@ -283,9 +272,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user to check
      * @return isWhitelisted Boolean indicating if the user is whitelisted
      */
-    function isAddressWhitelisted(
-        address user
-    ) external view returns (bool isWhitelisted) {
+    function isAddressWhitelisted(address user) external view returns (bool isWhitelisted) {
         return _getAssetTokenStorage().isWhitelisted[user];
     }
 
@@ -299,9 +286,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user to check
      * @return held Boolean indicating if the user has ever held AssetTokens
      */
-    function hasBeenHolder(
-        address user
-    ) external view returns (bool held) {
+    function hasBeenHolder(address user) external view returns (bool held) {
         return _getAssetTokenStorage().hasHeld[user];
     }
 
@@ -317,9 +302,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user to get the available balance of
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
-    function getBalanceAvailable(
-        address user
-    ) public view returns (uint256 balanceAvailable) {
+    function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
         if (isContract(user)) {
             try ISmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
                 return balanceOf(user) - lockedBalance;
@@ -360,9 +343,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user for which to get the total yield
      * @return amount Total yield distributed to the user
      */
-    function totalYield(
-        address user
-    ) external view returns (uint256 amount) {
+    function totalYield(address user) external view returns (uint256 amount) {
         return _getYieldDistributionTokenStorage().userStates[user].yieldAccrued;
     }
 
@@ -371,9 +352,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user for which to get the claimed yield
      * @return amount Amount of yield that the user has claimed
      */
-    function claimedYield(
-        address user
-    ) external view returns (uint256 amount) {
+    function claimedYield(address user) external view returns (uint256 amount) {
         return _getYieldDistributionTokenStorage().userStates[user].yieldWithdrawn;
     }
 
@@ -382,9 +361,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user for which to get the unclaimed yield
      * @return amount Amount of yield that the user has not yet claimed
      */
-    function unclaimedYield(
-        address user
-    ) external view returns (uint256 amount) {
+    function unclaimedYield(address user) external view returns (uint256 amount) {
         UserState memory userState = _getYieldDistributionTokenStorage().userStates[user];
         return userState.yieldAccrued - userState.yieldWithdrawn;
     }

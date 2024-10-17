@@ -35,9 +35,7 @@ contract WalletUtils {
      * @param addr Address to check
      * @return hasCode True if the address is a contract or smart wallet, and false if it is not
      */
-    function isContract(
-        address addr
-    ) internal view returns (bool hasCode) {
+    function isContract(address addr) internal view returns (bool hasCode) {
         uint32 size;
         assembly {
             size := extcodesize(addr)

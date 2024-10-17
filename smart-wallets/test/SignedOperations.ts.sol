@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "forge-std/Test.sol";
-import { SignedOperations } from "../src/extensions/SignedOperations.sol";
 import { SmartWallet } from "../src/SmartWallet.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { AssetVault } from "../src/extensions/AssetVault.sol";
+import { SignedOperations } from "../src/extensions/SignedOperations.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "forge-std/Test.sol";
 
 contract SignedOperationsTest is Test {
+
     SignedOperations signedOperations;
     ERC20Mock currencyToken;
     address owner;
@@ -24,7 +26,7 @@ contract SignedOperationsTest is Test {
         currencyToken = new ERC20Mock();
     }
 
-/*
+    /*
     function testExecuteSignedOperationsSuccess() public {
         // Prepare test data
         bytes32 nonce = keccak256("testnonce");
@@ -44,7 +46,7 @@ contract SignedOperationsTest is Test {
         values[0] = 0;
 
         // Execute signed operations
-        signedOperations.executeSignedOperations(targets, calls, values, nonce, nonceDependency, expiration, v, r, s);
+    signedOperations.executeSignedOperations(targets, calls, values, nonce, nonceDependency, expiration, v, r, s);
 
         // Check that nonce is marked as used
         assertTrue(signedOperations.isNonceUsed(nonce));
@@ -68,7 +70,7 @@ contract SignedOperationsTest is Test {
         values[0] = 0;
 
         vm.expectRevert(abi.encodeWithSelector(SignedOperations.ExpiredSignature.selector, nonce, expiration));
-        signedOperations.executeSignedOperations(targets, calls, values, nonce, nonceDependency, expiration, v, r, s);
+    signedOperations.executeSignedOperations(targets, calls, values, nonce, nonceDependency, expiration, v, r, s);
     }
 
     function testRevertInvalidNonce() public {
@@ -92,7 +94,7 @@ contract SignedOperationsTest is Test {
         values[0] = 0;
 
         vm.expectRevert(abi.encodeWithSelector(SignedOperations.InvalidNonce.selector, nonce));
-        signedOperations.executeSignedOperations(targets, calls, values, nonce, nonceDependency, expiration, v, r, s);
+    signedOperations.executeSignedOperations(targets, calls, values, nonce, nonceDependency, expiration, v, r, s);
     }
 
 
@@ -106,4 +108,5 @@ contract SignedOperationsTest is Test {
         assertTrue(signedOperations.isNonceUsed(nonce));
     }
     */
+
 }

@@ -5,13 +5,12 @@ import "forge-std/console.sol";
 
 // Mock SmartWallet for testing
 contract MockSmartWallet is ISmartWallet {
+
     mapping(IAssetToken => uint256) public lockedBalances;
 
     // Implementing ISmartWallet functions
 
-    function getBalanceLocked(
-        IAssetToken token
-    ) external view override returns (uint256) {
+    function getBalanceLocked(IAssetToken token) external view override returns (uint256) {
         return lockedBalances[token];
     }
 
@@ -24,30 +23,23 @@ contract MockSmartWallet is ISmartWallet {
         // Mock implementation
     }
 
-    function getAssetVault()
-        external
-        view
-        override
-        returns (IAssetVault assetVault)
-    {
+    function getAssetVault() external view override returns (IAssetVault assetVault) {
         // Mock implementation
         return IAssetVault(address(0));
     }
 
-
-function transferYield(
-    IAssetToken assetToken,
-    address beneficiary,
-    IERC20 currencyToken,
-    uint256 currencyTokenAmount
-) external {
-    //require(msg.sender == IAssetVault(address(0)), "Only AssetVault can call transferYield");
-    require(currencyToken.transfer(beneficiary, currencyTokenAmount), "Transfer failed");
-    console.log("MockSmartWallet: Transferred yield to beneficiary");
-    console.log("Beneficiary:", beneficiary);
-    console.log("Amount:", currencyTokenAmount);
-}
-
+    function transferYield(
+        IAssetToken assetToken,
+        address beneficiary,
+        IERC20 currencyToken,
+        uint256 currencyTokenAmount
+    ) external {
+        //require(msg.sender == IAssetVault(address(0)), "Only AssetVault can call transferYield");
+        require(currencyToken.transfer(beneficiary, currencyTokenAmount), "Transfer failed");
+        console.log("MockSmartWallet: Transferred yield to beneficiary");
+        console.log("Beneficiary:", beneficiary);
+        console.log("Amount:", currencyTokenAmount);
+    }
 
     function upgrade(address userWallet) external override {
         // Mock implementation
@@ -55,9 +47,7 @@ function transferYield(
 
     // Implementing ISignedOperations functions
 
-    function isNonceUsed(
-        bytes32 nonce
-    ) external view override returns (bool used) {
+    function isNonceUsed(bytes32 nonce) external view override returns (bool used) {
         // Mock implementation
         return false;
     }
@@ -101,11 +91,8 @@ function transferYield(
         lockedBalances[token] -= amount;
     }
 
-    function approveToken(
-        IERC20 token,
-        address spender,
-        uint256 amount
-    ) public {
+    function approveToken(IERC20 token, address spender, uint256 amount) public {
         token.approve(spender, amount);
     }
+
 }

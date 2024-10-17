@@ -15,9 +15,7 @@ contract TestWalletImplementation {
      * @notice Set the value
      * @param value_ Value to be set
      */
-    function setValue(
-        uint256 value_
-    ) public {
+    function setValue(uint256 value_) public {
         value = value_;
     }
 

@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "forge-std/Test.sol";
 import "../src/token/AssetToken.sol";
 import "../src/token/YieldDistributionToken.sol";
+
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import "forge-std/Test.sol";
 
 contract MockCurrencyToken is ERC20 {
+
     constructor() ERC20("Mock Currency", "MCT") {
-        _mint(msg.sender, 1000000 * 10 ** 18);
+        _mint(msg.sender, 1_000_000 * 10 ** 18);
     }
+
 }
 
 contract AssetTokenTest is Test {
+
     AssetToken public assetToken;
     MockCurrencyToken public currencyToken;
     address public owner;
@@ -40,25 +44,20 @@ contract AssetTokenTest is Test {
             abi.encodeWithSignature("isAddressWhitelisted(address)", owner),
             abi.encode(true)
         );
-*/
-        try
-            new AssetToken(
-                owner,
-                "Asset Token",
-                "AT",
-                currencyToken,
-                18,
-                "http://example.com/token",
-                1000 * 10 ** 18,
-                10000 * 10 ** 18,
-                false // Whitelist enabled
-            )
-        returns (AssetToken _assetToken) {
+        */
+        try new AssetToken(
+            owner,
+            "Asset Token",
+            "AT",
+            currencyToken,
+            18,
+            "http://example.com/token",
+            1000 * 10 ** 18,
+            10_000 * 10 ** 18,
+            false // Whitelist enabled
+        ) returns (AssetToken _assetToken) {
             assetToken = _assetToken;
-            console.log(
-                "AssetToken deployed successfully at:",
-                address(assetToken)
-            );
+            console.log("AssetToken deployed successfully at:", address(assetToken));
         } catch Error(string memory reason) {
             console.log("AssetToken deployment failed. Reason:", reason);
         } catch (bytes memory lowLevelData) {
@@ -85,24 +84,10 @@ contract AssetTokenTest is Test {
         assertEq(assetToken.symbol(), "AT", "Symbol mismatch");
         assertEq(assetToken.decimals(), 18, "Decimals mismatch");
         //assertEq(assetToken.tokenURI_(), "http://example.com/token", "TokenURI mismatch");
-        assertEq(
-            assetToken.totalSupply(),
-            1000 * 10 ** 18,
-            "Total supply mismatch"
-        );
-        assertEq(
-            assetToken.getTotalValue(),
-            10000 * 10 ** 18,
-            "Total value mismatch"
-        );
-        assertFalse(
-            assetToken.isWhitelistEnabled(),
-            "Whitelist should be enabled"
-        );
-        assertFalse(
-            assetToken.isAddressWhitelisted(owner),
-            "Owner should be whitelisted"
-        );
+        assertEq(assetToken.totalSupply(), 1000 * 10 ** 18, "Total supply mismatch");
+        assertEq(assetToken.getTotalValue(), 10_000 * 10 ** 18, "Total value mismatch");
+        assertFalse(assetToken.isWhitelistEnabled(), "Whitelist should be enabled");
+        assertFalse(assetToken.isAddressWhitelisted(owner), "Owner should be whitelisted");
 
         console.log("testInitialization completed successfully");
     }
@@ -145,13 +130,13 @@ contract AssetTokenTest is Test {
         console.log(assetToken.totalYield(user1));
         console.log(assetToken.unclaimedYield(user1));
                 vm.stopPrank();
-*/
+    */
     //assertEq(assetToken.totalYield(), yieldAmount);
     //assertEq(assetToken.totalYield(user1), yieldAmount);
     //assertEq(assetToken.unclaimedYield(user1), yieldAmount);
     /*
     }
-*/
+    */
     // TODO: Look into addToWhitelist
     /*
     function testGetters() public {
@@ -180,17 +165,17 @@ contract AssetTokenTest is Test {
         assertFalse(assetToken.hasBeenHolder(user2));
         vm.stopPrank();
     }
-*/
+    */
     function testSetTotalValue() public {
         vm.startPrank(owner);
-        uint256 newTotalValue = 20000 * 10 ** 18;
+        uint256 newTotalValue = 20_000 * 10 ** 18;
         assetToken.setTotalValue(newTotalValue);
         assertEq(assetToken.getTotalValue(), newTotalValue);
         vm.stopPrank();
     }
 
     /*
-TODO: convert to SmartWalletCall 
+    TODO: convert to SmartWalletCall 
     function testGetBalanceAvailable() public {
         vm.startPrank(owner);
 
@@ -233,7 +218,7 @@ TODO: convert to SmartWalletCall
         vm.prank(user1);
         assetToken.transfer(user2, transferAmount);
     }
-   // TODO: Look into whitelist
+    // TODO: Look into whitelist
 
     function testWhitelistManagement() public {
         assetToken.addToWhitelist(user1);
@@ -251,4 +236,5 @@ TODO: convert to SmartWalletCall
 
 
     */
+
 }

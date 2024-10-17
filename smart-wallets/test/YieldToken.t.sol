@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "forge-std/Test.sol";
-import {YieldToken} from "../src/token/YieldToken.sol";
-import {MockSmartWallet} from "../src/mocks/MockSmartWallet.sol";
-import {MockAssetToken} from "../src/mocks/MockAssetToken.sol";
-import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
+import { MockSmartWallet } from "../src/mocks/MockSmartWallet.sol";
+import { YieldToken } from "../src/token/YieldToken.sol";
+
+import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "forge-std/Test.sol";
 
 import "../src/interfaces/IAssetToken.sol";
 
 // This file is a big mess and should not be committed anywhere
 
 contract MockInvalidAssetToken is IAssetToken {
+
     function getCurrencyToken() external pure override returns (IERC20) {
         return IERC20(address(0));
     }
 
-    function accrueYield(address) external pure override {}
+    function accrueYield(address) external pure override { }
 
-    function allowance(
-        address,
-        address
-    ) external pure override returns (uint256) {
+    function allowance(address, address) external pure override returns (uint256) {
         return 0;
     }
 
@@ -34,21 +33,17 @@ contract MockInvalidAssetToken is IAssetToken {
         return 0;
     }
 
-    function claimYield(
-        address
-    ) external pure override returns (IERC20, uint256) {
+    function claimYield(address) external pure override returns (IERC20, uint256) {
         return (IERC20(address(0)), 0);
     }
 
-    function depositYield(uint256) external pure override {}
+    function depositYield(uint256) external pure override { }
 
-    function getBalanceAvailable(
-        address
-    ) external pure override returns (uint256) {
+    function getBalanceAvailable(address) external pure override returns (uint256) {
         return 0;
     }
 
-    function requestYield(address) external pure override {}
+    function requestYield(address) external pure override { }
 
     function totalSupply() external pure override returns (uint256) {
         return 0;
@@ -58,16 +53,14 @@ contract MockInvalidAssetToken is IAssetToken {
         return false;
     }
 
-    function transferFrom(
-        address,
-        address,
-        uint256
-    ) external pure override returns (bool) {
+    function transferFrom(address, address, uint256) external pure override returns (bool) {
         return false;
     }
+
 }
 
 contract YieldTokenTest is Test {
+
     YieldToken public yieldToken;
     ERC20Mock public mockCurrencyToken;
     ERC20Mock public currencyToken;
@@ -104,8 +97,7 @@ contract YieldTokenTest is Test {
 
         // Verify that the mock asset token has the correct currency token
         require(
-            address(mockAssetToken.getCurrencyToken()) ==
-                address(mockCurrencyToken),
+            address(mockAssetToken.getCurrencyToken()) == address(mockCurrencyToken),
             "MockAssetToken not initialized correctly"
         );
 
@@ -138,7 +130,7 @@ contract YieldTokenTest is Test {
 
         // Deploy mock AssetToken
         assetToken = new MockAssetToken();
-//        assetToken = new MockAssetToken(IERC20(address(currencyToken)));
+    //        assetToken = new MockAssetToken(IERC20(address(currencyToken)));
 
         // Deploy the YieldToken contract
         yieldToken = new YieldToken(
@@ -152,7 +144,7 @@ contract YieldTokenTest is Test {
             100 ether
         );
     }
-*/
+    */
     function testInitialDeployment() public {
         assertEq(yieldToken.name(), "Yield Token");
         assertEq(yieldToken.symbol(), "YLT");
@@ -162,7 +154,8 @@ contract YieldTokenTest is Test {
     function testInvalidCurrencyTokenOnDeploy() public {
         //ERC20Mock invalidCurrencyToken = new ERC20Mock();
         
-        vm.expectRevert(abi.encodeWithSelector(YieldToken.InvalidCurrencyToken.selector, address(invalidCurrencyToken), address(currencyToken)));
+    vm.expectRevert(abi.encodeWithSelector(YieldToken.InvalidCurrencyToken.selector, address(invalidCurrencyToken),
+    address(currencyToken)));
         new YieldToken(
             owner, 
             "Yield Token", 
@@ -173,8 +166,8 @@ contract YieldTokenTest is Test {
             IAssetToken(address(assetToken)), 
             100 ether
         );
-    }
-*/
+    }*/
+
     function testMintingByOwner() public {
         yieldToken.mint(user1, 50 ether);
         assertEq(yieldToken.balanceOf(user1), 50 ether);
@@ -195,17 +188,19 @@ contract YieldTokenTest is Test {
     function testReceiveYieldWithInvalidAssetToken() public {
         //MockAssetToken invalidAssetToken = new MockAssetToken();
 
-        vm.expectRevert(abi.encodeWithSelector(YieldToken.InvalidAssetToken.selector, address(invalidAssetToken), address(assetToken)));
+    vm.expectRevert(abi.encodeWithSelector(YieldToken.InvalidAssetToken.selector, address(invalidAssetToken),
+    address(assetToken)));
         yieldToken.receiveYield(invalidAssetToken, currencyToken, 10 ether);
     }
 
     function testReceiveYieldWithInvalidCurrencyToken() public {
         //ERC20Mock invalidCurrencyToken = new ERC20Mock();
         
-        vm.expectRevert(abi.encodeWithSelector(YieldToken.InvalidCurrencyToken.selector, address(invalidCurrencyToken), address(currencyToken)));
+    vm.expectRevert(abi.encodeWithSelector(YieldToken.InvalidCurrencyToken.selector, address(invalidCurrencyToken),
+    address(currencyToken)));
         yieldToken.receiveYield(assetToken, invalidCurrencyToken, 10 ether);
-    }
-*/
+    }*/
+
     function testRequestYieldSuccess() public {
         MockSmartWallet smartWallet = new MockSmartWallet();
 
@@ -217,5 +212,6 @@ contract YieldTokenTest is Test {
         vm.expectRevert(abi.encodeWithSelector(YieldToken.SmartWalletCallFailed.selector, address(0)));
         yieldToken.requestYield(address(0));  // Invalid address
     }
-*/
+    */
+
 }

@@ -19,13 +19,12 @@ contract TestWalletImplementationTest is Test {
     address constant EMPTY_ADDRESS = 0x4A8efF824790cB98cb65c8b62166965C128d49b6;
     address constant WALLET_FACTORY_ADDRESS = 0x1F8Deee5430f78682d2A9c7183f8a9B7104EbB89;
     address constant WALLET_PROXY_ADDRESS = 0x6B8f44b4627dF22E39EAf45557B8f6A48545373B;
-   
 
     /* forge test
     address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
     address constant WALLET_FACTORY_ADDRESS = 0xEebAC1B8e813FA641D8EFe967C8CD3DA68D2DF7a;
     address constant WALLET_PROXY_ADDRESS = 0x832C436692d2d0267Dd72e9577c82b5f2C96fb6f;
- */
+    */
     TestWalletImplementation testWalletImplementation;
 
     function setUp() public {

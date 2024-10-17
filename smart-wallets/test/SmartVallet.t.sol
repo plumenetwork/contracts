@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "forge-std/Test.sol";
-import { SignedOperations } from "../src/extensions/SignedOperations.sol";
 import { SmartWallet } from "../src/SmartWallet.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { AssetVault } from "../src/extensions/AssetVault.sol";
+import { SignedOperations } from "../src/extensions/SignedOperations.sol";
+
+import { IAssetToken } from "../src/interfaces/IAssetToken.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import {IAssetToken} from '../src/interfaces/IAssetToken.sol';
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "forge-std/Test.sol";
+
 contract SmartWalletTest is Test {
+
     SmartWallet smartWallet;
     ERC20Mock currencyToken;
     address owner;
@@ -37,7 +41,9 @@ contract SmartWalletTest is Test {
         smartWallet.deployAssetVault();
 
         // Try deploying again, expect revert
-        vm.expectRevert(abi.encodeWithSelector(SmartWallet.AssetVaultAlreadyExists.selector, smartWallet.getAssetVault()));
+        vm.expectRevert(
+            abi.encodeWithSelector(SmartWallet.AssetVaultAlreadyExists.selector, smartWallet.getAssetVault())
+        );
         smartWallet.deployAssetVault();
     }
 
@@ -49,7 +55,7 @@ contract SmartWalletTest is Test {
         smartWallet.transferYield(IAssetToken(address(0)), beneficiary, currencyToken, 100);
     }
 
-/*
+    /*
     function testReceiveYieldSuccess() public {
         // Transfer currencyToken from beneficiary to wallet
         currencyToken.mint(beneficiary, 100 ether);
@@ -73,4 +79,5 @@ contract SmartWalletTest is Test {
         //assertEq(smartWallet._implementation(), newWallet);
     }
     */
+
 }

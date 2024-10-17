@@ -40,9 +40,7 @@ contract WalletFactory is Ownable {
      * @dev Only the WalletFactory owner can upgrade the SmartWallet implementation
      * @param smartWallet_ New SmartWallet implementation
      */
-    function upgrade(
-        ISmartWallet smartWallet_
-    ) public onlyOwner {
+    function upgrade(ISmartWallet smartWallet_) public onlyOwner {
         smartWallet = smartWallet_;
         emit Upgraded(smartWallet_);
     }
