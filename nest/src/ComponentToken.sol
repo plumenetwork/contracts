@@ -77,7 +77,7 @@ abstract contract ComponentToken is
      * @notice Emitted when the vault has been notified of the completion of a deposit request
      * @param controller Controller of the request
      * @param assets Amount of `asset` that has been deposited
-     * @param shares Amount of shares hat to receive in exchange
+     * @param shares Amount of shares that to receive in exchange
      */
     event DepositNotified(address indexed controller, uint256 assets, uint256 shares);
 
