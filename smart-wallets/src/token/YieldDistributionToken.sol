@@ -4,15 +4,8 @@ pragma solidity ^0.8.25;
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
-
-// Suggestions:
-// - move structs to Types.sol file
-// - move errors, events to interface
-// - move storage related structs to YieldDistributionTokenStorage.sol library
 
 /**
  * @title YieldDistributionToken
@@ -87,11 +80,11 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         /// @dev State for each user
         mapping(address user => UserState userState) userStates;
         /// @dev Mapping to track registered DEX addresses
-        mapping(address => bool) isDEX;
+        mapping(address dex => bool) isDEX;
         /// @dev Mapping to associate DEX addresses with maker addresses
-        mapping(address => mapping(address => address)) dexToMakerAddress;
+        mapping(address dex => address maker) dexToMakerAddress;
         /// @dev Mapping to track tokens held on DEXs for each user
-        mapping(address => uint256) tokensHeldOnDEXs;
+        mapping(address maker => uint256 tokensHeldOnDEX) tokensHeldOnDEXs;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.YieldDistributionToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -210,7 +203,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
             // Adjust balances if transferring to a DEX
             if ($.isDEX[to]) {
-                $.dexToMakerAddress[to][address(this)] = from;
+                $.dexToMakerAddress[to] = from;
                 _adjustMakerBalance(from, value, true);
             }
         }
@@ -225,7 +218,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
             // Adjust balances if transferring from a DEX
             if ($.isDEX[from]) {
-                address maker = $.dexToMakerAddress[from][address(this)];
+                address maker = $.dexToMakerAddress[from];
                 _adjustMakerBalance(maker, value, false);
             }
         }
@@ -399,7 +392,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
         if ($.isDEX[user]) {
             // Redirect yield to the maker
-            address maker = $.dexToMakerAddress[user][address(this)];
+            address maker = $.dexToMakerAddress[user];
             $.userStates[maker].yieldAccrued += userState.yieldAccrued;
             emit YieldAccrued(maker, yieldAccrued / _BASE);
         } else {
@@ -437,7 +430,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     function registerMakerOrder(address maker, uint256 amount) external {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         require($.isDEX[msg.sender], "Caller is not a registered DEX");
-        $.dexToMakerAddress[msg.sender][address(this)] = maker;
+        $.dexToMakerAddress[msg.sender] = maker;
         $.tokensHeldOnDEXs[maker] += amount;
     }
 
@@ -453,7 +446,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         require($.tokensHeldOnDEXs[maker] >= amount, "Insufficient tokens held on DEX");
         $.tokensHeldOnDEXs[maker] -= amount;
         if ($.tokensHeldOnDEXs[maker] == 0) {
-            $.dexToMakerAddress[msg.sender][address(this)] = address(0);
+            $.dexToMakerAddress[msg.sender] = address(0);
         }
     }
 
