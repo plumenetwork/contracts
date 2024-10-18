@@ -114,7 +114,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
     // Events
 
-
     /**
      * @notice Emitted when yield is deposited into the YieldDistributionToken
      * @param user Address of the user who deposited the yield
@@ -194,7 +193,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @param to Address to transfer tokens to
      * @param value Amount of tokens to transfer
      */
-       function _update(address from, address to, uint256 value) internal virtual override {
+    function _update(address from, address to, uint256 value) internal virtual override {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         uint256 timestamp = block.timestamp;
         super._update(from, to, value);
@@ -229,13 +228,12 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                 address maker = $.dexToMakerAddress[from][address(this)];
                 _adjustMakerBalance(maker, value, false);
             }
-
         }
     }
 
     // Internal Functions
 
-     /**
+    /**
      * @notice Deposit yield into the YieldDistributionToken
      * @dev The sender must have approved the CurrencyToken to spend the given amount
      * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
