@@ -477,7 +477,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         uint256 tokensOnDEXs = $.tokensHeldOnDEXs[user];
         uint256 totalUserTokens = userState.amount + tokensOnDEXs;
 
-
         /**
          * There is a race condition in the current implementation that occurs when
          * we deposit yield, then accrue yield for some users, then deposit more yield
@@ -531,8 +530,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         userState.lastBalanceTimestamp = depositHistory.lastTimestamp;
 
         uint256 newYield = yieldAccrued / _BASE;
-
-
 
         if (totalUserTokens > 0) {
             // Calculate total yield for the user, including tokens on DEXs
