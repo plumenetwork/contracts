@@ -15,16 +15,17 @@ contract TestWalletImplementationTest is Test {
     address constant ADMIN_ADDRESS = 0xDE1509CC56D740997c70E1661BA687e950B4a241;
     bytes32 constant DEPLOY_SALT = keccak256("PlumeSmartWallets");
 
-    /* forge coverage --ir-minimum */
-    address constant EMPTY_ADDRESS = 0x4A8efF824790cB98cb65c8b62166965C128d49b6;
-    address constant WALLET_FACTORY_ADDRESS = 0x1F8Deee5430f78682d2A9c7183f8a9B7104EbB89;
-    address constant WALLET_PROXY_ADDRESS = 0x6B8f44b4627dF22E39EAf45557B8f6A48545373B;
-
-    /* forge test
-    address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
-    address constant WALLET_FACTORY_ADDRESS = 0xEebAC1B8e813FA641D8EFe967C8CD3DA68D2DF7a;
-    address constant WALLET_PROXY_ADDRESS = 0x832C436692d2d0267Dd72e9577c82b5f2C96fb6f;
+    /* forge coverage --ir-minimum
+    address constant EMPTY_ADDRESS = 0x0Ab1C3d2cCB7c314666185b317900a614e516feB;
+    address constant WALLET_FACTORY_ADDRESS = 0xf0533fC1183cf6006b0dCF943AB011c8aD58459D;
+    address constant WALLET_PROXY_ADDRESS = 0xaefD16513881Ad9Ad869bf2Bd028F4D441FF2B40;
     */
+
+    /* forge test */
+    address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
+    address constant WALLET_FACTORY_ADDRESS = 0x5F26233a11D5148aeEa71d54D9D102992F8d73E2;
+    address constant WALLET_PROXY_ADDRESS = 0xCd49AC437b7e0b73D403e2fF339429330166feE0;
+
     TestWalletImplementation testWalletImplementation;
 
     function setUp() public {
@@ -45,7 +46,7 @@ contract TestWalletImplementationTest is Test {
             new WalletFactory{ salt: DEPLOY_SALT }(ADMIN_ADDRESS, ISmartWallet(address(empty)));
         WalletProxy walletProxy = new WalletProxy{ salt: DEPLOY_SALT }(walletFactory);
 
-        //assertEq(address(empty), EMPTY_ADDRESS);
+        assertEq(address(empty), EMPTY_ADDRESS);
         assertEq(address(walletFactory), WALLET_FACTORY_ADDRESS);
         assertEq(address(walletProxy), WALLET_PROXY_ADDRESS);
 

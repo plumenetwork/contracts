@@ -47,14 +47,13 @@ contract AssetVaultTest is Test {
 
         vm.stopPrank();
     }
-    /*
+
     /// @dev This test fails if getBalanceAvailable uses high-level calls
     function test_noSmartWallets() public view {
         assertEq(assetToken.getBalanceAvailable(USER3), 0);
     }
-    */
-    // /// @dev Test accepting yield allowance
 
+    // /// @dev Test accepting yield allowance
     function test_acceptYieldAllowance() public {
         // OWNER updates allowance for USER1
         vm.startPrank(OWNER);
