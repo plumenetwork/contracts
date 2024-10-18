@@ -39,6 +39,8 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
 
     // Constants
 
+    /// @notice Role for the admin of the Nest Staking protocol
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the Nest Staking protocol
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
@@ -114,7 +116,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @dev Only the owner can call this function
      * @param aggregateToken AggregateToken to be featured
      */
-    function featureToken(IAggregateToken aggregateToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function featureToken(IAggregateToken aggregateToken) external onlyRole(ADMIN_ROLE) {
         NestStakingStorage storage $ = _getNestStakingStorage();
         if ($.isFeatured[aggregateToken]) {
             revert TokenAlreadyFeatured(aggregateToken);
@@ -129,7 +131,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @dev Only the owner can call this function
      * @param aggregateToken AggregateToken to be unfeatured
      */
-    function unfeatureToken(IAggregateToken aggregateToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function unfeatureToken(IAggregateToken aggregateToken) external onlyRole(ADMIN_ROLE) {
         NestStakingStorage storage $ = _getNestStakingStorage();
         if (!$.isFeatured[aggregateToken]) {
             revert TokenNotFeatured(aggregateToken);

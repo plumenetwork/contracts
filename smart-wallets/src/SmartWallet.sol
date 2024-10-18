@@ -101,9 +101,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @param assetToken AssetToken from which the yield is to be redistributed
      * @return balanceLocked Amount of the AssetToken that is currently locked
      */
-    function getBalanceLocked(
-        IAssetToken assetToken
-    ) external view returns (uint256 balanceLocked) {
+    function getBalanceLocked(IAssetToken assetToken) external view returns (uint256 balanceLocked) {
         return _getSmartWalletStorage().assetVault.getBalanceLocked(assetToken);
     }
 
@@ -111,9 +109,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @notice Claim the yield from the AssetToken, then redistribute it through the AssetVault
      * @param assetToken AssetToken from which the yield is to be redistributed
      */
-    function claimAndRedistributeYield(
-        IAssetToken assetToken
-    ) external {
+    function claimAndRedistributeYield(IAssetToken assetToken) external {
         SmartWalletStorage storage $ = _getSmartWalletStorage();
         IAssetVault assetVault = $.assetVault;
         if (address(assetVault) == address(0)) {
@@ -167,9 +163,7 @@ contract SmartWallet is Proxy, WalletUtils, SignedOperations, ISmartWallet {
      * @dev Only the user can upgrade the implementation for their own wallet
      * @param userWallet Address of the new user wallet implementation
      */
-    function upgrade(
-        address userWallet
-    ) external onlyWallet {
+    function upgrade(address userWallet) external onlyWallet {
         _getSmartWalletStorage().userWallet = userWallet;
         emit UserWalletUpgraded(userWallet);
     }

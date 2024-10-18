@@ -1,46 +1,43 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "forge-std/Test.sol";
-
-import "../src/extensions/AssetVault.sol";
-
-import "../src/interfaces/IAssetToken.sol";
-import "../src/interfaces/IAssetVault.sol";
-import "../src/token/AssetToken.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { Test } from "forge-std/Test.sol";
 
-// Mock YieldCurrency ERC20 for testing
-contract YieldCurrency is ERC20, Ownable {
-
-    constructor(string memory name, string memory symbol, address owner) ERC20(name, symbol) Ownable(owner) { }
-
-    function mint(address account, uint256 amount) public onlyOwner {
-        _mint(account, amount);
-    }
-
-}
+import { SmartWallet } from "../src/SmartWallet.sol";
+import { IAssetVault } from "../src/interfaces/IAssetVault.sol";
+import { ISmartWallet } from "../src/interfaces/ISmartWallet.sol";
+import { AssetToken } from "../src/token/AssetToken.sol";
 
 contract AssetVaultTest is Test {
 
-    YieldCurrency public yieldCurrency;
-    AssetVault public assetVault;
+    IAssetVault public assetVault;
     AssetToken public assetToken;
 
-    address public constant OWNER = address(1);
-    address public constant HOLDER_1 = address(2);
-    address public constant HOLDER_2 = address(3);
     uint256 initialSupply = 1_000_000;
 
+    address OWNER;
+    address USER1;
+    address USER2;
+    address constant USER3 = address(0xDEAD);
+
     function setUp() public {
-        // Setup mock ERC20 YieldCurrency and AssetToken
-        yieldCurrency = new YieldCurrency("USDC", "USDC", OWNER);
+        OWNER = address(new SmartWallet());
+        USER1 = address(new SmartWallet());
+        USER2 = address(new SmartWallet());
+
+        vm.startPrank(OWNER);
+
+        ISmartWallet(OWNER).deployAssetVault();
+        assetVault = ISmartWallet(OWNER).getAssetVault();
+        assertNotEq(address(assetVault), address(0));
+
+        // Setup mock AssetToken
         assetToken = new AssetToken(
             OWNER, // Address of the owner
             "AssetToken", // Name of the token
             "AT", // Symbol of the token
-            yieldCurrency, // ERC20 currency token
+            ERC20(address(0)), // ERC20 currency token
             18, // Decimals for the asset token
             "uri://asset", // Token URI
             initialSupply, // Initial supply of AssetToken
@@ -48,47 +45,51 @@ contract AssetVaultTest is Test {
             false // Disable whitelist
         );
 
-        vm.prank(OWNER);
-        assetVault = new AssetVault();
+        vm.stopPrank();
+    }
 
-        // Transfer some AssetTokens to the AssetVault
-        vm.prank(OWNER);
-        assetToken.transfer(address(assetVault), initialSupply);
-
-        assertEq(assetToken.balanceOf(address(assetVault)), initialSupply);
+    /// @dev This test fails if getBalanceAvailable uses high-level calls
+    function test_noSmartWallets() public view {
+        assertEq(assetToken.getBalanceAvailable(USER3), 0);
     }
 
     // /// @dev Test accepting yield allowance
-    function testAcceptYieldAllowance() public {
-        // OWNER updates allowance for HOLDER_1
-        vm.prank(OWNER);
-        assetVault.updateYieldAllowance(assetToken, HOLDER_1, 500_000, block.timestamp + 30 days);
+    function test_acceptYieldAllowance() public {
+        // OWNER updates allowance for USER1
+        vm.startPrank(OWNER);
+        assetVault.updateYieldAllowance(assetToken, USER1, 300_000, block.timestamp + 30 days);
 
-        // HOLDER_1 accepts the yield allowance
-        vm.prank(HOLDER_1);
-        assetVault.acceptYieldAllowance(assetToken, 500_000, block.timestamp + 30 days);
+        assertEq(assetVault.getBalanceLocked(assetToken), 0);
+        assertEq(assetToken.getBalanceAvailable(OWNER), 1_000_000);
+        assertEq(assetToken.balanceOf(OWNER), 1_000_000);
+        vm.stopPrank();
 
-        // Check locked balance
-        uint256 lockedBalance = assetVault.getBalanceLocked(assetToken);
-        assertEq(lockedBalance, 500_000);
+        // USER1 accepts the yield allowance
+        vm.startPrank(USER1);
+        assetVault.acceptYieldAllowance(assetToken, 300_000, block.timestamp + 30 days);
+
+        assertEq(assetVault.getBalanceLocked(assetToken), 300_000);
+        assertEq(assetToken.getBalanceAvailable(OWNER), 700_000);
+        assertEq(assetToken.balanceOf(OWNER), 1_000_000);
+        vm.stopPrank();
     }
 
     /// @dev Test accepting yield allowance with multiple holders
-    function testAcceptYieldAllowanceMultiple() public {
-        // OWNER updates allowance for HOLDER_1
+    function test_acceptYieldAllowanceMultiple() public {
+        // OWNER updates allowance for USER1
         vm.prank(OWNER);
-        assetVault.updateYieldAllowance(assetToken, HOLDER_1, 500_000, block.timestamp + 30 days);
+        assetVault.updateYieldAllowance(assetToken, USER1, 500_000, block.timestamp + 30 days);
 
-        // OWNER updates allowance for HOLDER_2
+        // OWNER updates allowance for USER2
         vm.prank(OWNER);
-        assetVault.updateYieldAllowance(assetToken, HOLDER_2, 300_000, block.timestamp + 30 days);
+        assetVault.updateYieldAllowance(assetToken, USER2, 300_000, block.timestamp + 30 days);
 
-        // HOLDER_1 accepts the yield allowance
-        vm.prank(HOLDER_1);
+        // USER1 accepts the yield allowance
+        vm.prank(USER1);
         assetVault.acceptYieldAllowance(assetToken, 500_000, block.timestamp + 30 days);
 
-        // HOLDER_2 accepts the yield allowance
-        vm.prank(HOLDER_2);
+        // USER2 accepts the yield allowance
+        vm.prank(USER2);
         assetVault.acceptYieldAllowance(assetToken, 300_000, block.timestamp + 30 days);
 
         // Check locked balance after both allowances are accepted

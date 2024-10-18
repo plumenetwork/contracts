@@ -1,29 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
+import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
 
 /**
  * @title AggregateToken
  * @author Eugene Y. Q. Shen
- * @notice ERC20 token that represents a basket of ComponentTokens
- * @dev Invariant: the total value of all AggregateTokens minted is approximately
- *   equal to the total value of all of its constituent ComponentTokens
+ * @notice Implementation of the abstract ComponentToken that represents a basket of ComponentTokens
  */
-contract AggregateToken is
-    Initializable,
-    ERC20Upgradeable,
-    AccessControlUpgradeable,
-    UUPSUpgradeable,
-    IAggregateToken
-{
+contract AggregateToken is ComponentToken, IAggregateToken {
 
     // Storage
 
@@ -33,16 +23,10 @@ contract AggregateToken is
         IComponentToken[] componentTokenList;
         /// @dev Mapping of all ComponentTokens that have ever been added to the AggregateToken
         mapping(IComponentToken componentToken => bool exists) componentTokenMap;
-        /// @dev CurrencyToken used to mint and burn the AggregateToken
-        IERC20 currencyToken;
-        /// @dev Number of decimals of the AggregateToken
-        uint8 decimals;
-        /// @dev Price at which users can buy the AggregateToken using CurrencyToken, times the base
+        /// @dev Price at which users can buy the AggregateToken using `asset`, times the base
         uint256 askPrice;
-        /// @dev Price at which users can sell the AggregateToken to receive CurrencyToken, times the base
+        /// @dev Price at which users can sell the AggregateToken to receive `asset`, times the base
         uint256 bidPrice;
-        /// @dev URI for the AggregateToken metadata
-        string tokenURI;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AggregateToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -57,69 +41,8 @@ contract AggregateToken is
 
     // Constants
 
-    /// @notice Role for the upgrader of the AggregateToken
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
-
     // Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 private constant _BASE = 1e18;
-
-    // Events
-
-    /**
-     * @notice Emitted when a user buys AggregateToken using CurrencyToken
-     * @param user Address of the user who bought the AggregateToken
-     * @param currencyToken CurrencyToken used to buy the AggregateToken
-     * @param currencyTokenAmount Amount of CurrencyToken paid
-     * @param aggregateTokenAmount Amount of AggregateToken received
-     */
-    event AggregateTokenBought(
-        address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 aggregateTokenAmount
-    );
-
-    /**
-     * @notice Emitted when a user sells AggregateToken to receive CurrencyToken
-     * @param user Address of the user who sold the AggregateToken
-     * @param currencyToken CurrencyToken received in exchange for the AggregateToken
-     * @param currencyTokenAmount Amount of CurrencyToken received
-     * @param aggregateTokenAmount Amount of AggregateToken sold
-     */
-    event AggregateTokenSold(
-        address indexed user, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 aggregateTokenAmount
-    );
-
-    /**
-     * @notice Emitted when a ComponentToken is added to the component token list
-     * @param componentToken ComponentToken that is added to the component token list
-     */
-    event ComponentTokenListed(IComponentToken componentToken);
-
-    /**
-     * @notice Emitted when a ComponentToken is removed from the component token list
-     * @param componentToken ComponentToken that is removed from the component token list
-     */
-    event ComponentTokenUnlisted(IComponentToken componentToken);
-
-    /**
-     * @notice Emitted when the owner buys ComponentToken using CurrencyToken
-     * @param owner Address of the owner who bought the ComponentToken
-     * @param currencyToken CurrencyToken used to buy the ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken paid
-     * @param componentTokenAmount Amount of ComponentToken received
-     */
-    event ComponentTokenBought(
-        address indexed owner, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
-    );
-
-    /**
-     * @notice Emitted when the owner sells ComponentToken to receive CurrencyToken
-     * @param owner Address of the owner who sold the ComponentToken
-     * @param currencyToken CurrencyToken received in exchange for the ComponentToken
-     * @param currencyTokenAmount Amount of CurrencyToken received
-     * @param componentTokenAmount Amount of ComponentToken sold
-     */
-    event ComponentTokenSold(
-        address indexed owner, IERC20 indexed currencyToken, uint256 currencyTokenAmount, uint256 componentTokenAmount
-    );
 
     // Errors
 
@@ -142,32 +65,17 @@ contract AggregateToken is
     error ComponentTokenBalanceNonZero(IComponentToken componentToken);
 
     /**
-     * @notice Indicates a failure because the ComponentToken is the current CurrencyToken
-     * @param componentToken ComponentToken that is the current CurrencyToken
+     * @notice Indicates a failure because the ComponentToken is the current `asset
+     * @param componentToken ComponentToken that is the current `asset`
      */
-    error ComponentTokenIsCurrencyToken(IComponentToken componentToken);
+    error ComponentTokenIsAsset(IComponentToken componentToken);
 
     /**
-     * @notice Indicates a failure because the given CurrencyToken does not match the actual CurrencyToken
-     * @param invalidCurrencyToken CurrencyToken that does not match the actual CurrencyToken
-     * @param currencyToken Actual CurrencyToken used to mint and burn the AggregateToken
+     * @notice Indicates a failure because the given `asset` does not match the actual `asset`
+     * @param invalidAsset Asset that does not match the actual `asset`
+     * @param asset Actual `asset` for the AggregateToken
      */
-    error InvalidCurrencyToken(IERC20 invalidCurrencyToken, IERC20 currencyToken);
-
-    /**
-     * @notice Indicates a failure because the AggregateToken does not have enough CurrencyToken
-     * @param currencyToken CurrencyToken used to mint and burn the AggregateToken
-     * @param amount Amount of CurrencyToken required in the failed transfer
-     */
-    error CurrencyTokenInsufficientBalance(IERC20 currencyToken, uint256 amount);
-
-    /**
-     * @notice Indicates a failure because the user does not have enough CurrencyToken
-     * @param currencyToken CurrencyToken used to mint and burn the AggregateToken
-     * @param user Address of the user who is selling the CurrencyToken
-     * @param amount Amount of CurrencyToken required in the failed transfer
-     */
-    error UserCurrencyTokenInsufficientBalance(IERC20 currencyToken, address user, uint256 amount);
+    error InvalidAsset(IERC20 invalidAsset, IERC20 asset);
 
     // Initializer
 
@@ -184,99 +92,72 @@ contract AggregateToken is
      * @param owner Address of the owner of the AggregateToken
      * @param name Name of the AggregateToken
      * @param symbol Symbol of the AggregateToken
-     * @param currencyToken CurrencyToken used to mint and burn the AggregateToken
-     * @param decimals_ Number of decimals of the AggregateToken
-     * @param askPrice Price at which users can buy the AggregateToken using CurrencyToken, times the base
-     * @param bidPrice Price at which users can sell the AggregateToken to receive CurrencyToken, times the base
-     * @param tokenURI URI of the AggregateToken metadata
+     * @param asset_ Asset used to mint and burn the AggregateToken
+     * @param askPrice Price at which users can buy the AggregateToken using `asset`, times the base
+     * @param bidPrice Price at which users can sell the AggregateToken to receive `asset`, times the base
      */
     function initialize(
         address owner,
         string memory name,
         string memory symbol,
-        IComponentToken currencyToken,
-        uint8 decimals_,
+        IComponentToken asset_,
         uint256 askPrice,
-        uint256 bidPrice,
-        string memory tokenURI
+        uint256 bidPrice
     ) public initializer {
-        __ERC20_init(name, symbol);
-        __AccessControl_init();
-        __UUPSUpgradeable_init();
-
-        _grantRole(DEFAULT_ADMIN_ROLE, owner);
-        _grantRole(UPGRADER_ROLE, owner);
+        super.initialize(owner, name, symbol, IERC20(address(asset_)), false, false);
 
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        $.componentTokenList.push(currencyToken);
-        $.componentTokenMap[currencyToken] = true;
-        $.currencyToken = IERC20(currencyToken);
-        $.decimals = decimals_;
+        $.componentTokenList.push(asset_);
+        $.componentTokenMap[asset_] = true;
         $.askPrice = askPrice;
         $.bidPrice = bidPrice;
-        $.tokenURI = tokenURI;
     }
 
     // Override Functions
 
     /**
-     * @notice Revert when `msg.sender` is not authorized to upgrade the contract
-     * @param newImplementation Address of the new implementation
+     * @inheritdoc IERC4626
+     * @dev 1:1 conversion rate between USDT and base asset
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
-
-    /// @notice Number of decimals of the AggregateToken
-    function decimals() public view override returns (uint8) {
-        return _getAggregateTokenStorage().decimals;
-    }
-
-    // User Functions
-
-    /**
-     * @notice Buy AggregateToken using CurrencyToken
-     * @dev The user must approve the contract to spend the CurrencyToken
-     * @param currencyToken CurrencyToken used to buy the AggregateToken
-     * @param currencyTokenAmount Amount of CurrencyToken to pay for the AggregateToken
-     * @return aggregateTokenAmount Amount of AggregateToken received
-     */
-    function buy(IERC20 currencyToken, uint256 currencyTokenAmount) public returns (uint256 aggregateTokenAmount) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-
-        if (currencyToken != $.currencyToken) {
-            revert InvalidCurrencyToken(currencyToken, $.currencyToken);
-        }
-        if (!currencyToken.transferFrom(msg.sender, address(this), currencyTokenAmount)) {
-            revert UserCurrencyTokenInsufficientBalance(currencyToken, msg.sender, currencyTokenAmount);
-        }
-
-        aggregateTokenAmount = currencyTokenAmount * _BASE / $.askPrice;
-
-        _mint(msg.sender, aggregateTokenAmount);
-
-        emit AggregateTokenBought(msg.sender, currencyToken, currencyTokenAmount, aggregateTokenAmount);
+    function convertToShares(uint256 assets)
+        public
+        view
+        override(ComponentToken, IComponentToken)
+        returns (uint256 shares)
+    {
+        return assets * _getAggregateTokenStorage().askPrice / _BASE;
     }
 
     /**
-     * @notice Sell AggregateToken to receive CurrencyToken
-     * @param currencyToken CurrencyToken received in exchange for the AggregateToken
-     * @param currencyTokenAmount Amount of CurrencyToken to receive in exchange for the AggregateToken
-     * @return aggregateTokenAmount Amount of AggregateToken sold
+     * @inheritdoc IERC4626
+     * @dev 1:1 conversion rate between USDT and base asset
      */
-    function sell(IERC20 currencyToken, uint256 currencyTokenAmount) public returns (uint256 aggregateTokenAmount) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+    function convertToAssets(uint256 shares)
+        public
+        view
+        override(ComponentToken, IComponentToken)
+        returns (uint256 assets)
+    {
+        return shares * _BASE / _getAggregateTokenStorage().bidPrice;
+    }
 
-        if (currencyToken != $.currencyToken) {
-            revert InvalidCurrencyToken(currencyToken, $.currencyToken);
-        }
-        if (!currencyToken.transfer(msg.sender, currencyTokenAmount)) {
-            revert CurrencyTokenInsufficientBalance(currencyToken, currencyTokenAmount);
-        }
+    /// @inheritdoc IComponentToken
+    function asset() public view override(ComponentToken, IComponentToken) returns (address assetTokenAddress) {
+        return super.asset();
+    }
 
-        aggregateTokenAmount = currencyTokenAmount * _BASE / $.bidPrice;
+    /// @inheritdoc IComponentToken
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public override(ComponentToken, IComponentToken) returns (uint256 assets) {
+        return super.redeem(shares, receiver, controller);
+    }
 
-        _burn(msg.sender, aggregateTokenAmount);
-
-        emit AggregateTokenSold(msg.sender, currencyToken, currencyTokenAmount, aggregateTokenAmount);
+    /// @inheritdoc IComponentToken
+    function totalAssets() public view override(ComponentToken, IComponentToken) returns (uint256 totalManagedAssets) {
+        return super.totalAssets();
     }
 
     // Admin Functions
@@ -286,7 +167,7 @@ contract AggregateToken is
      * @dev Only the owner can call this function, and there is no way to remove a ComponentToken later
      * @param componentToken ComponentToken to add
      */
-    function addComponentToken(IComponentToken componentToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function addComponentToken(IComponentToken componentToken) external onlyRole(ADMIN_ROLE) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
         if ($.componentTokenMap[componentToken]) {
             revert ComponentTokenAlreadyListed(componentToken);
@@ -297,16 +178,13 @@ contract AggregateToken is
     }
 
     /**
-     * @notice Buy ComponentToken using CurrencyToken
+     * @notice Buy ComponentToken using `asset`
      * @dev Only the owner can call this function, will revert if
-     *   the AggregateToken does not have enough CurrencyToken to buy the ComponentToken
+     *   the AggregateToken does not have enough `asset` to buy the ComponentToken
      * @param componentToken ComponentToken to buy
-     * @param currencyTokenAmount Amount of CurrencyToken to pay to receive the ComponentToken
+     * @param assets Amount of `asset` to pay to receive the ComponentToken
      */
-    function buyComponentToken(
-        IComponentToken componentToken,
-        uint256 currencyTokenAmount
-    ) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    function buyComponentToken(IComponentToken componentToken, uint256 assets) public onlyRole(ADMIN_ROLE) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
 
         if (!$.componentTokenMap[componentToken]) {
@@ -315,90 +193,55 @@ contract AggregateToken is
             emit ComponentTokenListed(componentToken);
         }
 
-        IERC20 currencyToken = $.currencyToken;
-        currencyToken.approve(address(componentToken), currencyTokenAmount);
-        uint256 componentTokenAmount = componentToken.buy(currencyToken, currencyTokenAmount);
-        componentToken.approve(address(componentToken), 0);
-
-        emit ComponentTokenBought(msg.sender, $.currencyToken, currencyTokenAmount, componentTokenAmount);
+        uint256 componentTokenAmount = componentToken.deposit(assets, address(this), address(this));
+        emit ComponentTokenBought(msg.sender, componentToken, componentTokenAmount, assets);
     }
 
     /**
-     * @notice Sell ComponentToken to receive CurrencyToken
+     * @notice Sell ComponentToken to receive `asset`
      * @dev Only the owner can call this function, will revert if
-     *   the ComponentToken does not have enough CurrencyToken to sell to the AggregateToken
+     *   the ComponentToken does not have enough `asset` to sell to the AggregateToken
      * @param componentToken ComponentToken to sell
-     * @param currencyTokenAmount Amount of CurrencyToken to receive in exchange for the ComponentToken
+     * @param componentTokenAmount Amount of ComponentToken to sell
      */
     function sellComponentToken(
         IComponentToken componentToken,
-        uint256 currencyTokenAmount
-    ) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        IERC20 currencyToken = _getAggregateTokenStorage().currencyToken;
-
-        uint256 componentTokenAmount = componentToken.sell(currencyToken, currencyTokenAmount);
-
-        emit ComponentTokenSold(msg.sender, currencyToken, currencyTokenAmount, componentTokenAmount);
+        uint256 componentTokenAmount
+    ) public onlyRole(ADMIN_ROLE) {
+        uint256 assets = componentToken.redeem(componentTokenAmount, address(this), address(this));
+        emit ComponentTokenSold(msg.sender, componentToken, componentTokenAmount, assets);
     }
 
     // Admin Setter Functions
 
     /**
-     * @notice Set the CurrencyToken used to mint and burn the AggregateToken
-     * @dev Only the owner can call this setter
-     * @param currencyToken New CurrencyToken
-     */
-    function setCurrencyToken(IERC20 currencyToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _getAggregateTokenStorage().currencyToken = currencyToken;
-    }
-
-    /**
-     * @notice Set the price at which users can buy the AggregateToken using CurrencyToken
+     * @notice Set the price at which users can buy the AggregateToken using `asset`
      * @dev Only the owner can call this setter
      * @param askPrice New ask price
      */
-    function setAskPrice(uint256 askPrice) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setAskPrice(uint256 askPrice) external onlyRole(ADMIN_ROLE) {
         _getAggregateTokenStorage().askPrice = askPrice;
     }
 
     /**
-     * @notice Set the price at which users can sell the AggregateToken to receive CurrencyToken
+     * @notice Set the price at which users can sell the AggregateToken to receive `asset`
      * @dev Only the owner can call this setter
      * @param bidPrice New bid price
      */
-    function setBidPrice(uint256 bidPrice) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setBidPrice(uint256 bidPrice) external onlyRole(ADMIN_ROLE) {
         _getAggregateTokenStorage().bidPrice = bidPrice;
-    }
-
-    /**
-     * @notice Set the URI for the AggregateToken metadata
-     * @dev Only the owner can call this setter
-     * @param tokenURI New token URI
-     */
-    function setTokenURI(string memory tokenURI) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _getAggregateTokenStorage().tokenURI = tokenURI;
     }
 
     // Getter View Functions
 
-    /// @notice CurrencyToken used to mint and burn the AggregateToken
-    function getCurrencyToken() external view returns (IERC20) {
-        return _getAggregateTokenStorage().currencyToken;
-    }
-
-    /// @notice Price at which users can buy the AggregateToken using CurrencyToken, times the base
+    /// @notice Price at which users can buy the AggregateToken using `asset`, times the base
     function getAskPrice() external view returns (uint256) {
         return _getAggregateTokenStorage().askPrice;
     }
 
-    /// @notice Price at which users can sell the AggregateToken to receive CurrencyToken, times the base
+    /// @notice Price at which users can sell the AggregateToken to receive `asset`, times the base
     function getBidPrice() external view returns (uint256) {
         return _getAggregateTokenStorage().bidPrice;
-    }
-
-    /// @notice URI for the AggregateToken metadata
-    function getTokenURI() external view returns (string memory) {
-        return _getAggregateTokenStorage().tokenURI;
     }
 
     /// @notice Get all ComponentTokens that have ever been added to the AggregateToken
@@ -413,64 +256,6 @@ contract AggregateToken is
      */
     function getComponentToken(IComponentToken componentToken) public view returns (bool isListed) {
         return _getAggregateTokenStorage().componentTokenMap[componentToken];
-    }
-
-    /// @notice Total yield distributed to all AggregateTokens for all users
-    function totalYield() public view returns (uint256 amount) {
-        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
-        uint256 length = componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].totalYield();
-        }
-    }
-
-    /// @notice Claimed yield across all AggregateTokens for all users
-    function claimedYield() public view returns (uint256 amount) {
-        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
-        uint256 length = componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].claimedYield();
-        }
-    }
-
-    /// @notice Unclaimed yield across all AggregateTokens for all users
-    function unclaimedYield() external view returns (uint256 amount) {
-        return totalYield() - claimedYield();
-    }
-
-    /**
-     * @notice Total yield distributed to a specific user
-     * @param user Address of the user for which to get the total yield
-     * @return amount Total yield distributed to the user
-     */
-    function totalYield(address user) public view returns (uint256 amount) {
-        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
-        uint256 length = componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].totalYield(user);
-        }
-    }
-
-    /**
-     * @notice Amount of yield that a specific user has claimed
-     * @param user Address of the user for which to get the claimed yield
-     * @return amount Amount of yield that the user has claimed
-     */
-    function claimedYield(address user) public view returns (uint256 amount) {
-        IComponentToken[] storage componentTokenList = _getAggregateTokenStorage().componentTokenList;
-        uint256 length = componentTokenList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += componentTokenList[i].claimedYield(user);
-        }
-    }
-
-    /**
-     * @notice Amount of yield that a specific user has not yet claimed
-     * @param user Address of the user for which to get the unclaimed yield
-     * @return amount Amount of yield that the user has not yet claimed
-     */
-    function unclaimedYield(address user) external view returns (uint256 amount) {
-        return totalYield(user) - claimedYield(user);
     }
 
 }

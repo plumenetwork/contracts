@@ -100,10 +100,8 @@ contract YieldDistributionTokenScenarioTest is Test {
         uint256 expectedBobYieldAccrued = expectedBobAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
         uint256 expectedCharlieYieldAccrued = expectedCharlieAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
 
-
         _transferFrom(alice, bob, MINT_AMOUNT);
         token.claimYield(charlie);
-
 
         assertEq(token.balanceOf(alice), 0);
         assertEq(token.balanceOf(bob), 2 * MINT_AMOUNT);
@@ -162,14 +160,22 @@ contract YieldDistributionTokenScenarioTest is Test {
         token.claimYield(charlie);
 
         // rounding error; perhaps can fix by rounding direction?
-        assertEq(currencyTokenMock.balanceOf(alice) - oldAliceBalance, expectedAliceYieldAccrued - oldWithdrawnYieldAlice - 1);
+        assertEq(
+            currencyTokenMock.balanceOf(alice) - oldAliceBalance, expectedAliceYieldAccrued - oldWithdrawnYieldAlice - 1
+        );
         assertEq(currencyTokenMock.balanceOf(bob) - oldBobBalance, expectedBobYieldAccrued - oldWithdrawnYieldBob);
-        assertEq(currencyTokenMock.balanceOf(charlie) - oldCharlieBalance, expectedCharlieYieldAccrued - oldWithdrawnYieldCharlie);
+        assertEq(
+            currencyTokenMock.balanceOf(charlie) - oldCharlieBalance,
+            expectedCharlieYieldAccrued - oldWithdrawnYieldCharlie
+        );
     }
-    
-    /// @dev Simulates a scenario where a user returns, or claims, some deposits after accruing `amountSeconds`, ensuring that
+
+    /// @dev Simulates a scenario where a user returns, or claims, some deposits after accruing `amountSeconds`,
+    /// ensuring that
     /// yield is correctly distributed
-    function test_scenario_userBurnsTokensAfterAccruingSomeYield_andWaitsForAtLeastTwoDeposits_priorToClaimingYield() public {
+    function test_scenario_userBurnsTokensAfterAccruingSomeYield_andWaitsForAtLeastTwoDeposits_priorToClaimingYield()
+        public
+    {
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
 
@@ -181,11 +187,12 @@ contract YieldDistributionTokenScenarioTest is Test {
 
         token.exposed_burn(alice, MINT_AMOUNT);
         _timeskip();
-        
+
         uint256 expectedAliceAmountSeconds = MINT_AMOUNT * skipDuration * 3;
         uint256 expectedBobAmountSeconds = MINT_AMOUNT * skipDuration * 3;
         uint256 expectedCharlieAmountSeconds = MINT_AMOUNT * skipDuration * 2;
-        uint256 totalExpectedAmountSeconds = expectedAliceAmountSeconds + expectedBobAmountSeconds + expectedCharlieAmountSeconds;
+        uint256 totalExpectedAmountSeconds =
+            expectedAliceAmountSeconds + expectedBobAmountSeconds + expectedCharlieAmountSeconds;
 
         _depositYield(YIELD_AMOUNT);
 
@@ -193,13 +200,13 @@ contract YieldDistributionTokenScenarioTest is Test {
         uint256 expectedBobYieldAccrued = expectedBobAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
         uint256 expectedCharlieYieldAccrued = expectedCharlieAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
 
-
         _timeskip();
 
         expectedAliceAmountSeconds = 0;
         expectedBobAmountSeconds = MINT_AMOUNT * skipDuration;
         expectedCharlieAmountSeconds = MINT_AMOUNT * skipDuration;
-        totalExpectedAmountSeconds = expectedAliceAmountSeconds + expectedBobAmountSeconds + expectedCharlieAmountSeconds;
+        totalExpectedAmountSeconds =
+            expectedAliceAmountSeconds + expectedBobAmountSeconds + expectedCharlieAmountSeconds;
 
         _depositYield(YIELD_AMOUNT);
 
@@ -219,11 +226,14 @@ contract YieldDistributionTokenScenarioTest is Test {
         token.claimYield(charlie);
 
         // TODO: no rounding error here, why?
-        assertEq(currencyTokenMock.balanceOf(alice) - oldAliceBalance, expectedAliceYieldAccrued - oldWithdrawnYieldAlice);
+        assertEq(
+            currencyTokenMock.balanceOf(alice) - oldAliceBalance, expectedAliceYieldAccrued - oldWithdrawnYieldAlice
+        );
         assertEq(currencyTokenMock.balanceOf(bob) - oldBobBalance, expectedBobYieldAccrued - oldWithdrawnYieldBob);
-        assertEq(currencyTokenMock.balanceOf(charlie) - oldCharlieBalance, expectedCharlieYieldAccrued - oldWithdrawnYieldCharlie);
-        
-        
+        assertEq(
+            currencyTokenMock.balanceOf(charlie) - oldCharlieBalance,
+            expectedCharlieYieldAccrued - oldWithdrawnYieldCharlie
+        );
     }
 
     function _timeskip() internal {
@@ -231,9 +241,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         vm.warp(block.timestamp + skipDuration);
     }
 
-    function _depositYield(
-        uint256 amount
-    ) internal {
+    function _depositYield(uint256 amount) internal {
         vm.startPrank(OWNER);
         currencyTokenMock.approve(address(token), amount);
         token.exposed_depositYield(amount);

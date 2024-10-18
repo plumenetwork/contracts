@@ -3,9 +3,9 @@ pragma solidity ^0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
-
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { IYieldToken } from "../interfaces/IYieldToken.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
@@ -15,7 +15,7 @@ import { YieldDistributionToken } from "./YieldDistributionToken.sol";
  * @author Eugene Y. Q. Shen
  * @notice ERC20 token that receives yield redistributions from an AssetToken
  */
-contract YieldToken is YieldDistributionToken, IYieldToken {
+contract YieldToken is YieldDistributionToken, WalletUtils, IYieldToken {
 
     // Storage
 
@@ -115,13 +115,18 @@ contract YieldToken is YieldDistributionToken, IYieldToken {
 
     /**
      * @notice Make the SmartWallet redistribute yield from their AssetToken into this YieldToken
+     * @dev The Solidity compiler adds a check that the target address has `extcodesize > 0`
+     *   and otherwise reverts for high-level calls, so we have to use a low-level call here
      * @param from Address of the SmartWallet to request the yield from
      */
-    function requestYield(
-        address from
-    ) external override(YieldDistributionToken, IYieldDistributionToken) {
+    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
         // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
-        ISmartWallet(payable(from)).claimAndRedistributeYield(_getYieldTokenStorage().assetToken);
+        (bool success,) = from.call(
+            abi.encodeWithSelector(ISmartWallet.claimAndRedistributeYield.selector, _getYieldTokenStorage().assetToken)
+        );
+        if (!success) {
+            revert SmartWalletCallFailed(from);
+        }
     }
 
 }
