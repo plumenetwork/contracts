@@ -473,6 +473,11 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         uint256 depositTimestamp = depositHistory.lastTimestamp;
         uint256 lastBalanceTimestamp = userState.lastBalanceTimestamp;
 
+        // Check if the user has any tokens on DEXs
+        uint256 tokensOnDEXs = $.tokensHeldOnDEXs[user];
+        uint256 totalUserTokens = userState.amount + tokensOnDEXs;
+
+
         /**
          * There is a race condition in the current implementation that occurs when
          * we deposit yield, then accrue yield for some users, then deposit more yield
@@ -505,7 +510,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                  * There can be a sequence of deposits made while the user balance remains the same throughout.
                  * Subtract the amountSeconds in this interval to get the total amountSeconds at the previous deposit.
                  */
-                uint256 intervalAmountSeconds = userState.amount * (depositTimestamp - previousDepositTimestamp);
+                uint256 intervalAmountSeconds = totalUserTokens * (depositTimestamp - previousDepositTimestamp);
                 amountSeconds -= intervalAmountSeconds;
                 yieldAccrued += _BASE * depositAmount * intervalAmountSeconds / intervalTotalAmountSeconds;
             } else {
@@ -522,14 +527,12 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         }
 
         userState.lastDepositAmountSeconds = userState.amountSeconds;
-        userState.amountSeconds += userState.amount * (depositHistory.lastTimestamp - lastBalanceTimestamp);
+        userState.amountSeconds += totalUserTokens * (depositHistory.lastTimestamp - lastBalanceTimestamp);
         userState.lastBalanceTimestamp = depositHistory.lastTimestamp;
 
         uint256 newYield = yieldAccrued / _BASE;
 
-        // Check if the user has any tokens on DEXs
-        uint256 tokensOnDEXs = $.tokensHeldOnDEXs[user];
-        uint256 totalUserTokens = userState.amount + tokensOnDEXs;
+
 
         if (totalUserTokens > 0) {
             // Calculate total yield for the user, including tokens on DEXs
