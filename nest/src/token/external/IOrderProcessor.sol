@@ -6,6 +6,7 @@ pragma solidity ^0.8.23;
 /// This interface provides a standard Order type and order lifecycle events
 /// Orders are requested on-chain, processed off-chain, then fulfillment is submitted for on-chain settlement
 interface IOrderProcessor {
+
     /// ------------------ Types ------------------ ///
 
     // Market or limit order
@@ -157,10 +158,11 @@ interface IOrderProcessor {
     /// @param sell Sell order
     /// @param paymentToken Payment token for order
     /// @param paymentTokenQuantity Payment token quantity for order
-    function totalStandardFee(bool sell, address paymentToken, uint256 paymentTokenQuantity)
-        external
-        view
-        returns (uint256);
+    function totalStandardFee(
+        bool sell,
+        address paymentToken,
+        uint256 paymentTokenQuantity
+    ) external view returns (uint256);
 
     /// @notice Check if an account is locked from transferring tokens
     /// @param token Token to check
@@ -196,9 +198,11 @@ interface IOrderProcessor {
     /// @param feeQuoteSignature Signature for fee quote
     /// @return id Order id
     /// @dev Emits OrderCreated event to be sent to fulfillment service (operator)
-    function createOrder(Order calldata order, FeeQuote calldata feeQuote, bytes calldata feeQuoteSignature)
-        external
-        returns (uint256);
+    function createOrder(
+        Order calldata order,
+        FeeQuote calldata feeQuote,
+        bytes calldata feeQuoteSignature
+    ) external returns (uint256);
 
     /// @notice Request an order with standard fees
     /// @param order Order request to submit
@@ -224,4 +228,5 @@ interface IOrderProcessor {
     /// @param reason Reason for cancellation
     /// @dev Only callable by operator
     function cancelOrder(Order calldata order, string calldata reason) external;
+
 }
