@@ -102,9 +102,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 private constant _BASE = 1e18;
 
-    // Scale that is used to multiply yield deposits for increased precision
-    uint256 private constant SCALE = 1e36;
-
     // Events
 
     /**
@@ -137,9 +134,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @param currencyTokenAmount Amount of CurrencyToken that failed to transfer
      */
     error TransferFailed(address user, uint256 currencyTokenAmount);
-
-    /// @notice Indicates a failure because a yield deposit is made in the same block as the last one
-    error DepositSameBlock();
 
     // Constructor
 
@@ -226,6 +220,16 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
     // Internal Functions
 
+    /// @notice Update the totalAmountSeconds and lastSupplyTimestamp when supply or time changes
+    function _updateSupply() internal {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        uint256 timestamp = block.timestamp;
+        if (timestamp > $.lastSupplyTimestamp) {
+            $.totalAmountSeconds += totalSupply() * (timestamp - $.lastSupplyTimestamp);
+            $.lastSupplyTimestamp = timestamp;
+        }
+    }
+    
     /**
      * @notice Deposit yield into the YieldDistributionToken
      * @dev The sender must have approved the CurrencyToken to spend the given amount
@@ -257,18 +261,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             revert TransferFailed(msg.sender, currencyTokenAmount);
         }
         emit Deposited(msg.sender, timestamp, currencyTokenAmount);
-    }
-
-    // Internal Functions
-
-    /// @notice Update the totalAmountSeconds and lastSupplyTimestamp when supply or time changes
-    function _updateSupply() internal {
-        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-        uint256 timestamp = block.timestamp;
-        if (timestamp > $.lastSupplyTimestamp) {
-            $.totalAmountSeconds += totalSupply() * (timestamp - $.lastSupplyTimestamp);
-            $.lastSupplyTimestamp = timestamp;
-        }
     }
 
     // Admin Setter Functions
