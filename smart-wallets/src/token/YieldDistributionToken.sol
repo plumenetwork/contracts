@@ -288,7 +288,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
     // Permissionless Functions
 
-    //TODO: why are we returning currencyToken?
     /**
      * @notice Claim all the remaining yield that has been accrued to a user
      * @dev Anyone can call this function to claim yield for any user
