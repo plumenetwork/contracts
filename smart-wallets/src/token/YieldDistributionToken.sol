@@ -229,7 +229,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             $.lastSupplyTimestamp = timestamp;
         }
     }
-    
+
     /**
      * @notice Deposit yield into the YieldDistributionToken
      * @dev The sender must have approved the CurrencyToken to spend the given amount
@@ -392,7 +392,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             emit YieldAccrued(user, yieldAccrued / _BASE);
         }
 
-        //emit YieldAccrued(user, yieldAccrued / _BASE);
     }
 
     /**
