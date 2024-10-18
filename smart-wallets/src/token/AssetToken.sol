@@ -7,8 +7,6 @@ import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
-
-import { Deposit, UserState } from "./Types.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
 /**
@@ -23,10 +21,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     /// @notice Boolean to enable whitelist for the AssetToken
     bool public immutable isWhitelistEnabled;
-
-    // Suggestions:
-    // - Can replace whitelist array + mapping with enumerable set
-    // - Can replace holders array + mapping with enumerable set
 
     /// @custom:storage-location erc7201:plume.storage.AssetToken
     struct AssetTokenStorage {
@@ -303,14 +297,16 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @return balanceAvailable Available unlocked AssetToken balance of the user
      */
     function getBalanceAvailable(address user) public view returns (uint256 balanceAvailable) {
-        if (isContract(user)) {
-            try ISmartWallet(payable(user)).getBalanceLocked(this) returns (uint256 lockedBalance) {
-                return balanceOf(user) - lockedBalance;
-            } catch {
-                revert SmartWalletCallFailed(user);
-            }
-        } else {
+        (bool success, bytes memory data) =
+            user.staticcall(abi.encodeWithSelector(ISmartWallet.getBalanceLocked.selector, this));
+        if (!success) {
             revert SmartWalletCallFailed(user);
+        }
+
+        balanceAvailable = balanceOf(user);
+        if (data.length > 0) {
+            uint256 lockedBalance = abi.decode(data, (uint256));
+            balanceAvailable -= lockedBalance;
         }
     }
 

@@ -28,19 +28,4 @@ contract WalletUtils {
         _;
     }
 
-    /**
-     * @notice Checks if an address is a contract or smart wallet.
-     * @dev This function uses the `extcodesize` opcode to check if the target address contains contract code.
-     * It returns true for contracts and smart wallets, and false for EOAs that do not have smart wallets.
-     * @param addr Address to check
-     * @return hasCode True if the address is a contract or smart wallet, and false if it is not
-     */
-    function isContract(address addr) internal view returns (bool hasCode) {
-        uint32 size;
-        assembly {
-            size := extcodesize(addr)
-        }
-        return size > 0;
-    }
-
 }

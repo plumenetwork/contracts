@@ -7,7 +7,6 @@ import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { IAssetVault } from "../interfaces/IAssetVault.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
-import { console } from "forge-std/console.sol";
 
 /**
  * @title AssetVault
@@ -242,59 +241,37 @@ contract AssetVault is WalletUtils, IAssetVault {
         IAssetToken assetToken,
         IERC20 currencyToken,
         uint256 currencyTokenAmount
-    ) external onlyWallet {
-        console.log("Redistributing yield. Currency token amount:", currencyTokenAmount);
+    ) external onlyUserWallet {
         if (currencyTokenAmount == 0) {
-            console.log("Currency token amount is 0, exiting function");
             return;
         }
 
-        uint256 amountTotal = assetToken.balanceOf(address(this));
-        console.log("Total amount of AssetTokens in AssetVault:", amountTotal);
+        uint256 amountTotal = assetToken.balanceOf(wallet);
 
+        // Iterate through the list and transfer yield to the beneficiary for each yield distribution
         YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
-
-        if (distribution.beneficiary == address(0)) {
-            console.log("No yield distributions found");
-            return;
-        }
-
-        uint256 totalDistributed = 0;
-        while (true) {
-            console.log("Current distribution beneficiary:", distribution.beneficiary);
-            console.log("Current distribution amount:", distribution.yield.amount);
-            console.log("Current distribution expiration:", distribution.yield.expiration);
-            console.log("Current block timestamp:", block.timestamp);
-
+        uint256 amountLocked = distribution.yield.amount;
+        while (amountLocked > 0) {
             if (distribution.yield.expiration > block.timestamp) {
-                uint256 yieldShare = (currencyTokenAmount * distribution.yield.amount) / amountTotal;
-                console.log("Calculated yield share:", yieldShare);
-
-                if (yieldShare > 0) {
-                    console.log("Transferring yield to beneficiary:", distribution.beneficiary);
-                    console.log("Yield amount:", yieldShare);
-                    ISmartWallet(wallet).transferYield(assetToken, distribution.beneficiary, currencyToken, yieldShare);
-                    emit YieldRedistributed(assetToken, distribution.beneficiary, currencyToken, yieldShare);
-                    totalDistributed += yieldShare;
-
-                    // Check beneficiary balance after transfer
-                    uint256 beneficiaryBalance = currencyToken.balanceOf(distribution.beneficiary);
-                    console.log("Beneficiary balance after transfer:", beneficiaryBalance);
-                } else {
-                    console.log("Yield share is 0, skipping transfer");
+                uint256 yieldShare = (currencyTokenAmount * amountLocked) / amountTotal;
+                (bool success,) = wallet.call(
+                    abi.encodeWithSelector(
+                        ISmartWallet.transferYield.selector,
+                        assetToken,
+                        distribution.beneficiary,
+                        currencyToken,
+                        yieldShare
+                    )
+                );
+                if (!success) {
+                    revert SmartWalletCallFailed(wallet);
                 }
-            } else {
-                console.log("Distribution has expired");
+                emit YieldRedistributed(assetToken, distribution.beneficiary, currencyToken, yieldShare);
             }
 
-            if (distribution.next.length == 0) {
-                console.log("No more distributions, exiting loop");
-                break;
-            }
             distribution = distribution.next[0];
+            amountLocked = distribution.yield.amount;
         }
-
-        console.log("Total yield distributed:", totalDistributed);
     }
 
     // Permissionless Functions
@@ -348,79 +325,27 @@ contract AssetVault is WalletUtils, IAssetVault {
 
         allowance.amount -= amount;
 
-        YieldDistributionListItem storage distributionHead = $.yieldDistributions[assetToken];
-        YieldDistributionListItem storage currentDistribution = distributionHead;
-
-        // If the list is empty or the first item is expired, update the head
-        if (currentDistribution.beneficiary == address(0) || currentDistribution.yield.expiration <= block.timestamp) {
-            distributionHead.beneficiary = beneficiary;
-            distributionHead.yield.amount = amount;
-            distributionHead.yield.expiration = expiration;
-        } else {
-            // Find the correct position to insert or update
-            while (currentDistribution.next.length > 0) {
-                if (
-                    currentDistribution.beneficiary == beneficiary && currentDistribution.yield.expiration == expiration
-                ) {
-                    currentDistribution.yield.amount += amount;
-                    break;
-                }
-                currentDistribution = currentDistribution.next[0];
+        // Either update the existing distribution with the same expiration or append a new one
+        YieldDistributionListItem storage distribution = $.yieldDistributions[assetToken];
+        while (true) {
+            if (distribution.beneficiary == beneficiary && distribution.yield.expiration == expiration) {
+                distribution.yield.amount += amount;
+                emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
+                return;
             }
-
-            // If we didn't find an existing distribution, add a new one
-            if (currentDistribution.beneficiary != beneficiary || currentDistribution.yield.expiration != expiration) {
-                currentDistribution.next.push();
-                YieldDistributionListItem storage newDistribution = currentDistribution.next[0];
-                newDistribution.beneficiary = beneficiary;
-                newDistribution.yield.amount = amount;
-                newDistribution.yield.expiration = expiration;
+            if (distribution.next.length > 0) {
+                distribution = distribution.next[0];
+            } else {
+                distribution.next.push();
+                distribution = distribution.next[0];
+                break;
             }
         }
-
-        console.log("Accepted yield allowance for beneficiary:", beneficiary);
-        console.log("Amount:", amount);
-        console.log("Expiration:", expiration);
+        distribution.beneficiary = beneficiary;
+        distribution.yield.amount = amount;
+        distribution.yield.expiration = expiration;
 
         emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
-    }
-
-    function getYieldDistributions(IAssetToken assetToken)
-        external
-        view
-        returns (address[] memory beneficiaries, uint256[] memory amounts, uint256[] memory expirations)
-    {
-        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
-        uint256 count = 0;
-        YieldDistributionListItem storage current = distribution;
-        while (true) {
-            if (current.beneficiary != address(0)) {
-                count++;
-            }
-            if (current.next.length == 0) {
-                break;
-            }
-            current = current.next[0];
-        }
-
-        beneficiaries = new address[](count);
-        amounts = new uint256[](count);
-        expirations = new uint256[](count);
-
-        current = distribution;
-        uint256 index = 0;
-        while (true) {
-            if (current.beneficiary != address(0)) {
-                beneficiaries[index] = current.beneficiary;
-                amounts[index] = current.yield.amount;
-                expirations[index] = current.yield.expiration;
-                index++;
-            }
-            if (current.next.length == 0) {
-                break;
-            }
-            current = current.next[0];
-        }
     }
 
     /**
@@ -437,48 +362,28 @@ contract AssetVault is WalletUtils, IAssetVault {
         uint256 amount,
         uint256 expiration
     ) external returns (uint256 amountRenounced) {
-        console.log("renounceYieldDistribution1");
         YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
         address beneficiary = msg.sender;
         uint256 amountLeft = amount;
-        console.log("renounceYieldDistribution2");
+
         // Iterate through the list and subtract the amount from the beneficiary's yield distributions
         uint256 amountLocked = distribution.yield.amount;
         while (amountLocked > 0) {
-            console.log("renounceYieldDistribution3");
-
             if (distribution.beneficiary == beneficiary && distribution.yield.expiration == expiration) {
-                console.log("renounceYieldDistribution4");
-
                 // If the entire yield distribution is to be renounced, then set its timestamp
                 // to be in the past so it is cleared on the next run of `clearYieldDistributions`
                 if (amountLeft >= amountLocked) {
-                    console.log("renounceYieldDistribution4.1");
-
                     amountLeft -= amountLocked;
-                    console.log("renounceYieldDistribution4.2");
-                    console.log("distribution.yield.expiration", distribution.yield.expiration);
-                    console.log("block.timestamp", block.timestamp - 1 days);
-                    //console.log("1.days",1 days);
-
                     distribution.yield.expiration = block.timestamp - 1 days;
-                    console.log("renounceYieldDistribution4.2.2");
-
                     if (amountLeft == 0) {
-                        console.log("renounceYieldDistribution4.2.3");
-
                         break;
                     }
-                    console.log("renounceYieldDistribution4.3");
                 } else {
-                    console.log("renounceYieldDistribution4.4");
                     distribution.yield.amount -= amountLeft;
-                    console.log("renounceYieldDistribution4.5");
                     amountLeft = 0;
                     break;
                 }
             }
-            console.log("renounceYieldDistribution5");
 
             if (gasleft() < MAX_GAS_PER_ITERATION) {
                 emit YieldDistributionRenounced(assetToken, beneficiary, amount - amountLeft);
@@ -486,15 +391,11 @@ contract AssetVault is WalletUtils, IAssetVault {
             }
             distribution = distribution.next[0];
             amountLocked = distribution.yield.amount;
-            console.log("renounceYieldDistribution6");
         }
-        console.log("renounceYieldDistribution7");
 
         if (amountLeft > 0) {
             revert InsufficientYieldDistributions(assetToken, beneficiary, amount - amountLeft, amount);
         }
-        console.log("renounceYieldDistribution8");
-
         emit YieldDistributionRenounced(assetToken, beneficiary, amount);
         return amount;
     }
@@ -508,44 +409,25 @@ contract AssetVault is WalletUtils, IAssetVault {
      */
     function clearYieldDistributions(IAssetToken assetToken) external {
         uint256 amountCleared = 0;
-        AssetVaultStorage storage s = _getAssetVaultStorage();
-        YieldDistributionListItem storage head = s.yieldDistributions[assetToken];
 
-        // Check if the list is empty
-        if (head.beneficiary == address(0) && head.yield.amount == 0) {
-            emit YieldDistributionsCleared(assetToken, 0);
-            return;
-        }
-
-        while (head.yield.amount > 0) {
-            if (head.yield.expiration <= block.timestamp) {
-                amountCleared += head.yield.amount;
-                if (head.next.length > 0) {
-                    YieldDistributionListItem storage nextItem = head.next[0];
-                    head.beneficiary = nextItem.beneficiary;
-                    head.yield = nextItem.yield;
-                    head.next = nextItem.next;
-                } else {
-                    // If there's no next item, clear the current one and break
-                    head.beneficiary = address(0);
-                    head.yield.amount = 0;
-                    head.yield.expiration = 0;
-                    break;
-                }
+        // Iterate through the list and delete all expired yield distributions
+        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
+        while (distribution.yield.amount > 0) {
+            YieldDistributionListItem storage nextDistribution = distribution.next[0];
+            if (distribution.yield.expiration <= block.timestamp) {
+                amountCleared += distribution.yield.amount;
+                distribution.beneficiary = nextDistribution.beneficiary;
+                distribution.yield = nextDistribution.yield;
+                distribution.next[0] = nextDistribution.next[0];
             } else {
-                // If the current item is not expired, move to the next one
-                if (head.next.length > 0) {
-                    head = head.next[0];
-                } else {
-                    break;
-                }
+                distribution = nextDistribution;
             }
 
             if (gasleft() < MAX_GAS_PER_ITERATION) {
-                break;
+                emit YieldDistributionsCleared(assetToken, amountCleared);
+                return;
             }
         }
-
         emit YieldDistributionsCleared(assetToken, amountCleared);
     }
 
