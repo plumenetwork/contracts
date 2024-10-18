@@ -8,7 +8,6 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
-import { Deposit, UserState } from "./Types.sol";
 
 // Suggestions:
 // - move structs to Types.sol file
@@ -87,6 +86,12 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         uint256 lastSupplyTimestamp;
         /// @dev State for each user
         mapping(address user => UserState userState) userStates;
+        /// @dev Mapping to track registered DEX addresses
+        mapping(address => bool) isDEX;
+        /// @dev Mapping to associate DEX addresses with maker addresses
+        mapping(address => mapping(address => address)) dexToMakerAddress;
+        /// @dev Mapping to track tokens held on DEXs for each user
+        mapping(address => uint256) tokensHeldOnDEXs;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.YieldDistributionToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -109,12 +114,14 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
     // Events
 
+
     /**
      * @notice Emitted when yield is deposited into the YieldDistributionToken
      * @param user Address of the user who deposited the yield
+     * @param timestamp Timestamp of the deposit
      * @param currencyTokenAmount Amount of CurrencyToken deposited as yield
      */
-    event Deposited(address indexed user, uint256 currencyTokenAmount);
+    event Deposited(address indexed user, uint256 timestamp, uint256 currencyTokenAmount);
 
     /**
      * @notice Emitted when yield is claimed by a user
@@ -187,9 +194,10 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @param to Address to transfer tokens to
      * @param value Amount of tokens to transfer
      */
-    function _update(address from, address to, uint256 value) internal virtual override {
+       function _update(address from, address to, uint256 value) internal virtual override {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-        _updateGlobalAmountSeconds();
+        uint256 timestamp = block.timestamp;
+        super._update(from, to, value);
 
         _updateSupply();
 
@@ -200,94 +208,34 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             fromState.amount = balanceOf(from);
             fromState.lastBalanceTimestamp = timestamp;
             $.userStates[from] = fromState;
+
+            // Adjust balances if transferring to a DEX
+            if ($.isDEX[to]) {
+                $.dexToMakerAddress[to][address(this)] = from;
+                _adjustMakerBalance(from, value, true);
+            }
         }
 
         if (to != address(0)) {
-            // conditions checks that this is the first time a user receives tokens
-            // if so, the lastDepositIndex is set to index of the last deposit in deposits array
-            // to avoid needlessly accruing yield for previous deposits which the user has no claim to
-            if ($.userStates[to].lastDepositIndex == 0 && balanceOf(to) == 0) {
-                $.userStates[to].lastDepositIndex = $.deposits.length - 1;
-            }
-
             accrueYield(to);
             UserState memory toState = $.userStates[to];
             toState.amountSeconds += toState.amount * (timestamp - toState.lastBalanceTimestamp);
             toState.amount = balanceOf(to);
             toState.lastBalanceTimestamp = timestamp;
             $.userStates[to] = toState;
-        }
 
-        super._update(from, to, value);
+            // Adjust balances if transferring from a DEX
+            if ($.isDEX[from]) {
+                address maker = $.dexToMakerAddress[from][address(this)];
+                _adjustMakerBalance(maker, value, false);
+            }
+
+        }
     }
 
     // Internal Functions
 
-    /// @notice Update the totalAmountSeconds and lastSupplyUpdate when supply or time changes
-    function _updateGlobalAmountSeconds() internal {
-        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-        uint256 timestamp = block.timestamp;
-        if (timestamp > $.lastSupplyUpdate) {
-            $.totalAmountSeconds += totalSupply() * (timestamp - $.lastSupplyUpdate);
-            $.lastSupplyUpdate = timestamp;
-        }
-    }
-
-    /// @notice Update the amountSeconds for a user
-    /// @param account Address of the user to update the amountSeconds for
-    function _updateUserAmountSeconds(address account) internal {
-        UserState storage userState = _getYieldDistributionTokenStorage().userStates[account];
-        userState.amountSeconds += balanceOf(account) * (block.timestamp - userState.lastUpdate);
-        userState.lastUpdate = block.timestamp;
-    }
-
-    /**
-     * @notice Deposit yield into the YieldDistributionToken
-     * @dev The sender must have approved the CurrencyToken to spend the given amount
-     * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
-     */
-    function _depositYield(uint256 currencyTokenAmount) internal {
-        if (currencyTokenAmount == 0) {
-            return;
-        }
-
-        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-
-        uint256 previousDepositIndex = $.deposits.length - 1;
-        if (block.timestamp == $.deposits[previousDepositIndex].timestamp) {
-            revert DepositSameBlock();
-        }
-
-        _updateGlobalAmountSeconds();
-
-        $.deposits.push(
-            Deposit({
-                scaledCurrencyTokenPerAmountSecond: currencyTokenAmount.mulDiv(
-                    SCALE, ($.totalAmountSeconds - $.deposits[previousDepositIndex].totalAmountSeconds)
-                ),
-                totalAmountSeconds: $.totalAmountSeconds,
-                timestamp: block.timestamp
-            })
-        );
-
-        $.currencyToken.safeTransferFrom(_msgSender(), address(this), currencyTokenAmount);
-
-        emit Deposited(_msgSender(), currencyTokenAmount);
-    }
-
-    // Internal Functions
-
-    /// @notice Update the totalAmountSeconds and lastSupplyTimestamp when supply or time changes
-    function _updateSupply() internal {
-        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-        uint256 timestamp = block.timestamp;
-        if (timestamp > $.lastSupplyTimestamp) {
-            $.totalAmountSeconds += totalSupply() * (timestamp - $.lastSupplyTimestamp);
-            $.lastSupplyTimestamp = timestamp;
-        }
-    }
-
-    /**
+     /**
      * @notice Deposit yield into the YieldDistributionToken
      * @dev The sender must have approved the CurrencyToken to spend the given amount
      * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
@@ -318,6 +266,18 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             revert TransferFailed(msg.sender, currencyTokenAmount);
         }
         emit Deposited(msg.sender, timestamp, currencyTokenAmount);
+    }
+
+    // Internal Functions
+
+    /// @notice Update the totalAmountSeconds and lastSupplyTimestamp when supply or time changes
+    function _updateSupply() internal {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        uint256 timestamp = block.timestamp;
+        if (timestamp > $.lastSupplyTimestamp) {
+            $.totalAmountSeconds += totalSupply() * (timestamp - $.lastSupplyTimestamp);
+            $.lastSupplyTimestamp = timestamp;
+        }
     }
 
     // Admin Setter Functions
@@ -438,7 +398,93 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         userState.lastBalanceTimestamp = depositHistory.lastTimestamp;
         userState.yieldAccrued += yieldAccrued / _BASE;
         $.userStates[user] = userState;
-        emit YieldAccrued(user, yieldAccrued / _BASE);
+
+        if ($.isDEX[user]) {
+            // Redirect yield to the maker
+            address maker = $.dexToMakerAddress[user][address(this)];
+            $.userStates[maker].yieldAccrued += userState.yieldAccrued;
+            emit YieldAccrued(maker, yieldAccrued / _BASE);
+        } else {
+            // Regular yield accrual
+            emit YieldAccrued(user, yieldAccrued / _BASE);
+        }
+
+        //emit YieldAccrued(user, yieldAccrued / _BASE);
+    }
+
+    /**
+     * @notice Register a DEX address
+     * @dev Only the owner can call this function
+     * @param dexAddress Address of the DEX to register
+     */
+    function registerDEX(address dexAddress) external onlyOwner {
+        _getYieldDistributionTokenStorage().isDEX[dexAddress] = true;
+    }
+
+    /**
+     * @notice Unregister a DEX address
+     * @dev Only the owner can call this function
+     * @param dexAddress Address of the DEX to unregister
+     */
+    function unregisterDEX(address dexAddress) external onlyOwner {
+        _getYieldDistributionTokenStorage().isDEX[dexAddress] = false;
+    }
+
+    /**
+     * @notice Register a maker's pending order on a DEX
+     * @dev Only registered DEXs can call this function
+     * @param maker Address of the maker
+     * @param amount Amount of tokens in the order
+     */
+    function registerMakerOrder(address maker, uint256 amount) external {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        require($.isDEX[msg.sender], "Caller is not a registered DEX");
+        $.dexToMakerAddress[msg.sender][address(this)] = maker;
+        $.tokensHeldOnDEXs[maker] += amount;
+    }
+
+    /**
+     * @notice Unregister a maker's completed or cancelled order on a DEX
+     * @dev Only registered DEXs can call this function
+     * @param maker Address of the maker
+     * @param amount Amount of tokens to return (if any)
+     */
+    function unregisterMakerOrder(address maker, uint256 amount) external {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        require($.isDEX[msg.sender], "Caller is not a registered DEX");
+        require($.tokensHeldOnDEXs[maker] >= amount, "Insufficient tokens held on DEX");
+        $.tokensHeldOnDEXs[maker] -= amount;
+        if ($.tokensHeldOnDEXs[maker] == 0) {
+            $.dexToMakerAddress[msg.sender][address(this)] = address(0);
+        }
+    }
+
+    /**
+     * @notice Check if an address is a registered DEX
+     * @param addr Address to check
+     * @return bool True if the address is a registered DEX, false otherwise
+     */
+    function isDexAddressWhitelisted(address addr) public view returns (bool) {
+        return _getYieldDistributionTokenStorage().isDEX[addr];
+    }
+
+    /**
+     * @notice Get the amount of tokens held on DEXs for a user
+     * @param user Address of the user
+     * @return amount of tokens held on DEXs on behalf of the user
+     */
+    function tokensHeldOnDEXs(address user) public view returns (uint256) {
+        return _getYieldDistributionTokenStorage().tokensHeldOnDEXs[user];
+    }
+
+    function _adjustMakerBalance(address maker, uint256 amount, bool increase) internal {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+        if (increase) {
+            $.tokensHeldOnDEXs[maker] += amount;
+        } else {
+            require($.tokensHeldOnDEXs[maker] >= amount, "Insufficient tokens held on DEXs");
+            $.tokensHeldOnDEXs[maker] -= amount;
+        }
     }
 
 }
