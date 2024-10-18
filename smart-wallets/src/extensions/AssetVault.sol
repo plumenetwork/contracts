@@ -256,7 +256,7 @@ contract AssetVault is WalletUtils, IAssetVault {
                 uint256 yieldShare = (currencyTokenAmount * amountLocked) / amountTotal;
                 (bool success,) = wallet.call(
                     abi.encodeWithSelector(
-                        ISmartWallet(wallet).transferYield.selector,
+                        ISmartWallet.transferYield.selector,
                         assetToken,
                         distribution.beneficiary,
                         currencyToken,

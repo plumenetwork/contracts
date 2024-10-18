@@ -110,7 +110,7 @@ contract YieldToken is YieldDistributionToken, WalletUtils, IYieldToken {
         if (currencyToken != _getYieldDistributionTokenStorage().currencyToken) {
             revert InvalidCurrencyToken(currencyToken, _getYieldDistributionTokenStorage().currencyToken);
         }
-        _depositYield(block.timestamp, currencyTokenAmount);
+        _depositYield(currencyTokenAmount);
     }
 
     /**
