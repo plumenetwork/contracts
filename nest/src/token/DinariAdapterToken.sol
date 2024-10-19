@@ -13,19 +13,17 @@ import { IAggregateToken } from "../interfaces/IAggregateToken.sol";
 import { IOrderProcessor } from "./external/IOrderProcessor.sol";
 
 /**
- * @title DinariToken
+ * @title DinariAdapterToken
  * @author Jake Timothy, Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that interfaces with external assets.
  * @dev Assets is USDC
  */
-contract DinariToken is ComponentToken {
-
-    // TODO: name - NestDinariVault?
+contract DinariAdapterToken is ComponentToken {
 
     // Storage
 
-    /// @custom:storage-location erc7201:plume.storage.DinariToken
-    struct DinariTokenStorage {
+    /// @custom:storage-location erc7201:plume.storage.DinariAdapterToken
+    struct DinariAdapterTokenStorage {
         /// @dev dShare token underlying component token
         address dshareToken;
         /// @dev Wrapped dShare token underlying component token
@@ -36,17 +34,17 @@ contract DinariToken is ComponentToken {
         IOrderProcessor externalOrderContract;
         /// @dev Mapping from request IDs to external request IDs
         mapping(uint256 requestId => uint256 externalId) requestMap;
-        // TODO: rename
-        mapping(uint256 externalId => uint256 amountIn) orderInputAmounts;
+        //
+        mapping(uint256 externalId => uint256 amountIn) adjustedRequestAmounts;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("plume.storage.DinariToken")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant DINARI_TOKEN_STORAGE_LOCATION =
-        0x8a42d16a5f4a9dd4fa20afc7735f15e9454454557ef7cacfda35654781bd3100;
+    // keccak256(abi.encode(uint256(keccak256("plume.storage.DinariAdapterToken")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant DINARI_ADAPTER_TOKEN_STORAGE_LOCATION =
+        0x2a49a1f589de6263f42d4846b2f178279aaa9b9efbd070fd2367cbda9b826400;
 
-    function _getDinariTokenStorage() private pure returns (DinariTokenStorage storage $) {
+    function _getDinariAdapterTokenStorage() private pure returns (DinariAdapterTokenStorage storage $) {
         assembly {
-            $.slot := DINARI_TOKEN_STORAGE_LOCATION
+            $.slot := DINARI_ADAPTER_TOKEN_STORAGE_LOCATION
         }
     }
 
@@ -70,13 +68,13 @@ contract DinariToken is ComponentToken {
     }
 
     /**
-     * @notice Initialize the DinariToken
-     * @param owner Address of the owner of the DinariToken
-     * @param name Name of the DinariToken
-     * @param symbol Symbol of the DinariToken
-     * @param currencyToken CurrencyToken used to mint and burn the DinariToken
+     * @notice Initialize the DinariAdapterToken
+     * @param owner Address of the owner of the DinariAdapterToken
+     * @param name Name of the DinariAdapterToken
+     * @param symbol Symbol of the DinariAdapterToken
+     * @param currencyToken CurrencyToken used to mint and burn the DinariAdapterToken
      * @param dshareToken dShare token underlying component token
-     * @param decimals_ Number of decimals of the DinariToken
+     * @param decimals_ Number of decimals of the DinariAdapterToken
      * @param nestStakingContract Address of the Nest Staking contract
      * @param externalOrderContract Address of the dShares order contract
      */
@@ -92,7 +90,7 @@ contract DinariToken is ComponentToken {
         address externalOrderContract
     ) public initializer {
         super.initialize(owner, name, symbol, IERC20(currencyToken), decimals_);
-        DinariTokenStorage storage $ = _getDinariTokenStorage();
+        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
         $.dshareToken = dshareToken;
         $.wrappedDshareToken = wrappedDshareToken;
         $.nestStakingContract = nestStakingContract;
@@ -104,19 +102,28 @@ contract DinariToken is ComponentToken {
     /// @inheritdoc IERC4626
     function convertToShares(uint256 assets) public view override(ComponentToken) returns (uint256 shares) {
         // Apply dshare price and wrapped conversion rate
-        DinariTokenStorage storage $ = _getDinariTokenStorage();
+        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
         IOrderProcessor orderContract = $.externalOrderContract;
-        IOrderProcessor.PricePoint memory price = orderContract.latestFillPrice($.dshareToken, $.currencyToken);
-        return IERC4626($.wrappedDshareToken).convertToShares((assets * price.price) / 1 ether);
+        address paymentToken = _getComponentTokenStorage().currencyToken;
+        uint256 fees = orderContract.totalStandardFee(false, paymentToken, assets);
+        IOrderProcessor.PricePoint memory price = orderContract.latestFillPrice($.dshareToken, paymentToken);
+        return IERC4626($.wrappedDshareToken).convertToShares(((assets - fees) * price.price) / 1 ether);
     }
 
     /// @inheritdoc IERC4626
     function convertToAssets(uint256 shares) public view override(ComponentToken) returns (uint256 assets) {
-        // Apply wrapped conversion rate and dshare price
-        DinariTokenStorage storage $ = _getDinariTokenStorage();
+        // Apply wrapped conversion rate and dshare price, subtract fees
+        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
         IOrderProcessor orderContract = $.externalOrderContract;
-        IOrderProcessor.PricePoint memory price = orderContract.latestFillPrice($.dshareToken, $.currencyToken);
-        return (IERC4626($.wrappedDshareToken).convertToAssets(shares) * 1 ether) / price.price;
+        address paymentToken = _getComponentTokenStorage().currencyToken;
+        address dshareToken = $.dshareToken;
+        IOrderProcessor.PricePoint memory price = orderContract.latestFillPrice(dshareToken, paymentToken);
+        uint256 dshares = IERC4626($.wrappedDshareToken).convertToAssets(shares);
+        // Round down to nearest supported decimal
+        uint256 precisionReductionFactor = 10 ** orderContract.orderDecimalReduction(dshareToken);
+        uint256 proceeds = ((dshares / precisionReductionFactor) * precisionReductionFactor * 1 ether) / price.price;
+        uint256 fees = orderContract.totalStandardFee(true, paymentToken, proceeds);
+        return proceeds - fees;
     }
 
     /// @inheritdoc IComponentToken
@@ -125,7 +132,7 @@ contract DinariToken is ComponentToken {
         address controller,
         address owner
     ) public override(ComponentToken) returns (uint256 requestId) {
-        DinariTokenStorage storage $ = _getDinariTokenStorage();
+        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
         address nestStakingContract = $.nestStakingContract;
         if (msg.sender != nestStakingContract) {
             revert Unauthorized(msg.sender, nestStakingContract);
@@ -135,10 +142,8 @@ contract DinariToken is ComponentToken {
         IOrderProcessor orderContract = $.externalOrderContract;
         address paymentToken = _getComponentTokenStorage().currencyToken;
         uint256 addedFees = orderContract.totalStandardFee(false, paymentToken, assets);
-        // Does not spend all assets, collect unspent in executeBuy if needed
-        // FIXME: make more precise? This does not spend all money and does not correspond to convertToShares
+        // TODO: make more precise? This does not spend all money, same logic used in convertToShares
         uint256 paymentTokenQuantity = assets - addedFees;
-        // TODO: round down to nearest supported decimal
 
         IOrderProcessor.Order memory order = IOrderProcessor.Order({
             requestTimestamp: block.timestamp,
@@ -154,12 +159,12 @@ contract DinariToken is ComponentToken {
         });
         uint256 orderId = $.externalOrderContract.createOrderStandardFees(order);
         $.requestMap[requestId] = orderId;
-        $.orderInputAmounts[orderId] = paymentTokenQuantity;
+        $.adjustedRequestAmounts[orderId] = paymentTokenQuantity;
     }
 
     function notifyBuy(uint256 externalId) public {
         // Restrict caller?
-        DinariTokenStorage storage $ = _getDinariTokenStorage();
+        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
 
         IOrderProcessor orderContract = $.externalOrderContract;
         if (orderContract.getOrderStatus(externalId) != IOrderProcessor.OrderStatus.FULFILLED) {
@@ -168,8 +173,8 @@ contract DinariToken is ComponentToken {
 
         uint256 proceeds = orderContract.getReceivedAmount(externalId);
         address nestStakingContract = $.nestStakingContract;
-        // TODO: handle partial refunds, verify assets amount
-        uint256 totalSpent = $.orderInputAmounts[externalId] + orderContract.getFeesTaken(externalId);
+        // TODO: handle partial fee refunds, verify assets amount
+        uint256 totalSpent = $.adjustedRequestAmounts[externalId] + orderContract.getFeesTaken(externalId);
         super.notifyDeposit(totalSpent, proceeds, nestStakingContract);
     }
 
@@ -195,39 +200,50 @@ contract DinariToken is ComponentToken {
         address controller,
         address owner
     ) public override(ComponentToken) returns (uint256 requestId) {
-        DinariTokenStorage storage $ = _getDinariTokenStorage();
+        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
         address nestStakingContract = $.nestStakingContract;
         if (msg.sender != nestStakingContract) {
             revert Unauthorized(msg.sender, nestStakingContract);
         }
+        // TODO: should this be called with orderAmount instead?
         requestId = super.requestSell(shares);
 
         // Unwrap dshares
-        uint256 dshareAmount = IERC4626($.wrappedDshareToken).redeem(shares);
+        address wrappedDshareToken = $.wrappedDshareToken;
+        uint256 dshares = IERC4626(wrappedDshareToken).redeem(shares);
+        // Round down to nearest supported decimal
+        address dshareToken = $.dshareToken;
+        uint256 precisionReductionFactor = 10 ** orderContract.orderDecimalReduction(dshareToken);
+        uint256 orderAmount = (dshares / precisionReductionFactor) * precisionReductionFactor;
+        // Rewrap dust
+        uint256 dshareDust = dshares - orderAmount;
+        if (dshareDust > 0) {
+            IERC4626(wrappedDshareToken).deposit(dshareDust, address(this));
+        }
         // Approve dshares
         IOrderProcessor orderContract = $.externalOrderContract;
-        IERC20($.dshareToken).approve(address(orderContract), dshareAmount);
+        IERC20(dshareToken).approve(address(orderContract), orderAmount);
         // Sell
         IOrderProcessor.Order memory order = IOrderProcessor.Order({
             requestTimestamp: block.timestamp,
             recipient: address(this),
-            assetToken: $.dshareToken,
+            assetToken: dshareToken,
             paymentToken: _getComponentTokenStorage().currencyToken,
             sell: true,
             orderType: IOrderProcessor.OrderType.MARKET,
-            assetTokenQuantity: dshareAmount,
+            assetTokenQuantity: orderAmount,
             paymentTokenQuantity: 0,
             price: 0,
             tif: IOrderProcessor.TIF.DAY
         });
         uint256 orderId = orderContract.createOrderStandardFees(order);
         $.requestMap[requestId] = orderId;
-        $.orderInputAmounts[orderId] = shares;
+        $.adjustedRequestAmounts[orderId] = shares;
     }
 
     function notifySell(uint256 externalId) public {
         // Restrict caller?
-        DinariTokenStorage storage $ = _getDinariTokenStorage();
+        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
 
         IOrderProcessor orderContract = $.externalOrderContract;
         uint256 externalId = $.requestMap[requestId];
@@ -237,7 +253,23 @@ contract DinariToken is ComponentToken {
 
         uint256 proceeds = orderContract.getReceivedAmount(externalId);
         address nestStakingContract = $.nestStakingContract;
-        super.notifyRedeem(proceeds, $.orderInputAmounts[externalId], nestStakingContract);
+        super.notifyRedeem(proceeds, $.adjustedRequestAmounts[externalId], nestStakingContract);
+    }
+
+    /// @inheritdoc IComponentToken
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public override(ComponentToken) returns (uint256 assets) {
+        AdapterTokenStorage storage $ = _getAdapterTokenStorage();
+        if (msg.sender != address($.externalContract)) {
+            revert Unauthorized(msg.sender, address($.externalContract));
+        }
+        if (receiver != address($.nestStakingContract)) {
+            revert Unauthorized(receiver, address($.nestStakingContract));
+        }
+        return super.redeem(shares, receiver, controller);
     }
 
 }
