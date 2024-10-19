@@ -6,9 +6,13 @@ import { WalletUtils } from "../src/WalletUtils.sol";
 import { AssetVault } from "../src/extensions/AssetVault.sol";
 import { IAssetToken } from "../src/interfaces/IAssetToken.sol";
 import { IAssetVault } from "../src/interfaces/IAssetVault.sol";
+
+import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { Test } from "forge-std/Test.sol";
 
+/*
 // Mock contracts for testing
 contract MockAssetToken is IAssetToken {
 
@@ -80,7 +84,7 @@ contract MockAssetToken is IAssetToken {
     }
 
 }
-
+*/
 contract MockYieldReceiver {
 
     function receiveYield(IAssetToken, IERC20, uint256) external pure { }
@@ -101,6 +105,9 @@ contract SmartWalletTest is Test {
     MockAssetToken mockAssetToken;
     MockYieldReceiver mockYieldReceiver;
     MockUserWallet mockUserWallet;
+
+    // small hack to be excluded from coverage report
+    function test() public { }
 
     function setUp() public {
         smartWallet = new SmartWallet();

@@ -12,6 +12,9 @@ contract WalletUtilsTest is Test {
 
     address private constant OWNER = address(0x1234);
 
+    // small hack to be excluded from coverage report
+    function test() public { }
+
     function setUp() public {
         walletUtils = new WalletUtilsHarness();
     }

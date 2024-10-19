@@ -27,6 +27,9 @@ contract TestWalletImplementationTest is Test {
     */
     TestWalletImplementation testWalletImplementation;
 
+    // small hack to be excluded from coverage report
+    function test() public { }
+
     function setUp() public {
         testWalletImplementation = new TestWalletImplementation();
     }

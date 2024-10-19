@@ -24,6 +24,9 @@ contract AssetTokenTest is Test {
     address public user1;
     address public user2;
 
+    // small hack to be excluded from coverage report
+    function test() public { }
+
     function setUp() public {
         owner = address(0xdead);
         user1 = address(0x1);

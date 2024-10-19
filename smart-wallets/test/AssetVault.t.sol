@@ -33,6 +33,9 @@ contract AssetVaultTest is Test {
     address USER2;
     address constant USER3 = address(0xDEAD);
 
+    // small hack to be excluded from coverage report
+    function test() public { }
+
     function setUp() public {
         OWNER = address(new SmartWallet());
         USER1 = address(new SmartWallet());
