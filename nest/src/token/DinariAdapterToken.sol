@@ -32,10 +32,9 @@ contract DinariAdapterToken is ComponentToken {
         address nestStakingContract;
         /// @dev Address of the dShares order contract
         IOrderProcessor externalOrderContract;
-        /// @dev Mapping from request IDs to external request IDs
-        mapping(uint256 requestId => uint256 externalId) requestMap;
         //
-        mapping(uint256 externalId => uint256 amountIn) adjustedRequestAmounts;
+        mapping(uint256 externalId => uint256 amountIn) adjustedTotalInput;
+        mapping(uint256 externalId => uint256) orderAmount;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.DinariAdapterToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -101,13 +100,26 @@ contract DinariAdapterToken is ComponentToken {
 
     /// @inheritdoc IERC4626
     function convertToShares(uint256 assets) public view override(ComponentToken) returns (uint256 shares) {
-        // Apply dshare price and wrapped conversion rate
+        // Apply dshare price and wrapped conversion rate, fees
         DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
         IOrderProcessor orderContract = $.externalOrderContract;
         address paymentToken = _getComponentTokenStorage().currencyToken;
-        uint256 fees = orderContract.totalStandardFee(false, paymentToken, assets);
+        (uint256 orderAmount, uint256 fees) = _getOrderFromTotalBuy(orderContract, paymentToken, assets);
         IOrderProcessor.PricePoint memory price = orderContract.latestFillPrice($.dshareToken, paymentToken);
-        return IERC4626($.wrappedDshareToken).convertToShares(((assets - fees) * price.price) / 1 ether);
+        return IERC4626($.wrappedDshareToken).convertToShares(((orderAmount + fees) * price.price) / 1 ether);
+    }
+
+    function _getOrderFromTotalBuy(
+        IOrderProcessor orderContract,
+        address paymentToken,
+        uint256 totalBuy
+    ) private view returns (uint256 orderAmount, uint256 fees) {
+        // order * (1 + vfee) + flat = total
+        // order = (total - flat) / (1 + vfee)
+        (uint256 flatFee, uint24 percentageFeeRate) = orderContract.getStandardFees(false, paymentToken);
+        orderAmount = (totalBuy - flatFee) * 1_000_000 / (1_000_000 + percentageFeeRate);
+
+        fees = orderContract.totalStandardFee(false, paymentToken, orderAmount);
     }
 
     /// @inheritdoc IERC4626
@@ -137,14 +149,18 @@ contract DinariAdapterToken is ComponentToken {
         if (msg.sender != nestStakingContract) {
             revert Unauthorized(msg.sender, nestStakingContract);
         }
-        requestId = super.requestBuy(assets);
 
         IOrderProcessor orderContract = $.externalOrderContract;
         address paymentToken = _getComponentTokenStorage().currencyToken;
-        uint256 addedFees = orderContract.totalStandardFee(false, paymentToken, assets);
-        // TODO: make more precise? This does not spend all money, same logic used in convertToShares
-        uint256 paymentTokenQuantity = assets - addedFees;
+        (uint256 orderAmount, uint256 fees) = _getOrderFromTotalBuy(orderContract, paymentToken, assets);
+        uint256 totalInput = orderAmount + fees;
 
+        // Subcall with calculated input amount to be safe
+        requestId = super.requestDeposit(totalInput, controller, owner);
+
+        // Approve dshares
+        IERC20(paymentToken).approve(address(orderContract), totalInput);
+        // Buy
         IOrderProcessor.Order memory order = IOrderProcessor.Order({
             requestTimestamp: block.timestamp,
             recipient: address(this),
@@ -153,13 +169,13 @@ contract DinariAdapterToken is ComponentToken {
             sell: false,
             orderType: IOrderProcessor.OrderType.MARKET,
             assetTokenQuantity: 0,
-            paymentTokenQuantity: paymentTokenQuantity,
+            paymentTokenQuantity: orderAmount,
             price: 0,
             tif: IOrderProcessor.TIF.DAY
         });
-        uint256 orderId = $.externalOrderContract.createOrderStandardFees(order);
-        $.requestMap[requestId] = orderId;
-        $.adjustedRequestAmounts[orderId] = paymentTokenQuantity;
+        uint256 orderId = orderContract.createOrderStandardFees(order);
+        $.adjustedTotalInput[orderId] = totalInput;
+        $.orderAmount[orderId] = orderAmount;
     }
 
     function notifyBuy(uint256 externalId) public {
@@ -173,9 +189,16 @@ contract DinariAdapterToken is ComponentToken {
 
         uint256 proceeds = orderContract.getReceivedAmount(externalId);
         address nestStakingContract = $.nestStakingContract;
-        // TODO: handle partial fee refunds, verify assets amount
-        uint256 totalSpent = $.adjustedRequestAmounts[externalId] + orderContract.getFeesTaken(externalId);
-        super.notifyDeposit(totalSpent, proceeds, nestStakingContract);
+        uint256 totalInput = $.adjustedTotalInput[externalId];
+
+        super.notifyDeposit(totalInput, proceeds, nestStakingContract);
+
+        // Send fee refund to controller
+        uint256 totalSpent = $.orderAmount[externalId] + orderContract.getFeesTaken(externalId);
+        uint256 refund = totalInput - totalSpent;
+        if (refund > 0) {
+            IERC20(_getComponentTokenStorage().currencyToken).transfer(nestStakingContract, refund);
+        }
     }
 
     /// @inheritdoc IComponentToken
@@ -205,8 +228,6 @@ contract DinariAdapterToken is ComponentToken {
         if (msg.sender != nestStakingContract) {
             revert Unauthorized(msg.sender, nestStakingContract);
         }
-        // TODO: should this be called with orderAmount instead?
-        requestId = super.requestSell(shares);
 
         // Unwrap dshares
         address wrappedDshareToken = $.wrappedDshareToken;
@@ -215,6 +236,10 @@ contract DinariAdapterToken is ComponentToken {
         address dshareToken = $.dshareToken;
         uint256 precisionReductionFactor = 10 ** orderContract.orderDecimalReduction(dshareToken);
         uint256 orderAmount = (dshares / precisionReductionFactor) * precisionReductionFactor;
+
+        // Subcall with dust removed
+        requestId = super.requestRedeem(orderAmount, controller, owner);
+
         // Rewrap dust
         uint256 dshareDust = dshares - orderAmount;
         if (dshareDust > 0) {
@@ -237,8 +262,7 @@ contract DinariAdapterToken is ComponentToken {
             tif: IOrderProcessor.TIF.DAY
         });
         uint256 orderId = orderContract.createOrderStandardFees(order);
-        $.requestMap[requestId] = orderId;
-        $.adjustedRequestAmounts[orderId] = shares;
+        $.adjustedTotalInput[orderId] = orderAmount;
     }
 
     function notifySell(uint256 externalId) public {
@@ -246,14 +270,13 @@ contract DinariAdapterToken is ComponentToken {
         DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
 
         IOrderProcessor orderContract = $.externalOrderContract;
-        uint256 externalId = $.requestMap[requestId];
         if (orderContract.getOrderStatus(externalId) != IOrderProcessor.OrderStatus.FULFILLED) {
             revert OrderNotFilled();
         }
 
         uint256 proceeds = orderContract.getReceivedAmount(externalId);
         address nestStakingContract = $.nestStakingContract;
-        super.notifyRedeem(proceeds, $.adjustedRequestAmounts[externalId], nestStakingContract);
+        super.notifyRedeem(proceeds, $.adjustedTotalInput[externalId], nestStakingContract);
     }
 
     /// @inheritdoc IComponentToken
