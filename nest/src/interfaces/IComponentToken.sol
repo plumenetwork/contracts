@@ -98,14 +98,18 @@ interface IComponentToken {
      * @param assets Amount of `asset` to convert
      * @return shares Amount of shares that would be received in exchange
      */
-    function convertToShares(uint256 assets) external view returns (uint256 shares);
+    function convertToShares(
+        uint256 assets
+    ) external view returns (uint256 shares);
 
     /**
      * @notice Equivalent amount of assets for the given amount of shares
      * @param shares Amount of shares to convert
      * @return assets Amount of `asset` that would be received in exchange
      */
-    function convertToAssets(uint256 shares) external view returns (uint256 assets);
+    function convertToAssets(
+        uint256 shares
+    ) external view returns (uint256 assets);
 
     /**
      * @notice Total amount of assets sent to the vault as part of pending deposit requests

@@ -26,12 +26,16 @@ contract YieldDistributionTokenHarness is YieldDistributionToken {
         _burn(from, amount);
     }
 
-    function exposed_depositYield(uint256 currencyTokenAmount) external {
+    function exposed_depositYield(
+        uint256 currencyTokenAmount
+    ) external {
         _depositYield(currencyTokenAmount);
     }
 
     // silence warnings
-    function requestYield(address) external override {
+    function requestYield(
+        address
+    ) external override {
         ++requestCounter;
     }
 

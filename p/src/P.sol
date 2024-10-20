@@ -53,7 +53,9 @@ contract P is
      * @dev Give all roles to the admin address passed into the constructor
      * @param owner Address of the owner of P
      */
-    function initialize(address owner) public initializer {
+    function initialize(
+        address owner
+    ) public initializer {
         __ERC20_init("Plume", "P");
         __ERC20Burnable_init();
         __ERC20Pausable_init();
@@ -74,7 +76,9 @@ contract P is
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(UPGRADER_ROLE) { }
 
     /**
      * @notice Update the balance of `from` and `to` after token transfer

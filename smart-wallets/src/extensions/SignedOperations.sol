@@ -121,7 +121,9 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
      * @param nonce Nonce to check
      * @return used True if the nonce has been used before, false otherwise
      */
-    function isNonceUsed(bytes32 nonce) public view returns (bool used) {
+    function isNonceUsed(
+        bytes32 nonce
+    ) public view returns (bool used) {
         return _getSignedOperationsStorage().nonces[nonce] != 0;
     }
 
@@ -131,7 +133,9 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
      *   After this, the affected SignedOperations will revert when trying to be executed.
      * @param nonce Nonce of the SignedOperations to cancel
      */
-    function cancelSignedOperations(bytes32 nonce) public onlyWallet {
+    function cancelSignedOperations(
+        bytes32 nonce
+    ) public onlyWallet {
         SignedOperationsStorage storage $ = _getSignedOperationsStorage();
         if ($.nonces[nonce] != 0) {
             revert InvalidNonce(nonce);

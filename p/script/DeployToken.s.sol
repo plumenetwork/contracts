@@ -17,7 +17,9 @@ contract DeployToken is Script {
     bytes32 private constant DEPLOY_SALT = keccak256("P");
     address private constant DEPLOYER_ADDRESS = 0x6513Aedb4D1593BA12e50644401D976aebDc90d8;
 
-    function run(address admin) external {
+    function run(
+        address admin
+    ) external {
         vm.startBroadcast();
 
         P pImpl = new P();

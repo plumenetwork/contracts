@@ -178,7 +178,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyOwner { }
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override(UUPSUpgradeable) onlyOwner { }
 
     // User Functions
 
@@ -255,7 +257,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @dev Only the owner can call this function
      * @param newOwner New owner of the faucet
      */
-    function setOwner(address newOwner) external onlyOwner {
+    function setOwner(
+        address newOwner
+    ) external onlyOwner {
         FaucetStorage storage $ = _getFaucetStorage();
         if (newOwner == address(0)) {
             revert InvalidAddress();
@@ -301,7 +305,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param token Name of the token to get the amount for
      * @return dripAmount Amount of tokens to mint per faucet call
      */
-    function getDripAmount(string calldata token) public view returns (uint256 dripAmount) {
+    function getDripAmount(
+        string calldata token
+    ) public view returns (uint256 dripAmount) {
         FaucetStorage storage $ = _getFaucetStorage();
         return $.dripAmounts[$.tokens[token]];
     }
@@ -311,7 +317,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param token Name of the token to get the address for
      * @return tokenAddress Address of the token
      */
-    function getTokenAddress(string calldata token) public view returns (address tokenAddress) {
+    function getTokenAddress(
+        string calldata token
+    ) public view returns (address tokenAddress) {
         return _getFaucetStorage().tokens[token];
     }
 
@@ -320,7 +328,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param nonce Nonce to check
      * @return used True if the nonce has been used; false otherwise
      */
-    function isNonceUsed(bytes32 nonce) public view returns (bool used) {
+    function isNonceUsed(
+        bytes32 nonce
+    ) public view returns (bool used) {
         return _getFaucetStorage().usedNonces[nonce];
     }
 
