@@ -37,18 +37,14 @@ interface IERC7540 is IERC165, IERC4626, IERC7575, IComponentToken {
     function totalAssets() external view override(IComponentToken, IERC4626) returns (uint256 totalManagedAssets);
 
     /// @inheritdoc IComponentToken
-    function convertToShares(uint256 assets)
-        external
-        view
-        override(IComponentToken, IERC4626)
-        returns (uint256 shares);
+    function convertToShares(
+        uint256 assets
+    ) external view override(IComponentToken, IERC4626) returns (uint256 shares);
 
     /// @inheritdoc IComponentToken
-    function convertToAssets(uint256 shares)
-        external
-        view
-        override(IComponentToken, IERC4626)
-        returns (uint256 assets);
+    function convertToAssets(
+        uint256 shares
+    ) external view override(IComponentToken, IERC4626) returns (uint256 assets);
 
     /**
      * @notice Check if an operator has permissions to manage requests for a controller

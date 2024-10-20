@@ -14,7 +14,9 @@ contract MockInvalidAssetToken is IAssetToken {
         return IERC20(address(0));
     }
 
-    function accrueYield(address) external pure override { }
+    function accrueYield(
+        address
+    ) external pure override { }
 
     function allowance(address, address) external pure override returns (uint256) {
         return 0;
@@ -24,21 +26,31 @@ contract MockInvalidAssetToken is IAssetToken {
         return false;
     }
 
-    function balanceOf(address) external pure override returns (uint256) {
+    function balanceOf(
+        address
+    ) external pure override returns (uint256) {
         return 0;
     }
 
-    function claimYield(address) external pure override returns (IERC20, uint256) {
+    function claimYield(
+        address
+    ) external pure override returns (IERC20, uint256) {
         return (IERC20(address(0)), 0);
     }
 
-    function depositYield(uint256) external pure override { }
+    function depositYield(
+        uint256
+    ) external pure override { }
 
-    function getBalanceAvailable(address) external pure override returns (uint256) {
+    function getBalanceAvailable(
+        address
+    ) external pure override returns (uint256) {
         return 0;
     }
 
-    function requestYield(address) external pure override { }
+    function requestYield(
+        address
+    ) external pure override { }
 
     function totalSupply() external pure override returns (uint256) {
         return 0;

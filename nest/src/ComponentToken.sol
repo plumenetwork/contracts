@@ -171,16 +171,14 @@ abstract contract ComponentToken is
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override(AccessControlUpgradeable, ERC165, IERC165)
-        returns (bool supported)
-    {
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view virtual override(AccessControlUpgradeable, ERC165, IERC165) returns (bool supported) {
         if (
             super.supportsInterface(interfaceId) || interfaceId == type(IERC7575).interfaceId
                 || interfaceId == 0xe3bc4e65
@@ -208,24 +206,16 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IERC4626
-    function convertToShares(uint256 assets)
-        public
-        view
-        virtual
-        override(ERC4626Upgradeable, IERC7540)
-        returns (uint256 shares)
-    {
+    function convertToShares(
+        uint256 assets
+    ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
         return super.convertToShares(assets);
     }
 
     /// @inheritdoc IERC4626
-    function convertToAssets(uint256 shares)
-        public
-        view
-        virtual
-        override(ERC4626Upgradeable, IERC7540)
-        returns (uint256 assets)
-    {
+    function convertToAssets(
+        uint256 shares
+    ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
         return super.convertToAssets(shares);
     }
 
@@ -495,13 +485,9 @@ abstract contract ComponentToken is
      * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous deposit vaults
      */
-    function previewDeposit(uint256 assets)
-        public
-        view
-        virtual
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 shares)
-    {
+    function previewDeposit(
+        uint256 assets
+    ) public view virtual override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
         if (_getComponentTokenStorage().asyncDeposit) {
             revert Unimplemented();
         }
@@ -512,13 +498,9 @@ abstract contract ComponentToken is
      * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous deposit vaults
      */
-    function previewMint(uint256 shares)
-        public
-        view
-        virtual
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 assets)
-    {
+    function previewMint(
+        uint256 shares
+    ) public view virtual override(ERC4626Upgradeable, IERC4626) returns (uint256 assets) {
         if (_getComponentTokenStorage().asyncDeposit) {
             revert Unimplemented();
         }
@@ -529,13 +511,9 @@ abstract contract ComponentToken is
      * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous redeem vaults
      */
-    function previewRedeem(uint256 shares)
-        public
-        view
-        virtual
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 assets)
-    {
+    function previewRedeem(
+        uint256 shares
+    ) public view virtual override(ERC4626Upgradeable, IERC4626) returns (uint256 assets) {
         if (_getComponentTokenStorage().asyncRedeem) {
             revert Unimplemented();
         }
@@ -546,13 +524,9 @@ abstract contract ComponentToken is
      * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous redeem vaults
      */
-    function previewWithdraw(uint256 assets)
-        public
-        view
-        virtual
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 shares)
-    {
+    function previewWithdraw(
+        uint256 assets
+    ) public view virtual override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
         if (_getComponentTokenStorage().asyncRedeem) {
             revert Unimplemented();
         }

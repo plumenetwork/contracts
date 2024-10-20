@@ -119,7 +119,9 @@ contract YieldToken is YieldDistributionToken, WalletUtils, IYieldToken {
      *   and otherwise reverts for high-level calls, so we have to use a low-level call here
      * @param from Address of the SmartWallet to request the yield from
      */
-    function requestYield(address from) external override(YieldDistributionToken, IYieldDistributionToken) {
+    function requestYield(
+        address from
+    ) external override(YieldDistributionToken, IYieldDistributionToken) {
         // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
         (bool success,) = from.call(
             abi.encodeWithSelector(ISmartWallet.claimAndRedistributeYield.selector, _getYieldTokenStorage().assetToken)

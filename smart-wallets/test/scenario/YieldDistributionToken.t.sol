@@ -241,7 +241,9 @@ contract YieldDistributionTokenScenarioTest is Test {
         vm.warp(block.timestamp + skipDuration);
     }
 
-    function _depositYield(uint256 amount) internal {
+    function _depositYield(
+        uint256 amount
+    ) internal {
         vm.startPrank(OWNER);
         currencyTokenMock.approve(address(token), amount);
         token.exposed_depositYield(amount);

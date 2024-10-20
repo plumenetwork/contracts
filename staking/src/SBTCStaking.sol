@@ -117,7 +117,9 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(UPGRADER_ROLE) { }
 
     // Admin Functions
 
@@ -144,7 +146,9 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Stake SBTC into the SBTCStaking contract
      * @param amount Amount of SBTC to stake
      */
-    function stake(uint256 amount) external {
+    function stake(
+        uint256 amount
+    ) external {
         SBTCStakingStorage storage $ = _getSBTCStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -183,7 +187,9 @@ contract SBTCStaking is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice State of a user who has staked into the SBTCStaking contract
-    function getUserState(address user) external view returns (uint256, uint256, uint256) {
+    function getUserState(
+        address user
+    ) external view returns (uint256, uint256, uint256) {
         SBTCStakingStorage storage $ = _getSBTCStakingStorage();
         UserState memory userState = $.userStates[user];
         return (

@@ -139,7 +139,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Virtual Functions
 
     /// @notice Request to receive yield from the given SmartWallet
-    function requestYield(address from) external virtual override(IYieldDistributionToken);
+    function requestYield(
+        address from
+    ) external virtual override(IYieldDistributionToken);
 
     // Override Functions
 
@@ -191,7 +193,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
     /// @notice Update the amountSeconds for a user
     /// @param account Address of the user to update the amountSeconds for
-    function _updateUserAmountSeconds(address account) internal {
+    function _updateUserAmountSeconds(
+        address account
+    ) internal {
         UserState storage userState = _getYieldDistributionTokenStorage().userStates[account];
         userState.amountSeconds += balanceOf(account) * (block.timestamp - userState.lastUpdate);
         userState.lastUpdate = block.timestamp;
@@ -202,7 +206,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @dev The sender must have approved the CurrencyToken to spend the given amount
      * @param currencyTokenAmount Amount of CurrencyToken to deposit as yield
      */
-    function _depositYield(uint256 currencyTokenAmount) internal {
+    function _depositYield(
+        uint256 currencyTokenAmount
+    ) internal {
         if (currencyTokenAmount == 0) {
             return;
         }
@@ -238,7 +244,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @dev Only the owner can call this setter
      * @param tokenURI New token URI
      */
-    function setTokenURI(string memory tokenURI) external onlyOwner {
+    function setTokenURI(
+        string memory tokenURI
+    ) external onlyOwner {
         _getYieldDistributionTokenStorage().tokenURI = tokenURI;
     }
 
@@ -255,12 +263,16 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     }
 
     /// @notice State of a holder of the YieldDistributionToken
-    function getUserState(address account) external view returns (UserState memory) {
+    function getUserState(
+        address account
+    ) external view returns (UserState memory) {
         return _getYieldDistributionTokenStorage().userStates[account];
     }
 
     /// @notice Deposit at a given index
-    function getDeposit(uint256 index) external view returns (Deposit memory) {
+    function getDeposit(
+        uint256 index
+    ) external view returns (Deposit memory) {
         return _getYieldDistributionTokenStorage().deposits[index];
     }
 
@@ -279,7 +291,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @return currencyToken CurrencyToken in which the yield is deposited and denominated
      * @return currencyTokenAmount Amount of CurrencyToken claimed as yield
      */
-    function claimYield(address user) public returns (IERC20 currencyToken, uint256 currencyTokenAmount) {
+    function claimYield(
+        address user
+    ) public returns (IERC20 currencyToken, uint256 currencyTokenAmount) {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         currencyToken = $.currencyToken;
 
@@ -303,7 +317,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      *   This function accrues all the yield up until the most recent deposit and updates the user state.
      * @param user Address of the user to accrue yield to
      */
-    function accrueYield(address user) public {
+    function accrueYield(
+        address user
+    ) public {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         UserState memory userState = $.userStates[user];
 

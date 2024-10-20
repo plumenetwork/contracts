@@ -115,7 +115,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Initialize the RWAStaking contract
      * @param owner Address of the owner of the RWAStaking contract
      */
-    function initialize(address owner) public initializer {
+    function initialize(
+        address owner
+    ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
 
@@ -130,7 +132,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(UPGRADER_ROLE) { }
 
     // Admin Functions
 
@@ -139,7 +143,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @dev This function can only be called by an admin
      * @param stablecoin Stablecoin token contract address
      */
-    function allowStablecoin(IERC20 stablecoin) external onlyRole(ADMIN_ROLE) {
+    function allowStablecoin(
+        IERC20 stablecoin
+    ) external onlyRole(ADMIN_ROLE) {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.allowedStablecoins[stablecoin]) {
             revert AlreadyAllowedStablecoin(stablecoin);
@@ -213,7 +219,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice State of a user who has staked into the RWAStaking contract
-    function getUserState(address user) external view returns (uint256, uint256, uint256) {
+    function getUserState(
+        address user
+    ) external view returns (uint256, uint256, uint256) {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         UserState memory userState = $.userStates[user];
         return (
@@ -230,7 +238,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice Whether a stablecoin is allowed to be staked in the RWAStaking contract
-    function isAllowedStablecoin(IERC20 stablecoin) external view returns (bool) {
+    function isAllowedStablecoin(
+        IERC20 stablecoin
+    ) external view returns (bool) {
         return _getRWAStakingStorage().allowedStablecoins[stablecoin];
     }
 

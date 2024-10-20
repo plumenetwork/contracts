@@ -38,42 +38,60 @@ contract MockAssetToken is IAssetToken, ERC20Upgradeable, OwnableUpgradeable {
         return _currencyToken;
     }
 
-    function requestYield(address from) external override {
+    function requestYield(
+        address from
+    ) external override {
         // Mock implementation for testing
     }
 
-    function claimYield(address user) external override returns (IERC20, uint256) {
+    function claimYield(
+        address user
+    ) external override returns (IERC20, uint256) {
         // Mock implementation
         return (_currencyToken, 0);
     }
 
-    function getBalanceAvailable(address user) external view override returns (uint256) {
+    function getBalanceAvailable(
+        address user
+    ) external view override returns (uint256) {
         return balanceOf(user);
     }
 
-    function accrueYield(address user) external override {
+    function accrueYield(
+        address user
+    ) external override {
         // Mock implementation
     }
 
-    function depositYield(uint256 currencyTokenAmount) external override {
+    function depositYield(
+        uint256 currencyTokenAmount
+    ) external override {
         // Mock implementation
     }
 
     // Additional functions to mock AssetToken behavior
 
-    function addToWhitelist(address user) external onlyOwner {
+    function addToWhitelist(
+        address user
+    ) external onlyOwner {
         _whitelist[user] = true;
     }
 
-    function removeFromWhitelist(address user) external onlyOwner {
+    function removeFromWhitelist(
+        address user
+    ) external onlyOwner {
         _whitelist[user] = false;
     }
 
-    function isAddressWhitelisted(address user) external view returns (bool) {
+    function isAddressWhitelisted(
+        address user
+    ) external view returns (bool) {
         return _whitelist[user];
     }
 
-    function setTotalValue(uint256 totalValue_) external onlyOwner {
+    function setTotalValue(
+        uint256 totalValue_
+    ) external onlyOwner {
         _totalValue = totalValue_;
     }
 

@@ -5,20 +5,29 @@ import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 import { ComponentToken } from "../ComponentToken.sol";
-import { IComponentToken } from "../interfaces/IComponentToken.sol";
+
 import { IAggregateToken } from "../interfaces/IAggregateToken.sol";
+import { IComponentToken } from "../interfaces/IComponentToken.sol";
 
 /// @notice Example of an interface for the external contract that manages the external asset
 interface IExternalContract {
 
     /// @notice Notify the external contract that a deposit has been requested
-    function requestDeposit(uint256 assets) external;
+    function requestDeposit(
+        uint256 assets
+    ) external;
     /// @notice Notify the external contract that a redeem has been requested
-    function requestRedeem(uint256 shares) external;
+    function requestRedeem(
+        uint256 shares
+    ) external;
     /// @notice Convert from quantity of assets to quantity of shares
-    function convertToShares(uint256 assets) external pure returns (uint256 shares);
+    function convertToShares(
+        uint256 assets
+    ) external pure returns (uint256 shares);
     /// @notice Convert from quantity of shares to quantity of assets
-    function convertToAssets(uint256 shares) external pure returns (uint256 assets);
+    function convertToAssets(
+        uint256 shares
+    ) external pure returns (uint256 assets);
 
 }
 
@@ -85,17 +94,25 @@ contract USDT is ComponentToken {
     // Override Functions
 
     /// @inheritdoc IERC4626
-    function convertToShares(uint256 assets) public view override(ComponentToken) returns (uint256 shares) {
+    function convertToShares(
+        uint256 assets
+    ) public view override(ComponentToken) returns (uint256 shares) {
         return _getAdapterTokenStorage().externalContract.convertToShares(assets);
     }
 
     /// @inheritdoc IERC4626
-    function convertToAssets(uint256 shares) public view override(ComponentToken) returns (uint256 assets) {
+    function convertToAssets(
+        uint256 shares
+    ) public view override(ComponentToken) returns (uint256 assets) {
         return _getAdapterTokenStorage().externalContract.convertToAssets(shares);
     }
 
     /// @inheritdoc IComponentToken
-    function requestDeposit(uint256 assets, address controller, address owner) public override(ComponentToken) returns (uint256 requestId) {
+    function requestDeposit(
+        uint256 assets,
+        address controller,
+        address owner
+    ) public override(ComponentToken) returns (uint256 requestId) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         if (msg.sender != address($.nestStakingContract)) {
             revert Unauthorized(msg.sender, address($.nestStakingContract));
@@ -105,7 +122,11 @@ contract USDT is ComponentToken {
     }
 
     /// @inheritdoc IComponentToken
-    function requestRedeem(uint256 shares, address controller, address owner) public override(ComponentToken) returns (uint256 requestId) {
+    function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public override(ComponentToken) returns (uint256 requestId) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         if (msg.sender != address($.nestStakingContract)) {
             revert Unauthorized(msg.sender, address($.nestStakingContract));
@@ -115,7 +136,11 @@ contract USDT is ComponentToken {
     }
 
     /// @inheritdoc IComponentToken
-    function deposit(uint256 assets, address receiver, address controller) public override(ComponentToken) returns (uint256 shares) {
+    function deposit(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public override(ComponentToken) returns (uint256 shares) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         if (msg.sender != address($.externalContract)) {
             revert Unauthorized(msg.sender, address($.externalContract));
@@ -127,7 +152,11 @@ contract USDT is ComponentToken {
     }
 
     /// @inheritdoc IComponentToken
-    function redeem(uint256 shares, address receiver, address controller) public override(ComponentToken) returns (uint256 assets) {
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public override(ComponentToken) returns (uint256 assets) {
         AdapterTokenStorage storage $ = _getAdapterTokenStorage();
         if (msg.sender != address($.externalContract)) {
             revert Unauthorized(msg.sender, address($.externalContract));
