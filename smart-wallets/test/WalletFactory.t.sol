@@ -16,6 +16,9 @@ contract WalletFactoryTest is Test {
     address constant OWNER = address(0x1234);
     address constant USER1 = address(0xBEEF);
 
+    // small hack to be excluded from coverage report
+    function test() public { }
+
     function setUp() public {
         smartWallet = new SmartWallet();
         walletFactory = new WalletFactory(OWNER, smartWallet);

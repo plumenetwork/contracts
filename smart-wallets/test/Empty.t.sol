@@ -7,6 +7,9 @@ import { Empty } from "../src/Empty.sol";
 
 contract EmptyTest is Test {
 
+    // small hack to be excluded from coverage report
+    function test() public { }
+
     function test_constructor() public {
         Empty empty = new Empty();
         assertNotEq(address(empty), address(0));
