@@ -11,11 +11,6 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { Deposit, UserState } from "./Types.sol";
 
-// Suggestions:
-// - move structs to Types.sol file
-// - move errors, events to interface
-// - move storage related structs to YieldDistributionTokenStorage.sol library
-
 /**
  * @title YieldDistributionToken
  * @author Eugene Y. Q. Shen
@@ -228,7 +223,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                 ),
                 totalAmountSeconds: $.totalAmountSeconds,
                 timestamp: block.timestamp
-            })
         );
 
         $.currencyToken.safeTransferFrom(_msgSender(), address(this), currencyTokenAmount);

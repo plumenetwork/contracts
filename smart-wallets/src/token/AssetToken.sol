@@ -7,7 +7,6 @@ import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
-
 import { Deposit, UserState } from "./Types.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
@@ -23,10 +22,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
 
     /// @notice Boolean to enable whitelist for the AssetToken
     bool public immutable isWhitelistEnabled;
-
-    // Suggestions:
-    // - Can replace whitelist array + mapping with enumerable set
-    // - Can replace holders array + mapping with enumerable set
 
     /// @custom:storage-location erc7201:plume.storage.AssetToken
     struct AssetTokenStorage {
