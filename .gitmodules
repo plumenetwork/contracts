@@ -34,3 +34,9 @@
 [submodule "staking/lib/openzeppelin-contracts-upgradeable"]
 	path = staking/lib/openzeppelin-contracts-upgradeable
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable
+[submodule "plume/lib/openzeppelin-contracts"]
+	path = plume/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "plume/lib/murky"]
+	path = plume/lib/murky
+	url = https://github.com/dmfxyz/murky
