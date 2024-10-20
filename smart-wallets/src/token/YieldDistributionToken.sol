@@ -219,10 +219,11 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         $.deposits.push(
             Deposit({
                 scaledCurrencyTokenPerAmountSecond: currencyTokenAmount.mulDiv(
-                    SCALE, ($.totalAmountSeconds - $.deposits[previousDepositIndex].totalAmountSeconds)
+                    SCALE, $.totalAmountSeconds - $.deposits[previousDepositIndex].totalAmountSeconds
                 ),
                 totalAmountSeconds: $.totalAmountSeconds,
                 timestamp: block.timestamp
+            })
         );
 
         $.currencyToken.safeTransferFrom(_msgSender(), address(this), currencyTokenAmount);
