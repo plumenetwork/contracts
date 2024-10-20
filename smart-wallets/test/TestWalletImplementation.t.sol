@@ -17,13 +17,13 @@ contract TestWalletImplementationTest is Test {
 
     /* forge coverage --ir-minimum */
     address constant EMPTY_ADDRESS = 0x0Ab1C3d2cCB7c314666185b317900a614e516feB;
-    address constant WALLET_FACTORY_ADDRESS = 0x2f91D289c1432493f3c6c76810BE0C6FF1172d6D;
-    address constant WALLET_PROXY_ADDRESS = 0xF6146dcD6b31E2ca7C269b0E2f5534908a596ee5;
+    address constant WALLET_FACTORY_ADDRESS = 0x20bb256ADCDF463Cff377152FEa514d14A4464b7;
+    address constant WALLET_PROXY_ADDRESS = 0x4920a4ba4752Ac88dF5f7BEaE071178B2b94e7d3;
 
-    /* forge test 
+    /* forge test
     address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
-    address constant WALLET_FACTORY_ADDRESS = 0x5F26233a11D5148aeEa71d54D9D102992F8d73E2;
-    address constant WALLET_PROXY_ADDRESS = 0xCd49AC437b7e0b73D403e2fF339429330166feE0;
+    address constant WALLET_FACTORY_ADDRESS = 0x69Fcc726062fE3d4a85621662419F01f44AaC3a3;
+    address constant WALLET_PROXY_ADDRESS = 0x8b00A3552Ab0A39be5b8E14a6E832C8a26c19168;
     */
     TestWalletImplementation testWalletImplementation;
 
