@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
-import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 
 import { RWAStaking } from "../src/RWAStaking.sol";
+
+import { ReserveStaking } from "../src/ReserveStaking.sol";
 import { SBTC } from "../src/SBTC.sol";
-import { SBTCStaking } from "../src/SBTCStaking.sol";
+import { STONE } from "../src/STONE.sol";
 import { PlumePreReserveFund } from "../src/proxy/PlumePreReserveFund.sol";
 import { PlumePreStaking } from "../src/proxy/PlumePreStaking.sol";
 
@@ -28,9 +30,10 @@ contract DeployStakingContracts is Script {
         console2.log("Plume Pre-Staking Proxy deployed to:", address(plumePreStaking));
 
         SBTC sbtc = new SBTC(NEST_ADMIN_ADDRESS);
-        SBTCStaking sbtcStaking = new SBTCStaking();
+        STONE stone = new STONE(NEST_ADMIN_ADDRESS);
+        ReserveStaking sbtcStaking = new ReserveStaking();
         PlumePreReserveFund plumePreReserveFund = new PlumePreReserveFund(
-            address(sbtcStaking), abi.encodeCall(SBTCStaking.initialize, (NEST_ADMIN_ADDRESS, sbtc))
+            address(sbtcStaking), abi.encodeCall(ReserveStaking.initialize, (NEST_ADMIN_ADDRESS, sbtc, stone))
         );
         console2.log("Plume Pre-Reserve Fund Proxy deployed to:", address(plumePreReserveFund));
 
