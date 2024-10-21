@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { WalletUtils } from "../WalletUtils.sol";
-import { AssetToken } from "../token/AssetToken.sol";
 
-contract MockSmartWallet is WalletUtils {
+import { WalletUtils } from "../src/WalletUtils.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "../src/token/AssetToken.sol";
+
+contract AssetTokenFactory is WalletUtils {
+    address public owner;
+
+    constructor(address _owner) {
+        owner = _owner;
+    }
+
     function deployAssetToken(
+        address tokenOwner,
         string memory name,
         string memory symbol,
         ERC20 currencyToken,
@@ -15,9 +23,10 @@ contract MockSmartWallet is WalletUtils {
         uint256 initialSupply,
         uint256 totalValue,
         bool isWhitelistEnabled
-    ) external onlyWallet returns (AssetToken) {
-        return new AssetToken(
-            address(this),
+    ) external returns (AssetToken) {
+        require(msg.sender == owner, "Only owner can deploy AssetToken");
+        return new AssetToken{salt: keccak256(abi.encodePacked(block.timestamp))}(
+            tokenOwner,
             name,
             symbol,
             currencyToken,
@@ -28,11 +37,4 @@ contract MockSmartWallet is WalletUtils {
             isWhitelistEnabled
         );
     }
-
-
-    function verifySetup() public pure returns (bool) {
-        return true;
-    }
-
-
 }

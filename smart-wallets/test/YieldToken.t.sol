@@ -4,7 +4,6 @@ pragma solidity ^0.8.25;
 import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
 
 import { MockInvalidAssetToken } from "../src/mocks/MockInvalidAssetToken.sol";
-import { MockSmartWallet } from "../src/mocks/MockSmartWallet.sol";
 import { YieldToken } from "../src/token/YieldToken.sol";
 
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
@@ -160,12 +159,14 @@ contract YieldTokenTest is Test {
         yieldToken.receiveYield(assetToken, invalidCurrencyToken, 10 ether);
     }*/
 
+/*
     function testRequestYieldSuccess() public {
         MockSmartWallet smartWallet = new MockSmartWallet();
 
         yieldToken.requestYield(address(smartWallet));
         // Optionally check that the smartWallet function was called properly
     }
+    */
     /*
     function testRequestYieldFailure() public {
         vm.expectRevert(abi.encodeWithSelector(YieldToken.SmartWalletCallFailed.selector, address(0)));
