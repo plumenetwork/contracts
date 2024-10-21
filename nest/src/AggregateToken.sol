@@ -122,7 +122,7 @@ contract AggregateToken is ComponentToken, IAggregateToken {
     function convertToShares(
         uint256 assets
     ) public view override(ComponentToken, IComponentToken) returns (uint256 shares) {
-        return assets * _getAggregateTokenStorage().askPrice / _BASE;
+        return assets * _BASE / _getAggregateTokenStorage().askPrice;
     }
 
     /**
@@ -132,7 +132,7 @@ contract AggregateToken is ComponentToken, IAggregateToken {
     function convertToAssets(
         uint256 shares
     ) public view override(ComponentToken, IComponentToken) returns (uint256 assets) {
-        return shares * _BASE / _getAggregateTokenStorage().bidPrice;
+        return shares * _getAggregateTokenStorage().bidPrice / _BASE;
     }
 
     /// @inheritdoc IComponentToken
