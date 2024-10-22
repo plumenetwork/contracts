@@ -5,6 +5,7 @@ import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 
 import { Faucet } from "../src/Faucet.sol";
+import { LoadTest } from "../src/LoadTest.sol";
 import { FaucetProxy } from "../src/proxy/FaucetProxy.sol";
 
 contract DeployDevnetContracts is Script {
@@ -19,11 +20,17 @@ contract DeployDevnetContracts is Script {
     function run() external {
         vm.startBroadcast(FAUCET_ADMIN_ADDRESS);
 
+        /* Deploy Faucet
         Faucet faucet = new Faucet();
         FaucetProxy faucetProxy = new FaucetProxy(
             address(faucet), abi.encodeCall(Faucet.initialize, (FAUCET_ADMIN_ADDRESS, tokens, tokenAddresses))
         );
         console2.log("Faucet Proxy deployed to:", address(faucetProxy));
+        */
+
+        // Deploy LoadTest
+        LoadTest loadTest = new LoadTest();
+        console2.log("LoadTest deployed to:", address(loadTest));
 
         vm.stopBroadcast();
     }
