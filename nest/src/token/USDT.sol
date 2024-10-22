@@ -38,7 +38,9 @@ contract USDT is ComponentToken {
      * @inheritdoc IERC4626
      * @dev 1:1 conversion rate between USDT and base asset
      */
-    function convertToShares(uint256 assets) public pure override(ComponentToken) returns (uint256 shares) {
+    function convertToShares(
+        uint256 assets
+    ) public pure override(ComponentToken) returns (uint256 shares) {
         return assets;
     }
 
@@ -46,7 +48,9 @@ contract USDT is ComponentToken {
      * @inheritdoc IERC4626
      * @dev 1:1 conversion rate between USDT and base asset
      */
-    function convertToAssets(uint256 shares) public pure override(ComponentToken) returns (uint256 assets) {
+    function convertToAssets(
+        uint256 shares
+    ) public pure override(ComponentToken) returns (uint256 assets) {
         return shares;
     }
 

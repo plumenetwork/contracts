@@ -13,13 +13,21 @@ import { IComponentToken } from "../interfaces/IComponentToken.sol";
 interface IExternalContract {
 
     /// @notice Notify the external contract that a deposit has been requested
-    function requestDeposit(uint256 assets) external;
+    function requestDeposit(
+        uint256 assets
+    ) external;
     /// @notice Notify the external contract that a redeem has been requested
-    function requestRedeem(uint256 shares) external;
+    function requestRedeem(
+        uint256 shares
+    ) external;
     /// @notice Convert from quantity of assets to quantity of shares
-    function convertToShares(uint256 assets) external pure returns (uint256 shares);
+    function convertToShares(
+        uint256 assets
+    ) external pure returns (uint256 shares);
     /// @notice Convert from quantity of shares to quantity of assets
-    function convertToAssets(uint256 shares) external pure returns (uint256 assets);
+    function convertToAssets(
+        uint256 shares
+    ) external pure returns (uint256 assets);
 
 }
 
@@ -86,12 +94,16 @@ contract USDT is ComponentToken {
     // Override Functions
 
     /// @inheritdoc IERC4626
-    function convertToShares(uint256 assets) public view override(ComponentToken) returns (uint256 shares) {
+    function convertToShares(
+        uint256 assets
+    ) public view override(ComponentToken) returns (uint256 shares) {
         return _getAdapterTokenStorage().externalContract.convertToShares(assets);
     }
 
     /// @inheritdoc IERC4626
-    function convertToAssets(uint256 shares) public view override(ComponentToken) returns (uint256 assets) {
+    function convertToAssets(
+        uint256 shares
+    ) public view override(ComponentToken) returns (uint256 assets) {
         return _getAdapterTokenStorage().externalContract.convertToAssets(shares);
     }
 
