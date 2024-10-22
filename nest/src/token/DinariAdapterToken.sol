@@ -7,6 +7,7 @@ import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC2
 
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { DoubleEndedQueue } from "@openzeppelin/contracts/utils/DoubleEndedQueue.sol";
 
 import { ComponentToken } from "../ComponentToken.sol";
 import { IAggregateToken } from "../interfaces/IAggregateToken.sol";
@@ -20,7 +21,15 @@ import { IOrderProcessor } from "./external/IOrderProcessor.sol";
  */
 contract DinariAdapterToken is ComponentToken {
 
+    using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
+
     // Storage
+
+    struct DShareOrderInfo {
+        bool sell;
+        uint256 orderAmount;
+        uint256 fees;
+    }
 
     /// @custom:storage-location erc7201:plume.storage.DinariAdapterToken
     struct DinariAdapterTokenStorage {
@@ -33,8 +42,8 @@ contract DinariAdapterToken is ComponentToken {
         /// @dev Address of the dShares order contract
         IOrderProcessor externalOrderContract;
         //
-        mapping(uint256 externalId => uint256 amountIn) adjustedTotalInput;
-        mapping(uint256 externalId => uint256) orderAmount;
+        mapping(uint256 orderId => DShareOrderInfo) submittedOrderInfo;
+        DoubleEndedQueue.Bytes32Deque submittedOrders;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.DinariAdapterToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -55,6 +64,10 @@ contract DinariAdapterToken is ComponentToken {
      * @param caller Address of the authorized caller
      */
     error Unauthorized(address invalidCaller, address caller);
+
+    error NoOutstandingOrders();
+    error OrderDoesNotExist();
+    error OrderStillActive();
 
     // Initializer
 
@@ -174,47 +187,8 @@ contract DinariAdapterToken is ComponentToken {
             tif: IOrderProcessor.TIF.DAY
         });
         uint256 orderId = orderContract.createOrderStandardFees(order);
-        $.adjustedTotalInput[orderId] = totalInput;
-        $.orderAmount[orderId] = orderAmount;
-    }
-
-    function notifyBuy(uint256 externalId) public {
-        // Restrict caller?
-        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
-
-        IOrderProcessor orderContract = $.externalOrderContract;
-        if (orderContract.getOrderStatus(externalId) != IOrderProcessor.OrderStatus.FULFILLED) {
-            revert OrderNotFilled();
-        }
-
-        uint256 proceeds = orderContract.getReceivedAmount(externalId);
-        address nestStakingContract = $.nestStakingContract;
-        uint256 totalInput = $.adjustedTotalInput[externalId];
-
-        super.notifyDeposit(totalInput, proceeds, nestStakingContract);
-
-        // Send fee refund to controller
-        uint256 totalSpent = $.orderAmount[externalId] + orderContract.getFeesTaken(externalId);
-        uint256 refund = totalInput - totalSpent;
-        if (refund > 0) {
-            IERC20(_getComponentTokenStorage().currencyToken).transfer(nestStakingContract, refund);
-        }
-    }
-
-    /// @inheritdoc IComponentToken
-    function deposit(
-        uint256 assets,
-        address receiver,
-        address controller
-    ) public override(ComponentToken) returns (uint256 shares) {
-        AdapterTokenStorage storage $ = _getAdapterTokenStorage();
-        if (msg.sender != address($.externalContract)) {
-            revert Unauthorized(msg.sender, address($.externalContract));
-        }
-        if (receiver != address($.nestStakingContract)) {
-            revert Unauthorized(receiver, address($.nestStakingContract));
-        }
-        return super.deposit(assets, receiver, controller);
+        $.submittedOrderInfo[orderId] = DShareOrderInfo({ sell: false, orderAmount: orderAmount, fees: fees });
+        $.submittedOrders.pushBack(bytes32(orderId));
     }
 
     /// @inheritdoc IComponentToken
@@ -262,21 +236,118 @@ contract DinariAdapterToken is ComponentToken {
             tif: IOrderProcessor.TIF.DAY
         });
         uint256 orderId = orderContract.createOrderStandardFees(order);
-        $.adjustedTotalInput[orderId] = orderAmount;
+        $.submittedOrderInfo[orderId] = DShareOrderInfo({ sell: true, orderAmount: orderAmount, fees: 0 });
+        $.submittedOrders.pushBack(bytes32(orderId));
     }
 
-    function notifySell(uint256 externalId) public {
-        // Restrict caller?
+    /// @dev Panic
+    function getNextSubmittedOrderStatus() public view returns (IOrderProcessor.OrderStatus) {
         DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
+        if ($.submittedOrders.length() == 0) {
+            revert NoOutstandingOrders();
+        }
+        uint256 orderId = uint256($.submittedOrders.front());
+        return $.externalOrderContract.getOrderStatus(orderId);
+    }
 
+    function processSubmittedOrders() public {
+        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
         IOrderProcessor orderContract = $.externalOrderContract;
-        if (orderContract.getOrderStatus(externalId) != IOrderProcessor.OrderStatus.FULFILLED) {
-            revert OrderNotFilled();
+        address paymentToken = _getComponentTokenStorage().currencyToken;
+        address nestStakingContract = $.nestStakingContract;
+        while ($.submittedOrders.length() > 0) {
+            uint256 orderId = uint256($.submittedOrders.front());
+            IOrderProcessor.OrderStatus status = orderContract.getOrderStatus(orderId);
+            if (status == IOrderProcessor.OrderStatus.ACTIVE) {
+                break;
+            } else if (status == IOrderProcessor.OrderStatus.NONE) {
+                revert OrderDoesNotExist();
+            }
+
+            DShareOrderInfo memory orderInfo = $.submittedOrderInfo[orderId];
+            uint256 totalInput = orderInfo.orderAmount + orderInfo.fees;
+
+            if (status == IOrderProcessor.OrderStatus.CANCELLED) {
+                // Assets have been refunded
+                $.pendingDepositRequest[controller] -= totalInput;
+            } else if (status == IOrderProcessor.OrderStatus.FULFILLED) {
+                uint256 proceeds = orderContract.getReceivedAmount(orderId);
+
+                if (orderInfo.sell) {
+                    super.notifyRedeem(proceeds, orderInfo.orderAmount, nestStakingContract);
+                } else {
+                    super.notifyDeposit(totalInput, proceeds, nestStakingContract);
+
+                    // Send fee refund to controller
+                    uint256 totalSpent = orderInfo.orderAmount + orderContract.getFeesTaken(orderId);
+                    uint256 refund = totalInput - totalSpent;
+                    if (refund > 0) {
+                        IERC20(paymentToken).transfer(nestStakingContract, refund);
+                    }
+                }
+            }
+
+            $.submittedOrders.popFront();
+        }
+    }
+
+    /// @dev Single order processing if gas limit is reached
+    function processNextSubmittedOrder() public {
+        DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
+        IOrderProcessor orderContract = $.externalOrderContract;
+        address nestStakingContract = $.nestStakingContract;
+
+        if ($.submittedOrders.length() == 0) {
+            revert NoOutstandingOrders();
+        }
+        uint256 orderId = uint256($.submittedOrders.front());
+        IOrderProcessor.OrderStatus status = orderContract.getOrderStatus(orderId);
+        if (status == IOrderProcessor.OrderStatus.ACTIVE) {
+            revert OrderStillActive();
+        } else if (status == IOrderProcessor.OrderStatus.NONE) {
+            revert OrderDoesNotExist();
         }
 
-        uint256 proceeds = orderContract.getReceivedAmount(externalId);
-        address nestStakingContract = $.nestStakingContract;
-        super.notifyRedeem(proceeds, $.adjustedTotalInput[externalId], nestStakingContract);
+        DShareOrderInfo memory orderInfo = $.submittedOrderInfo[orderId];
+        uint256 totalInput = orderInfo.orderAmount + orderInfo.fees;
+
+        if (status == IOrderProcessor.OrderStatus.CANCELLED) {
+            // Assets have been refunded
+            $.pendingDepositRequest[controller] -= totalInput;
+        } else if (status == IOrderProcessor.OrderStatus.FULFILLED) {
+            uint256 proceeds = orderContract.getReceivedAmount(orderId);
+
+            if (orderInfo.sell) {
+                super.notifyRedeem(proceeds, orderInfo.orderAmount, nestStakingContract);
+            } else {
+                super.notifyDeposit(totalInput, proceeds, nestStakingContract);
+
+                // Send fee refund to controller
+                uint256 totalSpent = orderInfo.orderAmount + orderContract.getFeesTaken(orderId);
+                uint256 refund = totalInput - totalSpent;
+                if (refund > 0) {
+                    IERC20(_getComponentTokenStorage().currencyToken).transfer(nestStakingContract, refund);
+                }
+            }
+        }
+
+        $.submittedOrders.popFront();
+    }
+
+    /// @inheritdoc IComponentToken
+    function deposit(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public override(ComponentToken) returns (uint256 shares) {
+        AdapterTokenStorage storage $ = _getAdapterTokenStorage();
+        if (msg.sender != address($.externalContract)) {
+            revert Unauthorized(msg.sender, address($.externalContract));
+        }
+        if (receiver != address($.nestStakingContract)) {
+            revert Unauthorized(receiver, address($.nestStakingContract));
+        }
+        return super.deposit(assets, receiver, controller);
     }
 
     /// @inheritdoc IComponentToken
