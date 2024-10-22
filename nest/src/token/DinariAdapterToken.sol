@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -112,7 +113,9 @@ contract DinariAdapterToken is ComponentToken {
     // Override Functions
 
     /// @inheritdoc IERC4626
-    function convertToShares(uint256 assets) public view override(ComponentToken) returns (uint256 shares) {
+    function convertToShares(
+        uint256 assets
+    ) public view override(ComponentToken) returns (uint256 shares) {
         // Apply dshare price and wrapped conversion rate, fees
         DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
         IOrderProcessor orderContract = $.externalOrderContract;
@@ -136,7 +139,9 @@ contract DinariAdapterToken is ComponentToken {
     }
 
     /// @inheritdoc IERC4626
-    function convertToAssets(uint256 shares) public view override(ComponentToken) returns (uint256 assets) {
+    function convertToAssets(
+        uint256 shares
+    ) public view override(ComponentToken) returns (uint256 assets) {
         // Apply wrapped conversion rate and dshare price, subtract fees
         DinariAdapterTokenStorage storage $ = _getDinariAdapterTokenStorage();
         IOrderProcessor orderContract = $.externalOrderContract;

@@ -120,32 +120,46 @@ interface IOrderProcessor {
     /// @notice Hash order data for validation and create unique order ID
     /// @param order Order data
     /// @dev EIP-712 typed data hash of order
-    function hashOrder(Order calldata order) external pure returns (uint256);
+    function hashOrder(
+        Order calldata order
+    ) external pure returns (uint256);
 
     /// @notice Status of a given order
     /// @param id Order ID
-    function getOrderStatus(uint256 id) external view returns (OrderStatus);
+    function getOrderStatus(
+        uint256 id
+    ) external view returns (OrderStatus);
 
     /// @notice Get remaining order quantity to fill
     /// @param id Order ID
-    function getUnfilledAmount(uint256 id) external view returns (uint256);
+    function getUnfilledAmount(
+        uint256 id
+    ) external view returns (uint256);
 
     /// @notice Get received amount for an order
     /// @param id Order ID
-    function getReceivedAmount(uint256 id) external view returns (uint256);
+    function getReceivedAmount(
+        uint256 id
+    ) external view returns (uint256);
 
     /// @notice Get fees in payment token escrowed for a buy order
     /// @param id Order ID
-    function getFeesEscrowed(uint256 id) external view returns (uint256);
+    function getFeesEscrowed(
+        uint256 id
+    ) external view returns (uint256);
 
     /// @notice Get cumulative payment token fees taken for an order
     /// @param id Order ID
     /// @dev Only valid for ACTIVE orders
-    function getFeesTaken(uint256 id) external view returns (uint256);
+    function getFeesTaken(
+        uint256 id
+    ) external view returns (uint256);
 
     /// @notice Reduces the precision allowed for the asset token quantity of an order
     /// @param token The address of the token
-    function orderDecimalReduction(address token) external view returns (uint8);
+    function orderDecimalReduction(
+        address token
+    ) external view returns (uint8);
 
     /// @notice Get worst case fees for an order
     /// @param sell Sell order
@@ -208,7 +222,9 @@ interface IOrderProcessor {
     /// @param order Order request to submit
     /// @return id Order id
     /// @dev Emits OrderCreated event to be sent to fulfillment service (operator)
-    function createOrderStandardFees(Order calldata order) external returns (uint256);
+    function createOrderStandardFees(
+        Order calldata order
+    ) external returns (uint256);
 
     /// @notice Fill an order
     /// @param order Order request to fill
@@ -221,7 +237,9 @@ interface IOrderProcessor {
     /// @param id Order id
     /// @dev Only callable by initial order requester
     /// @dev Emits CancelRequested event to be sent to fulfillment service (operator)
-    function requestCancel(uint256 id) external;
+    function requestCancel(
+        uint256 id
+    ) external;
 
     /// @notice Cancel an order
     /// @param order Order request to cancel
