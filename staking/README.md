@@ -19,7 +19,7 @@ $ forge compile
 
 ```bash
 $ forge test
-$ forge coverage --ir-minimum
+$ forge coverage
 ```
 
 ### Deploy
