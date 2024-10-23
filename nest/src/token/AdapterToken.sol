@@ -36,7 +36,7 @@ interface IExternalContract {
  * @author Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that interfaces with external assets.
  */
-contract USDT is ComponentToken {
+contract AdapterToken is ComponentToken {
 
     // Storage
 

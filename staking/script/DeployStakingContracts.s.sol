@@ -6,7 +6,6 @@ import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 
 import { RWAStaking } from "../src/RWAStaking.sol";
-
 import { ReserveStaking } from "../src/ReserveStaking.sol";
 import { SBTC } from "../src/SBTC.sol";
 import { STONE } from "../src/STONE.sol";

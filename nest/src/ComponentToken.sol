@@ -77,7 +77,7 @@ abstract contract ComponentToken is
      * @notice Emitted when the vault has been notified of the completion of a deposit request
      * @param controller Controller of the request
      * @param assets Amount of `asset` that has been deposited
-     * @param shares Amount of shares that to receive in exchange
+     * @param shares Amount of shares to receive in exchange
      */
     event DepositNotified(address indexed controller, uint256 assets, uint256 shares);
 
@@ -209,14 +209,14 @@ abstract contract ComponentToken is
     function convertToShares(
         uint256 assets
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
-        return super.convertToShares(assets);
+        revert Unimplemented();
     }
 
     /// @inheritdoc IERC4626
     function convertToAssets(
         uint256 shares
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
-        return super.convertToAssets(shares);
+        revert Unimplemented();
     }
 
     // User Functions
