@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
-
 import { SmartWallet } from "../src/SmartWallet.sol";
 import { WalletUtils } from "../src/WalletUtils.sol";
+
+import { IAssetToken } from "../src/interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../src/interfaces/ISmartWallet.sol";
-import { MockInvalidAssetToken } from "../src/mocks/MockInvalidAssetToken.sol";
 import { YieldToken } from "../src/token/YieldToken.sol";
 
+import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
+import { MockInvalidAssetToken } from "../src/mocks/MockInvalidAssetToken.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
-
-import "../src/interfaces/IAssetToken.sol";
-
-// This file is a big mess and should not be committed anywhere
 
 contract YieldTokenTest is Test {
 

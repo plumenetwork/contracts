@@ -26,9 +26,6 @@ contract SmartWalletTest is Test {
     MockYieldReceiver mockYieldReceiver;
     MockUserWallet mockUserWallet;
 
-    // small hack to be excluded from coverage report
-    // function test_() public { }
-
     function setUp() public {
         smartWallet = new SmartWallet();
         mockAssetToken = new MockAssetToken();
