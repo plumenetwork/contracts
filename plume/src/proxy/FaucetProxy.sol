@@ -10,12 +10,17 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
  */
 contract FaucetProxy is ERC1967Proxy {
 
+    /// @notice Indicates a failure because the function is not supported
+    error Unsupported();
+
     /// @notice Name of the proxy, used to ensure each named proxy has unique bytecode
     bytes32 public constant PROXY_NAME = keccak256("FaucetProxy");
 
     constructor(address logic, bytes memory data) ERC1967Proxy(logic, data) { }
 
     /// @dev Fallback function to silence compiler warnings
-    receive() external payable { }
+    receive() external payable {
+        revert Unsupported();
+    }
 
 }
