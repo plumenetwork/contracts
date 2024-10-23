@@ -36,7 +36,8 @@ contract ReserveStakingTest is Test {
 
         ReserveStaking stakingImpl = new ReserveStaking();
         ERC1967Proxy stakingProxy = new ERC1967Proxy(
-            address(stakingImpl), abi.encodeWithSelector(stakingImpl.initialize.selector, owner, sbtc, stone)
+            address(stakingImpl),
+            abi.encodeWithSelector(stakingImpl.initialize.selector, owner, sbtc, stone)
         );
         staking = ReserveStaking(address(stakingProxy));
     }
@@ -45,8 +46,8 @@ contract ReserveStakingTest is Test {
         vm.startPrank(user);
         sbtc.approve(address(staking), sbtcAmount);
         stone.approve(address(staking), stoneAmount);
-        vm.expectEmit(true, true, false, true, address(staking));
-        emit ReserveStaking.Staked(user, sbtcAmount, stoneAmount, block.timestamp);
+        vm.expectEmit(true, false, false, true, address(staking));
+        emit ReserveStaking.Staked(user, sbtcAmount, stoneAmount);
         staking.stake(sbtcAmount, stoneAmount);
         vm.stopPrank();
 
@@ -56,14 +57,7 @@ contract ReserveStakingTest is Test {
         assertEq(staking.getSTONETotalAmountStaked(), stoneAmount);
         assertEq(staking.getUsers().length, 1);
 
-        (
-            uint256 sbtcAmountSeconds,
-            uint256 sbtcAmountStaked,
-            uint256 sbtcLastUpdate,
-            uint256 stoneAmountSeconds,
-            uint256 stoneAmountStaked,
-            uint256 stoneLastUpdate
-        ) = staking.getUserState(user);
+        (uint256 sbtcAmountSeconds, uint256 sbtcAmountStaked, uint256 sbtcLastUpdate, uint256 stoneAmountSeconds, uint256 stoneAmountStaked, uint256 stoneLastUpdate) = staking.getUserState(user);
         assertEq(sbtcAmountSeconds, 0);
         assertEq(stoneAmountSeconds, 0);
         assertEq(sbtcAmountStaked, sbtcAmount);
@@ -86,14 +80,7 @@ contract ReserveStakingTest is Test {
         assertEq(staking.getUsers().length, 0);
         assertEq(staking.getEndTime(), 0);
 
-        (
-            uint256 sbtcAmountSeconds,
-            uint256 sbtcAmountStaked,
-            uint256 sbtcLastUpdate,
-            uint256 stoneAmountSeconds,
-            uint256 stoneAmountStaked,
-            uint256 stoneLastUpdate
-        ) = staking.getUserState(owner);
+        (uint256 sbtcAmountSeconds, uint256 sbtcAmountStaked, uint256 sbtcLastUpdate, uint256 stoneAmountSeconds, uint256 stoneAmountStaked, uint256 stoneLastUpdate) = staking.getUserState(owner);
         assertEq(sbtcAmountSeconds, 0);
         assertEq(stoneAmountSeconds, 0);
         assertEq(sbtcAmountStaked, 0);
@@ -117,41 +104,34 @@ contract ReserveStakingTest is Test {
 
     function test_stakingEnded() public {
         vm.startPrank(owner);
-        staking.withdraw();
+        staking.adminWithdraw();
 
         vm.expectRevert(abi.encodeWithSelector(ReserveStaking.StakingEnded.selector));
         staking.stake(100 ether, 100 ether);
         vm.expectRevert(abi.encodeWithSelector(ReserveStaking.StakingEnded.selector));
-        staking.withdraw();
+        staking.adminWithdraw();
 
         vm.stopPrank();
     }
 
-    function test_withdrawFail() public {
+    function test_adminWithdrawFail() public {
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector, user1, staking.ADMIN_ROLE()
             )
         );
         vm.prank(user1);
-        staking.withdraw();
+        staking.adminWithdraw();
     }
 
-    function test_withdraw() public {
+    function test_adminWithdraw() public {
         uint256 sbtcAmount = 100 ether;
         uint256 stoneAmount = 50 ether;
         uint256 timeskipAmount = 300;
         uint256 startTime = block.timestamp;
         helper_initialStake(user1, sbtcAmount, stoneAmount);
 
-        (
-            uint256 sbtcAmountSeconds,
-            uint256 sbtcAmountStaked,
-            uint256 sbtcLastUpdate,
-            uint256 stoneAmountSeconds,
-            uint256 stoneAmountStaked,
-            uint256 stoneLastUpdate
-        ) = staking.getUserState(user1);
+        (uint256 sbtcAmountSeconds, uint256 sbtcAmountStaked, uint256 sbtcLastUpdate, uint256 stoneAmountSeconds, uint256 stoneAmountStaked, uint256 stoneLastUpdate) = staking.getUserState(user1);
         assertEq(sbtcAmountSeconds, 0);
         assertEq(stoneAmountSeconds, 0);
         assertEq(sbtcAmountStaked, sbtcAmount);
@@ -161,8 +141,7 @@ contract ReserveStakingTest is Test {
 
         // Skip ahead in time by 300 seconds and check that AmountSeconds has changed
         vm.warp(startTime + timeskipAmount);
-        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) =
-            staking.getUserState(user1);
+        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) = staking.getUserState(user1);
         assertEq(sbtcAmountSeconds, sbtcAmount * timeskipAmount);
         assertEq(stoneAmountSeconds, stoneAmount * timeskipAmount);
         assertEq(sbtcAmountStaked, sbtcAmount);
@@ -173,15 +152,14 @@ contract ReserveStakingTest is Test {
         assertEq(stone.balanceOf(address(staking)), stoneAmount);
 
         vm.startPrank(owner);
-        vm.expectEmit(true, true, false, true, address(staking));
-        emit ReserveStaking.Withdrawn(owner, sbtcAmount, stoneAmount);
-        staking.withdraw();
+        vm.expectEmit(true, false, false, true, address(staking));
+        emit ReserveStaking.AdminWithdrawn(owner, sbtcAmount, stoneAmount);
+        staking.adminWithdraw();
         vm.stopPrank();
 
         // Skip ahead in time by 300 seconds and check that AmountSeconds is fixed
         vm.warp(startTime + timeskipAmount * 2);
-        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) =
-            staking.getUserState(user1);
+        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) = staking.getUserState(user1);
         assertEq(sbtcAmountSeconds, sbtcAmount * timeskipAmount);
         assertEq(stoneAmountSeconds, stoneAmount * timeskipAmount);
         assertEq(sbtcAmountStaked, sbtcAmount);
@@ -203,7 +181,9 @@ contract ReserveStakingTest is Test {
         vm.startPrank(user3);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(staking), 0, sbtcAmount)
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientAllowance.selector, address(staking), 0, sbtcAmount
+            )
         );
         staking.stake(sbtcAmount, stoneAmount);
 
@@ -225,14 +205,7 @@ contract ReserveStakingTest is Test {
         // Stake from user1
         helper_initialStake(user1, sbtcAmount, stoneAmount);
 
-        (
-            uint256 sbtcAmountSeconds,
-            uint256 sbtcAmountStaked,
-            uint256 sbtcLastUpdate,
-            uint256 stoneAmountSeconds,
-            uint256 stoneAmountStaked,
-            uint256 stoneLastUpdate
-        ) = staking.getUserState(user1);
+        (uint256 sbtcAmountSeconds, uint256 sbtcAmountStaked, uint256 sbtcLastUpdate, uint256 stoneAmountSeconds, uint256 stoneAmountStaked, uint256 stoneLastUpdate) = staking.getUserState(user1);
         assertEq(sbtcAmountSeconds, 0);
         assertEq(stoneAmountSeconds, 0);
         assertEq(sbtcAmountStaked, sbtcAmount);
@@ -243,8 +216,7 @@ contract ReserveStakingTest is Test {
         // Skip ahead in time by 300 seconds
         vm.warp(startTime + timeskipAmount);
 
-        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) =
-            staking.getUserState(user1);
+        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) = staking.getUserState(user1);
         assertEq(sbtcAmountSeconds, sbtcAmount * timeskipAmount);
         assertEq(stoneAmountSeconds, stoneAmount * timeskipAmount);
         assertEq(sbtcAmountStaked, sbtcAmount);
@@ -256,15 +228,14 @@ contract ReserveStakingTest is Test {
         vm.startPrank(user2);
         sbtc.approve(address(staking), sbtcAmount);
         stone.approve(address(staking), stoneAmount);
-        vm.expectEmit(true, true, false, true, address(staking));
-        emit ReserveStaking.Staked(user2, sbtcAmount, stoneAmount, startTime + timeskipAmount);
+        vm.expectEmit(true, false, false, true, address(staking));
+        emit ReserveStaking.Staked(user2, sbtcAmount, stoneAmount);
         staking.stake(sbtcAmount, stoneAmount);
         vm.stopPrank();
 
         assertEq(sbtc.balanceOf(address(staking)), sbtcAmount * 2);
         assertEq(stone.balanceOf(address(staking)), stoneAmount * 2);
-        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) =
-            staking.getUserState(user2);
+        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) = staking.getUserState(user2);
         assertEq(sbtcAmountSeconds, 0);
         assertEq(stoneAmountSeconds, 0);
         assertEq(sbtcAmountStaked, sbtcAmount);
@@ -282,22 +253,20 @@ contract ReserveStakingTest is Test {
         vm.startPrank(user1);
         sbtc.approve(address(staking), sbtcAmount);
         stone.approve(address(staking), stoneAmount);
-        vm.expectEmit(true, true, false, true, address(staking));
-        emit ReserveStaking.Staked(user1, sbtcAmount, stoneAmount, startTime + timeskipAmount * 2);
+        vm.expectEmit(true, false, false, true, address(staking));
+        emit ReserveStaking.Staked(user1, sbtcAmount, stoneAmount);
         staking.stake(sbtcAmount, stoneAmount);
         vm.stopPrank();
         vm.warp(startTime + timeskipAmount * 3);
 
-        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) =
-            staking.getUserState(user1);
+        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) = staking.getUserState(user1);
         assertEq(sbtcAmountSeconds, sbtcAmount * timeskipAmount * 4);
         assertEq(stoneAmountSeconds, stoneAmount * timeskipAmount * 4);
         assertEq(sbtcAmountStaked, sbtcAmount * 2);
         assertEq(stoneAmountStaked, stoneAmount * 2);
         assertEq(sbtcLastUpdate, startTime + timeskipAmount * 2);
         assertEq(stoneLastUpdate, startTime + timeskipAmount * 2);
-        (sbtcAmountSeconds, sbtcAmountStaked, sbtcLastUpdate, stoneAmountSeconds, stoneAmountStaked, stoneLastUpdate) =
-            staking.getUserState(user2);
+        (sbtcAmountSeconds, stoneAmountSeconds, sbtcAmountStaked, stoneAmountStaked, sbtcLastUpdate, stoneLastUpdate) = staking.getUserState(user2);
         assertEq(sbtcAmountSeconds, sbtcAmount * timeskipAmount * 2);
         assertEq(stoneAmountSeconds, stoneAmount * timeskipAmount * 2);
         assertEq(sbtcAmountStaked, sbtcAmount);
@@ -335,14 +304,7 @@ contract ReserveStakingTest is Test {
         assertEq(staking.getSTONETotalAmountStaked(), stoneAmount);
         assertEq(staking.getUsers().length, 1);
 
-        (
-            uint256 sbtcAmountSeconds,
-            uint256 sbtcAmountStaked,
-            uint256 sbtcLastUpdate,
-            uint256 stoneAmountSeconds,
-            uint256 stoneAmountStaked,
-            uint256 stoneLastUpdate
-        ) = staking.getUserState(user1);
+        (uint256 sbtcAmountSeconds, uint256 sbtcAmountStaked, uint256 sbtcLastUpdate, uint256 stoneAmountSeconds, uint256 stoneAmountStaked, uint256 stoneLastUpdate) = staking.getUserState(user1);
         assertEq(sbtcAmountSeconds, 0);
         assertEq(stoneAmountSeconds, 0);
         assertEq(sbtcAmountStaked, sbtcAmount);
@@ -350,5 +312,4 @@ contract ReserveStakingTest is Test {
         assertEq(sbtcLastUpdate, block.timestamp);
         assertEq(stoneLastUpdate, block.timestamp);
     }
-
 }
