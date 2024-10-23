@@ -10,8 +10,8 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
  */
 contract USDTProxy is ERC1967Proxy {
 
-    /// @notice Indicates a failure because the function is not supported
-    error Unsupported();
+    /// @notice Indicates a failure because transferring ETH to the proxy is unsupported
+    error ETHTransferUnsupported();
 
     /// @notice Name of the proxy, used to ensure each named proxy has unique bytecode
     bytes32 public constant PROXY_NAME = keccak256("USDTProxy");
@@ -20,7 +20,7 @@ contract USDTProxy is ERC1967Proxy {
 
     /// @dev Fallback function to silence compiler warnings
     receive() external payable {
-        revert Unsupported();
+        revert ETHTransferUnsupported();
     }
 
 }
