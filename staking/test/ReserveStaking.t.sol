@@ -138,12 +138,12 @@ contract ReserveStakingTest is Test {
 
     function test_stakingEnded() public {
         vm.startPrank(owner);
-        //staking.adminWithdraw();
+        staking.adminWithdraw();
 
         vm.expectRevert(abi.encodeWithSelector(ReserveStaking.StakingEnded.selector));
         staking.stake(100 ether, 100 ether);
         vm.expectRevert(abi.encodeWithSelector(ReserveStaking.StakingEnded.selector));
-        //staking.adminWithdraw();
+        staking.adminWithdraw();
         vm.expectRevert(abi.encodeWithSelector(ReserveStaking.StakingEnded.selector));
         staking.withdraw(100 ether, 100 ether);
 
@@ -157,7 +157,7 @@ contract ReserveStakingTest is Test {
             )
         );
         vm.prank(user1);
-        //staking.adminWithdraw();
+        staking.adminWithdraw();
     }
 
     function test_adminWithdraw() public {
@@ -198,7 +198,7 @@ contract ReserveStakingTest is Test {
         vm.startPrank(owner);
         vm.expectEmit(true, false, false, true, address(staking));
         emit ReserveStaking.AdminWithdrawn(owner, sbtcAmount, stoneAmount);
-        //staking.adminWithdraw();
+        staking.adminWithdraw();
         vm.stopPrank();
 
         // Skip ahead in time by 300 seconds and check that AmountSeconds is fixed
