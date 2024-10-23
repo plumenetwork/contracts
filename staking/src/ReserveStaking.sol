@@ -19,24 +19,6 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
 
     using SafeERC20 for IERC20;
 
-    // Add minimum confirmations required for admin actions
-    uint256 public constant MIN_CONFIRMATIONS = 3;
-
-    // Add mapping for admin confirmations
-    mapping(bytes32 => mapping(address => bool)) public adminConfirmations;
-    mapping(bytes32 => uint256) public confirmationCount;
-    mapping(bytes32 => bool) public isExecuted;
-
-    // Track pending admin withdrawals
-    struct PendingWithdrawal {
-        uint256 sbtcAmount;
-        uint256 stoneAmount;
-        uint256 timestamp;
-        bool executed;
-    }
-
-    mapping(bytes32 => PendingWithdrawal) public pendingWithdrawals;
-
     /**
      * @notice State of a user that deposits into the ReserveStaking contract
      * @param sbtcAmountSeconds Cumulative sum of the amount of SBTC staked by the user,
