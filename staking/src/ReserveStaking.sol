@@ -196,23 +196,34 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
             $.users.push(msg.sender);
         }
 
+        uint256 actualSbtcAmount;
+        uint256 actualStoneAmount;
+
         if (sbtcAmount > 0) {
-            $.sbtc.safeTransferFrom(msg.sender, address(this), sbtcAmount);
+            IERC20 sbtc = $.sbtc;
+            uint256 previousBalance = sbtc.balanceOf(address(this));
+            sbtc.safeTransferFrom(msg.sender, address(this), sbtcAmount);
+            uint256 newBalance = sbtc.balanceOf(address(this));
+            actualSbtcAmount = newBalance - previousBalance;
             userState.sbtcAmountSeconds += userState.sbtcAmountStaked * (timestamp - userState.sbtcLastUpdate);
-            userState.sbtcAmountStaked += sbtcAmount;
+            userState.sbtcAmountStaked += actualSbtcAmount;
             userState.sbtcLastUpdate = timestamp;
-            $.sbtcTotalAmountStaked += sbtcAmount;
+            $.sbtcTotalAmountStaked += actualSbtcAmount;
         }
 
         if (stoneAmount > 0) {
-            $.stone.safeTransferFrom(msg.sender, address(this), stoneAmount);
+            IERC20 stone = $.stone;
+            uint256 previousBalance = stone.balanceOf(address(this));
+            stone.safeTransferFrom(msg.sender, address(this), stoneAmount);
+            uint256 newBalance = stone.balanceOf(address(this));
+            actualStoneAmount = newBalance - previousBalance;
             userState.stoneAmountSeconds += userState.stoneAmountStaked * (timestamp - userState.stoneLastUpdate);
             userState.stoneAmountStaked += stoneAmount;
             userState.stoneLastUpdate = timestamp;
             $.stoneTotalAmountStaked += stoneAmount;
         }
 
-        emit Staked(msg.sender, sbtcAmount, stoneAmount);
+        emit Staked(msg.sender, actualSbtcAmount, actualStoneAmount);
     }
 
     /**
@@ -234,25 +245,36 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
             );
         }
 
+        uint256 actualSbtcAmount;
+        uint256 actualStoneAmount;
+
         if (sbtcAmount > 0) {
+            IERC20 sbtc = $.sbtc;
             userState.sbtcAmountSeconds += userState.sbtcAmountStaked * (timestamp - userState.sbtcLastUpdate);
-            $.sbtc.safeTransfer(msg.sender, sbtcAmount);
+            uint256 previousBalance = sbtc.balanceOf(address(this));
+            sbtc.safeTransfer(msg.sender, sbtcAmount);
+            uint256 newBalance = sbtc.balanceOf(address(this));
+            actualSbtcAmount = previousBalance - newBalance;
             userState.sbtcAmountSeconds -= userState.sbtcAmountSeconds * sbtcAmount / userState.sbtcAmountStaked;
-            userState.sbtcAmountStaked -= sbtcAmount;
+            userState.sbtcAmountStaked -= actualSbtcAmount;
             userState.sbtcLastUpdate = timestamp;
-            $.sbtcTotalAmountStaked -= sbtcAmount;
+            $.sbtcTotalAmountStaked -= actualSbtcAmount;
         }
 
         if (stoneAmount > 0) {
+            IERC20 stone = $.stone;
             userState.stoneAmountSeconds += userState.stoneAmountStaked * (timestamp - userState.stoneLastUpdate);
-            $.stone.safeTransfer(msg.sender, stoneAmount);
+            uint256 previousBalance = stone.balanceOf(address(this));
+            stone.safeTransfer(msg.sender, stoneAmount);
+            uint256 newBalance = stone.balanceOf(address(this));
+            actualStoneAmount = previousBalance - newBalance;
             userState.stoneAmountSeconds -= userState.stoneAmountSeconds * stoneAmount / userState.stoneAmountStaked;
-            userState.stoneAmountStaked -= stoneAmount;
+            userState.stoneAmountStaked -= actualStoneAmount;
             userState.stoneLastUpdate = timestamp;
-            $.stoneTotalAmountStaked -= stoneAmount;
+            $.stoneTotalAmountStaked -= actualStoneAmount;
         }
 
-        emit Withdrawn(msg.sender, sbtcAmount, stoneAmount);
+        emit Withdrawn(msg.sender, actualSbtcAmount, actualStoneAmount);
     }
 
     // Getter View Functions

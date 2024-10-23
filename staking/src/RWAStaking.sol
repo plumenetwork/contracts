@@ -191,7 +191,12 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
             revert NotAllowedStablecoin(stablecoin);
         }
 
+        uint256 previousBalance = stablecoin.balanceOf(address(this));
+
         stablecoin.safeTransferFrom(msg.sender, address(this), amount);
+
+        uint256 newBalance = stablecoin.balanceOf(address(this));
+        uint256 actualAmount = newBalance - previousBalance;
 
         uint256 timestamp = block.timestamp;
         UserState storage userState = $.userStates[msg.sender];
@@ -199,11 +204,11 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
             $.users.push(msg.sender);
         }
         userState.amountSeconds += userState.amountStaked * (timestamp - userState.lastUpdate);
-        userState.amountStaked += amount;
+        userState.amountStaked += actualAmount;
         userState.lastUpdate = timestamp;
-        $.totalAmountStaked += amount;
+        $.totalAmountStaked += actualAmount;
 
-        emit Staked(msg.sender, stablecoin, amount, timestamp);
+        emit Staked(msg.sender, stablecoin, actualAmount, timestamp);
     }
 
     // Getter View Functions
