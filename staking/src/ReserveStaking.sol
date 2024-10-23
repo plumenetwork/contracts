@@ -37,7 +37,6 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
 
     mapping(bytes32 => PendingWithdrawal) public pendingWithdrawals;
 
-
     /**
      * @notice State of a user that deposits into the ReserveStaking contract
      * @param sbtcAmountSeconds Cumulative sum of the amount of SBTC staked by the user,
@@ -121,11 +120,6 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
      */
     event Staked(address indexed user, uint256 sbtcAmount, uint256 stoneAmount);
 
-    // Events for multisig operations
-    event WithdrawalProposed(bytes32 indexed proposalId, address indexed proposer);
-    event WithdrawalConfirmed(bytes32 indexed proposalId, address indexed confirmer);
-    event WithdrawalExecuted(bytes32 indexed proposalId, address indexed executor);
-
     // Errors
 
     /// @notice Indicates a failure because the pre-staking period has ended
@@ -185,58 +179,20 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
      * @notice Stop the ReserveStaking contract by withdrawing all SBTC and STONE
      * @dev Only the admin can withdraw SBTC and STONE from the ReserveStaking contract
      */
-    // Modify adminWithdraw to use multisig
-    function proposeAdminWithdraw() external onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external onlyRole(ADMIN_ROLE) {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
         }
 
-        bytes32 proposalId = keccak256(abi.encodePacked("withdraw", block.timestamp, msg.sender));
-
         uint256 sbtcAmount = $.sbtc.balanceOf(address(this));
         uint256 stoneAmount = $.stone.balanceOf(address(this));
 
-        pendingWithdrawals[proposalId] = PendingWithdrawal({
-            sbtcAmount: sbtcAmount,
-            stoneAmount: stoneAmount,
-            timestamp: block.timestamp,
-            executed: false
-        });
-
-        adminConfirmations[proposalId][msg.sender] = true;
-        confirmationCount[proposalId] = 1;
-
-        emit WithdrawalProposed(proposalId, msg.sender);
-    }
-
-    function confirmAdminWithdraw(bytes32 proposalId) external onlyRole(ADMIN_ROLE) {
-        require(!adminConfirmations[proposalId][msg.sender], "Already confirmed");
-        require(!isExecuted[proposalId], "Already executed");
-        require(pendingWithdrawals[proposalId].timestamp != 0, "Invalid proposal");
-
-        adminConfirmations[proposalId][msg.sender] = true;
-        confirmationCount[proposalId] += 1;
-
-        emit WithdrawalConfirmed(proposalId, msg.sender);
-    }
-
-    function executeAdminWithdraw(bytes32 proposalId) external onlyRole(ADMIN_ROLE) nonReentrant {
-        require(confirmationCount[proposalId] >= MIN_CONFIRMATIONS, "Insufficient confirmations");
-        require(!isExecuted[proposalId], "Already executed");
-
-        ReserveStakingStorage storage $ = _getReserveStakingStorage();
-        PendingWithdrawal storage withdrawal = pendingWithdrawals[proposalId];
-
-        $.sbtc.safeTransfer(msg.sender, withdrawal.sbtcAmount);
-        $.stone.safeTransfer(msg.sender, withdrawal.stoneAmount);
+        $.sbtc.safeTransfer(msg.sender, sbtcAmount);
+        $.stone.safeTransfer(msg.sender, stoneAmount);
         $.endTime = block.timestamp;
 
-        isExecuted[proposalId] = true;
-        withdrawal.executed = true;
-
-        emit WithdrawalExecuted(proposalId, msg.sender);
-        emit AdminWithdrawn(msg.sender, withdrawal.sbtcAmount, withdrawal.stoneAmount);
+        emit AdminWithdrawn(msg.sender, sbtcAmount, stoneAmount);
     }
 
     // User Functions
