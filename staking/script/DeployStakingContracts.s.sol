@@ -18,6 +18,8 @@ contract DeployStakingContracts is Script {
     address private constant PUSD_ADDRESS = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
     address private constant USDT_ADDRESS = 0x2413b8C79Ce60045882559f63d308aE3DFE0903d;
 
+    function test() public { }
+
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
 

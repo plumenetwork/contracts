@@ -82,6 +82,14 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param sbtcAmount Amount of SBTC withdrawn
      * @param stoneAmount Amount of STONE withdrawn
      */
+    event AdminWithdrawn(address indexed user, uint256 sbtcAmount, uint256 stoneAmount);
+
+    /**
+     * @notice Emitted when a user withdraws SBTC and STONE from the ReserveStaking contract
+     * @param user Address of the user who withdrew stablecoins
+     * @param sbtcAmount Amount of SBTC withdrawn
+     * @param stoneAmount Amount of STONE withdrawn
+     */
     event Withdrawn(address indexed user, uint256 sbtcAmount, uint256 stoneAmount);
 
     /**
@@ -89,14 +97,25 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param user Address of the user who staked SBTC
      * @param sbtcAmount Amount of SBTC staked
      * @param stoneAmount Amount of STONE staked
-     * @param timestamp Timestamp of the stake
      */
-    event Staked(address indexed user, uint256 sbtcAmount, uint256 stoneAmount, uint256 timestamp);
+    event Staked(address indexed user, uint256 sbtcAmount, uint256 stoneAmount);
 
     // Errors
 
     /// @notice Indicates a failure because the pre-staking period has ended
     error StakingEnded();
+
+    /**
+     * @notice Indicates a failure because the user does not have enough SBTC or STONE staked
+     * @param user Address of the user who does not have enough SBTC or STONE staked
+     * @param sbtcAmount Amount of SBTC that the user does not have enough of
+     * @param stoneAmount Amount of STONE that the user does not have enough of
+     * @param sbtcAmountStaked Amount of SBTC that the user has staked
+     * @param stoneAmountStaked Amount of STONE that the user has staked
+     */
+    error InsufficientStaked(
+        address user, uint256 sbtcAmount, uint256 stoneAmount, uint256 sbtcAmountStaked, uint256 stoneAmountStaked
+    );
 
     // Initializer
 
@@ -142,7 +161,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Stop the ReserveStaking contract by withdrawing all SBTC and STONE
      * @dev Only the admin can withdraw SBTC and STONE from the ReserveStaking contract
      */
-    function withdraw() external onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external onlyRole(ADMIN_ROLE) {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -155,7 +174,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
         $.stone.safeTransfer(msg.sender, stoneAmount);
         $.endTime = block.timestamp;
 
-        emit Withdrawn(msg.sender, sbtcAmount, stoneAmount);
+        emit AdminWithdrawn(msg.sender, sbtcAmount, stoneAmount);
     }
 
     // User Functions
@@ -193,7 +212,47 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
             $.stoneTotalAmountStaked += stoneAmount;
         }
 
-        emit Staked(msg.sender, sbtcAmount, stoneAmount, timestamp);
+        emit Staked(msg.sender, sbtcAmount, stoneAmount);
+    }
+
+    /**
+     * @notice Withdraw SBTC and STONE from the ReserveStaking contract and lose points
+     * @param sbtcAmount Amount of SBTC to withdraw
+     * @param stoneAmount Amount of STONE to withdraw
+     */
+    function withdraw(uint256 sbtcAmount, uint256 stoneAmount) external {
+        ReserveStakingStorage storage $ = _getReserveStakingStorage();
+        if ($.endTime != 0) {
+            revert StakingEnded();
+        }
+
+        uint256 timestamp = block.timestamp;
+        UserState storage userState = $.userStates[msg.sender];
+        if (userState.sbtcAmountStaked < sbtcAmount || userState.stoneAmountStaked < stoneAmount) {
+            revert InsufficientStaked(
+                msg.sender, sbtcAmount, stoneAmount, userState.sbtcAmountStaked, userState.stoneAmountStaked
+            );
+        }
+
+        if (sbtcAmount > 0) {
+            userState.sbtcAmountSeconds += userState.sbtcAmountStaked * (timestamp - userState.sbtcLastUpdate);
+            $.sbtc.safeTransfer(msg.sender, sbtcAmount);
+            userState.sbtcAmountSeconds -= userState.sbtcAmountSeconds * sbtcAmount / userState.sbtcAmountStaked;
+            userState.sbtcAmountStaked -= sbtcAmount;
+            userState.sbtcLastUpdate = timestamp;
+            $.sbtcTotalAmountStaked -= sbtcAmount;
+        }
+
+        if (stoneAmount > 0) {
+            userState.stoneAmountSeconds += userState.stoneAmountStaked * (timestamp - userState.stoneLastUpdate);
+            $.stone.safeTransfer(msg.sender, stoneAmount);
+            userState.stoneAmountSeconds -= userState.stoneAmountSeconds * stoneAmount / userState.stoneAmountStaked;
+            userState.stoneAmountStaked -= stoneAmount;
+            userState.stoneLastUpdate = timestamp;
+            $.stoneTotalAmountStaked -= stoneAmount;
+        }
+
+        emit Withdrawn(msg.sender, sbtcAmount, stoneAmount);
     }
 
     // Getter View Functions
