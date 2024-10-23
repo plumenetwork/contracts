@@ -15,16 +15,16 @@ contract TestWalletImplementationTest is Test {
     address constant ADMIN_ADDRESS = 0xDE1509CC56D740997c70E1661BA687e950B4a241;
     bytes32 constant DEPLOY_SALT = keccak256("PlumeSmartWallets");
 
-    /* forge coverage --ir-minimum */
+    /* forge coverage --ir-minimum 
     address constant EMPTY_ADDRESS = 0x0Ab1C3d2cCB7c314666185b317900a614e516feB;
     address constant WALLET_FACTORY_ADDRESS = 0x20bb256ADCDF463Cff377152FEa514d14A4464b7;
     address constant WALLET_PROXY_ADDRESS = 0x4920a4ba4752Ac88dF5f7BEaE071178B2b94e7d3;
-
-    /* forge test 
-    address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
-    address constant WALLET_FACTORY_ADDRESS = 0x5F26233a11D5148aeEa71d54D9D102992F8d73E2;
-    address constant WALLET_PROXY_ADDRESS = 0xCd49AC437b7e0b73D403e2fF339429330166feE0;
     */
+    /* forge test */
+    address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
+    address constant WALLET_FACTORY_ADDRESS = 0xB8d58677E8A51C84a42a3F98971bA577d4ed1b88;
+    address constant WALLET_PROXY_ADDRESS = 0x97C345048Fa4D59eCB03c3C67c9De1916Cbb0857;
+    
     TestWalletImplementation testWalletImplementation;
 
     // small hack to be excluded from coverage report
