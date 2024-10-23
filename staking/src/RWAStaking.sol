@@ -250,7 +250,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
         uint256 newBalance = stablecoin.balanceOf(address(this));
         uint256 actualAmount = previousBalance - newBalance;
 
-        userState.amountSeconds -= userState.amountSeconds * amount / userState.amountStaked;
+        userState.amountSeconds -= userState.amountSeconds * actualAmount / userState.amountStaked;
         userState.amountStaked -= actualAmount;
         userState.lastUpdate = timestamp;
         $.totalAmountStaked -= actualAmount;

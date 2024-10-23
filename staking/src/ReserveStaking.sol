@@ -255,7 +255,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
             sbtc.safeTransfer(msg.sender, sbtcAmount);
             uint256 newBalance = sbtc.balanceOf(address(this));
             actualSbtcAmount = previousBalance - newBalance;
-            userState.sbtcAmountSeconds -= userState.sbtcAmountSeconds * sbtcAmount / userState.sbtcAmountStaked;
+            userState.sbtcAmountSeconds -= userState.sbtcAmountSeconds * actualSbtcAmount / userState.sbtcAmountStaked;
             userState.sbtcAmountStaked -= actualSbtcAmount;
             userState.sbtcLastUpdate = timestamp;
             $.sbtcTotalAmountStaked -= actualSbtcAmount;
@@ -268,7 +268,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
             stone.safeTransfer(msg.sender, stoneAmount);
             uint256 newBalance = stone.balanceOf(address(this));
             actualStoneAmount = previousBalance - newBalance;
-            userState.stoneAmountSeconds -= userState.stoneAmountSeconds * stoneAmount / userState.stoneAmountStaked;
+            userState.stoneAmountSeconds -= userState.stoneAmountSeconds * actualStoneAmount / userState.stoneAmountStaked;
             userState.stoneAmountStaked -= actualStoneAmount;
             userState.stoneLastUpdate = timestamp;
             $.stoneTotalAmountStaked -= actualStoneAmount;
