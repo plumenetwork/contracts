@@ -4,7 +4,7 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -37,10 +37,6 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
 
     mapping(bytes32 => PendingWithdrawal) public pendingWithdrawals;
 
-    // Events for multisig operations
-    event WithdrawalProposed(bytes32 indexed proposalId, address indexed proposer);
-    event WithdrawalConfirmed(bytes32 indexed proposalId, address indexed confirmer);
-    event WithdrawalExecuted(bytes32 indexed proposalId, address indexed executor);
 
     /**
      * @notice State of a user that deposits into the ReserveStaking contract
