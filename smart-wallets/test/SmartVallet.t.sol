@@ -6,12 +6,20 @@ import { WalletUtils } from "../src/WalletUtils.sol";
 import { AssetVault } from "../src/extensions/AssetVault.sol";
 import { IAssetToken } from "../src/interfaces/IAssetToken.sol";
 import { IAssetVault } from "../src/interfaces/IAssetVault.sol";
+import { IYieldReceiver } from "../src/interfaces/IYieldReceiver.sol";
 
 import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import { Test } from "forge-std/Test.sol";
-
+contract MockERC20 is ERC20 {
+    constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
+    
+    function mint(address to, uint256 amount) public {
+        _mint(to, amount);
+    }
+}
 /*
 // Mock contracts for testing
 contract MockAssetToken is IAssetToken {
@@ -85,10 +93,14 @@ contract MockAssetToken is IAssetToken {
 
 }
 */
-contract MockYieldReceiver {
-
-    function receiveYield(IAssetToken, IERC20, uint256) external pure { }
-
+contract MockYieldReceiver is IYieldReceiver {
+    function receiveYield(
+        IAssetToken assetToken,
+        IERC20 currencyToken,
+        uint256 amount
+    ) external override {
+        // Implementation can be empty for testing
+    }
 }
 
 contract MockUserWallet {
@@ -148,14 +160,29 @@ contract SmartWalletTest is Test {
         // Add assertions based on the expected behavior
     }
 
-    /*
-    function testTransferYield() public {
-        smartWallet.deployAssetVault();
-        address assetVault = address(smartWallet.getAssetVault());
-        vm.prank(assetVault);
-    smartWallet.transferYield(IAssetToken(address(mockAssetToken)), address(mockYieldReceiver), IERC20(address(1)),
-    100);
-    }*/
+
+function testTransferYield() public {
+    // Deploy mocks
+    MockERC20 mockCurrencyToken = new MockERC20("Mock", "MCK"); // Use a proper ERC20 mock
+    MockYieldReceiver mockReceiver = new MockYieldReceiver();
+    
+    // Setup
+    smartWallet.deployAssetVault();
+    address assetVault = address(smartWallet.getAssetVault());
+    
+    // Mint some tokens to the smart wallet for transfer
+    mockCurrencyToken.mint(address(smartWallet), 1000);
+    
+    // Execute transfer
+    vm.prank(assetVault);
+    smartWallet.transferYield(
+        IAssetToken(address(mockAssetToken)),
+        address(mockReceiver),
+        IERC20(address(mockCurrencyToken)),
+        100
+    );
+}
+
     function testTransferYieldUnauthorized() public {
         vm.expectRevert(abi.encodeWithSelector(SmartWallet.UnauthorizedAssetVault.selector, address(this)));
         smartWallet.transferYield(
