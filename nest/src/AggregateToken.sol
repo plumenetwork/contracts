@@ -119,12 +119,9 @@ contract AggregateToken is ComponentToken, IAggregateToken {
      * @inheritdoc IERC4626
      * @dev 1:1 conversion rate between USDT and base asset
      */
-    function convertToShares(uint256 assets)
-        public
-        view
-        override(ComponentToken, IComponentToken)
-        returns (uint256 shares)
-    {
+    function convertToShares(
+        uint256 assets
+    ) public view override(ComponentToken, IComponentToken) returns (uint256 shares) {
         return assets * _getAggregateTokenStorage().askPrice / _BASE;
     }
 
@@ -132,12 +129,9 @@ contract AggregateToken is ComponentToken, IAggregateToken {
      * @inheritdoc IERC4626
      * @dev 1:1 conversion rate between USDT and base asset
      */
-    function convertToAssets(uint256 shares)
-        public
-        view
-        override(ComponentToken, IComponentToken)
-        returns (uint256 assets)
-    {
+    function convertToAssets(
+        uint256 shares
+    ) public view override(ComponentToken, IComponentToken) returns (uint256 assets) {
         return shares * _BASE / _getAggregateTokenStorage().bidPrice;
     }
 
@@ -167,7 +161,9 @@ contract AggregateToken is ComponentToken, IAggregateToken {
      * @dev Only the owner can call this function, and there is no way to remove a ComponentToken later
      * @param componentToken ComponentToken to add
      */
-    function addComponentToken(IComponentToken componentToken) external onlyRole(ADMIN_ROLE) {
+    function addComponentToken(
+        IComponentToken componentToken
+    ) external onlyRole(ADMIN_ROLE) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
         if ($.componentTokenMap[componentToken]) {
             revert ComponentTokenAlreadyListed(componentToken);
@@ -219,7 +215,9 @@ contract AggregateToken is ComponentToken, IAggregateToken {
      * @dev Only the owner can call this setter
      * @param askPrice New ask price
      */
-    function setAskPrice(uint256 askPrice) external onlyRole(ADMIN_ROLE) {
+    function setAskPrice(
+        uint256 askPrice
+    ) external onlyRole(ADMIN_ROLE) {
         _getAggregateTokenStorage().askPrice = askPrice;
     }
 
@@ -228,7 +226,9 @@ contract AggregateToken is ComponentToken, IAggregateToken {
      * @dev Only the owner can call this setter
      * @param bidPrice New bid price
      */
-    function setBidPrice(uint256 bidPrice) external onlyRole(ADMIN_ROLE) {
+    function setBidPrice(
+        uint256 bidPrice
+    ) external onlyRole(ADMIN_ROLE) {
         _getAggregateTokenStorage().bidPrice = bidPrice;
     }
 
@@ -254,7 +254,9 @@ contract AggregateToken is ComponentToken, IAggregateToken {
      * @param componentToken ComponentToken to check
      * @return isListed Boolean indicating if the ComponentToken is in the component token list
      */
-    function getComponentToken(IComponentToken componentToken) public view returns (bool isListed) {
+    function getComponentToken(
+        IComponentToken componentToken
+    ) public view returns (bool isListed) {
         return _getAggregateTokenStorage().componentTokenMap[componentToken];
     }
 

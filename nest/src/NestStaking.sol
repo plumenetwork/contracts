@@ -93,7 +93,9 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @notice Initialize the Nest Staking protocol
      * @param owner Address of the owner of Nest Staking
      */
-    function initialize(address owner) public initializer {
+    function initialize(
+        address owner
+    ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
 
@@ -107,7 +109,9 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(UPGRADER_ROLE) { }
 
     // Admin Functions
 
@@ -116,7 +120,9 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @dev Only the owner can call this function
      * @param aggregateToken AggregateToken to be featured
      */
-    function featureToken(IAggregateToken aggregateToken) external onlyRole(ADMIN_ROLE) {
+    function featureToken(
+        IAggregateToken aggregateToken
+    ) external onlyRole(ADMIN_ROLE) {
         NestStakingStorage storage $ = _getNestStakingStorage();
         if ($.isFeatured[aggregateToken]) {
             revert TokenAlreadyFeatured(aggregateToken);
@@ -131,7 +137,9 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @dev Only the owner can call this function
      * @param aggregateToken AggregateToken to be unfeatured
      */
-    function unfeatureToken(IAggregateToken aggregateToken) external onlyRole(ADMIN_ROLE) {
+    function unfeatureToken(
+        IAggregateToken aggregateToken
+    ) external onlyRole(ADMIN_ROLE) {
         NestStakingStorage storage $ = _getNestStakingStorage();
         if (!$.isFeatured[aggregateToken]) {
             revert TokenNotFeatured(aggregateToken);
@@ -202,7 +210,9 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @param aggregateToken AggregateToken to check
      * @return featured Boolean indicating if the AggregateToken is featured
      */
-    function isFeatured(IAggregateToken aggregateToken) external view returns (bool featured) {
+    function isFeatured(
+        IAggregateToken aggregateToken
+    ) external view returns (bool featured) {
         return _getNestStakingStorage().isFeatured[aggregateToken];
     }
 

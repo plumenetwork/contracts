@@ -50,6 +50,9 @@ contract YieldDistributionTokenTest is Test, WalletUtils {
     address beneficiary;
     address proxyAdmin;
 
+    // small hack to be excluded from coverage report
+    function test() public { }
+
     function setUp() public {
         vm.startPrank(OWNER);
 

@@ -33,7 +33,11 @@ contract YieldDistributionTokenScenarioTest is Test {
         currencyTokenMock.mint(OWNER, OWNER_MINTED_AMOUNT);
     }
 
-    function test_setUp() public view {
+    function test_setUp() public {
+        token.exposed_mint(alice, MINT_AMOUNT);
+        token.exposed_mint(bob, MINT_AMOUNT);
+        token.exposed_mint(charlie, MINT_AMOUNT);
+
         assertEq(token.name(), "Yield Distribution Token");
         assertEq(token.symbol(), "YDT");
         assertEq(token.decimals(), 18);

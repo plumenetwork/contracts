@@ -42,6 +42,9 @@ contract AssetTokenTest is Test {
     address public user2;
     address public walletProxyAddress;
 
+    // Events for testing
+    event Deposited(address indexed user, uint256 currencyTokenAmount);
+
     // small hack to be excluded from coverage report
     // function test_() public { }
 
@@ -560,8 +563,5 @@ contract AssetTokenTest is Test {
         // 4. Claimed yield should be the user's total yield
         assertEq(assetToken.claimedYield(user1), assetToken.totalYield(user1));
     }
-
-    // Events for testing
-    event Deposited(address indexed user, uint256 currencyTokenAmount);
 
 }
