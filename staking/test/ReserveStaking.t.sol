@@ -8,9 +8,22 @@ import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Test } from "forge-std/Test.sol";
-import { console2 } from "forge-std/console2.sol";
 
 import { ReserveStaking } from "../src/ReserveStaking.sol";
+import { SBTC } from "../src/SBTC.sol";
+import { STONE } from "../src/STONE.sol";
+import { PlumePreReserveFund } from "../src/proxy/PlumePreReserveFund.sol";
+
+contract MockPlumePreReserveFund is PlumePreReserveFund {
+
+    constructor(address logic, bytes memory data) PlumePreReserveFund(logic, data) { }
+    function test() public { }
+
+    function exposed_implementation() public view returns (address) {
+        return _implementation();
+    }
+
+}
 
 contract ReserveStakingTest is Test {
 
@@ -26,8 +39,10 @@ contract ReserveStakingTest is Test {
     uint256 constant INITIAL_BALANCE = 1000 ether;
 
     function setUp() public {
-        ERC20Mock sbtcMock = new ERC20Mock();
-        ERC20Mock stoneMock = new ERC20Mock();
+        vm.startPrank(owner);
+
+        SBTC sbtcMock = new SBTC(owner);
+        STONE stoneMock = new STONE(owner);
         sbtcMock.mint(user1, INITIAL_BALANCE);
         sbtcMock.mint(user2, INITIAL_BALANCE);
         stoneMock.mint(user1, INITIAL_BALANCE);
@@ -35,11 +50,16 @@ contract ReserveStakingTest is Test {
         sbtc = IERC20(sbtcMock);
         stone = IERC20(stoneMock);
 
+        vm.stopPrank();
+
         ReserveStaking stakingImpl = new ReserveStaking();
-        ERC1967Proxy stakingProxy = new ERC1967Proxy(
+        MockPlumePreReserveFund plumeReserveFundProxy = new MockPlumePreReserveFund(
             address(stakingImpl), abi.encodeWithSelector(stakingImpl.initialize.selector, owner, sbtc, stone)
         );
-        staking = ReserveStaking(address(stakingProxy));
+        staking = ReserveStaking(address(plumeReserveFundProxy));
+
+        assertEq(plumeReserveFundProxy.PROXY_NAME(), keccak256("PlumePreReserveFund"));
+        assertEq(plumeReserveFundProxy.exposed_implementation(), address(stakingImpl));
     }
 
     function helper_initialStake(address user, uint256 sbtcAmount, uint256 stoneAmount) public {

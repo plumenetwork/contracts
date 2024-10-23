@@ -10,6 +10,18 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Test } from "forge-std/Test.sol";
 
 import { RWAStaking } from "../src/RWAStaking.sol";
+import { PlumePreStaking } from "../src/proxy/PlumePreStaking.sol";
+
+contract MockPlumePreStaking is PlumePreStaking {
+
+    constructor(address logic, bytes memory data) PlumePreStaking(logic, data) { }
+    function test() public { }
+
+    function exposed_implementation() public view returns (address) {
+        return _implementation();
+    }
+
+}
 
 contract RWAStakingTest is Test {
 
@@ -36,9 +48,13 @@ contract RWAStakingTest is Test {
         pusd = IERC20(pusdMock);
 
         RWAStaking rwaStakingImpl = new RWAStaking();
-        ERC1967Proxy rwaStakingProxy =
-            new ERC1967Proxy(address(rwaStakingImpl), abi.encodeWithSelector(rwaStakingImpl.initialize.selector, owner));
-        rwaStaking = RWAStaking(address(rwaStakingProxy));
+        MockPlumePreStaking plumePreStakingProxy = new MockPlumePreStaking(
+            address(rwaStakingImpl), abi.encodeWithSelector(rwaStakingImpl.initialize.selector, owner)
+        );
+        rwaStaking = RWAStaking(address(plumePreStakingProxy));
+
+        assertEq(plumePreStakingProxy.PROXY_NAME(), keccak256("PlumePreStaking"));
+        assertEq(plumePreStakingProxy.exposed_implementation(), address(rwaStakingImpl));
     }
 
     function helper_initialStake(address user, uint256 stakeAmount) public {
