@@ -27,28 +27,7 @@ contract SignedOperationsTest is Test {
         currencyToken = new ERC20Mock();
         vm.stopPrank();
     }
-/*
-    function testExecuteSignedOperationsSuccess() public {
-        bytes32 nonce = keccak256("testnonce");
-        bytes32 nonceDependency = bytes32(0);
-        uint256 expiration = block.timestamp + 1 days;
-        address[] memory targets = new address[](1);
-        bytes[] memory calls = new bytes[](1);
-        uint256[] memory values = new uint256[](1);
 
-        targets[0] = address(currencyToken);
-        calls[0] = abi.encodeWithSignature("transfer(address,uint256)", executor, 100);
-        values[0] = 0;
-
-        bytes32 digest = _getDigest(targets, calls, values, nonce, nonceDependency, expiration);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
-
-        vm.prank(address(signedOperations));
-        signedOperations.executeSignedOperations(targets, calls, values, nonce, nonceDependency, expiration, v, r, s);
-
-        assertTrue(signedOperations.isNonceUsed(nonce));
-    }
-*/
     function testRevertExpiredSignature() public {
         bytes32 nonce = keccak256("testnonce");
         bytes32 nonceDependency = bytes32(0);
@@ -139,5 +118,11 @@ contract SignedOperationsTest is Test {
             )
         );
     }
+
+    /*
+    function testExecuteSignedOperationsSuccess() public {
+    
+    }
+    */
 
 }

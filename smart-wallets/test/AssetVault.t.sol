@@ -6,19 +6,15 @@ import { Test } from "forge-std/Test.sol";
 import { console } from "forge-std/console.sol";
 
 import { SmartWallet } from "../src/SmartWallet.sol";
+
+import { WalletUtils } from "../src/WalletUtils.sol";
+import { AssetVault } from "../src/extensions/AssetVault.sol";
+import { IAssetToken } from "../src/interfaces/IAssetToken.sol";
 import { IAssetVault } from "../src/interfaces/IAssetVault.sol";
 import { ISmartWallet } from "../src/interfaces/ISmartWallet.sol";
 import { AssetToken } from "../src/token/AssetToken.sol";
 
-contract MockERC20 is ERC20 {
-
-    constructor(string memory name, string memory symbol) ERC20(name, symbol) { }
-
-    function mint(address to, uint256 amount) public {
-        _mint(to, amount);
-    }
-
-}
+import { MockERC20 } from "../src/mocks/MockERC20.sol";
 
 contract AssetVaultTest is Test {
 
@@ -34,7 +30,7 @@ contract AssetVaultTest is Test {
     address constant USER3 = address(0xDEAD);
 
     // small hack to be excluded from coverage report
-    function test() public { }
+    //function test() public { }
 
     function setUp() public {
         OWNER = address(new SmartWallet());
@@ -160,40 +156,6 @@ contract AssetVaultTest is Test {
         vm.prank(USER1);
         assetVault.acceptYieldAllowance(assetToken, 300_000, block.timestamp - 1 days);
     }
-    /*
-    function test_renounceYieldDistribution() public {
-    uint256 startTime = block.timestamp;
-    uint256 duration = 30 days;
-    uint256 expirationTime = startTime + duration;
-
-    vm.startPrank(OWNER);
-    assetVault.updateYieldAllowance(assetToken, USER1, 300_000, expirationTime);
-    vm.stopPrank();
-
-    vm.startPrank(USER1);
-    assetVault.acceptYieldAllowance(assetToken, 300_000, expirationTime);
-
-    // Advance time by half the duration
-    vm.warp(startTime + duration / 2);
-
-    // Check the locked balance before renouncing
-    uint256 balanceLockedBefore = assetVault.getBalanceLocked(assetToken);
-    console.log("Balance locked before:", balanceLockedBefore);
-
-    // Try to renounce part of the yield distribution
-    uint256 amountToRenounce = 100_000;
-    uint256 amountRenounced = assetVault.renounceYieldDistribution(assetToken, amountToRenounce, expirationTime);
-
-    // Check the locked balance after renouncing
-    uint256 balanceLockedAfter = assetVault.getBalanceLocked(assetToken);
-    console.log("Balance locked after:", balanceLockedAfter);
-
-    assertEq(amountRenounced, amountToRenounce, "Incorrect amount renounced");
-    assertEq(balanceLockedAfter, balanceLockedBefore - amountToRenounce, "Incorrect balance locked after renouncing");
-
-    vm.stopPrank();
-    }
-    */
 
     function test_renounceYieldDistributionInsufficientDistribution() public {
         vm.startPrank(OWNER);
@@ -251,5 +213,103 @@ contract AssetVaultTest is Test {
         vm.prank(USER1);
         assetVault.redistributeYield(assetToken, yieldCurrency, 1000);
     }
+
+    function testUpdateYieldAllowanceZeroAddress() public {
+        vm.startPrank(OWNER);
+
+        // Test zero asset token
+        vm.expectRevert(AssetVault.ZeroAddress.selector);
+        assetVault.updateYieldAllowance(IAssetToken(address(0)), USER1, 100, block.timestamp + 1 days);
+
+        // Test zero beneficiary
+        vm.expectRevert(AssetVault.ZeroAddress.selector);
+        assetVault.updateYieldAllowance(assetToken, address(0), 100, block.timestamp + 1 days);
+
+        vm.stopPrank();
+    }
+
+    function testUpdateYieldAllowanceZeroAmount() public {
+        vm.startPrank(OWNER);
+        vm.expectRevert(AssetVault.ZeroAmount.selector);
+        assetVault.updateYieldAllowance(assetToken, USER1, 0, block.timestamp + 1 days);
+        vm.stopPrank();
+    }
+
+    function testUpdateYieldAllowanceInvalidExpiration() public {
+        vm.startPrank(OWNER);
+        uint256 expiration = block.timestamp; // Same as current time
+        vm.expectRevert(abi.encodeWithSelector(AssetVault.InvalidExpiration.selector, expiration, block.timestamp));
+        assetVault.updateYieldAllowance(assetToken, USER1, 100, expiration);
+        vm.stopPrank();
+    }
+
+    function testRedistributeYieldExpired() public {
+        // Setup yield distribution
+        vm.startPrank(OWNER);
+        assetVault.updateYieldAllowance(assetToken, USER1, 100, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        vm.prank(USER1);
+        assetVault.acceptYieldAllowance(assetToken, 100, block.timestamp + 1 days);
+
+        // Warp past expiration
+        vm.warp(block.timestamp + 2 days);
+
+        // Mock yield generation
+        yieldCurrency.mint(address(assetToken), 1000);
+
+        vm.prank(OWNER);
+        assetVault.redistributeYield(assetToken, yieldCurrency, 1000);
+        // Should skip distribution as it's expired
+        // Could verify with an event check
+    }
+
+    function testAcceptYieldAllowanceZeroAmount() public {
+        vm.startPrank(OWNER);
+        assetVault.updateYieldAllowance(assetToken, USER1, 100, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        vm.startPrank(USER1);
+        vm.expectRevert(AssetVault.ZeroAmount.selector);
+        assetVault.acceptYieldAllowance(assetToken, 0, block.timestamp + 1 days);
+        vm.stopPrank();
+    }
+
+    function testAcceptYieldAllowanceMismatchedExpiration() public {
+        uint256 correctExpiration = block.timestamp + 1 days;
+        uint256 wrongExpiration = block.timestamp + 2 days;
+
+        vm.startPrank(OWNER);
+        assetVault.updateYieldAllowance(assetToken, USER1, 100, correctExpiration);
+        vm.stopPrank();
+
+        vm.startPrank(USER1);
+        vm.expectRevert(
+            abi.encodeWithSelector(AssetVault.MismatchedExpiration.selector, wrongExpiration, correctExpiration)
+        );
+        assetVault.acceptYieldAllowance(assetToken, 100, wrongExpiration);
+        vm.stopPrank();
+    }
+
+    function testAcceptYieldAllowanceInsufficientBalance() public {
+        vm.startPrank(OWNER);
+        // Transfer all tokens away from owner
+        assetToken.transfer(USER2, assetToken.balanceOf(OWNER));
+        assetVault.updateYieldAllowance(assetToken, USER1, 100, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        vm.startPrank(USER1);
+        vm.expectRevert(abi.encodeWithSelector(AssetVault.InsufficientBalance.selector, assetToken, 100));
+        assetVault.acceptYieldAllowance(assetToken, 100, block.timestamp + 1 days);
+        vm.stopPrank();
+    }
+
+    function testClearYieldDistributionsEmpty() public {
+        vm.prank(OWNER);
+        assetVault.clearYieldDistributions(assetToken);
+        // Should not revert
+    }
+
+    // TODO: test_renounceYieldDistribution
 
 }

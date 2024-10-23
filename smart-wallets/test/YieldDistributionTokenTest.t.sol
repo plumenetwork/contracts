@@ -17,6 +17,8 @@ import "../src/interfaces/IYieldReceiver.sol";
 import "../src/interfaces/IYieldToken.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+import { MockYieldCurrency } from "../src/mocks/MockYieldCurrency.sol";
+
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -28,19 +30,6 @@ error UnauthorizedCall(address invalidUser);
 contract NonSmartWalletContract {
 // This contract does not implement ISmartWallet
 }
-
-// Mock YieldCurrency for testing
-contract MockYieldCurrency is ERC20 {
-
-    constructor() ERC20("Yield Currency", "YC") { }
-
-    function mint(address to, uint256 amount) public {
-        _mint(to, amount);
-    }
-
-}
-
-// Mock DEX contract for testing
 
 contract YieldDistributionTokenTest is Test, WalletUtils {
 

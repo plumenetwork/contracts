@@ -172,7 +172,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         );
     }
 
-/*
+    /*
     /// @dev Simulates a scenario where a user returns, or claims, some deposits after accruing `amountSeconds`,
     /// ensuring that
     /// yield is correctly distributed
@@ -201,7 +201,7 @@ contract YieldDistributionTokenScenarioTest is Test {
 
         uint256 expectedAliceYieldAccrued = expectedAliceAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
         uint256 expectedBobYieldAccrued = expectedBobAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
-        uint256 expectedCharlieYieldAccrued = expectedCharlieAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
+    uint256 expectedCharlieYieldAccrued = expectedCharlieAmountSeconds * YIELD_AMOUNT / totalExpectedAmountSeconds;
 
         _timeskip();
 
@@ -238,7 +238,7 @@ contract YieldDistributionTokenScenarioTest is Test {
             expectedCharlieYieldAccrued - oldWithdrawnYieldCharlie
         );
     }
-*/
+    */
     function _timeskip() internal {
         timeskipCounter++;
         vm.warp(block.timestamp + skipDuration);

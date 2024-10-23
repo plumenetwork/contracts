@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { WalletUtils } from "../WalletUtils.sol";
 import { AssetToken } from "../token/AssetToken.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract MockSmartWallet is WalletUtils {
+
     // small hack to be excluded from coverage report
     function test() public { }
-    
+
     function deployAssetToken(
         string memory name,
         string memory symbol,
@@ -32,10 +33,8 @@ contract MockSmartWallet is WalletUtils {
         );
     }
 
-
     function verifySetup() public pure returns (bool) {
         return true;
     }
-
 
 }

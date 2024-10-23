@@ -120,18 +120,16 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         $.totalValue = totalValue_;
         isWhitelistEnabled = isWhitelistEnabled_;
 
-        
         // need to whitelist owner, otherwise reverts in _update
         if (isWhitelistEnabled_) {
-                // Whitelist the owner
-                if (owner == address(0)) {
-                    revert InvalidAddress();
-                }
-                $.whitelist.push(owner);
-                $.isWhitelisted[owner] = true;
-                emit AddressAddedToWhitelist(owner);
+            // Whitelist the owner
+            if (owner == address(0)) {
+                revert InvalidAddress();
+            }
+            $.whitelist.push(owner);
+            $.isWhitelisted[owner] = true;
+            emit AddressAddedToWhitelist(owner);
         }
-
 
         _mint(owner, initialSupply);
     }
@@ -148,32 +146,24 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     function _update(address from, address to, uint256 value) internal override(YieldDistributionToken) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
         if (isWhitelistEnabled) {
-            console.log("whitelist1");
             if (from != address(0) && !$.isWhitelisted[from]) {
-                console.log("whitelist2");
-
                 revert Unauthorized(from);
             }
             if (to != address(0) && !$.isWhitelisted[to]) {
-                console.log("to",to);
-                console.log("whitelist3");
                 revert Unauthorized(to);
             }
         }
-                console.log("update4");
 
         if (from != address(0)) {
             if (getBalanceAvailable(from) < value) {
                 revert InsufficientBalance(from);
             }
         }
-                console.log("update5");
 
         if (!$.hasHeld[to]) {
             $.holders.push(to);
             $.hasHeld[to] = true;
         }
-                        console.log("update6");
 
         super._update(from, to, value);
     }
