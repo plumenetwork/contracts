@@ -153,7 +153,9 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(UPGRADER_ROLE) { }
 
     // Admin Functions
 
@@ -302,7 +304,9 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
     }
 
     /// @notice State of a user who has staked into the ReserveStaking contract
-    function getUserState(address user) external view returns (uint256, uint256, uint256, uint256, uint256, uint256) {
+    function getUserState(
+        address user
+    ) external view returns (uint256, uint256, uint256, uint256, uint256, uint256) {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         UserState memory userState = $.userStates[user];
         return (
