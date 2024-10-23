@@ -113,7 +113,9 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param sbtcAmountStaked Amount of SBTC that the user has staked
      * @param stoneAmountStaked Amount of STONE that the user has staked
      */
-    error InsufficientStaked(address user, uint256 sbtcAmount, uint256 stoneAmount, uint256 sbtcAmountStaked, uint256 stoneAmountStaked);
+    error InsufficientStaked(
+        address user, uint256 sbtcAmount, uint256 stoneAmount, uint256 sbtcAmountStaked, uint256 stoneAmountStaked
+    );
 
     // Initializer
 
@@ -227,20 +229,24 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
         uint256 timestamp = block.timestamp;
         UserState storage userState = $.userStates[msg.sender];
         if (userState.sbtcAmountStaked < sbtcAmount || userState.stoneAmountStaked < stoneAmount) {
-            revert InsufficientStaked(msg.sender, sbtcAmount, stoneAmount, userState.sbtcAmountStaked, userState.stoneAmountStaked);
+            revert InsufficientStaked(
+                msg.sender, sbtcAmount, stoneAmount, userState.sbtcAmountStaked, userState.stoneAmountStaked
+            );
         }
 
         if (sbtcAmount > 0) {
+            userState.sbtcAmountSeconds += userState.sbtcAmountStaked * (timestamp - userState.sbtcLastUpdate);
             $.sbtc.safeTransfer(msg.sender, sbtcAmount);
-            userState.sbtcAmountSeconds -= userState.sbtcAmountSeconds * (sbtcAmount / userState.sbtcAmountStaked);
+            userState.sbtcAmountSeconds -= userState.sbtcAmountSeconds * sbtcAmount / userState.sbtcAmountStaked;
             userState.sbtcAmountStaked -= sbtcAmount;
             userState.sbtcLastUpdate = timestamp;
             $.sbtcTotalAmountStaked -= sbtcAmount;
         }
 
         if (stoneAmount > 0) {
+            userState.stoneAmountSeconds += userState.stoneAmountStaked * (timestamp - userState.stoneLastUpdate);
             $.stone.safeTransfer(msg.sender, stoneAmount);
-            userState.stoneAmountSeconds -= userState.stoneAmountSeconds * (stoneAmount / userState.stoneAmountStaked);
+            userState.stoneAmountSeconds -= userState.stoneAmountSeconds * stoneAmount / userState.stoneAmountStaked;
             userState.stoneAmountStaked -= stoneAmount;
             userState.stoneLastUpdate = timestamp;
             $.stoneTotalAmountStaked -= stoneAmount;
