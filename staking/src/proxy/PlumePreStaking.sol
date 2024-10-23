@@ -15,7 +15,4 @@ contract PlumePreStaking is ERC1967Proxy {
 
     constructor(address logic, bytes memory data) ERC1967Proxy(logic, data) { }
 
-    /// @dev Fallback function to silence compiler warnings
-    receive() external payable { }
-
 }

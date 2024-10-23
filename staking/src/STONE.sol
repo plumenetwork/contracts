@@ -11,9 +11,7 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  */
 contract STONE is ERC20, Ownable {
 
-    constructor(
-        address owner_
-    ) ERC20("StakeStone Ether", "STONE") Ownable(owner_) { }
+    constructor(address owner_) ERC20("StakeStone Ether", "STONE") Ownable(owner_) { }
 
     function mint(address to, uint256 amount) public onlyOwner {
         _mint(to, amount);

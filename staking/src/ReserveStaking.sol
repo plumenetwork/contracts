@@ -3,6 +3,8 @@ pragma solidity ^0.8.25;
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -11,11 +13,34 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
  * @author Eugene Y. Q. Shen
  * @notice Pre-staking contract into the Plume Mainnet Reserve Fund
  */
-contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
+contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
     // Types
 
     using SafeERC20 for IERC20;
+
+    // Add minimum confirmations required for admin actions
+    uint256 public constant MIN_CONFIRMATIONS = 3;
+
+    // Add mapping for admin confirmations
+    mapping(bytes32 => mapping(address => bool)) public adminConfirmations;
+    mapping(bytes32 => uint256) public confirmationCount;
+    mapping(bytes32 => bool) public isExecuted;
+
+    // Track pending admin withdrawals
+    struct PendingWithdrawal {
+        uint256 sbtcAmount;
+        uint256 stoneAmount;
+        uint256 timestamp;
+        bool executed;
+    }
+
+    mapping(bytes32 => PendingWithdrawal) public pendingWithdrawals;
+
+    // Events for multisig operations
+    event WithdrawalProposed(bytes32 indexed proposalId, address indexed proposer);
+    event WithdrawalConfirmed(bytes32 indexed proposalId, address indexed confirmer);
+    event WithdrawalExecuted(bytes32 indexed proposalId, address indexed executor);
 
     /**
      * @notice State of a user that deposits into the ReserveStaking contract
@@ -100,6 +125,11 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      */
     event Staked(address indexed user, uint256 sbtcAmount, uint256 stoneAmount);
 
+    // Events for multisig operations
+    event WithdrawalProposed(bytes32 indexed proposalId, address indexed proposer);
+    event WithdrawalConfirmed(bytes32 indexed proposalId, address indexed confirmer);
+    event WithdrawalExecuted(bytes32 indexed proposalId, address indexed executor);
+
     // Errors
 
     /// @notice Indicates a failure because the pre-staking period has ended
@@ -151,9 +181,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(
-        address newImplementation
-    ) internal override onlyRole(UPGRADER_ROLE) { }
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) { }
 
     // Admin Functions
 
@@ -161,20 +189,58 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Stop the ReserveStaking contract by withdrawing all SBTC and STONE
      * @dev Only the admin can withdraw SBTC and STONE from the ReserveStaking contract
      */
-    function adminWithdraw() external onlyRole(ADMIN_ROLE) {
+    // Modify adminWithdraw to use multisig
+    function proposeAdminWithdraw() external onlyRole(ADMIN_ROLE) {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
         }
 
+        bytes32 proposalId = keccak256(abi.encodePacked("withdraw", block.timestamp, msg.sender));
+
         uint256 sbtcAmount = $.sbtc.balanceOf(address(this));
         uint256 stoneAmount = $.stone.balanceOf(address(this));
 
-        $.sbtc.safeTransfer(msg.sender, sbtcAmount);
-        $.stone.safeTransfer(msg.sender, stoneAmount);
+        pendingWithdrawals[proposalId] = PendingWithdrawal({
+            sbtcAmount: sbtcAmount,
+            stoneAmount: stoneAmount,
+            timestamp: block.timestamp,
+            executed: false
+        });
+
+        adminConfirmations[proposalId][msg.sender] = true;
+        confirmationCount[proposalId] = 1;
+
+        emit WithdrawalProposed(proposalId, msg.sender);
+    }
+
+    function confirmAdminWithdraw(bytes32 proposalId) external onlyRole(ADMIN_ROLE) {
+        require(!adminConfirmations[proposalId][msg.sender], "Already confirmed");
+        require(!isExecuted[proposalId], "Already executed");
+        require(pendingWithdrawals[proposalId].timestamp != 0, "Invalid proposal");
+
+        adminConfirmations[proposalId][msg.sender] = true;
+        confirmationCount[proposalId] += 1;
+
+        emit WithdrawalConfirmed(proposalId, msg.sender);
+    }
+
+    function executeAdminWithdraw(bytes32 proposalId) external onlyRole(ADMIN_ROLE) nonReentrant {
+        require(confirmationCount[proposalId] >= MIN_CONFIRMATIONS, "Insufficient confirmations");
+        require(!isExecuted[proposalId], "Already executed");
+
+        ReserveStakingStorage storage $ = _getReserveStakingStorage();
+        PendingWithdrawal storage withdrawal = pendingWithdrawals[proposalId];
+
+        $.sbtc.safeTransfer(msg.sender, withdrawal.sbtcAmount);
+        $.stone.safeTransfer(msg.sender, withdrawal.stoneAmount);
         $.endTime = block.timestamp;
 
-        emit AdminWithdrawn(msg.sender, sbtcAmount, stoneAmount);
+        isExecuted[proposalId] = true;
+        withdrawal.executed = true;
+
+        emit WithdrawalExecuted(proposalId, msg.sender);
+        emit AdminWithdrawn(msg.sender, withdrawal.sbtcAmount, withdrawal.stoneAmount);
     }
 
     // User Functions
@@ -231,7 +297,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param sbtcAmount Amount of SBTC to withdraw
      * @param stoneAmount Amount of STONE to withdraw
      */
-    function withdraw(uint256 sbtcAmount, uint256 stoneAmount) external {
+    function withdraw(uint256 sbtcAmount, uint256 stoneAmount) external nonReentrant {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -245,36 +311,33 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
             );
         }
 
-        uint256 actualSbtcAmount;
-        uint256 actualStoneAmount;
-
         if (sbtcAmount > 0) {
             IERC20 sbtc = $.sbtc;
+            // Update state before transfer
             userState.sbtcAmountSeconds += userState.sbtcAmountStaked * (timestamp - userState.sbtcLastUpdate);
-            uint256 previousBalance = sbtc.balanceOf(address(this));
-            sbtc.safeTransfer(msg.sender, sbtcAmount);
-            uint256 newBalance = sbtc.balanceOf(address(this));
-            actualSbtcAmount = previousBalance - newBalance;
             userState.sbtcAmountSeconds -= userState.sbtcAmountSeconds * sbtcAmount / userState.sbtcAmountStaked;
-            userState.sbtcAmountStaked -= actualSbtcAmount;
+            userState.sbtcAmountStaked -= sbtcAmount;
             userState.sbtcLastUpdate = timestamp;
-            $.sbtcTotalAmountStaked -= actualSbtcAmount;
+            $.sbtcTotalAmountStaked -= sbtcAmount;
+
+            // Perform transfer after state updates
+            sbtc.safeTransfer(msg.sender, sbtcAmount);
         }
 
         if (stoneAmount > 0) {
             IERC20 stone = $.stone;
+            // Update state before transfer
             userState.stoneAmountSeconds += userState.stoneAmountStaked * (timestamp - userState.stoneLastUpdate);
-            uint256 previousBalance = stone.balanceOf(address(this));
-            stone.safeTransfer(msg.sender, stoneAmount);
-            uint256 newBalance = stone.balanceOf(address(this));
-            actualStoneAmount = previousBalance - newBalance;
             userState.stoneAmountSeconds -= userState.stoneAmountSeconds * stoneAmount / userState.stoneAmountStaked;
-            userState.stoneAmountStaked -= actualStoneAmount;
+            userState.stoneAmountStaked -= stoneAmount;
             userState.stoneLastUpdate = timestamp;
-            $.stoneTotalAmountStaked -= actualStoneAmount;
+            $.stoneTotalAmountStaked -= stoneAmount;
+
+            // Perform transfer after state updates
+            stone.safeTransfer(msg.sender, stoneAmount);
         }
 
-        emit Withdrawn(msg.sender, actualSbtcAmount, actualStoneAmount);
+        emit Withdrawn(msg.sender, sbtcAmount, stoneAmount);
     }
 
     // Getter View Functions
@@ -305,9 +368,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice State of a user who has staked into the ReserveStaking contract
-    function getUserState(
-        address user
-    ) external view returns (uint256, uint256, uint256, uint256, uint256, uint256) {
+    function getUserState(address user) external view returns (uint256, uint256, uint256, uint256, uint256, uint256) {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         UserState memory userState = $.userStates[user];
         return (
