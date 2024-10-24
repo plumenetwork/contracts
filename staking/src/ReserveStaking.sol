@@ -164,7 +164,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
      * @notice Stop the ReserveStaking contract by withdrawing all SBTC and STONE
      * @dev Only the admin can withdraw SBTC and STONE from the ReserveStaking contract
      */
-    function adminWithdraw() external onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();

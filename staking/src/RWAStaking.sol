@@ -176,7 +176,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
      * @notice Stop the RWAStaking contract by withdrawing all stablecoins
      * @dev Only the admin can withdraw stablecoins from the RWAStaking contract
      */
-    function adminWithdraw() external onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
