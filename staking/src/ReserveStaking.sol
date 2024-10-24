@@ -271,8 +271,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
             stone.safeTransfer(msg.sender, stoneAmount);
             uint256 newBalance = stone.balanceOf(address(this));
             actualStoneAmount = previousBalance - newBalance;
-            userState.stoneAmountSeconds -=
-                userState.stoneAmountSeconds * actualStoneAmount / userState.stoneAmountStaked;
+            userState.stoneAmountSeconds -= userState.stoneAmountSeconds * actualStoneAmount / userState.stoneAmountStaked;
             userState.stoneAmountStaked -= actualStoneAmount;
             userState.stoneLastUpdate = timestamp;
             $.stoneTotalAmountStaked -= actualStoneAmount;
