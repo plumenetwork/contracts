@@ -220,6 +220,80 @@ contract ReserveStakingTest is Test {
         assertEq(staking.getEndTime(), startTime + timeskipAmount);
     }
 
+    function test_pauseFail() public {
+        vm.startPrank(user1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, staking.ADMIN_ROLE()
+            )
+        );
+        staking.pause();
+
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+
+        vm.expectEmit(false, false, false, true, address(staking));
+        emit ReserveStaking.Paused();
+        staking.pause();
+
+        vm.expectRevert(abi.encodeWithSelector(ReserveStaking.AlreadyPaused.selector));
+        staking.pause();
+
+        vm.stopPrank();
+    }
+
+    function test_pause() public {
+        vm.startPrank(owner);
+
+        assertEq(staking.isPaused(), false);
+
+        vm.expectEmit(false, false, false, true, address(staking));
+        emit ReserveStaking.Paused();
+        staking.pause();
+        assertEq(staking.isPaused(), true);
+
+        vm.expectRevert(abi.encodeWithSelector(ReserveStaking.DepositPaused.selector));
+        staking.stake(100 ether, 0);
+
+        vm.stopPrank();
+    }
+
+    function test_unpauseFail() public {
+        vm.startPrank(user1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, staking.ADMIN_ROLE()
+            )
+        );
+        staking.unpause();
+
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+
+        vm.expectRevert(abi.encodeWithSelector(ReserveStaking.NotPaused.selector));
+        staking.unpause();
+
+        vm.stopPrank();
+    }
+
+    function test_unpause() public {
+        vm.startPrank(owner);
+
+        staking.pause();
+        assertEq(staking.isPaused(), true);
+
+        vm.expectEmit(false, false, false, true, address(staking));
+        emit ReserveStaking.Unpaused();
+        staking.unpause();
+        assertEq(staking.isPaused(), false);
+
+        vm.stopPrank();
+    }
+
     function test_withdrawFail() public {
         uint256 sbtcAmount = 100 ether;
         uint256 stoneAmount = 50 ether;

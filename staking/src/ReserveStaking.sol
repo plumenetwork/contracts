@@ -55,6 +55,8 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
         mapping(address user => UserState userState) userStates;
         /// @dev Timestamp of when pre-staking ends, when the admin withdraws all SBTC and STONE
         uint256 endTime;
+        /// @dev True if the ReserveStaking contract is paused for deposits, false otherwise
+        bool paused;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.ReserveStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -100,7 +102,22 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      */
     event Staked(address indexed user, uint256 sbtcAmount, uint256 stoneAmount);
 
+    /// @notice Emitted when the ReserveStaking contract is paused for deposits
+    event Paused();
+
+    /// @notice Emitted when the ReserveStaking contract is unpaused for deposits
+    event Unpaused();
+
     // Errors
+
+    /// @notice Indicates a failure because the contract is paused for deposits
+    error DepositPaused();
+
+    /// @notice Indicates a failure because the contract is already paused for deposits
+    error AlreadyPaused();
+
+    /// @notice Indicates a failure because the contract is not paused for deposits
+    error NotPaused();
 
     /// @notice Indicates a failure because the pre-staking period has ended
     error StakingEnded();
@@ -108,8 +125,8 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
     /**
      * @notice Indicates a failure because the user does not have enough SBTC or STONE staked
      * @param user Address of the user who does not have enough SBTC or STONE staked
-     * @param sbtcAmount Amount of SBTC that the user does not have enough of
-     * @param stoneAmount Amount of STONE that the user does not have enough of
+     * @param sbtcAmount Amount of SBTC that the user wants to withdraw
+     * @param stoneAmount Amount of STONE that the user wants to withdraw
      * @param sbtcAmountStaked Amount of SBTC that the user has staked
      * @param stoneAmountStaked Amount of STONE that the user has staked
      */
@@ -141,8 +158,9 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
         _grantRole(ADMIN_ROLE, owner);
         _grantRole(UPGRADER_ROLE, owner);
 
-        _getReserveStakingStorage().sbtc = sbtc;
-        _getReserveStakingStorage().stone = stone;
+        ReserveStakingStorage storage $ = _getReserveStakingStorage();
+        $.sbtc = sbtc;
+        $.stone = stone;
     }
 
     // Override Functions
@@ -177,6 +195,32 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
         emit AdminWithdrawn(msg.sender, sbtcAmount, stoneAmount);
     }
 
+    /**
+     * @notice Pause the ReserveStaking contract for deposits
+     * @dev Only the admin can pause the ReserveStaking contract for deposits
+     */
+    function pause() external onlyRole(ADMIN_ROLE) {
+        ReserveStakingStorage storage $ = _getReserveStakingStorage();
+        if ($.paused) {
+            revert AlreadyPaused();
+        }
+        $.paused = true;
+        emit Paused();
+    }
+
+    /**
+     * @notice Unpause the ReserveStaking contract for deposits
+     * @dev Only the admin can unpause the ReserveStaking contract for deposits
+     */
+    function unpause() external onlyRole(ADMIN_ROLE) {
+        ReserveStakingStorage storage $ = _getReserveStakingStorage();
+        if (!$.paused) {
+            revert NotPaused();
+        }
+        $.paused = false;
+        emit Unpaused();
+    }
+
     // User Functions
 
     /**
@@ -188,6 +232,9 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
+        }
+        if ($.paused) {
+            revert DepositPaused();
         }
 
         uint256 timestamp = block.timestamp;
@@ -268,7 +315,8 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
             stone.safeTransfer(msg.sender, stoneAmount);
             uint256 newBalance = stone.balanceOf(address(this));
             actualStoneAmount = previousBalance - newBalance;
-            userState.stoneAmountSeconds -= userState.stoneAmountSeconds * actualStoneAmount / userState.stoneAmountStaked;
+            userState.stoneAmountSeconds -=
+                userState.stoneAmountSeconds * actualStoneAmount / userState.stoneAmountStaked;
             userState.stoneAmountStaked -= actualStoneAmount;
             userState.stoneLastUpdate = timestamp;
             $.stoneTotalAmountStaked -= actualStoneAmount;
@@ -325,6 +373,11 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
     /// @notice Timestamp of when pre-staking ends, when the admin withdraws all SBTC
     function getEndTime() external view returns (uint256) {
         return _getReserveStakingStorage().endTime;
+    }
+
+    /// @notice Returns true if the ReserveStaking contract is paused for deposits, otherwise false
+    function isPaused() external view returns (bool) {
+        return _getReserveStakingStorage().paused;
     }
 
 }
