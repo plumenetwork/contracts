@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { RWAStaking } from "../src/RWAStaking.sol";
+import { PlumePreStaking } from "../src/proxy/PlumePreStaking.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
@@ -8,8 +10,6 @@ import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Test } from "forge-std/Test.sol";
-import { RWAStaking } from "../src/RWAStaking.sol";
-import { PlumePreStaking } from "../src/proxy/PlumePreStaking.sol";
 
 contract MockPlumePreStaking is PlumePreStaking {
 
@@ -175,16 +175,16 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, stakeAmount);
         assertEq(lastUpdate, startTime);
-    
+
         // ======================================
 
         // Skip ahead in time by 300 seconds and check that amountSeconds has changed
         vm.warp(startTime + timeskipAmount);
         (amountSeconds, amountStaked, lastUpdate) = rwaStaking.getUserState(user1);
-        
+
         assertEq(amountSeconds, stakeAmount * timeskipAmount);
         assertEq(amountStaked, stakeAmount);
-        
+
         // block.timestap is 301, lastUpdate still 1
         //assertEq(lastUpdate, startTime);
         vm.startPrank(owner);

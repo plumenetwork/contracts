@@ -501,7 +501,7 @@ contract ReserveStakingTest is Test {
         assertEq(stoneAmountSeconds, 0);
         assertEq(sbtcAmountStaked, sbtcAmount);
         assertEq(stoneAmountStaked, 0);
-       // assertEq(sbtcLastUpdate, startTime + timeskipAmount);
+        // assertEq(sbtcLastUpdate, startTime + timeskipAmount);
         //assertEq(stoneLastUpdate, 0);
         assertEq(sbtc.balanceOf(address(staking)), sbtcAmount * 2);
         assertEq(stone.balanceOf(address(staking)), stoneAmount * 2);
