@@ -3,6 +3,8 @@ pragma solidity ^0.8.25;
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -11,7 +13,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
  * @author Eugene Y. Q. Shen
  * @notice Pre-staking contract into the Plume Mainnet Reserve Fund
  */
-contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
+contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
     // Types
 
@@ -136,6 +138,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
     function initialize(address owner, IERC20 sbtc, IERC20 stone) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
@@ -161,7 +164,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Stop the ReserveStaking contract by withdrawing all SBTC and STONE
      * @dev Only the admin can withdraw SBTC and STONE from the ReserveStaking contract
      */
-    function adminWithdraw() external onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -184,7 +187,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param sbtcAmount Amount of SBTC to stake
      * @param stoneAmount Amount of STONE to stake
      */
-    function stake(uint256 sbtcAmount, uint256 stoneAmount) external {
+    function stake(uint256 sbtcAmount, uint256 stoneAmount) external nonReentrant {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -231,7 +234,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param sbtcAmount Amount of SBTC to withdraw
      * @param stoneAmount Amount of STONE to withdraw
      */
-    function withdraw(uint256 sbtcAmount, uint256 stoneAmount) external {
+    function withdraw(uint256 sbtcAmount, uint256 stoneAmount) external nonReentrant {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();

@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -11,7 +12,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
  * @author Eugene Y. Q. Shen
  * @notice Pre-staking contract for RWA Staking on Plume
  */
-contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
+contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
     // Types
 
@@ -136,6 +137,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
     ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
@@ -174,7 +176,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Stop the RWAStaking contract by withdrawing all stablecoins
      * @dev Only the admin can withdraw stablecoins from the RWAStaking contract
      */
-    function adminWithdraw() external onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -198,7 +200,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param amount Amount of stablecoins to stake
      * @param stablecoin Stablecoin token contract address
      */
-    function stake(uint256 amount, IERC20 stablecoin) external {
+    function stake(uint256 amount, IERC20 stablecoin) external nonReentrant {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -232,7 +234,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param amount Amount of stablecoins to withdraw
      * @param stablecoin Stablecoin token contract address
      */
-    function withdraw(uint256 amount, IERC20 stablecoin) external {
+    function withdraw(uint256 amount, IERC20 stablecoin) external nonReentrant {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
