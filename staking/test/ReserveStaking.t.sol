@@ -164,7 +164,8 @@ contract ReserveStakingTest is Test {
         uint256 sbtcAmount = 100 ether;
         uint256 stoneAmount = 50 ether;
         uint256 timeskipAmount = 300;
-        uint256 startTime = block.timestamp;
+        uint256 startTime = 1;
+        vm.warp(startTime);
         helper_initialStake(user1, sbtcAmount, stoneAmount);
 
         (
@@ -324,7 +325,8 @@ contract ReserveStakingTest is Test {
         uint256 sbtcAmount = 100 ether;
         uint256 stoneAmount = 50 ether;
         uint256 timeskipAmount = 300;
-        uint256 startTime = block.timestamp;
+        uint256 startTime = 1;
+        vm.warp(startTime);
 
         // Stake from user1
         helper_initialStake(user1, sbtcAmount, stoneAmount);
@@ -425,7 +427,8 @@ contract ReserveStakingTest is Test {
         uint256 sbtcAmount = 100 ether;
         uint256 stoneAmount = 50 ether;
         uint256 timeskipAmount = 300;
-        uint256 startTime = block.timestamp;
+        uint256 startTime = 1;
+        vm.warp(startTime);
 
         // Stake from user1
         helper_initialStake(user1, sbtcAmount, stoneAmount);

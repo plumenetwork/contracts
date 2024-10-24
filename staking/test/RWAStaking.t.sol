@@ -169,7 +169,8 @@ contract RWAStakingTest is Test {
         uint256 stakeAmount = 100 ether;
         uint256 pusdStakeAmount = 30 ether;
         uint256 timeskipAmount = 300;
-        uint256 startTime = block.timestamp;
+        uint256 startTime = 1;
+        vm.warp(startTime);
         helper_initialStake(user1, stakeAmount);
 
         (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = rwaStaking.getUserState(user1);
@@ -312,7 +313,8 @@ contract RWAStakingTest is Test {
     function test_withdraw() public {
         uint256 stakeAmount = 100 ether;
         uint256 timeskipAmount = 300;
-        uint256 startTime = block.timestamp;
+        uint256 startTime = 1;
+        vm.warp(startTime);
 
         // Stake from user1
         helper_initialStake(user1, stakeAmount);
@@ -392,7 +394,8 @@ contract RWAStakingTest is Test {
     function test_stake() public {
         uint256 stakeAmount = 100 ether;
         uint256 timeskipAmount = 300;
-        uint256 startTime = block.timestamp;
+        uint256 startTime = 1;
+        vm.warp(startTime);
 
         // Stake 100 USDC from user1
         helper_initialStake(user1, stakeAmount);
