@@ -3,6 +3,8 @@ pragma solidity ^0.8.25;
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -11,7 +13,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
  * @author Eugene Y. Q. Shen
  * @notice Pre-staking contract into the Plume Mainnet Reserve Fund
  */
-contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
+contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
     // Types
 
@@ -136,6 +138,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
     function initialize(address owner, IERC20 sbtc, IERC20 stone) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
@@ -161,7 +164,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Stop the ReserveStaking contract by withdrawing all SBTC and STONE
      * @dev Only the admin can withdraw SBTC and STONE from the ReserveStaking contract
      */
-    function adminWithdraw() external onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -196,34 +199,25 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
             $.users.push(msg.sender);
         }
 
-        uint256 actualSbtcAmount;
-        uint256 actualStoneAmount;
-
         if (sbtcAmount > 0) {
             IERC20 sbtc = $.sbtc;
-            uint256 previousBalance = sbtc.balanceOf(address(this));
-            sbtc.safeTransferFrom(msg.sender, address(this), sbtcAmount);
-            uint256 newBalance = sbtc.balanceOf(address(this));
-            actualSbtcAmount = newBalance - previousBalance;
             userState.sbtcAmountSeconds += userState.sbtcAmountStaked * (timestamp - userState.sbtcLastUpdate);
-            userState.sbtcAmountStaked += actualSbtcAmount;
+            sbtc.safeTransferFrom(msg.sender, address(this), sbtcAmount);
+            userState.sbtcAmountStaked += sbtcAmount;
             userState.sbtcLastUpdate = timestamp;
-            $.sbtcTotalAmountStaked += actualSbtcAmount;
+            $.sbtcTotalAmountStaked += sbtcAmount;
         }
 
         if (stoneAmount > 0) {
             IERC20 stone = $.stone;
-            uint256 previousBalance = stone.balanceOf(address(this));
-            stone.safeTransferFrom(msg.sender, address(this), stoneAmount);
-            uint256 newBalance = stone.balanceOf(address(this));
-            actualStoneAmount = newBalance - previousBalance;
             userState.stoneAmountSeconds += userState.stoneAmountStaked * (timestamp - userState.stoneLastUpdate);
+            stone.safeTransferFrom(msg.sender, address(this), stoneAmount);
             userState.stoneAmountStaked += stoneAmount;
             userState.stoneLastUpdate = timestamp;
             $.stoneTotalAmountStaked += stoneAmount;
         }
 
-        emit Staked(msg.sender, actualSbtcAmount, actualStoneAmount);
+        emit Staked(msg.sender, sbtcAmount, stoneAmount);
     }
 
     /**
@@ -231,7 +225,7 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param sbtcAmount Amount of SBTC to withdraw
      * @param stoneAmount Amount of STONE to withdraw
      */
-    function withdraw(uint256 sbtcAmount, uint256 stoneAmount) external {
+    function withdraw(uint256 sbtcAmount, uint256 stoneAmount) external nonReentrant {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -245,36 +239,33 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable {
             );
         }
 
-        uint256 actualSbtcAmount;
-        uint256 actualStoneAmount;
-
         if (sbtcAmount > 0) {
             IERC20 sbtc = $.sbtc;
+
             userState.sbtcAmountSeconds += userState.sbtcAmountStaked * (timestamp - userState.sbtcLastUpdate);
-            uint256 previousBalance = sbtc.balanceOf(address(this));
-            sbtc.safeTransfer(msg.sender, sbtcAmount);
-            uint256 newBalance = sbtc.balanceOf(address(this));
-            actualSbtcAmount = previousBalance - newBalance;
-            userState.sbtcAmountSeconds -= userState.sbtcAmountSeconds * actualSbtcAmount / userState.sbtcAmountStaked;
-            userState.sbtcAmountStaked -= actualSbtcAmount;
+            userState.sbtcAmountSeconds -= userState.sbtcAmountSeconds * sbtcAmount / userState.sbtcAmountStaked;
+            userState.sbtcAmountStaked -= sbtcAmount;
             userState.sbtcLastUpdate = timestamp;
-            $.sbtcTotalAmountStaked -= actualSbtcAmount;
+
+            $.sbtcTotalAmountStaked -= sbtcAmount;
+
+            sbtc.safeTransfer(msg.sender, sbtcAmount);
         }
 
         if (stoneAmount > 0) {
             IERC20 stone = $.stone;
+
             userState.stoneAmountSeconds += userState.stoneAmountStaked * (timestamp - userState.stoneLastUpdate);
-            uint256 previousBalance = stone.balanceOf(address(this));
-            stone.safeTransfer(msg.sender, stoneAmount);
-            uint256 newBalance = stone.balanceOf(address(this));
-            actualStoneAmount = previousBalance - newBalance;
-            userState.stoneAmountSeconds -= userState.stoneAmountSeconds * actualStoneAmount / userState.stoneAmountStaked;
-            userState.stoneAmountStaked -= actualStoneAmount;
+            userState.stoneAmountSeconds -= userState.stoneAmountSeconds * stoneAmount / userState.stoneAmountStaked;
+            userState.stoneAmountStaked -= stoneAmount;
             userState.stoneLastUpdate = timestamp;
-            $.stoneTotalAmountStaked -= actualStoneAmount;
+
+            $.stoneTotalAmountStaked -= stoneAmount;
+
+            stone.safeTransfer(msg.sender, stoneAmount);
         }
 
-        emit Withdrawn(msg.sender, actualSbtcAmount, actualStoneAmount);
+        emit Withdrawn(msg.sender, sbtcAmount, stoneAmount);
     }
 
     // Getter View Functions
