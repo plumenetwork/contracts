@@ -3,7 +3,6 @@ pragma solidity ^0.8.25;
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -12,7 +11,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
  * @author Eugene Y. Q. Shen
  * @notice Pre-staking contract for RWA Staking on Plume
  */
-contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
+contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
 
     // Types
 
@@ -137,7 +136,6 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
     ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
-        __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
@@ -200,7 +198,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
      * @param amount Amount of stablecoins to stake
      * @param stablecoin Stablecoin token contract address
      */
-    function stake(uint256 amount, IERC20 stablecoin) external nonReentrant {
+    function stake(uint256 amount, IERC20 stablecoin) external {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -213,7 +211,8 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
 
         stablecoin.safeTransferFrom(msg.sender, address(this), amount);
 
-        uint256 actualAmount = stablecoin.balanceOf(address(this)) - previousBalance;
+        uint256 newBalance = stablecoin.balanceOf(address(this));
+        uint256 actualAmount = newBalance - previousBalance;
 
         uint256 timestamp = block.timestamp;
         UserState storage userState = $.userStates[msg.sender];
@@ -233,7 +232,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
      * @param amount Amount of stablecoins to withdraw
      * @param stablecoin Stablecoin token contract address
      */
-    function withdraw(uint256 amount, IERC20 stablecoin) external nonReentrant {
+    function withdraw(uint256 amount, IERC20 stablecoin) external {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
