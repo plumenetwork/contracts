@@ -65,7 +65,7 @@ contract RWAStakingTest is Test {
         vm.startPrank(user);
         usdc.approve(address(rwaStaking), stakeAmount);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
-        emit RWAStaking.Staked(user, usdc, stakeAmount, block.timestamp);
+        emit RWAStaking.Staked(user, usdc, stakeAmount);
         rwaStaking.stake(stakeAmount, usdc);
         vm.stopPrank();
 
@@ -109,12 +109,12 @@ contract RWAStakingTest is Test {
 
     function test_stakingEnded() public {
         vm.startPrank(owner);
-        rwaStaking.withdraw();
+        rwaStaking.adminWithdraw();
 
         vm.expectRevert(abi.encodeWithSelector(RWAStaking.StakingEnded.selector));
         rwaStaking.stake(100 ether, usdc);
         vm.expectRevert(abi.encodeWithSelector(RWAStaking.StakingEnded.selector));
-        rwaStaking.withdraw();
+        rwaStaking.adminWithdraw();
 
         vm.stopPrank();
     }
@@ -152,18 +152,18 @@ contract RWAStakingTest is Test {
         vm.stopPrank();
     }
 
-    function test_withdrawFail() public {
+    function test_adminWithdrawFail() public {
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector, user1, rwaStaking.ADMIN_ROLE()
             )
         );
         vm.startPrank(user1);
-        rwaStaking.withdraw();
+        rwaStaking.adminWithdraw();
         vm.stopPrank();
     }
 
-    function test_withdraw() public {
+    function test_adminWithdraw() public {
         uint256 stakeAmount = 100 ether;
         uint256 pusdStakeAmount = 30 ether;
         uint256 timeskipAmount = 300;
@@ -196,10 +196,10 @@ contract RWAStakingTest is Test {
 
         vm.startPrank(owner);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
-        emit RWAStaking.Withdrawn(owner, usdc, stakeAmount);
+        emit RWAStaking.AdminWithdrawn(owner, usdc, stakeAmount);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
-        emit RWAStaking.Withdrawn(owner, pusd, pusdStakeAmount);
-        rwaStaking.withdraw();
+        emit RWAStaking.AdminWithdrawn(owner, pusd, pusdStakeAmount);
+        rwaStaking.adminWithdraw();
         vm.stopPrank();
 
         // Skip ahead in time by 300 seconds and check that amountSeconds is fixed
@@ -214,6 +214,76 @@ contract RWAStakingTest is Test {
         assertEq(rwaStaking.getTotalAmountStaked(), stakeAmount + pusdStakeAmount);
         assertEq(rwaStaking.getUsers().length, 1);
         assertEq(rwaStaking.getEndTime(), startTime + timeskipAmount);
+    }
+
+    function test_withdrawFail() public {
+        uint256 stakeAmount = 100 ether;
+
+        // Stake from user1 so we can test withdrawals
+        helper_initialStake(user1, stakeAmount);
+
+        vm.startPrank(user1);
+
+        uint256 withdrawAmount = stakeAmount + 1;
+        vm.expectRevert(
+            abi.encodeWithSelector(RWAStaking.InsufficientStaked.selector, user1, usdc, withdrawAmount, stakeAmount)
+        );
+        rwaStaking.withdraw(withdrawAmount, usdc);
+
+        vm.stopPrank();
+    }
+
+    function test_withdraw() public {
+        uint256 stakeAmount = 100 ether;
+        uint256 timeskipAmount = 300;
+        uint256 startTime = block.timestamp;
+
+        // Stake from user1
+        helper_initialStake(user1, stakeAmount);
+
+        (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = rwaStaking.getUserState(user1);
+        assertEq(amountSeconds, 0);
+        assertEq(amountStaked, stakeAmount);
+        assertEq(lastUpdate, startTime);
+        assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount);
+        assertEq(usdc.balanceOf(user1), INITIAL_BALANCE - stakeAmount);
+
+        // Skip ahead in time by 300 seconds
+        vm.warp(startTime + timeskipAmount);
+
+        // Withdraw half of the staked amount
+        uint256 withdrawAmount = stakeAmount / 2;
+        vm.startPrank(user1);
+        vm.expectEmit(true, true, false, true, address(rwaStaking));
+        emit RWAStaking.Withdrawn(user1, usdc, withdrawAmount);
+        rwaStaking.withdraw(withdrawAmount, usdc);
+        vm.stopPrank();
+
+        // Check updated balances and state
+        (amountSeconds, amountStaked, lastUpdate) = rwaStaking.getUserState(user1);
+        assertEq(amountSeconds, stakeAmount * timeskipAmount / 2);
+        assertEq(amountStaked, stakeAmount / 2);
+        assertEq(lastUpdate, startTime + timeskipAmount);
+        assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount / 2);
+        assertEq(usdc.balanceOf(user1), INITIAL_BALANCE - stakeAmount / 2);
+
+        // Skip ahead in time by another 300 seconds
+        vm.warp(startTime + timeskipAmount * 2);
+
+        // Withdraw remaining amounts
+        vm.startPrank(user1);
+        vm.expectEmit(true, true, false, true, address(rwaStaking));
+        emit RWAStaking.Withdrawn(user1, usdc, stakeAmount / 2);
+        rwaStaking.withdraw(stakeAmount / 2, usdc);
+        vm.stopPrank();
+
+        // Check final balances and state
+        (amountSeconds, amountStaked, lastUpdate) = rwaStaking.getUserState(user1);
+        assertEq(amountSeconds, 0);
+        assertEq(amountStaked, 0);
+        assertEq(lastUpdate, startTime + timeskipAmount * 2);
+        assertEq(usdc.balanceOf(address(rwaStaking)), 0);
+        assertEq(usdc.balanceOf(user1), INITIAL_BALANCE);
     }
 
     function test_stakeFail() public {
@@ -273,10 +343,10 @@ contract RWAStakingTest is Test {
         usdc.approve(address(rwaStaking), stakeAmount);
         pusd.approve(address(rwaStaking), stakeAmount);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
-        emit RWAStaking.Staked(user2, usdc, stakeAmount, startTime + timeskipAmount);
+        emit RWAStaking.Staked(user2, usdc, stakeAmount);
         rwaStaking.stake(stakeAmount, usdc);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
-        emit RWAStaking.Staked(user2, pusd, stakeAmount, startTime + timeskipAmount);
+        emit RWAStaking.Staked(user2, pusd, stakeAmount);
         rwaStaking.stake(stakeAmount, pusd);
         vm.stopPrank();
 
@@ -299,7 +369,7 @@ contract RWAStakingTest is Test {
         vm.startPrank(user1);
         pusd.approve(address(rwaStaking), stakeAmount);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
-        emit RWAStaking.Staked(user1, pusd, stakeAmount, startTime + timeskipAmount * 2);
+        emit RWAStaking.Staked(user1, pusd, stakeAmount);
         rwaStaking.stake(stakeAmount, pusd);
         vm.stopPrank();
         vm.warp(startTime + timeskipAmount * 3);
