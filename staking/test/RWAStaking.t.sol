@@ -115,6 +115,8 @@ contract RWAStakingTest is Test {
         rwaStaking.stake(100 ether, usdc);
         vm.expectRevert(abi.encodeWithSelector(RWAStaking.StakingEnded.selector));
         rwaStaking.adminWithdraw();
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.StakingEnded.selector));
+        rwaStaking.withdraw(100 ether, usdc);
 
         vm.stopPrank();
     }
@@ -214,6 +216,80 @@ contract RWAStakingTest is Test {
         assertEq(rwaStaking.getTotalAmountStaked(), stakeAmount + pusdStakeAmount);
         assertEq(rwaStaking.getUsers().length, 1);
         assertEq(rwaStaking.getEndTime(), startTime + timeskipAmount);
+    }
+
+    function test_pauseFail() public {
+        vm.startPrank(user1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, rwaStaking.ADMIN_ROLE()
+            )
+        );
+        rwaStaking.pause();
+
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+
+        vm.expectEmit(false, false, false, true, address(rwaStaking));
+        emit RWAStaking.Paused();
+        rwaStaking.pause();
+
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.AlreadyPaused.selector));
+        rwaStaking.pause();
+
+        vm.stopPrank();
+    }
+
+    function test_pause() public {
+        vm.startPrank(owner);
+
+        assertEq(rwaStaking.isPaused(), false);
+
+        vm.expectEmit(false, false, false, true, address(rwaStaking));
+        emit RWAStaking.Paused();
+        rwaStaking.pause();
+        assertEq(rwaStaking.isPaused(), true);
+
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.DepositPaused.selector));
+        rwaStaking.stake(100 ether, usdc);
+
+        vm.stopPrank();
+    }
+
+    function test_unpauseFail() public {
+        vm.startPrank(user1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, rwaStaking.ADMIN_ROLE()
+            )
+        );
+        rwaStaking.unpause();
+
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.NotPaused.selector));
+        rwaStaking.unpause();
+
+        vm.stopPrank();
+    }
+
+    function test_unpause() public {
+        vm.startPrank(owner);
+
+        rwaStaking.pause();
+        assertEq(rwaStaking.isPaused(), true);
+
+        vm.expectEmit(false, false, false, true, address(rwaStaking));
+        emit RWAStaking.Unpaused();
+        rwaStaking.unpause();
+        assertEq(rwaStaking.isPaused(), false);
+
+        vm.stopPrank();
     }
 
     function test_withdrawFail() public {

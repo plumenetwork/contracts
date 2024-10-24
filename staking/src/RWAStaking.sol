@@ -47,6 +47,8 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         mapping(IERC20 stablecoin => bool allowed) allowedStablecoins;
         /// @dev Timestamp of when pre-staking ends, when the admin withdraws all stablecoins
         uint256 endTime;
+        /// @dev True if the RWAStaking contract is paused for deposits, false otherwise
+        bool paused;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.RWAStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -92,7 +94,22 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
      */
     event Staked(address indexed user, IERC20 indexed stablecoin, uint256 amount);
 
+    /// @notice Emitted when the RWAStaking contract is paused for deposits
+    event Paused();
+
+    /// @notice Emitted when the RWAStaking contract is unpaused for deposits
+    event Unpaused();
+
     // Errors
+
+    /// @notice Indicates a failure because the contract is paused for deposits
+    error DepositPaused();
+
+    /// @notice Indicates a failure because the contract is already paused for deposits
+    error AlreadyPaused();
+
+    /// @notice Indicates a failure because the contract is not paused for deposits
+    error NotPaused();
 
     /// @notice Indicates a failure because the pre-staking period has ended
     error StakingEnded();
@@ -193,6 +210,34 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         $.endTime = block.timestamp;
     }
 
+    /**
+     * @notice Pause the RWAStaking contract for deposits
+     * @dev Only the admin can pause the RWAStaking contract for deposits
+     */
+    function pause() external onlyRole(ADMIN_ROLE) {
+        RWAStakingStorage storage $ = _getRWAStakingStorage();
+        if ($.paused) {
+            revert AlreadyPaused();
+        }
+        $.paused = true;
+        emit Paused();
+    }
+
+    // Errors
+
+    /**
+     * @notice Unpause the RWAStaking contract for deposits
+     * @dev Only the admin can unpause the RWAStaking contract for deposits
+     */
+    function unpause() external onlyRole(ADMIN_ROLE) {
+        RWAStakingStorage storage $ = _getRWAStakingStorage();
+        if (!$.paused) {
+            revert NotPaused();
+        }
+        $.paused = false;
+        emit Unpaused();
+    }
+
     // User Functions
 
     /**
@@ -204,6 +249,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
+        }
+        if ($.paused) {
+            revert DepositPaused();
         }
         if (!$.allowedStablecoins[stablecoin]) {
             revert NotAllowedStablecoin(stablecoin);
@@ -301,6 +349,11 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
     /// @notice Timestamp of when pre-staking ends, when the admin withdraws all stablecoins
     function getEndTime() external view returns (uint256) {
         return _getRWAStakingStorage().endTime;
+    }
+
+    /// @notice Returns true if the RWAStaking contract is pauseWhether the RWAStaking contract is paused for deposits
+    function isPaused() external view returns (bool) {
+        return _getRWAStakingStorage().paused;
     }
 
 }
