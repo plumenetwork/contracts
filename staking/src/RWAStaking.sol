@@ -73,6 +73,14 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param stablecoin Stablecoin token contract address
      * @param amount Amount of stablecoins withdrawn
      */
+    event AdminWithdrawn(address indexed user, IERC20 indexed stablecoin, uint256 amount);
+
+    /**
+     * @notice Emitted when a user withdraws stablecoins from the RWAStaking contract
+     * @param user Address of the user who withdrew stablecoins
+     * @param stablecoin Stablecoin token contract address
+     * @param amount Amount of stablecoins withdrawn
+     */
     event Withdrawn(address indexed user, IERC20 indexed stablecoin, uint256 amount);
 
     /**
@@ -80,9 +88,8 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param user Address of the user who staked stablecoins
      * @param stablecoin Stablecoin token contract address
      * @param amount Amount of stablecoins staked
-     * @param timestamp Timestamp of the stake
      */
-    event Staked(address indexed user, IERC20 indexed stablecoin, uint256 amount, uint256 timestamp);
+    event Staked(address indexed user, IERC20 indexed stablecoin, uint256 amount);
 
     // Errors
 
@@ -100,6 +107,15 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @param stablecoin Stablecoin token contract address
      */
     error NotAllowedStablecoin(IERC20 stablecoin);
+
+    /**
+     * @notice Indicates a failure because the user does not have enough stablecoins staked
+     * @param user Address of the user who does not have enough stablecoins staked
+     * @param stablecoin Stablecoin token contract address
+     * @param amount Amount of stablecoins that the user wants to withdraw
+     * @param amountStaked Amount of stablecoins that the user has staked
+     */
+    error InsufficientStaked(address user, IERC20 stablecoin, uint256 amount, uint256 amountStaked);
 
     // Initializer
 
@@ -158,7 +174,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Stop the RWAStaking contract by withdrawing all stablecoins
      * @dev Only the admin can withdraw stablecoins from the RWAStaking contract
      */
-    function withdraw() external onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external onlyRole(ADMIN_ROLE) {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -170,7 +186,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
             IERC20 stablecoin = stablecoins[i];
             uint256 amount = stablecoin.balanceOf(address(this));
             stablecoin.safeTransfer(msg.sender, amount);
-            emit Withdrawn(msg.sender, stablecoin, amount);
+            emit AdminWithdrawn(msg.sender, stablecoin, amount);
         }
         $.endTime = block.timestamp;
     }
@@ -208,7 +224,38 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable {
         userState.lastUpdate = timestamp;
         $.totalAmountStaked += actualAmount;
 
-        emit Staked(msg.sender, stablecoin, actualAmount, timestamp);
+        emit Staked(msg.sender, stablecoin, actualAmount);
+    }
+
+    /**
+     * @notice Withdraw stablecoins from the RWAStaking contract
+     * @param amount Amount of stablecoins to withdraw
+     * @param stablecoin Stablecoin token contract address
+     */
+    function withdraw(uint256 amount, IERC20 stablecoin) external {
+        RWAStakingStorage storage $ = _getRWAStakingStorage();
+        if ($.endTime != 0) {
+            revert StakingEnded();
+        }
+
+        uint256 timestamp = block.timestamp;
+        UserState storage userState = $.userStates[msg.sender];
+        if (userState.amountStaked < amount) {
+            revert InsufficientStaked(msg.sender, stablecoin, amount, userState.amountStaked);
+        }
+
+        userState.amountSeconds += userState.amountStaked * (timestamp - userState.lastUpdate);
+        uint256 previousBalance = stablecoin.balanceOf(address(this));
+        stablecoin.safeTransfer(msg.sender, amount);
+        uint256 newBalance = stablecoin.balanceOf(address(this));
+        uint256 actualAmount = previousBalance - newBalance;
+
+        userState.amountSeconds -= userState.amountSeconds * actualAmount / userState.amountStaked;
+        userState.amountStaked -= actualAmount;
+        userState.lastUpdate = timestamp;
+        $.totalAmountStaked -= actualAmount;
+
+        emit Withdrawn(msg.sender, stablecoin, actualAmount);
     }
 
     // Getter View Functions
