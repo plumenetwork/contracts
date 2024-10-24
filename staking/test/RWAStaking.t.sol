@@ -176,8 +176,6 @@ contract RWAStakingTest is Test {
         assertEq(amountStaked, stakeAmount);
         assertEq(lastUpdate, startTime);
 
-        // ======================================
-
         // Skip ahead in time by 300 seconds and check that amountSeconds has changed
         vm.warp(startTime + timeskipAmount);
         (amountSeconds, amountStaked, lastUpdate) = rwaStaking.getUserState(user1);
