@@ -12,30 +12,29 @@ import { STONE } from "../src/STONE.sol";
 import { PlumePreReserveFund } from "../src/proxy/PlumePreReserveFund.sol";
 import { PlumePreStaking } from "../src/proxy/PlumePreStaking.sol";
 
-contract DeployStakingContracts is Script {
+contract DeployTestStakingContracts is Script {
 
-    address private constant ADMIN_ADDRESS = 0xDE1509CC56D740997c70E1661BA687e950B4a241;
-    address private constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    address private constant USDT_ADDRESS = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
-    address private constant SBTC_ADDRESS = 0x094c0e36210634c3CfA25DC11B96b562E0b07624;
-    address private constant STONE_ADDRESS = 0x7122985656e38BDC0302Db86685bb972b145bD3C;
+    address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
+    address private constant PUSD_ADDRESS = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
+    address private constant USDT_ADDRESS = 0x2413b8C79Ce60045882559f63d308aE3DFE0903d;
 
     function test() public { }
 
     function run() external {
-        vm.startBroadcast(ADMIN_ADDRESS);
+        vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
         RWAStaking rwaStaking = new RWAStaking();
         PlumePreStaking plumePreStaking =
-            new PlumePreStaking(address(rwaStaking), abi.encodeCall(RWAStaking.initialize, (ADMIN_ADDRESS)));
-        RWAStaking(address(plumePreStaking)).allowStablecoin(IERC20(USDC_ADDRESS));
+            new PlumePreStaking(address(rwaStaking), abi.encodeCall(RWAStaking.initialize, (NEST_ADMIN_ADDRESS)));
+        RWAStaking(address(plumePreStaking)).allowStablecoin(IERC20(PUSD_ADDRESS));
         RWAStaking(address(plumePreStaking)).allowStablecoin(IERC20(USDT_ADDRESS));
         console2.log("Plume Pre-Staking Proxy deployed to:", address(plumePreStaking));
 
+        SBTC sbtc = new SBTC(NEST_ADMIN_ADDRESS);
+        STONE stone = new STONE(NEST_ADMIN_ADDRESS);
         ReserveStaking sbtcStaking = new ReserveStaking();
         PlumePreReserveFund plumePreReserveFund = new PlumePreReserveFund(
-            address(sbtcStaking),
-            abi.encodeCall(ReserveStaking.initialize, (ADMIN_ADDRESS, IERC20(SBTC_ADDRESS), IERC20(STONE_ADDRESS)))
+            address(sbtcStaking), abi.encodeCall(ReserveStaking.initialize, (NEST_ADMIN_ADDRESS, sbtc, stone))
         );
         console2.log("Plume Pre-Reserve Fund Proxy deployed to:", address(plumePreReserveFund));
 
