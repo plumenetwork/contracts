@@ -27,9 +27,7 @@ contract WalletProxy is Proxy {
      * @param walletFactory_ WalletFactory implementation
      * @dev The WalletFactory is immutable and set at deployment
      */
-    constructor(
-        WalletFactory walletFactory_
-    ) {
+    constructor(WalletFactory walletFactory_) {
         walletFactory = walletFactory_;
     }
 

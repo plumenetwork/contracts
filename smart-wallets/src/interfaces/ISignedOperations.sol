@@ -3,12 +3,8 @@ pragma solidity ^0.8.25;
 
 interface ISignedOperations {
 
-    function isNonceUsed(
-        bytes32 nonce
-    ) external view returns (bool used);
-    function cancelSignedOperations(
-        bytes32 nonce
-    ) external;
+    function isNonceUsed(bytes32 nonce) external view returns (bool used);
+    function cancelSignedOperations(bytes32 nonce) external;
     function executeSignedOperations(
         address[] calldata targets,
         bytes[] calldata calls,
