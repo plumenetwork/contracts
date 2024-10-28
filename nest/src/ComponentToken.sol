@@ -254,7 +254,7 @@ abstract contract ComponentToken is
      * @param shares Amount of shares to receive in exchange
      * @param controller Controller of the request
      */
-    function notifyDeposit(uint256 assets, uint256 shares, address controller) public virtual {
+    function _notifyDeposit(uint256 assets, uint256 shares, address controller) internal virtual {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -363,7 +363,7 @@ abstract contract ComponentToken is
      * @param shares Amount of shares that was redeemed by `requestRedeem`
      * @param controller Controller of the request
      */
-    function notifyRedeem(uint256 assets, uint256 shares, address controller) public virtual {
+    function _notifyRedeem(uint256 assets, uint256 shares, address controller) internal virtual {
         if (shares == 0) {
             revert ZeroAmount();
         }
