@@ -337,7 +337,8 @@ contract YieldDistributionTokenScenarioTest is Test {
         // use separated approve & deposit otherwise expectRevert will
         // fail if using the test `_depositYield()` call
         _approveForDepositYield(YIELD_AMOUNT);
-        vm.expectRevert(abi.encodeWithSignature("DepositSameBlock()"));
+        // vm.expectRevert(abi.encodeWithSignature("DepositSameBlock()"));
+        vm.expectRevert(DepositSameBlock.selector);
         token.exposed_depositYield(YIELD_AMOUNT);
     }
 
@@ -419,7 +420,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         assertGt(token.getUserState(alice).yieldAccrued, aliceInitialYield);
     }
 
-    function logUserState(address user, string memory prelog) view {
+    function logUserState(address user, string memory prelog) internal view {
         UserState memory userState = token.getUserState(user);
         console.log("\n%s", prelog);
         console.log("amountSeconds:", userState.amountSeconds);
