@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
+import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -15,7 +16,7 @@ import { PlumePreStaking } from "../src/proxy/PlumePreStaking.sol";
 contract MockPlumePreStaking is PlumePreStaking {
 
     constructor(address logic, bytes memory data) PlumePreStaking(logic, data) { }
-    function test() public { }
+    function test() public override {}
 
     function exposed_implementation() public view returns (address) {
         return _implementation();
@@ -26,6 +27,7 @@ contract MockPlumePreStaking is PlumePreStaking {
 contract RWAStakingTest is Test {
 
     RWAStaking rwaStaking;
+    TimelockController timelock;
     IERC20 usdc;
     IERC20 pusd;
 
@@ -47,9 +49,15 @@ contract RWAStakingTest is Test {
         pusdMock.mint(user2, INITIAL_BALANCE);
         pusd = IERC20(pusdMock);
 
+        address[] memory proposers = new address[](1);
+        address[] memory executors = new address[](1);
+        proposers[0] = owner;
+        executors[0] = owner;
+        timelock = new TimelockController(0 seconds, proposers, executors, address(0));
+
         RWAStaking rwaStakingImpl = new RWAStaking();
         MockPlumePreStaking plumePreStakingProxy = new MockPlumePreStaking(
-            address(rwaStakingImpl), abi.encodeWithSelector(rwaStakingImpl.initialize.selector, owner)
+            address(rwaStakingImpl), abi.encodeWithSelector(rwaStakingImpl.initialize.selector, timelock, owner)
         );
         rwaStaking = RWAStaking(address(plumePreStakingProxy));
 
@@ -79,7 +87,7 @@ contract RWAStakingTest is Test {
     function test_constructor() public {
         RWAStaking rwaStakingImpl = new RWAStaking();
         vm.expectRevert(abi.encodeWithSelector(Initializable.InvalidInitialization.selector));
-        rwaStakingImpl.initialize(owner);
+        rwaStakingImpl.initialize(timelock, owner);
     }
 
     function test_initialize() public view {
@@ -92,10 +100,11 @@ contract RWAStakingTest is Test {
         assertEq(rwaStaking.getAllowedStablecoins().length, 0);
         assertEq(rwaStaking.isAllowedStablecoin(usdc), false);
         assertEq(rwaStaking.getEndTime(), 0);
+        assertEq(rwaStaking.getMultisig(), owner);
+        assertEq(address(rwaStaking.getTimelock()), address(timelock));
 
         assertTrue(rwaStaking.hasRole(rwaStaking.DEFAULT_ADMIN_ROLE(), owner));
         assertTrue(rwaStaking.hasRole(rwaStaking.ADMIN_ROLE(), owner));
-        assertTrue(rwaStaking.hasRole(rwaStaking.UPGRADER_ROLE(), owner));
 
         assertEq(usdc.balanceOf(address(rwaStaking)), 0);
         assertEq(usdc.balanceOf(owner), 0);
@@ -108,7 +117,7 @@ contract RWAStakingTest is Test {
     }
 
     function test_stakingEnded() public {
-        vm.startPrank(owner);
+        vm.startPrank(address(timelock));
         rwaStaking.adminWithdraw();
 
         vm.expectRevert(abi.encodeWithSelector(RWAStaking.StakingEnded.selector));
@@ -119,6 +128,23 @@ contract RWAStakingTest is Test {
         rwaStaking.withdraw(100 ether, usdc);
 
         vm.stopPrank();
+    }
+
+    function test_setMultisigFail() public {
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.Unauthorized.selector, user1, address(timelock)));
+        vm.startPrank(user1);
+        rwaStaking.setMultisig(user1);
+        vm.stopPrank();
+    }
+
+    function test_setMultisig() public {
+        assertEq(rwaStaking.getMultisig(), owner);
+
+        vm.startPrank(address(timelock));
+        rwaStaking.setMultisig(user1);
+        vm.stopPrank();
+
+        assertEq(rwaStaking.getMultisig(), user1);
     }
 
     function test_allowStablecoinFail() public {
@@ -155,11 +181,7 @@ contract RWAStakingTest is Test {
     }
 
     function test_adminWithdrawFail() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, rwaStaking.ADMIN_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.Unauthorized.selector, user1, address(timelock)));
         vm.startPrank(user1);
         rwaStaking.adminWithdraw();
         vm.stopPrank();
@@ -197,7 +219,7 @@ contract RWAStakingTest is Test {
         assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount);
         assertEq(pusd.balanceOf(address(rwaStaking)), pusdStakeAmount);
 
-        vm.startPrank(owner);
+        vm.startPrank(address(timelock));
         vm.expectEmit(true, true, false, true, address(rwaStaking));
         emit RWAStaking.AdminWithdrawn(owner, usdc, stakeAmount);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
@@ -472,7 +494,7 @@ contract RWAStakingTest is Test {
         address newImplementation = address(new RWAStaking());
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, rwaStaking.UPGRADER_ROLE()
+                RWAStaking.Unauthorized.selector, user1, address(timelock)
             )
         );
         vm.startPrank(user1);
@@ -485,7 +507,7 @@ contract RWAStakingTest is Test {
         helper_initialStake(user1, stakeAmount);
 
         address newImplementation = address(new RWAStaking());
-        vm.startPrank(owner);
+        vm.startPrank(address(timelock));
         rwaStaking.upgradeToAndCall(newImplementation, "");
         vm.stopPrank();
 

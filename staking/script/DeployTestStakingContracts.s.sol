@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
@@ -23,9 +24,16 @@ contract DeployTestStakingContracts is Script {
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
+        address[] memory proposers = new address[](1);
+        address[] memory executors = new address[](1);
+        proposers[0] = NEST_ADMIN_ADDRESS;
+        executors[0] = NEST_ADMIN_ADDRESS;
+        TimelockController timelock = new TimelockController(2 minutes, proposers, executors, address(0));
+
         RWAStaking rwaStaking = new RWAStaking();
-        PlumePreStaking plumePreStaking =
-            new PlumePreStaking(address(rwaStaking), abi.encodeCall(RWAStaking.initialize, (NEST_ADMIN_ADDRESS)));
+        PlumePreStaking plumePreStaking = new PlumePreStaking(
+            address(rwaStaking), abi.encodeCall(RWAStaking.initialize, (timelock, NEST_ADMIN_ADDRESS))
+        );
         RWAStaking(address(plumePreStaking)).allowStablecoin(IERC20(PUSD_ADDRESS));
         RWAStaking(address(plumePreStaking)).allowStablecoin(IERC20(USDT_ADDRESS));
         console2.log("Plume Pre-Staking Proxy deployed to:", address(plumePreStaking));
@@ -34,7 +42,7 @@ contract DeployTestStakingContracts is Script {
         STONE stone = new STONE(NEST_ADMIN_ADDRESS);
         ReserveStaking sbtcStaking = new ReserveStaking();
         PlumePreReserveFund plumePreReserveFund = new PlumePreReserveFund(
-            address(sbtcStaking), abi.encodeCall(ReserveStaking.initialize, (NEST_ADMIN_ADDRESS, sbtc, stone))
+            address(sbtcStaking), abi.encodeCall(ReserveStaking.initialize, (timelock, NEST_ADMIN_ADDRESS, sbtc, stone))
         );
         console2.log("Plume Pre-Reserve Fund Proxy deployed to:", address(plumePreReserveFund));
 

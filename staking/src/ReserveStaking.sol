@@ -3,8 +3,9 @@ pragma solidity ^0.8.25;
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+
+import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -59,6 +60,10 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
         uint256 endTime;
         /// @dev True if the ReserveStaking contract is paused for deposits, false otherwise
         bool paused;
+        /// @dev Multisig address that withdraws the tokens and proposes/executes Timelock transactions
+        address multisig;
+        /// @dev Timelock contract address
+        TimelockController timelock;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.ReserveStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -75,8 +80,6 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
 
     /// @notice Role for the admin of the ReserveStaking contract
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    /// @notice Role for the upgrader of the ReserveStaking contract
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     // Events
 
@@ -112,6 +115,13 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
 
     // Errors
 
+    /**
+     * @notice Indicates a failure because the sender is not authorized to perform the action
+     * @param sender Address of the sender that is not authorized
+     * @param authorizedUser Address of the authorized user who can perform the action
+     */
+    error Unauthorized(address sender, address authorizedUser);
+
     /// @notice Indicates a failure because the contract is paused for deposits
     error DepositPaused();
 
@@ -136,6 +146,16 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
         address user, uint256 sbtcAmount, uint256 stoneAmount, uint256 sbtcAmountStaked, uint256 stoneAmountStaked
     );
 
+    // Modifiers
+
+    /// @notice Only the timelock contract can call this function
+    modifier onlyTimelock() {
+        if (msg.sender != address(_getReserveStakingStorage().timelock)) {
+            revert Unauthorized(msg.sender, address(_getReserveStakingStorage().timelock));
+        }
+        _;
+    }
+
     // Initializer
 
     /**
@@ -148,22 +168,24 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
 
     /**
      * @notice Initialize the ReserveStaking contract
+     * @param timelock Timelock contract address
      * @param owner Address of the owner of the ReserveStaking contract
      * @param sbtc SBTC token contract address
      * @param stone STONE token contract address
      */
-    function initialize(address owner, IERC20 sbtc, IERC20 stone) public initializer {
+    function initialize(TimelockController timelock, address owner, IERC20 sbtc, IERC20 stone) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
-        _grantRole(UPGRADER_ROLE, owner);
 
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         $.sbtc = sbtc;
         $.stone = stone;
+        $.multisig = owner;
+        $.timelock = timelock;
     }
 
     // Override Functions
@@ -174,15 +196,23 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
      */
     function _authorizeUpgrade(
         address newImplementation
-    ) internal override onlyRole(UPGRADER_ROLE) { }
+    ) internal override onlyTimelock { }
 
     // Admin Functions
+
+    /**
+     * @notice Set the multisig address
+     * @param multisig Multisig address
+     */
+    function setMultisig(address multisig) external nonReentrant onlyTimelock {
+        _getReserveStakingStorage().multisig = multisig;
+    }
 
     /**
      * @notice Stop the ReserveStaking contract by withdrawing all SBTC and STONE
      * @dev Only the admin can withdraw SBTC and STONE from the ReserveStaking contract
      */
-    function adminWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external nonReentrant onlyTimelock {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -191,11 +221,11 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
         uint256 sbtcAmount = $.sbtc.balanceOf(address(this));
         uint256 stoneAmount = $.stone.balanceOf(address(this));
 
-        $.sbtc.safeTransfer(msg.sender, sbtcAmount);
-        $.stone.safeTransfer(msg.sender, stoneAmount);
+        $.sbtc.safeTransfer($.multisig, sbtcAmount);
+        $.stone.safeTransfer($.multisig, stoneAmount);
         $.endTime = block.timestamp;
 
-        emit AdminWithdrawn(msg.sender, sbtcAmount, stoneAmount);
+        emit AdminWithdrawn($.multisig, sbtcAmount, stoneAmount);
     }
 
     /**
@@ -381,6 +411,16 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
     /// @notice Returns true if the ReserveStaking contract is paused for deposits, otherwise false
     function isPaused() external view returns (bool) {
         return _getReserveStakingStorage().paused;
+    }
+
+    /// @notice Multisig address that withdraws the tokens and proposes/executes Timelock transactions
+    function getMultisig() external view returns (address) {
+        return _getReserveStakingStorage().multisig;
+    }
+
+    /// @notice Timelock contract that controls upgrades and withdrawals
+    function getTimelock() external view returns (TimelockController) {
+        return _getReserveStakingStorage().timelock;
     }
 
 }
