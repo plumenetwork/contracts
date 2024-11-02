@@ -302,34 +302,6 @@ contract YieldDistributionTokenScenarioTest is Test {
         vm.stopPrank();
     }
 
-    // NOTE: not working. most likely dont need to test this
-    // since ERC20 transfers sh
-    // function test_scenario_reentrantYieldClaim() public {
-    //     // Setup initial state
-    //     token.exposed_mint(alice, MINT_AMOUNT);
-    //     _timeskip();
-    //     _depositYield(YIELD_AMOUNT);
-
-    //     // Deploy malicious contract that attempts reentrancy
-    //     ReentrantMock attacker = new ReentrantMock(address(token), address(currencyTokenMock));
-    //     token.exposed_mint(address(attacker), MINT_AMOUNT);
-
-    //     // Need to timeskip to accrue some yield
-    //     _timeskip();
-
-    //     // Ensure attacker has approved token contract to transfer currency tokens
-    //     attacker.approve();
-
-    //     // Mock some yield for the attacker
-    //     vm.startPrank(OWNER);
-    //     currencyTokenMock.mint(address(attacker), YIELD_AMOUNT);
-    //     vm.stopPrank();
-
-    //     // Expect revert with reentrancy error
-    //     vm.expectRevert("ReentrancyGuard: reentrant call");
-    //     attacker.attemptReentrantClaim();
-    // }
-
     function test_scenario_yieldDistributionInSameBlockReverts() public {
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
@@ -474,38 +446,6 @@ contract YieldDistributionTokenScenarioTest is Test {
             aliceBalance
         );
         assertEq(currencyTokenMock.balanceOf(alice), aliceYieldAfterClaim);
-    }
-
-}
-
-// Helper contract for testing reentrancy
-contract ReentrantMock {
-
-    YieldDistributionTokenHarness public token;
-    IERC20 public currencyToken;
-    bool public attacked;
-
-    constructor(address _token, address _currencyToken) {
-        token = YieldDistributionTokenHarness(_token);
-        currencyToken = IERC20(_currencyToken);
-    }
-
-    // Add receive() to handle ETH transfers
-    receive() external payable {
-        console.log("[ReentrantMock] receive");
-        if (!attacked) {
-            attacked = true;
-            token.claimYield(address(this));
-        }
-    }
-
-    function attemptReentrantClaim() external {
-        token.claimYield(address(this));
-    }
-
-    // Add approve function to allow token contract to transfer currency tokens
-    function approve() external {
-        currencyToken.approve(address(token), type(uint256).max);
     }
 
 }
