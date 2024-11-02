@@ -32,6 +32,10 @@ contract YieldDistributionTokenHarness is YieldDistributionToken {
         _depositYield(currencyTokenAmount);
     }
 
+    function exposed_getTotalAmountSeconds() external view returns (uint256) {
+        return _getYieldDistributionTokenStorage().totalAmountSeconds;
+    }
+
     // silence warnings
     function requestYield(
         address

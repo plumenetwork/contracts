@@ -7,8 +7,42 @@ import { Test } from "forge-std/Test.sol";
 
 import { Deposit, UserState } from "../../src/token/Types.sol";
 import { YieldDistributionTokenHarness } from "../harness/YieldDistributionTokenHarness.sol";
+import { console } from "forge-std/console.sol";
 
 contract YieldDistributionTokenScenarioTest is Test {
+
+    /**
+     * @notice Emitted when yield is deposited into the YieldDistributionToken
+     * @param user Address of the user who deposited the yield
+     * @param currencyTokenAmount Amount of CurrencyToken deposited as yield
+     */
+    event Deposited(address indexed user, uint256 currencyTokenAmount);
+
+    /**
+     * @notice Emitted when yield is claimed by a user
+     * @param user Address of the user who claimed the yield
+     * @param currencyTokenAmount Amount of CurrencyToken claimed as yield
+     */
+    event YieldClaimed(address indexed user, uint256 currencyTokenAmount);
+
+    /**
+     * @notice Emitted when yield is accrued to a user
+     * @param user Address of the user who accrued the yield
+     * @param currencyTokenAmount Amount of CurrencyToken accrued as yield
+     */
+    event YieldAccrued(address indexed user, uint256 currencyTokenAmount);
+
+    // Errors
+
+    /**
+     * @notice Indicates a failure because the transfer of CurrencyToken failed
+     * @param user Address of the user who tried to transfer CurrencyToken
+     * @param currencyTokenAmount Amount of CurrencyToken that failed to transfer
+     */
+    error TransferFailed(address user, uint256 currencyTokenAmount);
+
+    /// @notice Indicates a failure because a yield deposit is made in the same block as the last one
+    error DepositSameBlock();
 
     YieldDistributionTokenHarness token;
     ERC20Mock currencyTokenMock;
@@ -254,10 +288,223 @@ contract YieldDistributionTokenScenarioTest is Test {
         vm.stopPrank();
     }
 
+    function _approveForDepositYield(
+        uint256 amount
+    ) internal {
+        vm.startPrank(OWNER);
+        currencyTokenMock.approve(address(token), amount);
+        vm.stopPrank();
+    }
+
     function _transferFrom(address from, address to, uint256 amount) internal {
         vm.startPrank(from);
         token.transfer(to, amount);
         vm.stopPrank();
+    }
+
+    // NOTE: not working. most likely dont need to test this
+    // since ERC20 transfers sh
+    // function test_scenario_reentrantYieldClaim() public {
+    //     // Setup initial state
+    //     token.exposed_mint(alice, MINT_AMOUNT);
+    //     _timeskip();
+    //     _depositYield(YIELD_AMOUNT);
+
+    //     // Deploy malicious contract that attempts reentrancy
+    //     ReentrantMock attacker = new ReentrantMock(address(token), address(currencyTokenMock));
+    //     token.exposed_mint(address(attacker), MINT_AMOUNT);
+
+    //     // Need to timeskip to accrue some yield
+    //     _timeskip();
+
+    //     // Ensure attacker has approved token contract to transfer currency tokens
+    //     attacker.approve();
+
+    //     // Mock some yield for the attacker
+    //     vm.startPrank(OWNER);
+    //     currencyTokenMock.mint(address(attacker), YIELD_AMOUNT);
+    //     vm.stopPrank();
+
+    //     // Expect revert with reentrancy error
+    //     vm.expectRevert("ReentrancyGuard: reentrant call");
+    //     attacker.attemptReentrantClaim();
+    // }
+
+    function test_scenario_yieldDistributionInSameBlockReverts() public {
+        token.exposed_mint(alice, MINT_AMOUNT);
+        _timeskip();
+        _depositYield(YIELD_AMOUNT);
+        // use separated approve & deposit otherwise expectRevert will
+        // fail if using the test `_depositYield()` call
+        _approveForDepositYield(YIELD_AMOUNT);
+        vm.expectRevert(abi.encodeWithSignature("DepositSameBlock()"));
+        token.exposed_depositYield(YIELD_AMOUNT);
+    }
+
+    function test_scenario_precisionLossHandling() public {
+        // Test handling of very small amounts and precision loss
+        uint256 tinyAmount = 1;
+        token.exposed_mint(alice, tinyAmount);
+        token.exposed_mint(bob, MINT_AMOUNT);
+
+        _timeskip();
+        _depositYield(YIELD_AMOUNT);
+
+        uint256 aliceYieldBefore = token.getUserState(alice).yieldAccrued;
+        uint256 bobYieldBefore = token.getUserState(bob).yieldAccrued;
+
+        token.claimYield(alice);
+        token.claimYield(bob);
+
+        // Ensure small holders still get something if entitled
+        if (aliceYieldBefore > 0) {
+            assertGt(token.getUserState(alice).yieldWithdrawn, 0);
+        }
+        assertGt(token.getUserState(bob).yieldWithdrawn, 0);
+    }
+
+    function test_scenario_multipleDepositsAndClaims() public {
+        uint256 aliceBalance = currencyTokenMock.balanceOf(alice);
+        console.log("aliceBalance", aliceBalance);
+
+        token.exposed_mint(alice, MINT_AMOUNT);
+        _timeskip();
+
+        // Multiple deposits
+        for (uint256 i = 0; i < 3; i++) {
+            _depositYield(YIELD_AMOUNT);
+            _timeskip();
+        }
+
+        // Partial claims
+        uint256 initialAccrued = token.getUserState(alice).yieldAccrued;
+        token.claimYield(alice);
+        aliceBalance = currencyTokenMock.balanceOf(alice);
+        console.log("aliceBalance after claimYield", aliceBalance);
+
+        _depositYield(YIELD_AMOUNT);
+        _timeskip();
+
+        uint256 newAccrued = token.getUserState(alice).yieldAccrued;
+        assertGt(newAccrued, 0);
+        assertLt(initialAccrued, newAccrued);
+    }
+
+    // TODO: test failing rn.
+    function test_scenario_transferDuringYieldAccrual() public {
+        token.exposed_mint(alice, MINT_AMOUNT);
+        _timeskip();
+        _depositYield(YIELD_AMOUNT);
+
+        // Record initial states
+        uint256 aliceInitialYield = token.getUserState(alice).yieldAccrued;
+
+        // Transfer tokens
+        _transferFrom(alice, bob, MINT_AMOUNT / 2);
+        logUserState(bob, "after _transferFrom");
+        token.accrueYield(bob);
+        logUserState(bob, "after accrueYield(bob)");
+        _timeskip();
+        _depositYield(YIELD_AMOUNT);
+        logUserState(bob, "after depositYield");
+        // Verify yield distribution after transfer
+        // the transfer is bob's first deposit
+        // the transfer will update bob's amountSeconds and lastUpdate.
+        // accrueYield must be called after some _timeskip() after the first _transferFrom()
+        // in order for bob to actually accrue any yield
+        token.accrueYield(bob);
+        logUserState(bob, "after second accrueYield(bob)");
+
+        assertGt(token.getUserState(bob).yieldAccrued, 0);
+        assertGt(token.getUserState(alice).yieldAccrued, aliceInitialYield);
+    }
+
+    function logUserState(address user, string memory prelog) view {
+        UserState memory userState = token.getUserState(user);
+        console.log("\n%s", prelog);
+        console.log("amountSeconds:", userState.amountSeconds);
+        console.log("amountSecondsDeduction:", userState.amountSecondsDeduction);
+        console.log("lastUpdate:", userState.lastUpdate);
+        console.log("lastDepositIndex:", userState.lastDepositIndex);
+        console.log("yieldAccrued:", userState.yieldAccrued);
+        console.log("yieldWithdrawn:", userState.yieldWithdrawn);
+    }
+
+    function test_scenario_massiveAmounts() public {
+        uint256 largeAmount = type(uint128).max;
+        uint256 largeYield = type(uint128).max;
+
+        // Test with very large numbers to ensure no overflows
+        token.exposed_mint(alice, largeAmount);
+        _timeskip();
+
+        vm.startPrank(OWNER);
+        currencyTokenMock.mint(OWNER, largeYield);
+        currencyTokenMock.approve(address(token), largeYield);
+        token.exposed_depositYield(largeYield);
+        vm.stopPrank();
+
+        // Should not revert
+        token.claimYield(alice);
+        assertGt(token.getUserState(alice).yieldWithdrawn, 0);
+    }
+
+    function test_scenario_accrueYieldThenClaim() public {
+        token.exposed_mint(alice, MINT_AMOUNT);
+        _timeskip();
+        _depositYield(YIELD_AMOUNT);
+
+        token.accrueYield(alice);
+        uint256 aliceYieldAfterAccrue = token.getUserState(alice).yieldAccrued;
+
+        vm.expectEmit(true, true, false, true, address(token));
+        // YieldAccrued should not be emitted since it was already called and nothing
+        // has changed
+        emit YieldClaimed(alice, aliceYieldAfterAccrue);
+        token.claimYield(alice);
+
+        uint256 aliceYieldAfterClaim = token.getUserState(alice).yieldAccrued;
+        assertEq(aliceYieldAfterAccrue, aliceYieldAfterClaim);
+        uint256 aliceBalance = currencyTokenMock.balanceOf(alice);
+        console.log(
+            "aliceYieldAfterAccrue: %d\naliceYieldAfterClaim: %d\naliceBalance: %d",
+            aliceYieldAfterAccrue,
+            aliceYieldAfterClaim,
+            aliceBalance
+        );
+        assertEq(currencyTokenMock.balanceOf(alice), aliceYieldAfterClaim);
+    }
+
+}
+
+// Helper contract for testing reentrancy
+contract ReentrantMock {
+
+    YieldDistributionTokenHarness public token;
+    IERC20 public currencyToken;
+    bool public attacked;
+
+    constructor(address _token, address _currencyToken) {
+        token = YieldDistributionTokenHarness(_token);
+        currencyToken = IERC20(_currencyToken);
+    }
+
+    // Add receive() to handle ETH transfers
+    receive() external payable {
+        console.log("[ReentrantMock] receive");
+        if (!attacked) {
+            attacked = true;
+            token.claimYield(address(this));
+        }
+    }
+
+    function attemptReentrantClaim() external {
+        token.claimYield(address(this));
+    }
+
+    // Add approve function to allow token contract to transfer currency tokens
+    function approve() external {
+        currencyToken.approve(address(token), type(uint256).max);
     }
 
 }
