@@ -31,7 +31,7 @@ contract DeployStakingContracts is Script {
         address[] memory executors = new address[](1);
         proposers[0] = MULTISIG_ADDRESS;
         executors[0] = MULTISIG_ADDRESS;
-        TimelockController timelock = new TimelockController(2 minutes, proposers, executors, address(0));
+        TimelockController timelock = new TimelockController(2 days, proposers, executors, address(0));
 
         RWAStaking rwaStaking = new RWAStaking();
         PlumePreStaking plumePreStaking = new PlumePreStaking(
