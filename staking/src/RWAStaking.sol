@@ -4,9 +4,10 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-
 import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
@@ -74,6 +75,8 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
 
     /// @notice Role for the admin of the RWAStaking contract
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    /// @notice Number of decimals for the base unit of amount
+    uint8 public constant _BASE = 18;
 
     // Events
 
@@ -127,6 +130,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
 
     /// @notice Indicates a failure because the pre-staking period has ended
     error StakingEnded();
+
+    /// @notice Indicates a failure because the stablecoin has too many decimals
+    error TooManyDecimals();
 
     /**
      * @notice Indicates a failure because the stablecoin is already allowed to be staked
@@ -221,6 +227,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         if ($.allowedStablecoins[stablecoin]) {
             revert AlreadyAllowedStablecoin(stablecoin);
         }
+        if (IERC20Metadata(address(stablecoin)).decimals() > _BASE) {
+            revert TooManyDecimals();
+        }
         $.stablecoins.push(stablecoin);
         $.allowedStablecoins[stablecoin] = true;
     }
@@ -298,7 +307,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         stablecoin.safeTransferFrom(msg.sender, address(this), amount);
 
         uint256 newBalance = stablecoin.balanceOf(address(this));
-        uint256 actualAmount = newBalance - previousBalance;
+        // Convert the amount to the base unit of amount, i.e. USDC amount gets multiplied by 10^12
+        uint256 actualAmount =
+            (newBalance - previousBalance) * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals());
 
         uint256 timestamp = block.timestamp;
         UserState storage userState = $.userStates[msg.sender];
@@ -335,7 +346,8 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         uint256 previousBalance = stablecoin.balanceOf(address(this));
         stablecoin.safeTransfer(msg.sender, amount);
         uint256 newBalance = stablecoin.balanceOf(address(this));
-        uint256 actualAmount = previousBalance - newBalance;
+        uint256 actualAmount =
+            (previousBalance - newBalance) * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals());
 
         userState.amountSeconds -= userState.amountSeconds * actualAmount / userState.amountStaked;
         userState.amountStaked -= actualAmount;

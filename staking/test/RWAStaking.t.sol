@@ -5,8 +5,9 @@ import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/I
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
-import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Test } from "forge-std/Test.sol";
 
@@ -20,6 +21,30 @@ contract MockPlumePreStaking is PlumePreStaking {
 
     function exposed_implementation() public view returns (address) {
         return _implementation();
+    }
+
+}
+
+contract MockERC20 is ERC20 {
+
+    uint8 private immutable _decimals;
+
+    constructor(
+        uint8 decimals_
+    ) ERC20("MockERC20", "ME20") {
+        _decimals = decimals_;
+    }
+
+    function mint(address account, uint256 amount) external {
+        _mint(account, amount);
+    }
+
+    function burn(address account, uint256 amount) external {
+        _burn(account, amount);
+    }
+
+    function decimals() public view override returns (uint8) {
+        return _decimals;
     }
 
 }
@@ -39,12 +64,12 @@ contract RWAStakingTest is Test {
     uint256 constant INITIAL_BALANCE = 1000 ether;
 
     function setUp() public {
-        ERC20Mock usdcMock = new ERC20Mock();
+        MockERC20 usdcMock = new MockERC20(18);
         usdcMock.mint(user1, INITIAL_BALANCE);
         usdcMock.mint(user2, INITIAL_BALANCE);
         usdc = IERC20(usdcMock);
 
-        ERC20Mock pusdMock = new ERC20Mock();
+        MockERC20 pusdMock = new MockERC20(6);
         pusdMock.mint(user1, INITIAL_BALANCE);
         pusdMock.mint(user2, INITIAL_BALANCE);
         pusd = IERC20(pusdMock);
@@ -216,18 +241,18 @@ contract RWAStakingTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user1);
-        pusd.approve(address(rwaStaking), pusdStakeAmount);
-        rwaStaking.stake(pusdStakeAmount, pusd);
+        pusd.approve(address(rwaStaking), pusdStakeAmount / 10 ** 12);
+        rwaStaking.stake(pusdStakeAmount / 10 ** 12, pusd);
         vm.stopPrank();
 
         assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount);
-        assertEq(pusd.balanceOf(address(rwaStaking)), pusdStakeAmount);
+        assertEq(pusd.balanceOf(address(rwaStaking)), pusdStakeAmount / 10 ** 12);
 
         vm.startPrank(address(timelock));
         vm.expectEmit(true, true, false, true, address(rwaStaking));
         emit RWAStaking.AdminWithdrawn(owner, usdc, stakeAmount);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
-        emit RWAStaking.AdminWithdrawn(owner, pusd, pusdStakeAmount);
+        emit RWAStaking.AdminWithdrawn(owner, pusd, pusdStakeAmount / 10 ** 12);
         rwaStaking.adminWithdraw();
         vm.stopPrank();
 
@@ -238,6 +263,7 @@ contract RWAStakingTest is Test {
         assertEq(amountStaked, stakeAmount + pusdStakeAmount);
         assertEq(lastUpdate, startTime + timeskipAmount);
         assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, pusd), pusdStakeAmount);
 
         assertEq(usdc.balanceOf(address(rwaStaking)), 0);
         assertEq(pusd.balanceOf(address(rwaStaking)), 0);
@@ -470,17 +496,17 @@ contract RWAStakingTest is Test {
 
         vm.startPrank(user2);
         usdc.approve(address(rwaStaking), stakeAmount);
-        pusd.approve(address(rwaStaking), stakeAmount);
+        pusd.approve(address(rwaStaking), stakeAmount / 10 ** 12);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
         emit RWAStaking.Staked(user2, usdc, stakeAmount);
         rwaStaking.stake(stakeAmount, usdc);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
         emit RWAStaking.Staked(user2, pusd, stakeAmount);
-        rwaStaking.stake(stakeAmount, pusd);
+        rwaStaking.stake(stakeAmount / 10 ** 12, pusd);
         vm.stopPrank();
 
         assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount * 2);
-        assertEq(pusd.balanceOf(address(rwaStaking)), stakeAmount);
+        assertEq(pusd.balanceOf(address(rwaStaking)), stakeAmount / 10 ** 12);
         (amountSeconds, amountStaked, lastUpdate) = rwaStaking.getUserState(user2);
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, stakeAmount * 2);
@@ -498,10 +524,10 @@ contract RWAStakingTest is Test {
         // Then skip ahead in time by another 300 seconds
         vm.warp(startTime + timeskipAmount * 2);
         vm.startPrank(user1);
-        pusd.approve(address(rwaStaking), stakeAmount);
+        pusd.approve(address(rwaStaking), stakeAmount / 10 ** 12);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
         emit RWAStaking.Staked(user1, pusd, stakeAmount);
-        rwaStaking.stake(stakeAmount, pusd);
+        rwaStaking.stake(stakeAmount / 10 ** 12, pusd);
         vm.stopPrank();
         vm.warp(startTime + timeskipAmount * 3);
 
@@ -518,7 +544,7 @@ contract RWAStakingTest is Test {
         assertEq(rwaStaking.getUserStablecoinAmounts(user2, usdc), stakeAmount);
         assertEq(rwaStaking.getUserStablecoinAmounts(user2, pusd), stakeAmount);
         assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount * 2);
-        assertEq(pusd.balanceOf(address(rwaStaking)), stakeAmount * 2);
+        assertEq(pusd.balanceOf(address(rwaStaking)), stakeAmount * 2 / 10 ** 12);
         assertEq(rwaStaking.getTotalAmountStaked(), stakeAmount * 4);
         assertEq(rwaStaking.getUsers().length, 2);
     }
