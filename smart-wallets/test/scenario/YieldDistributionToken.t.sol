@@ -7,6 +7,8 @@ import { Test } from "forge-std/Test.sol";
 
 import { Deposit, UserState } from "../../src/token/Types.sol";
 import { YieldDistributionTokenHarness } from "../harness/YieldDistributionTokenHarness.sol";
+import { stdError } from "forge-std/StdError.sol";
+
 import { console2 } from "forge-std/console2.sol";
 
 contract YieldDistributionTokenScenarioTest is Test {
@@ -302,7 +304,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         vm.stopPrank();
     }
 
-    function test_RevertIfDepositYieldCalledMultipleTimesInSameBlock() public {
+    function test_RevertIf_DepositYieldCalledMultipleTimesInSameBlock() public {
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
         _depositYield(YIELD_AMOUNT);
@@ -433,7 +435,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         // YieldAccrued should not be emitted since it was
         // already called and nothing
         // has changed
-        vm.expectEmit(true, true, true, true, address(token)); 
+        vm.expectEmit(true, true, true, true, address(token));
         emit YieldClaimed(alice, aliceYieldAfterAccrue);
         token.claimYield(alice);
 
@@ -443,8 +445,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         assertEq(currencyTokenMock.balanceOf(alice), aliceYieldAfterClaim);
     }
 
-    function test_scenario_burnThenClaim() public {
-
+    function test_RevertIf_BurnAllThenDepositYIeld() public {
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
         _depositYield(YIELD_AMOUNT);
@@ -462,15 +463,18 @@ contract YieldDistributionTokenScenarioTest is Test {
         console2.log("timeskip before depositYield 2");
         _timeskip();
         console2.log("depositing yield 2");
-        // Reverts here b/c of division by 0. This is expected b/c 
+        // Reverts here b/c of division by 0. This is expected b/c
         // _updateGlobalAmountSeconds() is setting
         // $.totalAmountSeconds += 0 since totalSupply() is now 0.
         // then in _depositYield, the deposit denominator is
         // `$.totalAmountSeconds - $.deposits[previousDepositIndex].totalAmountSeconds`
         // which is 0.
-        _depositYield(YIELD_AMOUNT);
+        _approveForDepositYield(YIELD_AMOUNT);
+        vm.expectRevert(stdError.divisionError);
+        token.exposed_depositYield(YIELD_AMOUNT);
+        // _depositYield(YIELD_AMOUNT);
         // _timeskip();
-        // console2.log("accrueYield 2");  
+        // console2.log("accrueYield 2");
         // token.accrueYield(alice);
         // uint256 aliceYieldAfterDeposit = token.getUserState(alice).yieldAccrued;
         // console2.log("aliceYieldAfterDeposit", aliceYieldAfterDeposit);
@@ -513,7 +517,7 @@ contract YieldDistributionTokenScenarioTest is Test {
     //     uint256 bobBeforeTransfer = token.getUserState(bob).yieldAccrued;
     //     _transferFrom(bob, charlie, token.balanceOf(bob));
     //     // token.exposed_burn(bob, 2 * MINT_AMOUNT);
-            
+
     //     console2.log("alice yield: %d", token.getUserState(alice).yieldAccrued);
     //     console2.log("bobBeforeTransfer:\t%d", bobBeforeTransfer);
     //     token.accrueYield(bob);
@@ -522,7 +526,7 @@ contract YieldDistributionTokenScenarioTest is Test {
     //     uint256 bobAfterTransfer = token.getUserState(bob).yieldAccrued;
     //     console2.log("bobAfterTransfer:\t%d", bobAfterTransfer);
     //     console2.log("charlieAfterTransfer:\t%d", charlieAfterTransfer);
-        
+
     //     _timeskip();
     //     _depositYield(YIELD_AMOUNT);
     //     token.accrueYield(alice);
@@ -568,7 +572,7 @@ contract YieldDistributionTokenScenarioTest is Test {
     // }
 
     function test_scenario_mintAndTransferInSameBlock_3() public {
-                // setup - bob & alice have equal amount
+        // setup - bob & alice have equal amount
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
         console2.log("depositing yield 1");
@@ -584,4 +588,5 @@ contract YieldDistributionTokenScenarioTest is Test {
         uint256 aliceYield2 = token.getUserState(alice).yieldAccrued;
         assertEq(aliceYield1, aliceYield2);
     }
+
 }
