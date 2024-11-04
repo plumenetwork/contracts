@@ -17,6 +17,7 @@ import { PlumePreStaking } from "../src/proxy/PlumePreStaking.sol";
 contract MockPlumePreStaking is PlumePreStaking {
 
     constructor(address logic, bytes memory data) PlumePreStaking(logic, data) { }
+
     function test() public override { }
 
     function exposed_implementation() public view returns (address) {
@@ -34,6 +35,8 @@ contract MockERC20 is ERC20 {
     ) ERC20("MockERC20", "ME20") {
         _decimals = decimals_;
     }
+
+    function test() public { }
 
     function mint(address account, uint256 amount) external {
         _mint(account, amount);
@@ -252,7 +255,7 @@ contract RWAStakingTest is Test {
         vm.expectEmit(true, true, false, true, address(rwaStaking));
         emit RWAStaking.AdminWithdrawn(owner, usdc, stakeAmount);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
-        emit RWAStaking.AdminWithdrawn(owner, pusd, pusdStakeAmount / 10 ** 12);
+        emit RWAStaking.AdminWithdrawn(owner, pusd, pusdStakeAmount);
         rwaStaking.adminWithdraw();
         vm.stopPrank();
 
@@ -371,7 +374,9 @@ contract RWAStakingTest is Test {
         rwaStaking.withdraw(withdrawAmount, usdc);
 
         // Test that user1 cannot withdraw pUSD, only USDC
-        vm.expectRevert(abi.encodeWithSelector(RWAStaking.InsufficientStaked.selector, user1, pusd, stakeAmount, 0));
+        vm.expectRevert(
+            abi.encodeWithSelector(RWAStaking.InsufficientStaked.selector, user1, pusd, stakeAmount * 10 ** 12, 0)
+        );
         rwaStaking.withdraw(stakeAmount, pusd);
 
         rwaStaking.withdraw(stakeAmount, usdc);

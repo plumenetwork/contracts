@@ -250,7 +250,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
             IERC20 stablecoin = stablecoins[i];
             uint256 amount = stablecoin.balanceOf(address(this));
             stablecoin.safeTransfer($.multisig, amount);
-            emit AdminWithdrawn($.multisig, stablecoin, amount);
+            emit AdminWithdrawn(
+                $.multisig, stablecoin, amount * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals())
+            );
         }
         $.endTime = block.timestamp;
     }
@@ -336,18 +338,20 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
             revert StakingEnded();
         }
 
+        uint256 baseUnitConversion = 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals());
         uint256 timestamp = block.timestamp;
         UserState storage userState = $.userStates[msg.sender];
-        if (userState.stablecoinAmounts[stablecoin] < amount) {
-            revert InsufficientStaked(msg.sender, stablecoin, amount, userState.stablecoinAmounts[stablecoin]);
+        if (userState.stablecoinAmounts[stablecoin] < amount * baseUnitConversion) {
+            revert InsufficientStaked(
+                msg.sender, stablecoin, amount * baseUnitConversion, userState.stablecoinAmounts[stablecoin]
+            );
         }
 
         userState.amountSeconds += userState.amountStaked * (timestamp - userState.lastUpdate);
         uint256 previousBalance = stablecoin.balanceOf(address(this));
         stablecoin.safeTransfer(msg.sender, amount);
         uint256 newBalance = stablecoin.balanceOf(address(this));
-        uint256 actualAmount =
-            (previousBalance - newBalance) * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals());
+        uint256 actualAmount = (previousBalance - newBalance) * baseUnitConversion;
 
         userState.amountSeconds -= userState.amountSeconds * actualAmount / userState.amountStaked;
         userState.amountStaked -= actualAmount;
