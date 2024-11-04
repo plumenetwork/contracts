@@ -33,6 +33,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         uint256 amountSeconds;
         uint256 amountStaked;
         uint256 lastUpdate;
+        mapping(IERC20 stablecoin => uint256 amount) stablecoinAmounts;
     }
 
     // Storage
@@ -307,6 +308,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         userState.amountSeconds += userState.amountStaked * (timestamp - userState.lastUpdate);
         userState.amountStaked += actualAmount;
         userState.lastUpdate = timestamp;
+        userState.stablecoinAmounts[stablecoin] += actualAmount;
         $.totalAmountStaked += actualAmount;
 
         emit Staked(msg.sender, stablecoin, actualAmount);
@@ -325,8 +327,8 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
 
         uint256 timestamp = block.timestamp;
         UserState storage userState = $.userStates[msg.sender];
-        if (userState.amountStaked < amount) {
-            revert InsufficientStaked(msg.sender, stablecoin, amount, userState.amountStaked);
+        if (userState.stablecoinAmounts[stablecoin] < amount) {
+            revert InsufficientStaked(msg.sender, stablecoin, amount, userState.stablecoinAmounts[stablecoin]);
         }
 
         userState.amountSeconds += userState.amountStaked * (timestamp - userState.lastUpdate);
@@ -338,6 +340,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         userState.amountSeconds -= userState.amountSeconds * actualAmount / userState.amountStaked;
         userState.amountStaked -= actualAmount;
         userState.lastUpdate = timestamp;
+        userState.stablecoinAmounts[stablecoin] -= actualAmount;
         $.totalAmountStaked -= actualAmount;
 
         emit Withdrawn(msg.sender, stablecoin, actualAmount);
@@ -358,15 +361,20 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
     /// @notice State of a user who has staked into the RWAStaking contract
     function getUserState(
         address user
-    ) external view returns (uint256, uint256, uint256) {
+    ) external view returns (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
-        UserState memory userState = $.userStates[user];
+        UserState storage userState = $.userStates[user];
         return (
             userState.amountSeconds
                 + userState.amountStaked * (($.endTime > 0 ? $.endTime : block.timestamp) - userState.lastUpdate),
             userState.amountStaked,
             userState.lastUpdate
         );
+    }
+
+    /// @notice Amount of stablecoins staked by a user for each stablecoin
+    function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
+        return _getRWAStakingStorage().userStates[user].stablecoinAmounts[stablecoin];
     }
 
     /// @notice List of stablecoins allowed to be staked in the RWAStaking contract

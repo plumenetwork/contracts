@@ -97,6 +97,8 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, 0);
         assertEq(lastUpdate, 0);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), 0);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, pusd), 0);
         assertEq(rwaStaking.getAllowedStablecoins().length, 0);
         assertEq(rwaStaking.isAllowedStablecoin(usdc), false);
         assertEq(rwaStaking.getEndTime(), 0);
@@ -199,6 +201,7 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, stakeAmount);
         assertEq(lastUpdate, startTime);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount);
 
         // Skip ahead in time by 300 seconds and check that amountSeconds has changed
         vm.warp(startTime + timeskipAmount);
@@ -206,6 +209,7 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, stakeAmount * timeskipAmount);
         assertEq(amountStaked, stakeAmount);
         assertEq(lastUpdate, startTime);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount);
 
         vm.startPrank(owner);
         rwaStaking.allowStablecoin(pusd);
@@ -233,6 +237,7 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, stakeAmount * timeskipAmount);
         assertEq(amountStaked, stakeAmount + pusdStakeAmount);
         assertEq(lastUpdate, startTime + timeskipAmount);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount);
 
         assertEq(usdc.balanceOf(address(rwaStaking)), 0);
         assertEq(pusd.balanceOf(address(rwaStaking)), 0);
@@ -321,6 +326,16 @@ contract RWAStakingTest is Test {
         // Stake from user1 so we can test withdrawals
         helper_initialStake(user1, stakeAmount);
 
+        // Stake pUSD from user2 to ensure that user1 cannot withdraw pUSD
+        vm.startPrank(owner);
+        rwaStaking.allowStablecoin(pusd);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        pusd.approve(address(rwaStaking), stakeAmount);
+        rwaStaking.stake(stakeAmount, pusd);
+        vm.stopPrank();
+
         vm.startPrank(user1);
 
         uint256 withdrawAmount = stakeAmount + 1;
@@ -328,6 +343,14 @@ contract RWAStakingTest is Test {
             abi.encodeWithSelector(RWAStaking.InsufficientStaked.selector, user1, usdc, withdrawAmount, stakeAmount)
         );
         rwaStaking.withdraw(withdrawAmount, usdc);
+
+        // Test that user1 cannot withdraw pUSD, only USDC
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.InsufficientStaked.selector, user1, pusd, stakeAmount, 0));
+        rwaStaking.withdraw(stakeAmount, pusd);
+
+        rwaStaking.withdraw(stakeAmount, usdc);
+        assertEq(usdc.balanceOf(user1), INITIAL_BALANCE);
+        assertEq(usdc.balanceOf(address(rwaStaking)), 0);
 
         vm.stopPrank();
     }
@@ -345,6 +368,7 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, stakeAmount);
         assertEq(lastUpdate, startTime);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount);
         assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount);
         assertEq(usdc.balanceOf(user1), INITIAL_BALANCE - stakeAmount);
 
@@ -364,6 +388,7 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, stakeAmount * timeskipAmount / 2);
         assertEq(amountStaked, stakeAmount / 2);
         assertEq(lastUpdate, startTime + timeskipAmount);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount / 2);
         assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount / 2);
         assertEq(usdc.balanceOf(user1), INITIAL_BALANCE - stakeAmount / 2);
 
@@ -382,6 +407,7 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, 0);
         assertEq(lastUpdate, startTime + timeskipAmount * 2);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), 0);
         assertEq(usdc.balanceOf(address(rwaStaking)), 0);
         assertEq(usdc.balanceOf(user1), INITIAL_BALANCE);
     }
@@ -426,6 +452,7 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, stakeAmount);
         assertEq(lastUpdate, startTime);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount);
 
         // Skip ahead in time by 300 seconds
         vm.warp(startTime + timeskipAmount);
@@ -434,6 +461,7 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, stakeAmount * timeskipAmount);
         assertEq(amountStaked, stakeAmount);
         assertEq(lastUpdate, startTime);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount);
 
         // Stake 100 USDC and 100 pUSD from user2
         vm.startPrank(owner);
@@ -457,6 +485,8 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, stakeAmount * 2);
         assertEq(lastUpdate, startTime + timeskipAmount);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user2, usdc), stakeAmount);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user2, pusd), stakeAmount);
         assertEq(rwaStaking.getTotalAmountStaked(), stakeAmount * 3);
         assertEq(rwaStaking.getUsers().length, 2);
         assertEq(rwaStaking.getAllowedStablecoins().length, 2);
@@ -479,11 +509,14 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, stakeAmount * timeskipAmount * 4);
         assertEq(amountStaked, stakeAmount * 2);
         assertEq(lastUpdate, startTime + timeskipAmount * 2);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, pusd), stakeAmount);
         (amountSeconds, amountStaked, lastUpdate) = rwaStaking.getUserState(user2);
         assertEq(amountSeconds, stakeAmount * timeskipAmount * 4);
         assertEq(amountStaked, stakeAmount * 2);
         assertEq(lastUpdate, startTime + timeskipAmount);
-
+        assertEq(rwaStaking.getUserStablecoinAmounts(user2, usdc), stakeAmount);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user2, pusd), stakeAmount);
         assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount * 2);
         assertEq(pusd.balanceOf(address(rwaStaking)), stakeAmount * 2);
         assertEq(rwaStaking.getTotalAmountStaked(), stakeAmount * 4);
@@ -518,6 +551,7 @@ contract RWAStakingTest is Test {
         assertEq(amountSeconds, 0);
         assertEq(amountStaked, stakeAmount);
         assertEq(lastUpdate, block.timestamp);
+        assertEq(rwaStaking.getUserStablecoinAmounts(user1, usdc), stakeAmount);
     }
 
 }
