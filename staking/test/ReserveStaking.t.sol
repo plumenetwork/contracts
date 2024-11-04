@@ -3,12 +3,13 @@ pragma solidity ^0.8.25;
 
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
+
+import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Test } from "forge-std/Test.sol";
-import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 
 import { ReserveStaking } from "../src/ReserveStaking.sol";
 import { SBTC } from "../src/SBTC.sol";
@@ -18,7 +19,7 @@ import { PlumePreReserveFund } from "../src/proxy/PlumePreReserveFund.sol";
 contract MockPlumePreReserveFund is PlumePreReserveFund {
 
     constructor(address logic, bytes memory data) PlumePreReserveFund(logic, data) { }
-    function test() public override {}
+    function test() public override { }
 
     function exposed_implementation() public view returns (address) {
         return _implementation();
@@ -542,11 +543,7 @@ contract ReserveStakingTest is Test {
 
     function test_upgradeFail() public {
         address newImplementation = address(new ReserveStaking());
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ReserveStaking.Unauthorized.selector, user1, address(timelock)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(ReserveStaking.Unauthorized.selector, user1, address(timelock)));
         vm.prank(user1);
         staking.upgradeToAndCall(newImplementation, "");
     }

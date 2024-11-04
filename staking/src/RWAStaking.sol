@@ -202,7 +202,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
      * @notice Set the multisig address
      * @param multisig Multisig address
      */
-    function setMultisig(address multisig) external nonReentrant onlyTimelock {
+    function setMultisig(
+        address multisig
+    ) external nonReentrant onlyTimelock {
         _getRWAStakingStorage().multisig = multisig;
     }
 

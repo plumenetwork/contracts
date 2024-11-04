@@ -16,7 +16,7 @@ import { PlumePreStaking } from "../src/proxy/PlumePreStaking.sol";
 contract MockPlumePreStaking is PlumePreStaking {
 
     constructor(address logic, bytes memory data) PlumePreStaking(logic, data) { }
-    function test() public override {}
+    function test() public override { }
 
     function exposed_implementation() public view returns (address) {
         return _implementation();
@@ -492,11 +492,7 @@ contract RWAStakingTest is Test {
 
     function test_upgradeFail() public {
         address newImplementation = address(new RWAStaking());
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                RWAStaking.Unauthorized.selector, user1, address(timelock)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.Unauthorized.selector, user1, address(timelock)));
         vm.startPrank(user1);
         rwaStaking.upgradeToAndCall(newImplementation, "");
         vm.stopPrank();
