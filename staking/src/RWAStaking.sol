@@ -373,10 +373,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
     }
 
     /// @notice Amount of stablecoins staked by a user for each stablecoin
-    function getUserStablecoinAmounts(
-        address user,
-        IERC20 stablecoin
-    ) external view returns (uint256) {
+    function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
         return _getRWAStakingStorage().userStates[user].stablecoinAmounts[stablecoin];
     }
 

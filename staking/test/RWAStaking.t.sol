@@ -345,9 +345,7 @@ contract RWAStakingTest is Test {
         rwaStaking.withdraw(withdrawAmount, usdc);
 
         // Test that user1 cannot withdraw pUSD, only USDC
-        vm.expectRevert(
-            abi.encodeWithSelector(RWAStaking.InsufficientStaked.selector, user1, pusd, stakeAmount, 0)
-        );
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.InsufficientStaked.selector, user1, pusd, stakeAmount, 0));
         rwaStaking.withdraw(stakeAmount, pusd);
 
         rwaStaking.withdraw(stakeAmount, usdc);
