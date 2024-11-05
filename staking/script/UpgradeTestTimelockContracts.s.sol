@@ -13,8 +13,6 @@ contract UpgradeTestTimelockContracts is Script {
 
     address private constant DEPLOYER_ADDRESS = 0xDE1509CC56D740997c70E1661BA687e950B4a241;
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
-    address private constant PUSD_ADDRESS = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
-    address private constant USDT_ADDRESS = 0x2413b8C79Ce60045882559f63d308aE3DFE0903d;
     UUPSUpgradeable private constant PLUME_PRESTAKING_PROXY =
         UUPSUpgradeable(payable(0x6d4780D9cC966B2D34180b7A27f7B677a392BfDE));
     UUPSUpgradeable private constant PLUME_PRERESERVE_FUND_PROXY =
