@@ -10,7 +10,6 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { Deposit, UserState } from "./Types.sol";
-import { console2 } from "forge-std/console2.sol";
 
 /**
  * @title YieldDistributionToken
@@ -187,11 +186,8 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         uint256 timestamp = block.timestamp;
         if (timestamp > $.lastSupplyUpdate) {
-            console2.log("updating $.totalAmountSeconds");
             $.totalAmountSeconds += totalSupply() * (timestamp - $.lastSupplyUpdate);
             $.lastSupplyUpdate = timestamp;
-        } else {
-            console2.log("$.totalAmountSeconds is not updated");
         }
     }
 

@@ -316,11 +316,12 @@ contract YieldDistributionTokenScenarioTest is Test {
         token.exposed_depositYield(YIELD_AMOUNT);
     }
 
+    //TODO: test failing b/c of rounding down to 0. 
     function test_scenario_precisionLossHandling() public {
         // Test handling of very small amounts and precision loss
         uint256 tinyAmount = 1;
         token.exposed_mint(alice, tinyAmount);
-        token.exposed_mint(bob, MINT_AMOUNT);
+        token.exposed_mint(bob, 100_000_000 * MINT_AMOUNT);
 
         _timeskip();
         _depositYield(YIELD_AMOUNT);
@@ -332,15 +333,14 @@ contract YieldDistributionTokenScenarioTest is Test {
         token.claimYield(bob);
 
         // Ensure small holders still get something if entitled
-        if (aliceYieldBefore > 0) {
-            assertGt(token.getUserState(alice).yieldWithdrawn, 0);
-        }
+        // NOTE: this line is failing
+        assertGt(token.getUserState(alice).yieldWithdrawn, 0);
+        
         assertGt(token.getUserState(bob).yieldWithdrawn, 0);
     }
 
     function test_scenario_multipleDepositsAndClaims() public {
         uint256 aliceBalance = currencyTokenMock.balanceOf(alice);
-        console2.log("aliceBalance", aliceBalance);
 
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
@@ -355,7 +355,6 @@ contract YieldDistributionTokenScenarioTest is Test {
         uint256 initialAccrued = token.getUserState(alice).yieldAccrued;
         token.claimYield(alice);
         aliceBalance = currencyTokenMock.balanceOf(alice);
-        console2.log("aliceBalance after claimYield", aliceBalance);
 
         _depositYield(YIELD_AMOUNT);
         _timeskip();
@@ -365,7 +364,6 @@ contract YieldDistributionTokenScenarioTest is Test {
         assertLt(initialAccrued, newAccrued);
     }
 
-    // TODO: test failing rn.
     function test_scenario_transferDuringYieldAccrual() public {
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
@@ -373,10 +371,6 @@ contract YieldDistributionTokenScenarioTest is Test {
         _depositYield(YIELD_AMOUNT);
         // Record initial states
         uint256 aliceInitialYield = token.getUserState(alice).yieldAccrued;
-        // console2.log("aliceInitialYield", aliceInitialYield);
-
-        // token.accrueYield(alice);
-        console2.log("aliceYieldAfterAccrue", token.getUserState(alice).yieldAccrued);
         uint256 expectedAliceAmountSeconds = MINT_AMOUNT * skipDuration * timeskipCounter;
         uint256 expectedAliceYieldAccrued = expectedAliceAmountSeconds * YIELD_AMOUNT / expectedAliceAmountSeconds;
 
@@ -386,21 +380,17 @@ contract YieldDistributionTokenScenarioTest is Test {
         _transferFrom(alice, bob, MINT_AMOUNT / 2);
 
         uint256 aliceYieldAfterTransfer = token.getUserState(alice).yieldAccrued;
-        console2.log("aliceYieldAfterTransfer", aliceYieldAfterTransfer);
-        token.logUserState(bob, "bob after _transferFrom");
         token.accrueYield(bob);
-        token.logUserState(bob, "bob after accrueYield(bob)");
+        uint256 bobYield = token.getUserState(bob).yieldAccrued;
+        assertEq(bobYield, 0);
         _timeskip();
         _depositYield(YIELD_AMOUNT);
-        token.logUserState(bob, "bob after depositYield");
         // Verify yield distribution after transfer
         // the transfer is bob's first deposit
         // the transfer will update bob's amountSeconds and lastUpdate.
-        // accrueYield must be called after some _timeskip() after the first _transferFrom()
-        // in order for bob to actually accrue any yield
+        // in order for bob to accrue yield, token.accrueYield(bob) must be called
+        // after bob has held balance for some time
         token.accrueYield(bob);
-        token.logUserState(bob, "after second accrueYield(bob)");
-
         assertGt(token.getUserState(bob).yieldAccrued, 0);
         assertGt(token.getUserState(alice).yieldAccrued, aliceInitialYield);
     }
@@ -442,7 +432,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         uint256 aliceYieldAfterClaim = token.getUserState(alice).yieldAccrued;
         assertEq(aliceYieldAfterAccrue, aliceYieldAfterClaim);
         uint256 aliceBalance = currencyTokenMock.balanceOf(alice);
-        assertEq(currencyTokenMock.balanceOf(alice), aliceYieldAfterClaim);
+        assertEq(aliceBalance, aliceYieldAfterClaim);
     }
 
     function test_RevertIf_BurnAllThenDepositYIeld() public {
@@ -456,13 +446,8 @@ contract YieldDistributionTokenScenarioTest is Test {
         _timeskip();
         token.accrueYield(alice);
         uint256 aliceYieldAfterBurn = token.getUserState(alice).yieldAccrued;
-        console2.log("aliceYieldBeforeBurn", aliceYieldBeforeBurn);
-        console2.log("aliceYieldAfterBurn", aliceYieldAfterBurn);
         assertEq(aliceYieldBeforeBurn, aliceYieldAfterBurn);
-
-        console2.log("timeskip before depositYield 2");
         _timeskip();
-        console2.log("depositing yield 2");
         // Reverts here b/c of division by 0. This is expected b/c
         // _updateGlobalAmountSeconds() is setting
         // $.totalAmountSeconds += 0 since totalSupply() is now 0.
@@ -472,110 +457,12 @@ contract YieldDistributionTokenScenarioTest is Test {
         _approveForDepositYield(YIELD_AMOUNT);
         vm.expectRevert(stdError.divisionError);
         token.exposed_depositYield(YIELD_AMOUNT);
-        // _depositYield(YIELD_AMOUNT);
-        // _timeskip();
-        // console2.log("accrueYield 2");
-        // token.accrueYield(alice);
-        // uint256 aliceYieldAfterDeposit = token.getUserState(alice).yieldAccrued;
-        // console2.log("aliceYieldAfterDeposit", aliceYieldAfterDeposit);
-        // assertGt(aliceYieldAfterDeposit, aliceYieldAfterBurn);
     }
 
-    // function test_scenario_mintAndTransferInSameBlock() public {
-    //     // setup - bob & alice have equal amount
-    //     token.exposed_mint(alice, MINT_AMOUNT);
-    //     token.exposed_mint(bob, MINT_AMOUNT);
-    //     _timeskip();
-    //     _depositYield(YIELD_AMOUNT);
-    //     token.accrueYield(alice);
-    //     token.accrueYield(bob);
-    //     assertEq(token.getUserState(alice).yieldAccrued, token.getUserState(bob).yieldAccrued);
-    //     _timeskip();
-    //     _depositYield(YIELD_AMOUNT);
-    //     token.accrueYield(alice);
-    //     token.accrueYield(bob);
-    //     // this timeskip results in bob still accruing yield after
-    //     // minting & transferring all his tokens in the same block
-    //     _timeskip();
-
-    //     // alice mints & accrues yield in same block
-    //     token.logUserState(alice, "alice before mint2");
-    //     console2.log("before mint2");
-    //     uint256 aliceBeforeMintAndAccrue = token.getUserState(alice).yieldAccrued;
-    //     token.exposed_mint(alice, MINT_AMOUNT);
-    //     token.accrueYield(alice);
-    //     uint256 aliceAfterMintAndAccrue = token.getUserState(alice).yieldAccrued;
-    //     console2.log("aliceBeforeMintAndAccrue:\t%d", aliceBeforeMintAndAccrue);
-    //     console2.log("aliceAfterMintAndAccrue:\t%d", aliceAfterMintAndAccrue);
-
-    //     token.accrueYield(bob);
-    //     uint256 bobBeforeMintAndAccrue = token.getUserState(bob).yieldAccrued;
-    //     console2.log("bobBeforeMintAndAccrue:\t%d", bobBeforeMintAndAccrue);
-    //     // bob mints, accures yield then transfers all yieldTokens to charlie
-    //     token.exposed_mint(bob, MINT_AMOUNT);
-    //     token.accrueYield(bob);
-    //     uint256 bobBeforeTransfer = token.getUserState(bob).yieldAccrued;
-    //     _transferFrom(bob, charlie, token.balanceOf(bob));
-    //     // token.exposed_burn(bob, 2 * MINT_AMOUNT);
-
-    //     console2.log("alice yield: %d", token.getUserState(alice).yieldAccrued);
-    //     console2.log("bobBeforeTransfer:\t%d", bobBeforeTransfer);
-    //     token.accrueYield(bob);
-    //     token.accrueYield(charlie);
-    //     uint256 charlieAfterTransfer = token.getUserState(charlie).yieldAccrued;
-    //     uint256 bobAfterTransfer = token.getUserState(bob).yieldAccrued;
-    //     console2.log("bobAfterTransfer:\t%d", bobAfterTransfer);
-    //     console2.log("charlieAfterTransfer:\t%d", charlieAfterTransfer);
-
-    //     _timeskip();
-    //     _depositYield(YIELD_AMOUNT);
-    //     token.accrueYield(alice);
-    //     token.accrueYield(bob);
-    //     token.accrueYield(charlie);
-    //     uint256 aliceYieldAfterTimeskip = token.getUserState(alice).yieldAccrued;
-    //     uint256 bobYieldAfterTransferAndTimeskip = token.getUserState(bob).yieldAccrued;
-    //     uint256 charlieYieldAfterTransferAndTimeskip = token.getUserState(charlie).yieldAccrued;
-
-    //     console2.log("aliceYieldAfterTimeskip:\t%d", aliceYieldAfterTimeskip);
-    //     console2.log("bobYieldAfterTransferAndTimeskip:\t%d", bobYieldAfterTransferAndTimeskip);
-    //     console2.log("charlieYieldAfterTransferAndTimeskip:\t%d", charlieYieldAfterTransferAndTimeskip);
-    //     assertGt(aliceYieldAfterTimeskip, bobYieldAfterTransferAndTimeskip);
-    //     // token.logUserState(alice, "alice after mint2 and accrueYield");
-    //     // console2.log("before burn2");
-    //     // token.exposed_burn(alice, MINT_AMOUNT);
-    //     // token.accrueYield(alice);
-    //     // token.logUserState(alice, "alice after burn2 and accrueYield");
-
-    // }
-
-    // function test_scenario_mintAndTransferInSameBlock_2() public {
-    //     // setup - bob & alice have equal amount
-    //     token.exposed_mint(alice, MINT_AMOUNT);
-    //     token.exposed_mint(bob, MINT_AMOUNT);
-    //     _timeskip();
-    //     _depositYield(YIELD_AMOUNT);
-    //     token.accrueYield(alice);
-    //     uint256 bob1 = token.getUserState(bob).yieldAccrued;
-    //     token.accrueYield(bob);
-    //     uint256 bob2 = token.getUserState(bob).yieldAccrued;
-    //     _transferFrom(bob, charlie, token.balanceOf(bob));
-    //     _timeskip();
-    //     token.accrueYield(bob);
-    //     uint256 bobBefore3 = token.getUserState(bob).yieldAccrued;
-    //     _depositYield(YIELD_AMOUNT);
-    //     token.accrueYield(bob);
-    //     uint256 bob3 = token.getUserState(bob).yieldAccrued;
-    //     console2.log("bob1:\t%d", bob1);
-    //     console2.log("bob2:\t%d", bob2);
-    //     console2.log("bobBefore3:\t%d", bobBefore3);
-    //     console2.log("bob3:\t%d", bob3);
-    // }
-
-    function test_scenario_mintAndTransferInSameBlock_3() public {
+    function test_scenario_mintAndTransferInSameBlock() public {
         // setup - bob & alice have equal amount
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
-        console2.log("depositing yield 1");
         _depositYield(YIELD_AMOUNT);
         // alice is owed yield from initial deposit
         token.accrueYield(alice);
@@ -587,6 +474,60 @@ contract YieldDistributionTokenScenarioTest is Test {
         token.accrueYield(alice);
         uint256 aliceYield2 = token.getUserState(alice).yieldAccrued;
         assertEq(aliceYield1, aliceYield2);
+    }
+
+    function test_scenario_mintAndBurnInSameBlock() public {
+        // setup - bob & alice have equal amount
+        token.exposed_mint(alice, MINT_AMOUNT);
+        // need to mint to bob to have some supply
+        token.exposed_mint(bob, MINT_AMOUNT);
+
+        _timeskip();
+        // deposit 1
+        _depositYield(YIELD_AMOUNT);
+        // alice is owed yield for holding from initial mint until deposit 1
+        token.accrueYield(alice);
+        uint256 aliceYield1 = token.getUserState(alice).yieldAccrued;
+        assertGt(aliceYield1, 0);
+
+        _timeskip();
+        // deposit 2
+        _depositYield(YIELD_AMOUNT);
+        // Alice burns all her tokens.
+        token.exposed_burn(alice, token.balanceOf(alice));
+        // alice should be owed yield for deposit 2
+        token.accrueYield(alice);
+        uint256 aliceYield2 = token.getUserState(alice).yieldAccrued;
+        assertGt(aliceYield2, aliceYield1);
+
+        // deposit 3
+        _timeskip();
+        _depositYield(YIELD_AMOUNT);
+        token.exposed_mint(alice, MINT_AMOUNT);
+        token.exposed_burn(alice, token.balanceOf(alice));
+        token.accrueYield(alice);
+        uint256 aliceYield3 = token.getUserState(alice).yieldAccrued;
+        assertEq(aliceYield3, aliceYield2); 
+
+        // deposit 4
+        _timeskip();
+        token.exposed_mint(alice, MINT_AMOUNT);
+        _depositYield(YIELD_AMOUNT);
+        token.accrueYield(alice);
+        token.exposed_burn(alice, token.balanceOf(alice));
+        uint256 aliceYield4 = token.getUserState(alice).yieldAccrued;
+        assertEq(aliceYield4, aliceYield3);
+
+        // deposit 5
+        // alice held yieldToken for some time but burned
+        // before yield was deposited. Should still be owed yield.
+        token.exposed_mint(alice, MINT_AMOUNT);
+        _timeskip();
+        token.exposed_burn(alice, token.balanceOf(alice));
+        _depositYield(YIELD_AMOUNT);
+        token.accrueYield(alice);
+        uint256 aliceYield5 = token.getUserState(alice).yieldAccrued;
+        assertGt(aliceYield5, aliceYield4);
     }
 
 }
