@@ -18,7 +18,7 @@ contract MockPlumePreStaking is PlumePreStaking {
 
     constructor(address logic, bytes memory data) PlumePreStaking(logic, data) { }
 
-    function test() public override { }
+    function test() public { }
 
     function exposed_implementation() public view returns (address) {
         return _implementation();
