@@ -20,6 +20,17 @@ $ forge compile
 ```bash
 $ forge test
 $ forge coverage --ir-minimum
+
+# for generating an detailed easy-to-read report on coverage
+$ forge coverage --ir-minimum --report lcov   
+$ genhtml -o report --branch-coverage lcov.info                                 ✔  08:29:50  
+# if genhtml gives you an error like this:
+# Reading tracefile lcov.info.
+# genhtml: ERROR: (corrupt) unable to read trace file 'lcov.info': genhtml: ERROR: (inconsistent) "src/token/YieldDistributionToken.sol":62:  function YieldDistributionToken._getYieldDistributionTokenStorage found on line but no corresponding 'line' coverage data point.  Cannot derive function end line.  See lcovrc man entry for 'derive_function_end_line'.
+#         (use "genhtml --ignore-errors inconsistent ..." to bypass this error)
+# then use this to generate the report
+$ genhtml -o report --branch-coverage --ignore-errors inconsistent --ignore-errors corrupt lcov.info
+# open up report/index.html in your editor and open the preview to navigate through the coverage report
 ```
 
 ### Deploy
