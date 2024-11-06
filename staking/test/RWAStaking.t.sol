@@ -195,6 +195,24 @@ contract RWAStakingTest is Test {
         vm.stopPrank();
     }
 
+    function test_allowStablecoinTooManyDecimals() public {
+        // Create a mock stablecoin with more than 18 decimals (BASE)
+        MockERC20 tooManyDecimalsMock = new MockERC20(19); // 19 > 18 (_BASE)
+        IERC20 tooManyDecimalsToken = IERC20(tooManyDecimalsMock);
+
+        vm.startPrank(owner);
+        
+        // Attempt to allow the token with too many decimals
+        vm.expectRevert(abi.encodeWithSelector(RWAStaking.TooManyDecimals.selector));
+        rwaStaking.allowStablecoin(tooManyDecimalsToken);
+        
+        vm.stopPrank();
+
+        // Verify the token was not added
+        assertEq(rwaStaking.isAllowedStablecoin(tooManyDecimalsToken), false);
+        assertEq(rwaStaking.getAllowedStablecoins().length, 0);
+    }
+
     function test_allowStablecoin() public {
         vm.startPrank(owner);
 
