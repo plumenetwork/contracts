@@ -6,7 +6,6 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -191,6 +190,17 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
+    }
+
+    /**
+     * @notice Reinitialize the RWAStaking contract by adding the timelock and multisig contract address
+     * @param multisig Multisig contract address
+     * @param timelock Timelock contract address
+     */
+    function reinitialize(address multisig, TimelockController timelock) public reinitializer(2) onlyRole(ADMIN_ROLE) {
+        RWAStakingStorage storage $ = _getRWAStakingStorage();
+        $.multisig = multisig;
+        $.timelock = timelock;
     }
 
     // Override Functions

@@ -19,7 +19,7 @@ import { PlumePreReserveFund } from "../src/proxy/PlumePreReserveFund.sol";
 contract MockPlumePreReserveFund is PlumePreReserveFund {
 
     constructor(address logic, bytes memory data) PlumePreReserveFund(logic, data) { }
-    function test() public override { }
+    function test() public { }
 
     function exposed_implementation() public view returns (address) {
         return _implementation();
