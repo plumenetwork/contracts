@@ -352,11 +352,11 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                 userState.amountSeconds += amountSecondsAccrued;
 
                 if (userState.amountSeconds > userState.amountSecondsDeduction) {
-                    console2.log("\tyieldAccrued before: %d", userState.yieldAccrued);
+                    uint256 yieldAccruedBefore = userState.yieldAccrued;
                     userState.yieldAccrued += deposit.scaledCurrencyTokenPerAmountSecond.mulDiv(
                         userState.amountSeconds - userState.amountSecondsDeduction, SCALE
                     );
-                    console2.log("\tyieldAccrued after: %d", userState.yieldAccrued);
+                    console2.log("\tyieldAccrued: %d", (userState.yieldAccrued - yieldAccruedBefore));
 
                     // the `amountSecondsDeduction` is updated to the value of `amountSeconds`
                     // of the last yield accrual - therefore for the current yield accrual, it is updated
@@ -372,7 +372,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                 // of the deposit timestamp is equal to the users last update, meaning yield has already been accrued
                 // the check ensures that the process terminates early if there are no more deposits from which to
                 // accrue yield
+                console2.log("\tamountSecondsAccrued: %d", amountSecondsAccrued);
                 if (amountSecondsAccrued == 0) {
+                    console2.log("\tamountSecondsAccrued == 0 at %d. EARLYBREAK\n\n\n", lastDepositIndex);
                     userState.lastDepositIndex = currentDepositIndex;
                     break;
                 }

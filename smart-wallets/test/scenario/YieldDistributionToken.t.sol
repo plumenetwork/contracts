@@ -602,7 +602,53 @@ contract YieldDistributionTokenScenarioTest is Test {
         */
         token.accrueYield(alice);
         token.logUserState(alice, "alice after last accrueYield");
+    }
 
+    /// Notes:
+    /// - _transferFrom also calls accrueYield on both the sender & receiver
+    ///     balances aren't updated until after accrueYield is called
+    /// - is there any bug in the accrueYield early break for the amountSecondsAccrued  == 0 case?
+    /// Test:
+    /// alice with balance 
+    //  depositYield() and timeskip multiple times
+    //  
+    function test_scenario_zeroBalanceThenDepositYieldThenNonZeroBalanceThenDepositYield() public {
+        token.exposed_mint(alice, MINT_AMOUNT);
+        _timeskip();
+        // deposit1
+        _depositYield(YIELD_AMOUNT);
+        token.accrueYield(alice);
+        token.logUserState(alice, "alice after zero balance then deposit yield");
+        uint256 aliceYield1 = token.getUserState(alice).yieldAccrued;
+        assertGt(aliceYield1, 0);
+
+        // alice transfers all her tokens to bob
+        _transferFrom(alice, bob, token.balanceOf(alice));
+        _timeskip();
+        // deposit 2
+        // alice should have no yield from this
+        _depositYield(YIELD_AMOUNT);
+        _timeskip();
+        // uint256 aliceYield2 = token.getUserState(alice).yieldAccrued;
+        // assertEq(aliceYield2, aliceYield1);
+        _transferFrom(bob, alice, token.balanceOf(bob));
+        _timeskip();
+        // deposit 3
+        _depositYield(YIELD_AMOUNT);
+        _transferFrom(alice, bob, token.balanceOf(alice));
+        _timeskip();
+        // deposit 4
+        _depositYield(YIELD_AMOUNT);
+        // alice should have yield for the time from deposit 2 to deposit 3 
+        console2.log("alice accrueYield");
+        token.accrueYield(alice);
+        uint256 aliceYield2 = token.getUserState(alice).yieldAccrued;
+        assertGt(aliceYield2, aliceYield1);
+
+
+
+
+        // token.exposed_mint(alice, MINT_AMOUNT);
     }
 
 }
