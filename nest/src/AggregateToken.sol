@@ -157,6 +157,16 @@ contract AggregateToken is ComponentToken, IAggregateToken {
     // Admin Functions
 
     /**
+     * @notice Approve the given ComponentToken to spend the given amount of `asset`
+     * @dev Only the owner can call this function
+     * @param componentToken ComponentToken to approve
+     * @param amount Amount of `asset` to approve
+     */
+    function approveComponentToken(IComponentToken componentToken, uint256 amount) external onlyRole(ADMIN_ROLE) {
+        IERC20(componentToken.asset()).approve(address(componentToken), amount);
+    }
+
+    /**
      * @notice Add a ComponentToken to the component token list
      * @dev Only the owner can call this function, and there is no way to remove a ComponentToken later
      * @param componentToken ComponentToken to add
