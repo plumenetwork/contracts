@@ -35,7 +35,7 @@ contract DeployStakingContracts is Script {
 
         RWAStaking rwaStaking = new RWAStaking();
         PlumePreStaking plumePreStaking = new PlumePreStaking(
-            address(rwaStaking), abi.encodeCall(RWAStaking.initialize, (timelock, DEPLOYER_ADDRESS))
+            address(rwaStaking), abi.encodeCall(RWAStaking.initialize, (timelock, MULTISIG_ADDRESS))
         );
         RWAStaking(address(plumePreStaking)).allowStablecoin(IERC20(USDC_ADDRESS));
         RWAStaking(address(plumePreStaking)).allowStablecoin(IERC20(USDT_ADDRESS));
@@ -45,7 +45,7 @@ contract DeployStakingContracts is Script {
         PlumePreReserveFund plumePreReserveFund = new PlumePreReserveFund(
             address(sbtcStaking),
             abi.encodeCall(
-                ReserveStaking.initialize, (timelock, DEPLOYER_ADDRESS, IERC20(SBTC_ADDRESS), IERC20(STONE_ADDRESS))
+                ReserveStaking.initialize, (timelock, MULTISIG_ADDRESS, IERC20(SBTC_ADDRESS), IERC20(STONE_ADDRESS))
             )
         );
         console2.log("Plume Pre-Reserve Fund Proxy deployed to:", address(plumePreReserveFund));
