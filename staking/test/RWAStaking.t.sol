@@ -6,7 +6,6 @@ import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.so
 import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Test } from "forge-std/Test.sol";
@@ -17,8 +16,7 @@ import { PlumePreStaking } from "../src/proxy/PlumePreStaking.sol";
 contract MockPlumePreStaking is PlumePreStaking {
 
     constructor(address logic, bytes memory data) PlumePreStaking(logic, data) { }
-
-    function test() public { }
+    function test() public override { }
 
     function exposed_implementation() public view returns (address) {
         return _implementation();
@@ -67,6 +65,8 @@ contract RWAStakingTest is Test {
     uint256 constant INITIAL_BALANCE = 1000 ether;
 
     function setUp() public {
+        vm.startPrank(owner);
+
         MockERC20 usdcMock = new MockERC20(18);
         usdcMock.mint(user1, INITIAL_BALANCE);
         usdcMock.mint(user2, INITIAL_BALANCE);
@@ -76,6 +76,8 @@ contract RWAStakingTest is Test {
         pusdMock.mint(user1, INITIAL_BALANCE);
         pusdMock.mint(user2, INITIAL_BALANCE);
         pusd = IERC20(pusdMock);
+
+        vm.stopPrank();
 
         address[] memory proposers = new address[](1);
         address[] memory executors = new address[](1);
@@ -95,14 +97,18 @@ contract RWAStakingTest is Test {
 
     function helper_initialStake(address user, uint256 stakeAmount) public {
         vm.startPrank(owner);
+
         rwaStaking.allowStablecoin(usdc);
+
         vm.stopPrank();
 
         vm.startPrank(user);
+
         usdc.approve(address(rwaStaking), stakeAmount);
         vm.expectEmit(true, true, false, true, address(rwaStaking));
         emit RWAStaking.Staked(user, usdc, stakeAmount);
         rwaStaking.stake(stakeAmount, usdc);
+
         vm.stopPrank();
 
         assertEq(usdc.balanceOf(address(rwaStaking)), stakeAmount);
@@ -144,6 +150,39 @@ contract RWAStakingTest is Test {
         assertEq(pusd.balanceOf(owner), 0);
         assertEq(pusd.balanceOf(user1), INITIAL_BALANCE);
         assertEq(pusd.balanceOf(user2), INITIAL_BALANCE);
+    }
+
+    function test_reinitializeFail() public {
+        vm.startPrank(user1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, rwaStaking.ADMIN_ROLE()
+            )
+        );
+        rwaStaking.reinitialize(user1, timelock);
+
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+
+        rwaStaking.reinitialize(owner, timelock);
+        vm.expectRevert(abi.encodeWithSelector(Initializable.InvalidInitialization.selector));
+        rwaStaking.reinitialize(user1, timelock);
+
+        vm.stopPrank();
+    }
+
+    function test_reinitialize() public {
+        vm.startPrank(owner);
+
+        assertEq(rwaStaking.getMultisig(), owner);
+        assertEq(address(rwaStaking.getTimelock()), address(timelock));
+        rwaStaking.reinitialize(user1, TimelockController(payable(user2)));
+        assertEq(rwaStaking.getMultisig(), user1);
+        assertEq(address(rwaStaking.getTimelock()), address(user2));
+
+        vm.stopPrank();
     }
 
     function test_stakingEnded() public {
@@ -201,11 +240,11 @@ contract RWAStakingTest is Test {
         IERC20 tooManyDecimalsToken = IERC20(tooManyDecimalsMock);
 
         vm.startPrank(owner);
-        
+
         // Attempt to allow the token with too many decimals
         vm.expectRevert(abi.encodeWithSelector(RWAStaking.TooManyDecimals.selector));
         rwaStaking.allowStablecoin(tooManyDecimalsToken);
-        
+
         vm.stopPrank();
 
         // Verify the token was not added
