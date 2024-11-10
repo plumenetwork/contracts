@@ -17,6 +17,7 @@ contract PlumePreReserveFund is ERC1967Proxy {
     bytes32 public constant PROXY_NAME = keccak256("PlumePreReserveFund");
 
     constructor(address logic, bytes memory data) ERC1967Proxy(logic, data) { }
+    function test() public virtual { }
 
     /// @dev Fallback function to silence compiler warnings
     receive() external payable {
