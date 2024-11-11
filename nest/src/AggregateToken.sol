@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 
 import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
@@ -13,7 +14,7 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  * @author Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that represents a basket of ComponentTokens
  */
-contract AggregateToken is ComponentToken, IAggregateToken {
+contract AggregateToken is ComponentToken, IAggregateToken, IERC1155Receiver {
 
     // Storage
 
@@ -199,6 +200,8 @@ contract AggregateToken is ComponentToken, IAggregateToken {
             emit ComponentTokenListed(componentToken);
         }
 
+        IERC20(asset()).approve(address(componentToken), assets);
+
         uint256 componentTokenAmount = componentToken.deposit(assets, address(this), address(this));
         emit ComponentTokenBought(msg.sender, componentToken, componentTokenAmount, assets);
     }
@@ -216,6 +219,14 @@ contract AggregateToken is ComponentToken, IAggregateToken {
     ) public onlyRole(ADMIN_ROLE) {
         uint256 assets = componentToken.redeem(componentTokenAmount, address(this), address(this));
         emit ComponentTokenSold(msg.sender, componentToken, componentTokenAmount, assets);
+    }
+
+    function requestSellComponentToken(
+        IComponentToken componentToken,
+        uint256 componentTokenAmount
+    ) public onlyRole(ADMIN_ROLE) {
+        uint256 requestId = componentToken.requestRedeem(componentTokenAmount, address(this), address(this));
+        emit ComponentTokenSellRequested(msg.sender, componentToken, componentTokenAmount, requestId);
     }
 
     // Admin Setter Functions
@@ -270,4 +281,22 @@ contract AggregateToken is ComponentToken, IAggregateToken {
         return _getAggregateTokenStorage().componentTokenMap[componentToken];
     }
 
+    // ======== IERC1155Receiver =========
+    function onERC1155Received(address, address, uint256, uint256, bytes memory)
+        public
+        virtual
+        override
+        returns (bytes4)
+    {
+        return this.onERC1155Received.selector;
+    }
+
+    function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes memory)
+        public
+        virtual
+        override
+        returns (bytes4)
+    {
+        return this.onERC1155BatchReceived.selector;
+    }
 }
