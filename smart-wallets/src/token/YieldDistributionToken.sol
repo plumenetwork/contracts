@@ -146,7 +146,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Override Functions
 
     /// @notice Number of decimals of the YieldDistributionToken
-    function decimals() public view override returns (uint8) {
+    function decimals() public view virtual override returns (uint8) {
         return _getYieldDistributionTokenStorage().decimals;
     }
 
