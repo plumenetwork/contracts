@@ -200,6 +200,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, IERC1155Receiver {
             emit ComponentTokenListed(componentToken);
         }
 
+        // Should approve the componentToken to transfer assets from AggregateToken to ComponentToken.
         IERC20(asset()).approve(address(componentToken), assets);
 
         uint256 componentTokenAmount = componentToken.deposit(assets, address(this), address(this));
@@ -221,6 +222,13 @@ contract AggregateToken is ComponentToken, IAggregateToken, IERC1155Receiver {
         emit ComponentTokenSold(msg.sender, componentToken, componentTokenAmount, assets);
     }
 
+    /**
+     * @notice Request to sell ComponentToken.
+     * @dev Only the owner can call this function. This function requests the sale of ComponentToken, which will be processed later.
+     *
+     * @param componentToken ComponentToken to sell
+     * @param componentTokenAmount Amount of ComponentToken to sell
+     */
     function requestSellComponentToken(
         IComponentToken componentToken,
         uint256 componentTokenAmount
@@ -281,7 +289,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, IERC1155Receiver {
         return _getAggregateTokenStorage().componentTokenMap[componentToken];
     }
 
-    // ======== IERC1155Receiver =========
+    // IERC1155Receiver
     function onERC1155Received(address, address, uint256, uint256, bytes memory)
         public
         virtual

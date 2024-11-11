@@ -40,7 +40,15 @@ interface IAggregateToken is IComponentToken {
     event ComponentTokenSold(
         address indexed owner, IComponentToken indexed componentToken, uint256 componentTokenAmount, uint256 assets
     );
-
+    
+    /**
+     * @notice Emitted when the owner requests to sell a ComponentToken.
+     *
+     * @param owner Address of the owner who requested to sell the ComponentToken.
+     * @param componentToken ComponentToken that was requested to be sold.
+     * @param componentTokenAmount Amount of ComponentToken requested to be sold.
+     * @param requestId The ID of the sell request.
+     */
     event ComponentTokenSellRequested(
         address indexed owner, IComponentToken indexed componentToken, uint256 componentTokenAmount, uint256 requestId
     );
