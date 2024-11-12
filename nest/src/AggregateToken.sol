@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 
 import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
@@ -13,7 +14,7 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  * @author Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that represents a basket of ComponentTokens
  */
-contract AggregateToken is ComponentToken, IAggregateToken {
+contract AggregateToken is ERC1155Holder, ComponentToken, IAggregateToken  {
 
     // Storage
 
@@ -268,6 +269,46 @@ contract AggregateToken is ComponentToken, IAggregateToken {
         IComponentToken componentToken
     ) public view returns (bool isListed) {
         return _getAggregateTokenStorage().componentTokenMap[componentToken];
+    }
+
+
+
+       function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(ComponentToken, ERC1155Holder)
+        returns (bool)
+    {
+        return
+            super.supportsInterface(interfaceId) ||
+            interfaceId == type(IERC1155Receiver).interfaceId;
+    }
+
+    /**
+     * @dev See {IERC1155Receiver-onERC1155Received}.
+     */
+    function onERC1155Received(
+        address operator,
+        address from,
+        uint256 id,
+        uint256 value,
+        bytes memory data
+    ) public virtual override returns (bytes4) {
+        return this.onERC1155Received.selector;
+    }
+
+    /**
+     * @dev See {IERC1155Receiver-onERC1155BatchReceived}.
+     */
+    function onERC1155BatchReceived(
+        address operator,
+        address from,
+        uint256[] memory ids,
+        uint256[] memory values,
+        bytes memory data
+    ) public virtual override returns (bytes4) {
+        return this.onERC1155BatchReceived.selector;
     }
 
 }

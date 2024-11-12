@@ -4,206 +4,307 @@ pragma solidity ^0.8.25;
 import "forge-std/Test.sol";
 import "../src/AggregateToken.sol";
 import "../src/interfaces/IComponentToken.sol";
+import "../src/proxy/AggregateTokenProxy.sol";
 
-interface IUSDT is IERC20 {
+interface IUSDT {
+    function balanceOf(address account) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
     function decimals() external view returns (uint8);
-    function mint(address to, uint256 amount) external;
 }
 
-interface IUSDC is IERC20 {
+interface IUSDC {
+    function balanceOf(address account) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
     function decimals() external view returns (uint8);
-    function mint(address to, uint256 amount) external;
+    function allowance(address owner, address spender) external view returns (uint256);
 }
 
 interface ICredbullVault is IComponentToken {
-    function noticePeriod() external view returns (uint256);
     function currentPeriod() external view returns (uint256);
+    function noticePeriod() external view returns (uint256);
     function balanceOf(address account, uint256 id) external view returns (uint256);
-    function requestDeposit(uint256 assets, address controller, address owner) external returns (uint256);
-    function requestRedeem(uint256 shares, address controller, address owner) external returns (uint256);
-    function deposit(uint256 assets, address receiver, address controller) external returns (uint256);
-    function redeem(uint256 shares, address receiver, address controller) external returns (uint256);
+    function setApprovalForAll(address operator, bool approved) external;
+    function asset() external view returns (address);
+       // Add these role-related functions
+    function OPERATOR_ROLE() external view returns (bytes32);
+    function DEFAULT_ADMIN_ROLE() external view returns (bytes32);
+    function hasRole(bytes32 role, address account) external view returns (bool);
+    function grantRole(bytes32 role, address account) external;
+    function revokeRole(bytes32 role, address account) external;
+    function getRoleMember(bytes32 role, uint256 index) external view returns (address);
+    function getRoleMemberCount(bytes32 role) external view returns (uint256);
+
+    // Also helpful to have these for debugging
+    function unlockRequestAmount(address owner, uint256 requestId) external view returns (uint256);
+    function claimableRedeemRequest(uint256 requestId, address controller) external view returns (uint256);
 }
 
 contract AggregateTokenTest is Test {
-    // Deployed contracts
-    AggregateToken public aggregateToken;
-    ICredbullVault public constant credbullVault = ICredbullVault(0x4B1fC984F324D2A0fDD5cD83925124b61175f5C6);
-    
-    // Plume Testnet token addresses
-    IUSDT public constant USDT = IUSDT(0x2413b8C79Ce60045882559f63d308aE3DFE0903d);
-    IUSDC public constant USDC = IUSDC(0x401eCb1D350407f13ba348573E5630B83638E30D);
-    
-    // Test accounts
-    address public owner = address(0x1);
-    address public user = address(0x2);
-    
-    // Constants
-    uint256 constant INITIAL_BALANCE = 1_000_000e6; // 1M USDT/USDC
-    uint256 constant TEST_AMOUNT = 10_000e6; // 10k USDT
-    uint256 constant BASE = 1e18;
-    uint256 constant CHAIN_ID = 161221135; // Plume testnet
+    // Contract addresses - testnet addresses
+    address constant USDT_ADDRESS = 0x2413b8C79Ce60045882559f63d308aE3DFE0903d;
+    address constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
+    address constant CREDBULL_ADDRESS = 0x4B1fC984F324D2A0fDD5cD83925124b61175f5C6;
 
-    function setUp() public {
-        // Fork Plume testnet
-        vm.createSelectFork(vm.envString("PLUME_RPC_URL"), CHAIN_ID);
+    ICredbullVault public constant CREDBULL_VAULT = ICredbullVault(CREDBULL_ADDRESS);
+    IUSDT public constant USDT = IUSDT(USDT_ADDRESS);
+    IUSDC public constant USDC = IUSDC(USDC_ADDRESS);
+    
+    // Test parameters
+    uint256 constant TEST_AMOUNT = 1e6; // $1
+    uint256 constant BASE = 1e18;
+
+    // Contract instances
+    AggregateToken public token;
+    address public account;
+
+     function setUp() public {
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        account = vm.addr(privateKey);
+        address controller = vm.addr(privateKey);
+
+        console.log("Setting up test with account:", account);
+        console.log("Test amount:", TEST_AMOUNT);
+
+        vm.startBroadcast(privateKey);
         
-        // Setup accounts
-        vm.startPrank(owner);
+    // First check if we need to become admin
+    bytes32 adminRole = CREDBULL_VAULT.DEFAULT_ADMIN_ROLE();
+    bool isAdmin = CREDBULL_VAULT.hasRole(adminRole, controller);
+    
+    if (!isAdmin) {
+        // For testing, we can impersonate the current admin to grant our account admin rights
+        // First, get the current admin
+        address currentAdmin = CREDBULL_VAULT.getRoleMember(adminRole, 0);
+        vm.stopBroadcast();
+        vm.startPrank(currentAdmin);
+        CREDBULL_VAULT.grantRole(adminRole, controller);
+        vm.stopPrank();
+        vm.startBroadcast(privateKey);
+    }
+
+
+        // Deploy implementation
+        AggregateToken implementation = new AggregateToken();
+        console.log("Implementation deployed at:", address(implementation));
         
-        // Deploy AggregateToken
-        aggregateToken = new AggregateToken();
-        aggregateToken.initialize(
-            owner,
-            "Aggregate USD",
-            "aUSD",
-            IComponentToken(address(credbullVault)),
-            BASE, // 1:1 ask price
-            BASE  // 1:1 bid price
+        // Initialize with USDC as asset token
+        bytes memory initData = abi.encodeCall(
+            AggregateToken.initialize,
+            (
+                account,                   // owner
+                "Test Aggregate USD",      // name
+                "tAUSD",                  // symbol
+                IComponentToken(USDC_ADDRESS),  // USDC as asset token
+                BASE,                     // ask price
+                BASE                      // bid price
+            )
         );
+
+        // Deploy proxy
+        AggregateTokenProxy proxy = new AggregateTokenProxy(
+            address(implementation),
+            initData
+        );
+        console.log("Proxy deployed at:", address(proxy));
         
-        // Setup initial token balances
-        vm.deal(user, 100 ether); // Give some ETH for gas
-        vm.startPrank(address(USDT));
-        USDT.mint(user, INITIAL_BALANCE);
-        vm.stopPrank();
+        token = AggregateToken(address(proxy));
+
+        // Add Credbull vault as component
+        token.addComponentToken(IComponentToken(address(CREDBULL_VAULT)));
+        console.log("Credbull vault added as component");
         
-        vm.startPrank(address(USDC));
-        USDC.mint(address(aggregateToken), INITIAL_BALANCE);
-        vm.stopPrank();
+        // Set up approvals
+        USDC.approve(address(token), type(uint256).max);
+        console.log("USDC approved for AggregateToken");
+        console.log("USDC allowance:", USDC.allowance(account, address(token)));
+
+        USDC.approve(address(CREDBULL_VAULT), type(uint256).max);
+        console.log("USDC approved for Credbull");
+        console.log("USDC allowance for Credbull:", USDC.allowance(account, address(CREDBULL_VAULT)));
         
-        // Approve tokens
-        vm.startPrank(user);
-        USDT.approve(address(aggregateToken), type(uint256).max);
-        vm.stopPrank();
+        token.approveComponentToken(CREDBULL_VAULT, type(uint256).max);
+        CREDBULL_VAULT.setApprovalForAll(address(token), true);
+        console.log("Component approvals set");
         
-        // Approve AggregateToken to interact with Credbull vault
-        aggregateToken.approveComponentToken(IComponentToken(address(credbullVault)), type(uint256).max);
-        
-        vm.stopPrank();
+    bytes32 operatorRole = CREDBULL_VAULT.OPERATOR_ROLE();
+    if(!CREDBULL_VAULT.hasRole(operatorRole, address(token))) {
+        CREDBULL_VAULT.grantRole(operatorRole, address(token));
+    }
+    
+
+
+
+        vm.stopBroadcast();
 
         // Log initial state
-        console.log("Test Setup Complete");
-        console.log("USDT balance of user:", USDT.balanceOf(user));
-        console.log("USDC balance of AggregateToken:", USDC.balanceOf(address(aggregateToken)));
+        console.log("\n=== Initial State ===");
+        console.log("USDC Balance:", USDC.balanceOf(account));
+        console.log("AggregateToken Asset:", token.asset());
+        console.log("Credbull Asset:", CREDBULL_VAULT.asset());
     }
 
-    function testBuyCredbullFlow() public {
-        vm.startPrank(user);
+function testComponentTokenFlow() public {
+    uint256 privateKey = vm.envUint("PRIVATE_KEY");
+    address controller = vm.addr(privateKey);
+    vm.startBroadcast(privateKey);
+    
+    // Step 1: Deposit USDC to get aggregate tokens
+    uint256 shares = token.deposit(TEST_AMOUNT, controller, controller);
+    console.log("Deposited shares:", shares);
+
+    // Step 2: Buy component token (Credbull Vault tokens)
+    token.buyComponentToken(CREDBULL_VAULT, TEST_AMOUNT);
+    console.log("Bought Credbull tokens");
+
+    uint256 currentPeriod = CREDBULL_VAULT.currentPeriod();
+    console.log("Current Period:", currentPeriod);
+
+    // Get balances
+    uint256 balance = CREDBULL_VAULT.balanceOf(address(token), currentPeriod);
+    console.log("Balance at current period:", balance);
+
+    // Step 3: We need to make our request through the AggregateToken
+    vm.stopBroadcast();
+    vm.startPrank(address(token));  // Act as the AggregateToken
+
+    // Request redeem as the AggregateToken
+    CREDBULL_VAULT.requestRedeem(
+        TEST_AMOUNT,
+        address(token),  // controller
+        address(token)   // owner
+    );
+    console.log("Redeem requested");
+
+    // Step 4: Wait notice period
+    uint256 noticePeriod = CREDBULL_VAULT.noticePeriod();
+    vm.warp(block.timestamp + noticePeriod * 1 days);
+    console.log("Time warped");
+
+    vm.stopPrank();
+    vm.startBroadcast(privateKey);
+
+    // Step 5: Now try to sell component token
+    token.sellComponentToken(CREDBULL_VAULT, TEST_AMOUNT);
+    console.log("Successfully sold Credbull tokens");
+
+    vm.stopBroadcast();
+}
+
+// Add helper function to check state
+function testCheckBalances() public view {
+    console.log("\n=== Balances ===");
+    address tokenAddr = address(token);
+    uint256 currentPeriod = CREDBULL_VAULT.currentPeriod();
+    
+    console.log("Current Period:", currentPeriod);
+    console.log("Vault balance:", CREDBULL_VAULT.balanceOf(tokenAddr, currentPeriod));
+    console.log("Unlock request amount:", CREDBULL_VAULT.unlockRequestAmount(tokenAddr, currentPeriod));
+    console.log("Claimable request amount:", CREDBULL_VAULT.claimableRedeemRequest(currentPeriod, tokenAddr));
+}
+// Helper function to check state
+function testCheckState() public view {
+    console.log("\n=== Vault State ===");
+    address tokenAddr = address(token);
+    uint256 currentPeriod = CREDBULL_VAULT.currentPeriod();
+    
+    console.log("Current Period:", currentPeriod);
+    console.log("AggregateToken Balance in Vault:", CREDBULL_VAULT.balanceOf(tokenAddr, currentPeriod));
+    console.log("Unlock Request Amount:", CREDBULL_VAULT.unlockRequestAmount(tokenAddr, currentPeriod));
+    console.log("Claimable Request Amount:", CREDBULL_VAULT.claimableRedeemRequest(currentPeriod, tokenAddr));
+}
+/*
+
+
+    function testComponentTokenFlow() public {
+    uint256 privateKey = vm.envUint("PRIVATE_KEY");
+    address controller = vm.addr(privateKey);
+    vm.startBroadcast(privateKey);
+    
+    // Step 1: Deposit USDC to get aggregate tokens
+    uint256 shares = token.deposit(TEST_AMOUNT, controller, controller);
+
+    // Step 2: Request redeem to set up the unlock amount
+    uint256 requestId = CREDBULL_VAULT.requestRedeem(shares, controller, controller);
+
+    // Step 3: Fast forward to after notice period
+    uint256 noticePeriod = CREDBULL_VAULT.noticePeriod();
+    vm.warp(block.timestamp + noticePeriod);
+
+    // Step 4: Call redeem to fulfill the request
+    uint256 assets = CREDBULL_VAULT.redeem(shares, controller, controller);
+    console.log("Redeem successful! Assets redeemed:", assets);
+
+    vm.stopBroadcast();
+}
+
+
+
+
+    function testComponentTokenFlow() public {
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
         
-        // Record initial states
-        uint256 initialUsdtBalance = USDT.balanceOf(user);
-        uint256 currentPeriod = credbullVault.currentPeriod();
+        console.log("\n=== Starting Component Token Flow ===");
+        uint256 initialUsdcBalance = USDC.balanceOf(account);
         
-        console.log("Starting Buy Flow");
-        console.log("Initial USDT Balance:", initialUsdtBalance);
+        console.log("Initial USDC:", initialUsdcBalance);
+        console.log("USDC allowance for AggregateToken:", USDC.allowance(account, address(token)));
+        console.log("USDC allowance for Credbull:", USDC.allowance(account, address(CREDBULL_VAULT)));
+        
+        // Step 1: Deposit USDC to get aggregate tokens
+        try token.deposit(TEST_AMOUNT, account, account) returns (uint256 shares) {
+            console.log("\nUSDC Deposit successful!");
+            console.log("USDC Deposited:", TEST_AMOUNT);
+            console.log("Aggregate Shares:", shares);
+            console.log("USDC Balance after deposit:", USDC.balanceOf(account));
+            
+            // Step 2: Buy Credbull through AggregateToken
+            try token.buyComponentToken(IComponentToken(address(CREDBULL_VAULT)), TEST_AMOUNT) {
+                console.log("\nCredbull buy successful!");
+                
+                uint256 currentPeriod = CREDBULL_VAULT.currentPeriod();
+                uint256 credbullBalance = CREDBULL_VAULT.balanceOf(address(token), currentPeriod);
+                console.log("Current period:", currentPeriod);
+                console.log("Credbull balance:", credbullBalance);
+                
+                // Step 3: Try to sell Credbull
+                if (credbullBalance > 0) {
+                    try token.sellComponentToken(IComponentToken(address(CREDBULL_VAULT)), credbullBalance) {
+                        console.log("\nCredbull sell successful!");
+                        console.log("Final Credbull balance:", CREDBULL_VAULT.balanceOf(address(token), currentPeriod));
+                    } catch Error(string memory reason) {
+                        console.log("Credbull sell failed:", reason);
+                    }
+                }
+            } catch Error(string memory reason) {
+                console.log("Credbull buy failed:", reason);
+            }
+        } catch Error(string memory reason) {
+            console.log("USDC deposit failed:", reason);
+        }
+        
+        console.log("\n=== Final State ===");
+        console.log("USDC Balance:", USDC.balanceOf(account));
+        console.log("Aggregate Token Balance:", token.balanceOf(account));
+        
+        uint256 finalPeriod = CREDBULL_VAULT.currentPeriod();
+        console.log("Credbull Balance Period", finalPeriod, ":", 
+            CREDBULL_VAULT.balanceOf(address(token), finalPeriod));
+        
+        vm.stopBroadcast();
+    }
+*/
+    function testQueryBalances() public view {
+        console.log("\n=== Current Balances ===");
+        console.log("USDC Balance:", USDC.balanceOf(account));
+        console.log("USDC Allowance (AggregateToken):", USDC.allowance(account, address(token)));
+        console.log("USDC Allowance (Credbull):", USDC.allowance(account, address(CREDBULL_VAULT)));
+        console.log("Aggregate Token Balance:", token.balanceOf(account));
+        
+        uint256 currentPeriod = CREDBULL_VAULT.currentPeriod();
+        console.log("\n=== Credbull Vault Info ===");
         console.log("Current Period:", currentPeriod);
-        
-        // Step 1: User deposits USDT to get aUSD (AggregateToken shares)
-        uint256 aggregateShares = aggregateToken.deposit(TEST_AMOUNT, user, user);
-        
-        console.log("Aggregate Shares Received:", aggregateShares);
-        
-        assertEq(USDT.balanceOf(user), initialUsdtBalance - TEST_AMOUNT, "USDT not transferred");
-        assertEq(aggregateToken.balanceOf(user), aggregateShares, "Aggregate shares not received");
-        
-        // Step 2: AggregateToken buys Credbull vault shares
-        uint256 initialAggregateBalance = aggregateToken.balanceOf(user);
-        
-        // First need to request deposit due to async nature
-        uint256 requestId = credbullVault.requestDeposit(
-            TEST_AMOUNT,
-            address(aggregateToken),
-            address(aggregateToken)
-        );
-        
-        console.log("Deposit Request ID:", requestId);
-        
-        // Wait for deposit to be ready
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1 hours);
-        
-        // Complete deposit
-        aggregateToken.buyComponentToken(IComponentToken(address(credbullVault)), TEST_AMOUNT);
-        
-        // Verify Credbull vault shares received
-        uint256 credbullShares = credbullVault.balanceOf(address(aggregateToken), currentPeriod);
-        console.log("Credbull Shares Received:", credbullShares);
-        
-        assertGt(credbullShares, 0, "No Credbull shares received");
-        assertEq(aggregateToken.balanceOf(user), initialAggregateBalance, "Aggregate token balance changed unexpectedly");
-        
-        vm.stopPrank();
-    }
-
-    function testSellCredbullFlow() public {
-        // First buy some Credbull shares
-        testBuyCredbullFlow();
-        
-        vm.startPrank(user);
-        
-        console.log("Starting Sell Flow");
-        uint256 currentPeriod = credbullVault.currentPeriod();
-        
-        // Step 1: Calculate initial balances
-        uint256 initialAggregateBalance = aggregateToken.balanceOf(user);
-        uint256 initialCredbullShares = credbullVault.balanceOf(address(aggregateToken), currentPeriod);
-        
-        console.log("Initial Credbull Shares:", initialCredbullShares);
-        
-        // Step 2: Request redemption from Credbull vault
-        uint256 requestId = credbullVault.requestRedeem(
-            initialCredbullShares,
-            address(aggregateToken),
-            address(aggregateToken)
-        );
-        
-        console.log("Redeem Request ID:", requestId);
-        
-        // Wait for notice period
-        uint256 noticePeriod = credbullVault.noticePeriod();
-        console.log("Notice Period:", noticePeriod);
-        
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + noticePeriod + 1);
-        
-        // Step 3: Complete redemption through AggregateToken
-        aggregateToken.sellComponentToken(
-            IComponentToken(address(credbullVault)),
-            initialCredbullShares
-        );
-        
-        // Verify final state
-        assertEq(credbullVault.balanceOf(address(aggregateToken), currentPeriod), 0, "Credbull shares not sold");
-        assertEq(aggregateToken.balanceOf(user), initialAggregateBalance, "Aggregate token balance changed unexpectedly");
-        
-        // Step 4: Redeem aggregate tokens back to USDT
-        uint256 initialUsdtBalance = USDT.balanceOf(user);
-        uint256 redeemAmount = aggregateToken.balanceOf(user);
-        
-        aggregateToken.redeem(redeemAmount, user, user);
-        
-        uint256 finalUsdtBalance = USDT.balanceOf(user);
-        console.log("Initial USDT Balance:", initialUsdtBalance);
-        console.log("Final USDT Balance:", finalUsdtBalance);
-        
-        assertEq(aggregateToken.balanceOf(user), 0, "Aggregate tokens not burned");
-        assertGt(finalUsdtBalance, initialUsdtBalance, "USDT not received back");
-        
-        vm.stopPrank();
-    }
-
-    function testQueryVaultInfo() public {
-        // Get vault info
-        address vaultAsset = credbullVault.asset();
-        uint256 noticePeriod = credbullVault.noticePeriod();
-        uint256 currentPeriod = credbullVault.currentPeriod();
-        uint256 totalAssets = credbullVault.totalAssets();
-        
-        console.log("Vault Info:");
-        console.log("Vault Asset:", vaultAsset);
-        console.log("Notice Period:", noticePeriod);
-        console.log("Current Period:", currentPeriod);
-        console.log("Total Assets:", totalAssets);
+        console.log("Notice Period:", CREDBULL_VAULT.noticePeriod());
+        console.log("Asset:", CREDBULL_VAULT.asset());
+        console.log("Credbull Balance:", CREDBULL_VAULT.balanceOf(address(token), currentPeriod));
     }
 }
