@@ -186,12 +186,8 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         IAggregateToken aggregateTokenImplementation = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateTokenImplementation),
-            abi.encodeCall(
-                AggregateToken.initialize, (owner, name, symbol, currencyToken, askPrice, bidPrice)
-            )
+            abi.encodeCall(AggregateToken.initialize, (owner, name, symbol, currencyToken, askPrice, bidPrice))
         );
-
-
 
         aggregateToken = IAggregateToken(address(aggregateTokenProxy));
         $.featuredList.push(aggregateToken);
