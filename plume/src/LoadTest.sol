@@ -35,7 +35,7 @@ contract LoadTest {
         uint256 iterations
     ) external {
         for (uint256 i = 0; i < iterations; i++) {
-            bytes32 key = keccak256(abi.encodePacked("key", i));
+            bytes32 key = keccak256(abi.encodePacked(msg.sender, block.timestamp, i));
             storageMap[key] = i;
         }
     }
