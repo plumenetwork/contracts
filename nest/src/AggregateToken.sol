@@ -3,7 +3,7 @@ pragma solidity ^0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
+import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 
 import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
@@ -14,7 +14,7 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  * @author Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that represents a basket of ComponentTokens
  */
-contract AggregateToken is ComponentToken, IAggregateToken, IERC1155Receiver {
+contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     // Storage
 
@@ -200,9 +200,6 @@ contract AggregateToken is ComponentToken, IAggregateToken, IERC1155Receiver {
             emit ComponentTokenListed(componentToken);
         }
 
-        // Should approve the componentToken to transfer assets from AggregateToken to ComponentToken.
-        IERC20(asset()).approve(address(componentToken), assets);
-
         uint256 componentTokenAmount = componentToken.deposit(assets, address(this), address(this));
         emit ComponentTokenBought(msg.sender, componentToken, componentTokenAmount, assets);
     }
@@ -289,22 +286,9 @@ contract AggregateToken is ComponentToken, IAggregateToken, IERC1155Receiver {
         return _getAggregateTokenStorage().componentTokenMap[componentToken];
     }
 
-    // IERC1155Receiver
-    function onERC1155Received(address, address, uint256, uint256, bytes memory)
-        public
-        virtual
-        override
-        returns (bytes4)
-    {
-        return this.onERC1155Received.selector;
-    }
-
-    function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes memory)
-        public
-        virtual
-        override
-        returns (bytes4)
-    {
-        return this.onERC1155BatchReceived.selector;
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view virtual override(ComponentToken, ERC1155Holder) returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 }
