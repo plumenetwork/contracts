@@ -7,28 +7,19 @@ import "../src/proxy/AggregateTokenProxy.sol";
 import "forge-std/Test.sol";
 
 interface IUSDT {
-
-    function balanceOf(
-        address account
-    ) external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
     function decimals() external view returns (uint8);
-
 }
 
 interface IUSDC {
-
-    function balanceOf(
-        address account
-    ) external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
     function decimals() external view returns (uint8);
     function allowance(address owner, address spender) external view returns (uint256);
-
 }
 
 interface ICredbullVault is IComponentToken {
-
     function currentPeriod() external view returns (uint256);
     function noticePeriod() external view returns (uint256);
     function balanceOf(address account, uint256 id) external view returns (uint256);
@@ -41,18 +32,14 @@ interface ICredbullVault is IComponentToken {
     function grantRole(bytes32 role, address account) external;
     function revokeRole(bytes32 role, address account) external;
     function getRoleMember(bytes32 role, uint256 index) external view returns (address);
-    function getRoleMemberCount(
-        bytes32 role
-    ) external view returns (uint256);
+    function getRoleMemberCount(bytes32 role) external view returns (uint256);
 
     // Also helpful to have these for debugging
     function unlockRequestAmount(address owner, uint256 requestId) external view returns (uint256);
     function claimableRedeemRequest(uint256 requestId, address controller) external view returns (uint256);
-
 }
 
 contract AggregateTokenCredbullTest is Test {
-
     // Contract addresses - testnet addresses
     // run with: forge test -vvvv --rpc-url $PLUME_RPC_URL --match-contract AggregateTokenCredbullTest
 
@@ -216,5 +203,4 @@ contract AggregateTokenCredbullTest is Test {
         console.log("Unlock Request Amount:", CREDBULL_VAULT.unlockRequestAmount(address(token), currentPeriod));
         console.log("Claimable Request Amount:", CREDBULL_VAULT.claimableRedeemRequest(currentPeriod, address(token)));
     }
-
 }
