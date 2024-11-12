@@ -5,7 +5,6 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Script } from "forge-std/Script.sol";
 import { Test } from "forge-std/Test.sol";
-
 import { console2 } from "forge-std/console2.sol";
 
 import { AggregateToken } from "../src/AggregateToken.sol";
