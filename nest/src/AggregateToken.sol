@@ -220,9 +220,21 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     }
 
     /**
+     * @notice Request to buy ComponentToken.
+     * @dev Only the owner can call this function. This function requests the purchase of ComponentToken, which will be
+     * processed later.
+     * @param componentToken ComponentToken to buy
+     * @param assets Amount of `asset` to pay to receive the ComponentToken
+     */
+    function requestBuyComponentToken(IComponentToken componentToken, uint256 assets) public onlyRole(ADMIN_ROLE) {
+        uint256 requestId = componentToken.requestDeposit(assets, address(this), address(this));
+        emit ComponentTokenBuyRequested(msg.sender, componentToken, assets, requestId);
+    }
+
+    /**
      * @notice Request to sell ComponentToken.
-     * @dev Only the owner can call this function. This function requests the sale of ComponentToken, which will be processed later.
-     *
+     * @dev Only the owner can call this function. This function requests the sale of ComponentToken, which will be
+     * processed later.
      * @param componentToken ComponentToken to sell
      * @param componentTokenAmount Amount of ComponentToken to sell
      */
@@ -291,4 +303,5 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     ) public view virtual override(ComponentToken, ERC1155Holder) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
+
 }
