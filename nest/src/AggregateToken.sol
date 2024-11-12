@@ -3,7 +3,7 @@ pragma solidity ^0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 
 import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
@@ -14,7 +14,7 @@ import { IComponentToken } from "./interfaces/IComponentToken.sol";
  * @author Eugene Y. Q. Shen
  * @notice Implementation of the abstract ComponentToken that represents a basket of ComponentTokens
  */
-contract AggregateToken is ERC1155Holder, ComponentToken, IAggregateToken  {
+contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     // Storage
 
@@ -219,6 +219,21 @@ contract AggregateToken is ERC1155Holder, ComponentToken, IAggregateToken  {
         emit ComponentTokenSold(msg.sender, componentToken, componentTokenAmount, assets);
     }
 
+    /**
+     * @notice Request to sell ComponentToken.
+     * @dev Only the owner can call this function. This function requests the sale of ComponentToken, which will be processed later.
+     *
+     * @param componentToken ComponentToken to sell
+     * @param componentTokenAmount Amount of ComponentToken to sell
+     */
+    function requestSellComponentToken(
+        IComponentToken componentToken,
+        uint256 componentTokenAmount
+    ) public onlyRole(ADMIN_ROLE) {
+        uint256 requestId = componentToken.requestRedeem(componentTokenAmount, address(this), address(this));
+        emit ComponentTokenSellRequested(msg.sender, componentToken, componentTokenAmount, requestId);
+    }
+
     // Admin Setter Functions
 
     /**
@@ -271,44 +286,9 @@ contract AggregateToken is ERC1155Holder, ComponentToken, IAggregateToken  {
         return _getAggregateTokenStorage().componentTokenMap[componentToken];
     }
 
-
-
-       function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override(ComponentToken, ERC1155Holder)
-        returns (bool)
-    {
-        return
-            super.supportsInterface(interfaceId) ||
-            interfaceId == type(IERC1155Receiver).interfaceId;
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view virtual override(ComponentToken, ERC1155Holder) returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
-
-    /**
-     * @dev See {IERC1155Receiver-onERC1155Received}.
-     */
-    function onERC1155Received(
-        address operator,
-        address from,
-        uint256 id,
-        uint256 value,
-        bytes memory data
-    ) public virtual override returns (bytes4) {
-        return this.onERC1155Received.selector;
-    }
-
-    /**
-     * @dev See {IERC1155Receiver-onERC1155BatchReceived}.
-     */
-    function onERC1155BatchReceived(
-        address operator,
-        address from,
-        uint256[] memory ids,
-        uint256[] memory values,
-        bytes memory data
-    ) public virtual override returns (bytes4) {
-        return this.onERC1155BatchReceived.selector;
-    }
-
 }
