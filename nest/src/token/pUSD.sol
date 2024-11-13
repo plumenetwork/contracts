@@ -14,7 +14,6 @@ interface BeforeTransferHook {
 
 }
 
-// Update IVault interface to include all functions
 interface IVault {
 
     function enter(address from, address asset, uint256 assetAmount, address to, uint256 shareAmount) external;
