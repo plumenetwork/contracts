@@ -32,10 +32,10 @@ contract pUSD is ComponentToken {
     /// @custom:storage-location erc7201:plume.storage.pUSD
     struct pUSDStorage {
         IVault vault;
+        uint8 tokenDecimals;
         bool paused;
         string tokenName;
         string tokenSymbol;
-        uint8 tokenDecimals;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.pUSD")) - 1)) & ~bytes32(uint256(0xff))
