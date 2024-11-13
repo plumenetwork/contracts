@@ -36,7 +36,6 @@ contract PUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     // ========== STATE VARIABLES ==========
     IVault public vault;
     bool public paused;
-    BeforeTransferHook public hook;
 
     // ========== EVENTS ==========
     event VaultChanged(address oldVault, address newVault);
