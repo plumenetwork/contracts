@@ -161,37 +161,27 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
 
     function balanceOf(
         address account
-    ) public view virtual override(ERC20Upgradeable, IERC20) returns (uint256) {
+    ) public view override(IERC20, ERC20Upgradeable) returns (uint256) {
         return _getpUSDStorage().vault.balanceOf(account);
     }
 
     // ========== METADATA OVERRIDES ==========
 
-    function decimals() public pure override(ERC20Upgradeable, ERC4626Upgradeable, IERC20Metadata) returns (uint8) {
+    function decimals() public pure override(ERC4626Upgradeable, ERC20Upgradeable, IERC20Metadata) returns (uint8) {
         return 6;
     }
 
-    function name()
-        public
-        pure
-        override(ERC20Upgradeable, ERC4626Upgradeable, IERC20Metadata)
-        returns (string memory)
-    {
+    function name() public pure override(ERC20Upgradeable, IERC20Metadata) returns (string memory) {
         return "Plume USD";
     }
 
-    function symbol()
-        public
-        pure
-        override(ERC20Upgradeable, ERC4626Upgradeable, IERC20Metadata)
-        returns (string memory)
-    {
+    function symbol() public pure override(ERC20Upgradeable, IERC20Metadata) returns (string memory) {
         return "pUSD";
     }
 
     function supportsInterface(
         bytes4 interfaceId
-    ) public view virtual override(ComponentToken, AccessControlUpgradeable) returns (bool) {
+    ) public view virtual override(AccessControlUpgradeable, ComponentToken) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
