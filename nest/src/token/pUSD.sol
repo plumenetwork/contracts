@@ -29,7 +29,7 @@ interface IVault {
 /**
  * @title pUSD
  * @author Eugene Y. Q. Shen, Alp Guneysel
- * @notice Implementation of the abstract ComponentToken for Plume USD stablecoin using Boring Vault
+ * @notice Unified Plume USD stablecoin
  */
 contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable, ComponentToken {
 
