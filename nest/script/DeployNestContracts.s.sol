@@ -36,6 +36,8 @@ contract ConcreteComponentToken is ComponentToken {
 contract DeployNestContracts is Script, Test {
 
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
+    address private constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
+    address private constant VAULT_ADDRESS = 0x52805adf7b3d25c013eDa66eF32b53d1696f809C;
 
     function test() public { }
 
@@ -44,8 +46,10 @@ contract DeployNestContracts is Script, Test {
 
         // Deploy pUSD
         pUSD pUSDToken = new pUSD();
-        ERC1967Proxy pUSDProxy =
-            new ERC1967Proxy(address(pUSDToken), abi.encodeCall(pUSD.initialize, (NEST_ADMIN_ADDRESS)));
+        ERC1967Proxy pUSDProxy = new ERC1967Proxy(
+            address(pUSDToken), abi.encodeCall(pUSD.initialize, (NEST_ADMIN_ADDRESS, IERC20(USDC_ADDRESS), VAULT_ADDRESS))
+        );
+
         console2.log("pUSDProxy deployed to:", address(pUSDProxy));
 
         // Deploy ConcreteComponentToken

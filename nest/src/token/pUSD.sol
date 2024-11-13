@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ComponentToken } from "./ComponentToken.sol";
-
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+
+import { ComponentToken } from "../ComponentToken.sol";
+import { IComponentToken } from "../interfaces/IComponentToken.sol";
 
 interface IVault {
 
@@ -22,23 +25,27 @@ interface IVault {
 /**
  * @title pUSD
  * @author Eugene Y. Q. Shen, Alp Guneysel
- * @notice Unified Plume USD stablecoin implemented as both a ComponentToken and Vault-backed ERC20
+ * @notice Implementation of the abstract ComponentToken for Plume USD stablecoin using Boring Vault
  */
-contract PUSD is ComponentToken {
+contract pUSD is ComponentToken {
 
     // ========== STORAGE ==========
-    /// @custom:storage-location erc7201:plume.storage.PUSD
-    struct PUSDStorage {
+    /// @custom:storage-location erc7201:plume.storage.pUSD
+    struct pUSDStorage {
         IVault vault;
         bool paused;
+        string tokenName;
+        string tokenSymbol;
+        uint8 tokenDecimals;
     }
 
-    // Using ERC-7201 namespaced storage pattern to avoid storage collisions during upgrades
-    bytes32 private constant PUSD_STORAGE_LOCATION = keccak256("plume.storage.PUSD");
+    // Following ERC-7201 storage pattern
+    bytes32 private constant PUSD_STORAGE_POSITION = keccak256("plume.storage.pUSD");
 
-    function _getPUSDStorage() private pure returns (PUSDStorage storage $) {
+    function _getpUSDStorage() private pure returns (pUSDStorage storage $) {
+        bytes32 position = PUSD_STORAGE_POSITION;
         assembly {
-            $.slot := PUSD_STORAGE_LOCATION
+            $.slot := position
         }
     }
 
@@ -47,111 +54,78 @@ contract PUSD is ComponentToken {
     event Paused(address account);
     event Unpaused(address account);
 
-    // ========== MODIFIERS ==========
-    modifier whenNotPaused() {
-        require(!_getPUSDStorage().paused, "PUSD: paused");
-        _;
-    }
-
     // ========== ROLES ==========
     bytes32 public constant VAULT_ADMIN_ROLE = keccak256("VAULT_ADMIN_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
-    // ========== CONSTRUCTOR ==========
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    // ========== MODIFIERS ==========
+    modifier whenNotPaused() {
+        require(!_getpUSDStorage().paused, "pUSD: paused");
+        _;
+    }
+
+    /**
+     * @notice Prevent the implementation contract from being initialized or reinitialized
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
     constructor() {
         _disableInitializers();
     }
 
-    // ========== INITIALIZER ==========
-    function initialize(address admin, IERC20 asset_, address _vault) external initializer {
-        // Initialize ComponentToken with pUSD metadata
-        super.initialize(
-            admin,
-            "Plume USD",
-            "pUSD",
-            asset_,
-            false, // synchronous deposits
-            false // synchronous redemptions
-        );
+    /**
+     * @notice Initialize pUSD
+     * @param owner Address of the owner of pUSD
+     * @param asset_ Address of the underlying asset
+     * @param vault_ Address of the Boring Vault
+     */
+    function initialize(address owner, IERC20 asset_, address vault_) public initializer {
+        ComponentToken.initialize(owner, "", "", asset_, false, false);
 
-        PUSDStorage storage $ = _getPUSDStorage();
-        $.vault = IVault(_vault);
+        pUSDStorage storage $ = _getpUSDStorage();
+        $.vault = IVault(vault_);
+        $.tokenName = "Plume USD";
+        $.tokenSymbol = "pUSD";
+        $.tokenDecimals = 6;
 
-        // Setup additional roles
-        _grantRole(VAULT_ADMIN_ROLE, admin);
-        _grantRole(PAUSER_ROLE, admin);
-        _grantRole(UPGRADER_ROLE, admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(VAULT_ADMIN_ROLE, owner);
+        _grantRole(PAUSER_ROLE, owner);
+        _grantRole(UPGRADER_ROLE, owner);
     }
 
     // ========== ADMIN FUNCTIONS ==========
     function setVault(
         address newVault
     ) external onlyRole(VAULT_ADMIN_ROLE) {
-        PUSDStorage storage $ = _getPUSDStorage();
+        pUSDStorage storage $ = _getpUSDStorage();
         address oldVault = address($.vault);
         $.vault = IVault(newVault);
         emit VaultChanged(oldVault, newVault);
     }
 
     function pause() external onlyRole(PAUSER_ROLE) {
-        _getPUSDStorage().paused = true;
+        _getpUSDStorage().paused = true;
         emit Paused(msg.sender);
     }
 
     function unpause() external onlyRole(PAUSER_ROLE) {
-        _getPUSDStorage().paused = false;
+        _getpUSDStorage().paused = false;
         emit Unpaused(msg.sender);
     }
 
-    // ========== UPGRADE FUNCTIONS ==========
-    function _authorizeUpgrade(
-        address newImplementation
-    ) internal override onlyRole(UPGRADER_ROLE) { }
-
-    // ========== GETTERS ==========
+    // ========== VIEW FUNCTIONS ==========
     function vault() external view returns (address) {
-        return address(_getPUSDStorage().vault);
+        return address(_getpUSDStorage().vault);
     }
 
-    function paused() external view returns (bool) {
-        return _getPUSDStorage().paused;
-    }
-
-    // ========== ERC20 OVERRIDES ==========
-    function decimals() public pure override returns (uint8) {
-        return 6;
-    }
-
-    function transfer(address to, uint256 amount) public override whenNotPaused returns (bool) {
-        return _getPUSDStorage().vault.transferFrom(msg.sender, to, amount);
-    }
-
-    function transferFrom(address from, address to, uint256 amount) public override whenNotPaused returns (bool) {
-        return _getPUSDStorage().vault.transferFrom(from, to, amount);
-    }
-
-    function approve(address spender, uint256 amount) public override whenNotPaused returns (bool) {
-        bool success = super.approve(spender, amount);
-        _getPUSDStorage().vault.approve(spender, amount);
-        return success;
-    }
-
-    function balanceOf(
-        address account
-    ) public view override returns (uint256) {
-        return _getPUSDStorage().vault.balanceOf(account);
-    }
-
-    // ========== COMPONENT TOKEN OVERRIDES ==========
+    // ========== COMPONENT TOKEN INTEGRATION ==========
     function deposit(
         uint256 assets,
         address receiver,
         address controller
-    ) public override whenNotPaused returns (uint256 shares) {
+    ) public virtual override whenNotPaused returns (uint256 shares) {
         shares = super.deposit(assets, receiver, controller);
-        _getPUSDStorage().vault.enter(address(this), address(asset()), assets, receiver, shares);
+        _getpUSDStorage().vault.enter(address(this), address(asset()), assets, receiver, shares);
         return shares;
     }
 
@@ -159,22 +133,32 @@ contract PUSD is ComponentToken {
         uint256 shares,
         address receiver,
         address controller
-    ) public override whenNotPaused returns (uint256 assets) {
+    ) public virtual override whenNotPaused returns (uint256 assets) {
         assets = super.redeem(shares, receiver, controller);
-        _getPUSDStorage().vault.exit(receiver, address(asset()), assets, address(this), shares);
+        _getpUSDStorage().vault.exit(receiver, address(asset()), assets, address(this), shares);
         return assets;
     }
 
-    function convertToShares(
-        uint256 assets
-    ) public view override returns (uint256) {
-        return assets; // 1:1 conversion for stablecoin
+    // ========== ERC20 FUNCTIONS ==========
+    function transfer(
+        address to,
+        uint256 amount
+    ) public virtual override(ERC20Upgradeable, IERC20) whenNotPaused returns (bool) {
+        return _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
     }
 
-    function convertToAssets(
-        uint256 shares
-    ) public view override returns (uint256) {
-        return shares; // 1:1 conversion for stablecoin
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) public virtual override(ERC20Upgradeable, IERC20) whenNotPaused returns (bool) {
+        return _getpUSDStorage().vault.transferFrom(from, to, amount);
+    }
+
+    function balanceOf(
+        address account
+    ) public view virtual override(ERC20Upgradeable, IERC20) returns (uint256) {
+        return _getpUSDStorage().vault.balanceOf(account);
     }
 
 }
