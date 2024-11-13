@@ -5,7 +5,6 @@ import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/ac
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 import { ComponentToken } from "../ComponentToken.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
@@ -40,8 +39,7 @@ contract pUSD is ComponentToken {
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.pUSD")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant PUSD_STORAGE_LOCATION =
-        0x54ae4f9578cdf7faaee986bff2a08b358f01b852b4da3af4f67309dae312ee00;
+    bytes32 private constant PUSD_STORAGE_LOCATION = 0x54ae4f9578cdf7faaee986bff2a08b358f01b852b4da3af4f67309dae312ee00;
 
     function _getpUSDStorage() private pure returns (pUSDStorage storage $) {
         bytes32 position = PUSD_STORAGE_POSITION;

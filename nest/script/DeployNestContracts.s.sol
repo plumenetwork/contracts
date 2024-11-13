@@ -47,7 +47,8 @@ contract DeployNestContracts is Script, Test {
         // Deploy pUSD
         pUSD pUSDToken = new pUSD();
         ERC1967Proxy pUSDProxy = new ERC1967Proxy(
-            address(pUSDToken), abi.encodeCall(pUSD.initialize, (NEST_ADMIN_ADDRESS, IERC20(USDC_ADDRESS), VAULT_ADDRESS))
+            address(pUSDToken),
+            abi.encodeCall(pUSD.initialize, (NEST_ADMIN_ADDRESS, IERC20(USDC_ADDRESS), VAULT_ADDRESS))
         );
 
         console2.log("pUSDProxy deployed to:", address(pUSDProxy));
