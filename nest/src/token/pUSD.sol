@@ -8,27 +8,12 @@ import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC2
 
 import { SafeTransferLib } from "@solmate/utils/SafeTransferLib.sol";
 
-interface BeforeTransferHook {
-
-    function beforeTransfer(address from, address to, address operator) external view;
-
-}
-
 interface IVault {
 
     function enter(address from, address asset, uint256 assetAmount, address to, uint256 shareAmount) external;
     function exit(address to, address asset, uint256 assetAmount, address from, uint256 shareAmount) external;
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function approve(address spender, uint256 amount) external returns (bool);
-    function manage(address target, bytes calldata data, uint256 value) external returns (bytes memory);
-    function manage(
-        address[] calldata targets,
-        bytes[] calldata data,
-        uint256[] calldata values
-    ) external returns (bytes[] memory);
-    function setBeforeTransferHook(
-        address hook
-    ) external;
 
 }
 
@@ -107,13 +92,6 @@ contract PUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         emit VaultChanged(oldVault, newVault);
     }
 
-    function setBeforeTransferHook(
-        address _hook
-    ) external onlyRole(VAULT_ADMIN_ROLE) {
-        hook = BeforeTransferHook(_hook);
-        vault.setBeforeTransferHook(_hook);
-    }
-
     function pause() external onlyRole(PAUSER_ROLE) {
         paused = true;
         emit Paused(msg.sender);
@@ -124,49 +102,18 @@ contract PUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         emit Unpaused(msg.sender);
     }
 
-    function manage(
-        address target,
-        bytes calldata data,
-        uint256 value
-    ) external onlyRole(VAULT_ADMIN_ROLE) returns (bytes memory) {
-        return vault.manage(target, data, value);
-    }
-
-    function manage(
-        address[] calldata targets,
-        bytes[] calldata data,
-        uint256[] calldata values
-    ) external onlyRole(VAULT_ADMIN_ROLE) returns (bytes[] memory) {
-        return vault.manage(targets, data, values);
-    }
-
     // Required override for UUPSUpgradeable
     function _authorizeUpgrade(
         address newImplementation
     ) internal override onlyRole(UPGRADER_ROLE) { }
 
-    // ========== TRANSFER HOOKS ==========
-    function _callBeforeTransfer(
-        address from
-    ) internal view {
-        if (address(hook) != address(0)) {
-            hook.beforeTransfer(from);
-        }
-    }
-
     // ========== ERC20 OVERRIDES ==========
     function transfer(address to, uint256 amount) public override whenNotPaused returns (bool) {
-        _callBeforeTransfer(msg.sender);
-        bool success = super.transfer(to, amount);
-        vault.transferFrom(msg.sender, to, amount);
-        return success;
+        return vault.transferFrom(msg.sender, to, amount);
     }
 
     function transferFrom(address from, address to, uint256 amount) public override whenNotPaused returns (bool) {
-        _callBeforeTransfer(from);
-        bool success = super.transferFrom(from, to, amount);
-        vault.transferFrom(from, to, amount);
-        return success;
+        return vault.transferFrom(from, to, amount);
     }
 
     function approve(address spender, uint256 amount) public override whenNotPaused returns (bool) {
@@ -175,15 +122,10 @@ contract PUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         return success;
     }
 
-    // ========== MINT/BURN ==========
-    function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) {
-        _mint(to, amount);
-        vault.enter(address(this), address(this), 0, to, amount);
-    }
-
-    function burn(address from, uint256 amount) external onlyRole(BURNER_ROLE) {
-        _burn(from, amount);
-        vault.exit(address(this), address(this), 0, from, amount);
+    function balanceOf(
+        address account
+    ) public view override returns (uint256) {
+        return vault.balanceOf(account);
     }
 
     // ========== INTERFACE SUPPORT ==========
