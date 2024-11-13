@@ -8,17 +8,41 @@ import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC2
 
 import { SafeTransferLib } from "@solmate/utils/SafeTransferLib.sol";
 
+interface BeforeTransferHook {
+
+    function beforeTransfer(address from, address to, address operator) external view;
+
+}
+
+// Update IVault interface to include all functions
+interface IVault {
+
+    function enter(address from, address asset, uint256 assetAmount, address to, uint256 shareAmount) external;
+    function exit(address to, address asset, uint256 assetAmount, address from, uint256 shareAmount) external;
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function manage(address target, bytes calldata data, uint256 value) external returns (bytes memory);
+    function manage(
+        address[] calldata targets,
+        bytes[] calldata data,
+        uint256[] calldata values
+    ) external returns (bytes[] memory);
+    function setBeforeTransferHook(
+        address hook
+    ) external;
+
+}
+
 /**
  * @title pUSD
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Unified Plume USD stablecoin
  */
-contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable {
+contract PUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable {
 
     using SafeTransferLib for ERC20;
 
     // ========== ROLES ==========
-
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
@@ -26,41 +50,27 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     // ========== STATE VARIABLES ==========
-
-    /// @notice The vault contract for internal accounting
     IVault public vault;
-
-    /// @notice Whether transfers are paused
     bool public paused;
+    BeforeTransferHook public hook;
 
     // ========== EVENTS ==========
-
     event VaultChanged(address oldVault, address newVault);
     event Paused(address account);
     event Unpaused(address account);
 
     // ========== MODIFIERS ==========
-
     modifier whenNotPaused() {
         require(!paused, "PUSD: paused");
         _;
     }
 
     // ========== CONSTRUCTOR & INITIALIZER ==========
-
-    /**
-     * @notice Prevent the implementation contract from being initialized or reinitialized
-     * @custom:oz-upgrades-unsafe-allow constructor
-     */
+    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    /**
-     * @notice Initialize pUSD
-     * @dev Give all roles to the admin address passed into the constructor
-     * @param owner_ Address of the owner of pUSD
-     */
     function initialize(address _vault, address admin) external initializer {
         __ERC20_init("", ""); // Empty strings since we override name() and symbol()
         __AccessControl_init();
@@ -68,7 +78,6 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
 
         vault = IVault(_vault);
 
-        // Setup roles
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(UPGRADER_ROLE, admin);
         _grantRole(MINTER_ROLE, admin);
@@ -78,7 +87,6 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     }
 
     // ========== METADATA OVERRIDES ==========
-
     function decimals() public pure override returns (uint8) {
         return 6;
     }
@@ -92,13 +100,19 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     }
 
     // ========== ADMIN FUNCTIONS ==========
-
     function setVault(
         address newVault
     ) external onlyRole(VAULT_ADMIN_ROLE) {
         address oldVault = address(vault);
         vault = IVault(newVault);
         emit VaultChanged(oldVault, newVault);
+    }
+
+    function setBeforeTransferHook(
+        address _hook
+    ) external onlyRole(VAULT_ADMIN_ROLE) {
+        hook = BeforeTransferHook(_hook);
+        vault.setBeforeTransferHook(_hook);
     }
 
     function pause() external onlyRole(PAUSER_ROLE) {
@@ -111,59 +125,69 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         emit Unpaused(msg.sender);
     }
 
+    function manage(
+        address target,
+        bytes calldata data,
+        uint256 value
+    ) external onlyRole(VAULT_ADMIN_ROLE) returns (bytes memory) {
+        return vault.manage(target, data, value);
+    }
+
+    function manage(
+        address[] calldata targets,
+        bytes[] calldata data,
+        uint256[] calldata values
+    ) external onlyRole(VAULT_ADMIN_ROLE) returns (bytes[] memory) {
+        return vault.manage(targets, data, values);
+    }
+
     // Required override for UUPSUpgradeable
     function _authorizeUpgrade(
         address newImplementation
     ) internal override onlyRole(UPGRADER_ROLE) { }
 
+    // ========== TRANSFER HOOKS ==========
+    function _callBeforeTransfer(
+        address from
+    ) internal view {
+        if (address(hook) != address(0)) {
+            hook.beforeTransfer(from);
+        }
+    }
+
     // ========== ERC20 OVERRIDES ==========
-
     function transfer(address to, uint256 amount) public override whenNotPaused returns (bool) {
-        address owner = _msgSender();
+        _callBeforeTransfer(msg.sender);
         bool success = super.transfer(to, amount);
-
-        // Perform actual transfer in vault
-        vault.transferFrom(owner, to, amount);
-
+        vault.transferFrom(msg.sender, to, amount);
         return success;
     }
 
     function transferFrom(address from, address to, uint256 amount) public override whenNotPaused returns (bool) {
+        _callBeforeTransfer(from);
         bool success = super.transferFrom(from, to, amount);
-
-        // Perform actual transfer in vault
         vault.transferFrom(from, to, amount);
-
         return success;
     }
 
     function approve(address spender, uint256 amount) public override whenNotPaused returns (bool) {
         bool success = super.approve(spender, amount);
-
-        // Approve in vault as well
         vault.approve(spender, amount);
-
         return success;
     }
 
     // ========== MINT/BURN ==========
-
     function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) {
         _mint(to, amount);
-
-        // Mint in vault
         vault.enter(address(this), address(this), 0, to, amount);
     }
 
     function burn(address from, uint256 amount) external onlyRole(BURNER_ROLE) {
         _burn(from, amount);
-
-        // Burn in vault
         vault.exit(address(this), address(this), 0, from, amount);
     }
 
     // ========== INTERFACE SUPPORT ==========
-
     function supportsInterface(
         bytes4 interfaceId
     ) public view override(AccessControlUpgradeable) returns (bool) {
