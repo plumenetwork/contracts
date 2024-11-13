@@ -4,7 +4,12 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+
+import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import { ComponentToken } from "../ComponentToken.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
@@ -26,7 +31,7 @@ interface IVault {
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Implementation of the abstract ComponentToken for Plume USD stablecoin using Boring Vault
  */
-contract pUSD is ComponentToken {
+contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable, ComponentToken {
 
     // ========== STORAGE ==========
     /// @custom:storage-location erc7201:plume.storage.pUSD
@@ -42,7 +47,7 @@ contract pUSD is ComponentToken {
     bytes32 private constant PUSD_STORAGE_LOCATION = 0x54ae4f9578cdf7faaee986bff2a08b358f01b852b4da3af4f67309dae312ee00;
 
     function _getpUSDStorage() private pure returns (pUSDStorage storage $) {
-        bytes32 position = PUSD_STORAGE_POSITION;
+        bytes32 position = PUSD_STORAGE_LOCATION;
         assembly {
             $.slot := position
         }
@@ -138,7 +143,7 @@ contract pUSD is ComponentToken {
         return assets;
     }
 
-    // ========== ERC20 FUNCTIONS ==========
+    // ========== ERC20 OVERRIDES ==========
     function transfer(
         address to,
         uint256 amount
@@ -158,6 +163,36 @@ contract pUSD is ComponentToken {
         address account
     ) public view virtual override(ERC20Upgradeable, IERC20) returns (uint256) {
         return _getpUSDStorage().vault.balanceOf(account);
+    }
+
+    // ========== METADATA OVERRIDES ==========
+
+    function decimals() public pure override(ERC20Upgradeable, ERC4626Upgradeable, IERC20Metadata) returns (uint8) {
+        return 6;
+    }
+
+    function name()
+        public
+        pure
+        override(ERC20Upgradeable, ERC4626Upgradeable, IERC20Metadata)
+        returns (string memory)
+    {
+        return "Plume USD";
+    }
+
+    function symbol()
+        public
+        pure
+        override(ERC20Upgradeable, ERC4626Upgradeable, IERC20Metadata)
+        returns (string memory)
+    {
+        return "pUSD";
+    }
+
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view virtual override(ComponentToken, AccessControlUpgradeable) returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 
 }
