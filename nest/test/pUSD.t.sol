@@ -107,7 +107,7 @@ contract pUSDTest is Test {
         // Setup: user1 deposits tokens
         vm.startPrank(user1);
         token.deposit(amount, user1, user1);
-        
+
         // user1 approves user2 to spend their tokens
         token.approve(user2, amount);
         vm.stopPrank();
@@ -121,12 +121,12 @@ contract pUSDTest is Test {
 
         // user2 redeems user1's tokens to user2's address
         vm.prank(user2);
-        token.redeem(amount, user2, user1);  // user1 is controller (owner of shares), user2 is receiver
+        token.redeem(amount, user2, user1); // user1 is controller (owner of shares), user2 is receiver
 
         // Verify balances
         assertEq(token.balanceOf(user1), 0);
         assertEq(asset.balanceOf(user2), initialBalance + amount);
-        
+
         // Verify allowance was decreased
         assertEq(token.allowance(user1, user2), 0);
     }
