@@ -56,10 +56,8 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     // ========== EVENTS ==========
     event VaultChanged(address oldVault, address newVault);
 
-
     // ========== ROLES ==========
     bytes32 public constant VAULT_ADMIN_ROLE = keccak256("VAULT_ADMIN_ROLE");
-
 
     /**
      * @notice Prevent the implementation contract from being initialized or reinitialized
@@ -96,7 +94,6 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         emit VaultChanged(oldVault, newVault);
     }
 
-
     // ========== VIEW FUNCTIONS ==========
     function vault() external view returns (address) {
         return address(_getpUSDStorage().vault);
@@ -119,16 +116,18 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address receiver,
         address controller
     ) public virtual override returns (uint256 assets) {
-        assets = super.redeem(shares, receiver, controller);
+        // Calculate the assets amount
+        assets = convertToAssets(shares);
+
+        // Get assets from vault
         _getpUSDStorage().vault.exit(receiver, address(asset()), assets, address(this), shares);
-        return assets;
+
+        // Call super.redeem() which will handle the transfer and events
+        return super.redeem(shares, receiver, controller);
     }
 
     // ========== ERC20 OVERRIDES ==========
-    function transfer(
-        address to,
-        uint256 amount
-    ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
+    function transfer(address to, uint256 amount) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
         _getpUSDStorage().vault.approve(address(_getpUSDStorage().vault), amount); // Add approval for vault
         _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
         return super.transfer(to, amount);
