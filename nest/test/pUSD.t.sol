@@ -38,7 +38,6 @@ contract pUSDTest is Test {
     address public owner;
     address public user1;
     address public user2;
-    // Make sure the event matches the contract exactly
 
     event VaultChanged(MockVault indexed oldVault, MockVault indexed newVault);
 
@@ -152,9 +151,6 @@ contract pUSDTest is Test {
         // Verify the vault was updated
         assertEq(address(token.vault()), address(newVault));
     }
-
-    // Add this event definition at the contract level
-    //event VaultChanged(address indexed oldVault, address indexed newVault);
 
     function testVault() public {
         // Verify the vault address matches what we set in setUp
