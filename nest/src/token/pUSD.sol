@@ -14,6 +14,8 @@ import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.so
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+
 import { ComponentToken } from "../ComponentToken.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -22,9 +24,17 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Unified Plume USD stablecoin
  */
-contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable, ComponentToken {
+contract pUSD is
+    Initializable,
+    ERC20Upgradeable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    ComponentToken,
+    ReentrancyGuardUpgradeable
+{
 
     using SafeERC20 for IERC20;
+    
     // ========== STORAGE ==========
     /// @custom:storage-location erc7201:plume.storage.pUSD
 
@@ -68,7 +78,12 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     // Changed to _initialize to avoid double initialization
 
     function initialize(address owner, IERC20 asset_, address vault_) public initializer {
+        require(owner != address(0), "Zero address owner");
+        require(address(asset_) != address(0), "Zero address asset");
+        require(vault_ != address(0), "Zero address vault");
+
         super.initialize(owner, "Plume USD", "pUSD", asset_, false, false);
+        __ReentrancyGuard_init();
 
         pUSDStorage storage $ = _getpUSDStorage();
         $.vault = IVault(vault_);
@@ -79,7 +94,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     // ========== ADMIN FUNCTIONS ==========
     function setVault(
         address newVault
-    ) external onlyRole(VAULT_ADMIN_ROLE) {
+    ) external nonReentrant onlyRole(VAULT_ADMIN_ROLE) {
         pUSDStorage storage $ = _getpUSDStorage();
         address oldVault = address($.vault);
         $.vault = IVault(newVault);
@@ -92,22 +107,25 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     }
 
     // ========== COMPONENT TOKEN INTEGRATION ==========
-    function deposit(
+ function deposit(
         uint256 assets,
         address receiver,
-        address controller // Required by ComponentToken interface but not used in this implementation
-    ) public virtual override returns (uint256 shares) {
+        address controller
+    ) public virtual override nonReentrant returns (uint256 shares) {
         // Calculate shares to mint
         shares = previewDeposit(assets);
 
-        // Transfer assets from depositor
-        IERC20(asset()).safeTransferFrom(msg.sender, address(this), assets);
+        // Get asset token
+        IERC20 assetToken = IERC20(asset());
+
+        // Transfer assets from depositor using safeTransferFrom
+        assetToken.safeTransferFrom(msg.sender, address(this), assets);
 
         // Mint shares to receiver
         _mint(receiver, shares);
 
-        // Approve and deposit assets into vault
-        IERC20(asset()).approve(address(_getpUSDStorage().vault), assets);
+        // Use safeIncreaseAllowance
+        assetToken.safeIncreaseAllowance(address(_getpUSDStorage().vault), assets);
         _getpUSDStorage().vault.enter(address(this), address(asset()), assets, receiver, shares);
 
         emit Deposit(msg.sender, receiver, assets, shares);
@@ -117,7 +135,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         uint256 shares,
         address receiver,
         address controller
-    ) public virtual override returns (uint256 assets) {
+    ) public virtual override nonReentrant returns (uint256 assets) {
         // Calculate the assets amount using previewRedeem
         assets = previewRedeem(shares);
 
@@ -137,7 +155,10 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     }
 
     // ========== ERC20 OVERRIDES ==========
-    function transfer(address to, uint256 amount) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
+    function transfer(
+        address to,
+        uint256 amount
+    ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
         // Since balances are tracked in the vault, we only need to update the vault's records
         return _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
     }
@@ -146,16 +167,13 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address from,
         address to,
         uint256 amount
-    ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
-        // Handle allowance in the token contract
+    ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
+        require(from != address(0), "ERC20: transfer from zero address");
+        require(to != address(0), "ERC20: transfer to zero address");
+
+        // Handle allowance using OpenZeppelin's ERC20 spending mechanism
         if (from != msg.sender) {
-            uint256 currentAllowance = allowance(from, msg.sender);
-            if (currentAllowance != type(uint256).max) {
-                require(currentAllowance >= amount, "ERC20: insufficient allowance");
-                unchecked {
-                    _approve(from, msg.sender, currentAllowance - amount);
-                }
-            }
+            _spendAllowance(from, msg.sender, amount);
         }
 
         // Delegate the actual transfer to the vault
