@@ -95,7 +95,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     function deposit(
         uint256 assets,
         address receiver,
-        address controller
+        address controller // Required by ComponentToken interface but not used in this implementation
     ) public virtual override returns (uint256 shares) {
         // Calculate shares to mint
         shares = previewDeposit(assets);
