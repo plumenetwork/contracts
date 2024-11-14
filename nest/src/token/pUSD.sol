@@ -18,12 +18,13 @@ import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/
 
 import { ComponentToken } from "../ComponentToken.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 /**
  * @title pUSD
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Unified Plume USD stablecoin
  */
+
 contract pUSD is
     Initializable,
     ERC20Upgradeable,
@@ -34,6 +35,7 @@ contract pUSD is
 {
 
     using SafeERC20 for IERC20;
+    using Math for uint256;
 
     // ========== ERRORS ==========
     error ZeroAddress();
@@ -82,8 +84,7 @@ contract pUSD is
      * @param asset_ Address of the underlying asset
      * @param vault_ Address of the Boring Vault
      */
-    // Changed to _initialize to avoid double initialization
-
+    //
     function initialize(address owner, IERC20 asset_, address vault_) public initializer {
         require(owner != address(0), "Zero address owner");
         require(address(asset_) != address(0), "Zero address asset");
@@ -186,6 +187,20 @@ contract pUSD is
         _getpUSDStorage().vault.exit(receiver, address(asset()), assets, controller, shares);
 
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    function convertToShares(
+        uint256 assets
+    ) public view virtual override returns (uint256) {
+        return _convertToShares(assets, Math.Rounding.Floor);
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    function convertToAssets(
+        uint256 shares
+    ) public view virtual override returns (uint256) {
+        return _convertToAssets(shares, Math.Rounding.Floor);
     }
 
     // ========== ERC20 OVERRIDES ==========
