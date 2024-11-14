@@ -106,6 +106,11 @@ contract pUSD is
     }
 
     // ========== ADMIN FUNCTIONS ==========
+
+    /**
+     * @notice Set a new vault address for the pUSD token
+     * @param newVault Address of the new vault to be set
+     */
     function setVault(
         address newVault
     ) external nonReentrant onlyRole(VAULT_ADMIN_ROLE) {
@@ -126,11 +131,24 @@ contract pUSD is
     }
 
     // ========== VIEW FUNCTIONS ==========
+
+    /**
+     * @notice Get the current vault address
+     * @return Address of the current vault
+     */
     function vault() external view returns (address) {
         return address(_getpUSDStorage().vault);
     }
 
     // ========== COMPONENT TOKEN INTEGRATION ==========
+
+    /**
+     * @notice Deposit assets and mint corresponding shares
+     * @param assets Amount of assets to deposit
+     * @param receiver Address that will receive the shares
+     * @param controller Address that will control the shares (unused in this implementation)
+     * @return shares Amount of shares minted
+     */
     function deposit(
         uint256 assets,
         address receiver,
@@ -159,6 +177,13 @@ contract pUSD is
         emit Deposit(msg.sender, receiver, assets, shares);
     }
 
+    /**
+     * @notice Burn shares and withdraw corresponding assets
+     * @param shares Amount of shares to burn
+     * @param receiver Address that will receive the assets
+     * @param controller Address that currently controls the shares
+     * @return assets Amount of assets withdrawn
+     */
     function redeem(
         uint256 shares,
         address receiver,
@@ -204,6 +229,13 @@ contract pUSD is
     }
 
     // ========== ERC20 OVERRIDES ==========
+
+    /**
+     * @notice Transfer tokens to a specified address
+     * @param to Address to transfer tokens to
+     * @param amount Amount of tokens to transfer
+     * @return bool indicating whether the transfer was successful
+     */
     function transfer(
         address to,
         uint256 amount
@@ -212,6 +244,13 @@ contract pUSD is
         return _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
     }
 
+    /**
+     * @notice Transfer tokens from one address to another
+     * @param from Address to transfer tokens from
+     * @param to Address to transfer tokens to
+     * @param amount Amount of tokens to transfer
+     * @return bool indicating whether the transfer was successful
+     */
     function transferFrom(
         address from,
         address to,
@@ -229,6 +268,11 @@ contract pUSD is
         return _getpUSDStorage().vault.transferFrom(from, to, amount);
     }
 
+    /**
+     * @notice Get the token balance of an account
+     * @param account Address to check balance for
+     * @return Balance of the account
+     */
     function balanceOf(
         address account
     ) public view override(IERC20, ERC20Upgradeable) returns (uint256) {
@@ -237,18 +281,35 @@ contract pUSD is
 
     // ========== METADATA OVERRIDES ==========
 
+    /**
+     * @notice Get the number of decimals for the token
+     * @return Number of decimals (6)
+     */
     function decimals() public pure override(ERC4626Upgradeable, ERC20Upgradeable, IERC20Metadata) returns (uint8) {
         return 6;
     }
 
+    /**
+     * @notice Get the name of the token
+     * @return Name of the token
+     */
     function name() public pure override(ERC20Upgradeable, IERC20Metadata) returns (string memory) {
         return "Plume USD";
     }
 
+    /**
+     * @notice Get the symbol of the token
+     * @return Symbol of the token
+     */
     function symbol() public pure override(ERC20Upgradeable, IERC20Metadata) returns (string memory) {
         return "pUSD";
     }
 
+    /**
+     * @notice Check if the contract supports a given interface
+     * @param interfaceId Interface identifier to check
+     * @return bool indicating whether the interface is supported
+     */
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(AccessControlUpgradeable, ComponentToken) returns (bool) {
