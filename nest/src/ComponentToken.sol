@@ -210,14 +210,27 @@ abstract contract ComponentToken is
     function convertToShares(
         uint256 assets
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
-        return assets; // 1:1 ratio
+        uint256 supply = totalSupply();
+        uint256 totalAssets_ = totalAssets();
+
+        if (supply == 0 || totalAssets_ == 0) {
+            return assets;
+        }
+
+        return (assets * supply) / totalAssets_;
     }
 
     /// @inheritdoc IERC4626
     function convertToAssets(
         uint256 shares
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
-        return shares; // 1:1 ratio
+        uint256 supply = totalSupply();
+
+        if (supply == 0) {
+            return shares;
+        }
+
+        return (shares * totalAssets()) / supply;
     }
 
     // User Functions

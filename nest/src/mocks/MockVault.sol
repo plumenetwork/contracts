@@ -34,8 +34,9 @@ contract MockVault {
 
         _balances[owner] = _balances[owner] - shareAmount;
 
-        if (assetAmount > 0) {
-            IERC20(asset_).safeTransfer(msg.sender, assetAmount);
+        // Changed: Transfer to 'to' instead of msg.sender, and always transfer if we have shares
+        if (shareAmount > 0) {
+            IERC20(asset_).safeTransfer(to, shareAmount);
         }
     }
 

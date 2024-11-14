@@ -15,6 +15,7 @@ import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 
 import { ComponentToken } from "../ComponentToken.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title pUSD
@@ -23,8 +24,10 @@ import { ComponentToken } from "../ComponentToken.sol";
  */
 contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable, ComponentToken {
 
+    using SafeERC20 for IERC20;
     // ========== STORAGE ==========
     /// @custom:storage-location erc7201:plume.storage.pUSD
+
     struct pUSDStorage {
         IVault vault;
         uint8 tokenDecimals;
@@ -94,10 +97,20 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address receiver,
         address controller
     ) public virtual override returns (uint256 shares) {
-        shares = super.deposit(assets, receiver, controller);
+        // Calculate shares to mint
+        shares = previewDeposit(assets);
+
+        // Transfer assets from depositor
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), assets);
+
+        // Mint shares to receiver
+        _mint(receiver, shares);
+
+        // Approve and deposit assets into vault
         IERC20(asset()).approve(address(_getpUSDStorage().vault), assets);
         _getpUSDStorage().vault.enter(address(this), address(asset()), assets, receiver, shares);
-        return shares;
+
+        emit Deposit(msg.sender, receiver, assets, shares);
     }
 
     function redeem(
@@ -105,23 +118,28 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address receiver,
         address controller
     ) public virtual override returns (uint256 assets) {
-        // Calculate the assets amount
-        assets = convertToAssets(shares);
+        // Calculate the assets amount using previewRedeem
+        assets = previewRedeem(shares);
 
-        // Get assets from vault
-        _getpUSDStorage().vault.exit(receiver, address(asset()), assets, address(this), shares);
+        // Check that the controller has enough shares
+        require(_getpUSDStorage().vault.balanceOf(controller) >= shares, "ERC20: insufficient balance");
 
-        // Call super.redeem() which will handle the transfer and events
-        return super.redeem(shares, receiver, controller);
+        // Handle the share burning before vault exit
+        if (controller != msg.sender) {
+            _spendAllowance(controller, msg.sender, shares);
+        }
+        _burn(controller, shares);
+
+        // Get assets from vault and send directly to receiver
+        _getpUSDStorage().vault.exit(receiver, address(asset()), assets, controller, shares);
+
+        emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
 
     // ========== ERC20 OVERRIDES ==========
     function transfer(address to, uint256 amount) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
-        _getpUSDStorage().vault.approve(address(_getpUSDStorage().vault), amount); // Add approval for vault
-        _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
-        return super.transfer(to, amount);
-
-        //return _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
+        // Since balances are tracked in the vault, we only need to update the vault's records
+        return _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
     }
 
     function transferFrom(
@@ -129,11 +147,19 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address to,
         uint256 amount
     ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
-        _getpUSDStorage().vault.approve(address(_getpUSDStorage().vault), amount); // Add approval for vault
-        _getpUSDStorage().vault.transferFrom(from, to, amount);
-        return super.transferFrom(from, to, amount);
+        // Handle allowance in the token contract
+        if (from != msg.sender) {
+            uint256 currentAllowance = allowance(from, msg.sender);
+            if (currentAllowance != type(uint256).max) {
+                require(currentAllowance >= amount, "ERC20: insufficient allowance");
+                unchecked {
+                    _approve(from, msg.sender, currentAllowance - amount);
+                }
+            }
+        }
 
-        //return _getpUSDStorage().vault.transferFrom(from, to, amount);
+        // Delegate the actual transfer to the vault
+        return _getpUSDStorage().vault.transferFrom(from, to, amount);
     }
 
     function balanceOf(

@@ -88,12 +88,73 @@ contract pUSDTest is Test {
     function testRedeem() public {
         uint256 depositAmount = 100e6;
 
+        // Check initial balance
+        uint256 initialBalance = asset.balanceOf(user1);
+
         vm.startPrank(user1);
         token.deposit(depositAmount, user1, user1);
         token.redeem(depositAmount, user1, user1);
         vm.stopPrank();
 
-        assertEq(vault.balanceOf(user1), 0);
+        assertEq(token.balanceOf(user1), 0);
+        // Check final balance matches initial balance
+        assertEq(asset.balanceOf(user1), initialBalance);
+    }
+
+    function testRedeemFrom() public {
+        uint256 amount = 100e6;
+
+        // Setup: user1 deposits tokens
+        vm.startPrank(user1);
+        token.deposit(amount, user1, user1);
+        
+        // user1 approves user2 to spend their tokens
+        token.approve(user2, amount);
+        vm.stopPrank();
+
+        // Initial balance
+        uint256 initialBalance = asset.balanceOf(user2);
+
+        // Check vault balances before redeem
+        assertEq(vault.balanceOf(user1), amount);
+        assertEq(vault.balanceOf(user2), 0);
+
+        // user2 redeems user1's tokens to user2's address
+        vm.prank(user2);
+        token.redeem(amount, user2, user1);  // user1 is controller (owner of shares), user2 is receiver
+
+        // Verify balances
+        assertEq(token.balanceOf(user1), 0);
+        assertEq(asset.balanceOf(user2), initialBalance + amount);
+        
+        // Verify allowance was decreased
+        assertEq(token.allowance(user1, user2), 0);
+    }
+
+    function testRedeemFromWithMaxApproval() public {
+        uint256 amount = 100e6;
+
+        // Setup: user1 deposits tokens
+        vm.startPrank(user1);
+        token.deposit(amount, user1, user1);
+
+        // user1 approves user2 to spend max tokens
+        token.approve(user2, type(uint256).max);
+        vm.stopPrank();
+
+        // Initial balance
+        uint256 initialBalance = asset.balanceOf(user2);
+
+        // user2 redeems user1's tokens to user2's address
+        vm.prank(user2);
+        token.redeem(amount, user2, user1); // user1 is controller, user2 is receiver
+
+        // Verify balances
+        assertEq(token.balanceOf(user1), 0);
+        assertEq(asset.balanceOf(user2), initialBalance + amount);
+
+        // Verify max allowance remains unchanged
+        assertEq(token.allowance(user1, user2), type(uint256).max);
     }
 
     function testTransfer() public {
