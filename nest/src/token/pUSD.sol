@@ -5,11 +5,11 @@ import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/ac
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
-
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import { ComponentToken } from "../ComponentToken.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
@@ -170,7 +170,8 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(AccessControlUpgradeable, ComponentToken) returns (bool) {
-        return super.supportsInterface(interfaceId);
+        return interfaceId == type(IERC20).interfaceId || interfaceId == type(IAccessControl).interfaceId
+            || super.supportsInterface(interfaceId);
     }
 
 }
