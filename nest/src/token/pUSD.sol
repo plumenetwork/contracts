@@ -13,6 +13,7 @@ import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/I
 
 import { ComponentToken } from "../ComponentToken.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
+import { console } from "forge-std/console.sol";
 
 interface IVault {
 
@@ -82,19 +83,16 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
      * @param asset_ Address of the underlying asset
      * @param vault_ Address of the Boring Vault
      */
+    // Changed to _initialize to avoid double initialization
+
     function initialize(address owner, IERC20 asset_, address vault_) public initializer {
-        ComponentToken.initialize(owner, "", "", asset_, false, false);
+        super.initialize(owner, "Plume USD", "pUSD", asset_, false, false);
 
         pUSDStorage storage $ = _getpUSDStorage();
         $.vault = IVault(vault_);
-        $.tokenName = "Plume USD";
-        $.tokenSymbol = "pUSD";
-        $.tokenDecimals = 6;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(VAULT_ADMIN_ROLE, owner);
         _grantRole(PAUSER_ROLE, owner);
-        _grantRole(UPGRADER_ROLE, owner);
     }
 
     // ========== ADMIN FUNCTIONS ==========
@@ -129,6 +127,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address controller
     ) public virtual override whenNotPaused returns (uint256 shares) {
         shares = super.deposit(assets, receiver, controller);
+        IERC20(asset()).approve(address(_getpUSDStorage().vault), assets);
         _getpUSDStorage().vault.enter(address(this), address(asset()), assets, receiver, shares);
         return shares;
     }
@@ -148,7 +147,11 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address to,
         uint256 amount
     ) public virtual override(ERC20Upgradeable, IERC20) whenNotPaused returns (bool) {
-        return _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
+        _getpUSDStorage().vault.approve(address(_getpUSDStorage().vault), amount); // Add approval for vault
+        _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
+        return super.transfer(to, amount);
+
+        //return _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
     }
 
     function transferFrom(
@@ -156,7 +159,11 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address to,
         uint256 amount
     ) public virtual override(ERC20Upgradeable, IERC20) whenNotPaused returns (bool) {
-        return _getpUSDStorage().vault.transferFrom(from, to, amount);
+        _getpUSDStorage().vault.approve(address(_getpUSDStorage().vault), amount); // Add approval for vault
+        _getpUSDStorage().vault.transferFrom(from, to, amount);
+        return super.transferFrom(from, to, amount);
+
+        //return _getpUSDStorage().vault.transferFrom(from, to, amount);
     }
 
     function balanceOf(

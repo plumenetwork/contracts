@@ -10,6 +10,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { console } from "forge-std/console.sol";
 
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
 import { IERC7540 } from "./interfaces/IERC7540.sol";
@@ -150,7 +151,7 @@ abstract contract ComponentToken is
         IERC20 asset_,
         bool asyncDeposit,
         bool asyncRedeem
-    ) public initializer {
+    ) public onlyInitializing {
         __ERC20_init(name, symbol);
         __ERC4626_init(asset_);
         __AccessControl_init();
@@ -209,14 +210,14 @@ abstract contract ComponentToken is
     function convertToShares(
         uint256 assets
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
-        revert Unimplemented();
+        return assets; // 1:1 ratio
     }
 
     /// @inheritdoc IERC4626
     function convertToAssets(
         uint256 shares
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
-        revert Unimplemented();
+        return shares; // 1:1 ratio
     }
 
     // User Functions
