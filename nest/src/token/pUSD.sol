@@ -39,7 +39,6 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     struct pUSDStorage {
         IVault vault;
         uint8 tokenDecimals;
-        bool paused;
         string tokenName;
         string tokenSymbol;
     }
@@ -56,18 +55,11 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
 
     // ========== EVENTS ==========
     event VaultChanged(address oldVault, address newVault);
-    event Paused(address account);
-    event Unpaused(address account);
+
 
     // ========== ROLES ==========
     bytes32 public constant VAULT_ADMIN_ROLE = keccak256("VAULT_ADMIN_ROLE");
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    // ========== MODIFIERS ==========
-    modifier whenNotPaused() {
-        require(!_getpUSDStorage().paused, "pUSD: paused");
-        _;
-    }
 
     /**
      * @notice Prevent the implementation contract from being initialized or reinitialized
@@ -92,7 +84,6 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         $.vault = IVault(vault_);
 
         _grantRole(VAULT_ADMIN_ROLE, owner);
-        _grantRole(PAUSER_ROLE, owner);
     }
 
     // ========== ADMIN FUNCTIONS ==========
@@ -105,15 +96,6 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         emit VaultChanged(oldVault, newVault);
     }
 
-    function pause() external onlyRole(PAUSER_ROLE) {
-        _getpUSDStorage().paused = true;
-        emit Paused(msg.sender);
-    }
-
-    function unpause() external onlyRole(PAUSER_ROLE) {
-        _getpUSDStorage().paused = false;
-        emit Unpaused(msg.sender);
-    }
 
     // ========== VIEW FUNCTIONS ==========
     function vault() external view returns (address) {
@@ -125,7 +107,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         uint256 assets,
         address receiver,
         address controller
-    ) public virtual override whenNotPaused returns (uint256 shares) {
+    ) public virtual override returns (uint256 shares) {
         shares = super.deposit(assets, receiver, controller);
         IERC20(asset()).approve(address(_getpUSDStorage().vault), assets);
         _getpUSDStorage().vault.enter(address(this), address(asset()), assets, receiver, shares);
@@ -136,7 +118,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         uint256 shares,
         address receiver,
         address controller
-    ) public virtual override whenNotPaused returns (uint256 assets) {
+    ) public virtual override returns (uint256 assets) {
         assets = super.redeem(shares, receiver, controller);
         _getpUSDStorage().vault.exit(receiver, address(asset()), assets, address(this), shares);
         return assets;
@@ -146,7 +128,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     function transfer(
         address to,
         uint256 amount
-    ) public virtual override(ERC20Upgradeable, IERC20) whenNotPaused returns (bool) {
+    ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
         _getpUSDStorage().vault.approve(address(_getpUSDStorage().vault), amount); // Add approval for vault
         _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
         return super.transfer(to, amount);
@@ -158,7 +140,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address from,
         address to,
         uint256 amount
-    ) public virtual override(ERC20Upgradeable, IERC20) whenNotPaused returns (bool) {
+    ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
         _getpUSDStorage().vault.approve(address(_getpUSDStorage().vault), amount); // Add approval for vault
         _getpUSDStorage().vault.transferFrom(from, to, amount);
         return super.transferFrom(from, to, amount);
