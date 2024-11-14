@@ -34,7 +34,14 @@ contract pUSD is
 {
 
     using SafeERC20 for IERC20;
-    
+
+    // ========== ERRORS ==========
+    error ZeroAddress();
+    error InvalidAsset();
+    error InvalidReceiver();
+    error InvalidController();
+    error InvalidVault();
+
     // ========== STORAGE ==========
     /// @custom:storage-location erc7201:plume.storage.pUSD
 
@@ -82,6 +89,12 @@ contract pUSD is
         require(address(asset_) != address(0), "Zero address asset");
         require(vault_ != address(0), "Zero address vault");
 
+        // Validate asset interface support
+        try IERC20Metadata(address(asset_)).decimals() returns (uint8) { }
+        catch {
+            revert InvalidAsset();
+        }
+
         super.initialize(owner, "Plume USD", "pUSD", asset_, false, false);
         __ReentrancyGuard_init();
 
@@ -95,6 +108,16 @@ contract pUSD is
     function setVault(
         address newVault
     ) external nonReentrant onlyRole(VAULT_ADMIN_ROLE) {
+        if (newVault == address(0)) {
+            revert InvalidVault();
+        }
+
+        // Validate vault interface support
+        try IVault(newVault).balanceOf(address(this)) returns (uint256) { }
+        catch {
+            revert InvalidVault();
+        }
+
         pUSDStorage storage $ = _getpUSDStorage();
         address oldVault = address($.vault);
         $.vault = IVault(newVault);
@@ -107,11 +130,15 @@ contract pUSD is
     }
 
     // ========== COMPONENT TOKEN INTEGRATION ==========
- function deposit(
+    function deposit(
         uint256 assets,
         address receiver,
         address controller
     ) public virtual override nonReentrant returns (uint256 shares) {
+        if (receiver == address(0)) {
+            revert InvalidReceiver();
+        }
+
         // Calculate shares to mint
         shares = previewDeposit(assets);
 
@@ -136,6 +163,13 @@ contract pUSD is
         address receiver,
         address controller
     ) public virtual override nonReentrant returns (uint256 assets) {
+        if (receiver == address(0)) {
+            revert InvalidReceiver();
+        }
+        if (controller == address(0)) {
+            revert InvalidController();
+        }
+
         // Calculate the assets amount using previewRedeem
         assets = previewRedeem(shares);
 

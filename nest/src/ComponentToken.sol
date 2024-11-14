@@ -71,6 +71,8 @@ abstract contract ComponentToken is
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the ComponentToken
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
+    uint256 private constant _BASE = 1e18;
 
     // Events
 
@@ -217,7 +219,8 @@ abstract contract ComponentToken is
             return assets;
         }
 
-        return (assets * supply) / totalAssets_;
+        // Multiply by scaling factor first to maintain precision
+        return (assets * _BASE * supply) / (totalAssets_ * _BASE);
     }
 
     /// @inheritdoc IERC4626
@@ -230,7 +233,9 @@ abstract contract ComponentToken is
             return shares;
         }
 
-        return (shares * totalAssets()) / supply;
+        uint256 totalAssets_ = totalAssets();
+        // Multiply by scaling factor first to maintain precision
+        return (shares * _BASE * totalAssets_) / (supply * _BASE);
     }
 
     // User Functions
@@ -505,7 +510,8 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncDeposit) {
             revert Unimplemented();
         }
-        shares = super.previewDeposit(assets);
+        // Returns how many shares would be minted for given assets
+        return convertToShares(assets);
     }
 
     /**
@@ -531,7 +537,8 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncRedeem) {
             revert Unimplemented();
         }
-        assets = super.previewRedeem(shares);
+        // Returns how many assets would be withdrawn for given shares
+        return convertToAssets(shares);
     }
 
     /**
