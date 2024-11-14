@@ -13,19 +13,8 @@ import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadat
 
 import { ComponentToken } from "../ComponentToken.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
+import { IVault } from "../interfaces/IVault.sol";
 import { console } from "forge-std/console.sol";
-
-interface IVault {
-
-    function enter(address from, address asset, uint256 assetAmount, address to, uint256 shareAmount) external;
-    function exit(address to, address asset, uint256 assetAmount, address from, uint256 shareAmount) external;
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function approve(address spender, uint256 amount) external returns (bool);
-    function balanceOf(
-        address account
-    ) external view returns (uint256);
-
-}
 
 /**
  * @title pUSD
