@@ -35,7 +35,6 @@ The unified Plume USD stablecoin implementation that interfaces with a vault for
 ### ComponentToken
 The base implementation supporting both synchronous and asynchronous deposit/redeem operations.
 
-[Insert "Understanding ComponentToken and AggregateToken" markdown from previous response here]
 
 ### AdapterToken
 An implementation that interfaces with external assets, enabling integration with other protocols.
@@ -62,8 +61,11 @@ An implementation that interfaces with external assets, enabling integration wit
 
 ```solidity
 // Owner initiates request
-requestDeposit(assets, controller, owner) 
-// Controller executes final deposit
+   function requestDeposit(
+        uint256 assets,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {// Controller executes final deposit
 deposit(assets, receiver, controller)
 ```
 
@@ -73,6 +75,13 @@ deposit(assets, receiver, controller)
 3. Shares are burned
 4. Assets are transferred
 
+```solidity
+  function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public virtual returns (uint256 requestId) {
+```
 
 
 ## Understanding ComponentToken and AggregateToken
