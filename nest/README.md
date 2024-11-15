@@ -23,7 +23,8 @@ graph TD
 A[pUSD] --> B[ComponentToken]
 C[AggregateToken] --> B[ComponentToken]
 D[AdapterToken] --> B[ComponentToken]
-B --> E[ERC4626]
+B --> E[ERC7540]
+E --> F[ERC4626]
 ```
 
 
