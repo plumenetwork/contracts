@@ -65,8 +65,10 @@ An implementation that interfaces with external assets, enabling integration wit
         uint256 assets,
         address controller,
         address owner
-    ) public virtual returns (uint256 requestId) {// Controller executes final deposit
-deposit(assets, receiver, controller)
+    ) public virtual returns (uint256 requestId) {
+        // Controller executes final deposit
+        deposit(assets, receiver, controller)
+    }
 ```
 
 ### Redemption Flow
@@ -135,7 +137,8 @@ The AggregateToken is a special implementation of ComponentToken that acts as a 
 
 #### Core Purpose:
 It's a token that represents a collection of other ComponentTokens
-It has its own asset (specified during initialization)
+It has its own asset (specified during initialization).
+
 Users can buy/sell the AggregateToken at specified ask/bid prices
 
 #### Key Features:
@@ -201,12 +204,12 @@ Example deployment script for pUSD:
 pUSD pUSDToken = new pUSD();
 // Deploy proxy
 ERC1967Proxy pUSDProxy = new ERC1967Proxy(
-address(pUSDToken),
-abi.encodeCall(
-pUSD.initialize,
-(owner, asset, vault)
-)
-);
+    address(pUSDToken),
+    abi.encodeCall(
+        pUSD.initialize,
+            (owner, asset, vault)
+        )
+    );
 ```
 
 
