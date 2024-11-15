@@ -119,7 +119,7 @@ The controller pattern allows for:
 If you need to track specific owner requests, you would need to:
 - Either maintain that mapping in your integration layer
 - Or use a dedicated controller for each owner
-Or track through events which include both owner and controller addresses
+- Or track through events which include both owner and controller addresses
 
 The events emitted can help track the relationship:
 
