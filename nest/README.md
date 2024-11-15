@@ -197,6 +197,174 @@ function convertToAssets(uint256 shares) returns (uint256) {
 
 The AggregateToken essentially provides a way to create managed portfolios of ComponentTokens with controlled entry/exit prices.
 
+
+1. Controllers in Practice:
+
+You can have multiple patterns:
+
+Pattern 1: 1 Controller for Many Owners
+```
+  Controller1 -> [Owner1, Owner2, Owner3...]
+```
+  - Good for batching operations
+  - Simpler management
+  - Used when a central service manages deposits/redeems
+
+Pattern 2: 1:1 Controller to Owner
+
+```
+  Controller1 -> Owner1
+  Controller2 -> Owner2
+  Controller3 -> Owner3
+```
+  - Better for individual tracking
+  - More granular control
+  - Each owner manages their own operations
+
+2. Batching Strategy for Slippage Protection:
+
+```solidity
+struct Batch {
+    uint256 batchId;
+    uint256 totalAssets;
+    uint256 totalShares;
+    uint256 executionPrice;
+    mapping(address => UserRequest) requests;
+}
+
+struct UserRequest {
+    uint256 assets;
+    uint256 minSharesOut;  // slippage protection
+    bool claimed;
+}
+```
+
+
+Example implementation:
+
+```solidity
+contract BatchedComponentToken is ComponentToken {
+    mapping(uint256 => Batch) public batches;
+    uint256 public currentBatchId;
+    
+    function requestDeposit(
+        uint256 assets,
+        uint256 minSharesOut,
+        address controller
+    ) external returns (uint256 batchId) {
+        batchId = currentBatchId;
+        batches[batchId].requests[msg.sender] = UserRequest({
+            assets: assets,
+            minSharesOut: minSharesOut,
+            claimed: false
+        });
+        batches[batchId].totalAssets += assets;
+        
+        // Transfer assets to contract
+        asset.transferFrom(msg.sender, address(this), assets);
+        
+        emit DepositRequest(controller, msg.sender, batchId, assets);
+    }
+    
+    function executeBatch(uint256 batchId, uint256 executionPrice) external onlyController {
+        Batch storage batch = batches[batchId];
+        batch.executionPrice = executionPrice;
+        batch.totalShares = (batch.totalAssets * 1e18) / executionPrice;
+        
+        emit BatchExecuted(batchId, executionPrice);
+    }
+    
+    function claim(uint256 batchId) external {
+        Batch storage batch = batches[batchId];
+        UserRequest storage request = batch.requests[msg.sender];
+        require(!request.claimed, "Already claimed");
+        
+        uint256 shares = (request.assets * 1e18) / batch.executionPrice;
+        require(shares >= request.minSharesOut, "Slippage too high");
+        
+        request.claimed = true;
+        _mint(msg.sender, shares);
+        
+        emit Claimed(msg.sender, batchId, shares);
+    }
+}
+```
+
+This approach:
+1. Groups requests into batches
+2. Allows setting min output for slippage protection
+3. Executes all requests in a batch at same price
+4. Users can claim their shares after batch execution
+5. Maintains fairness within each batch
+
+The current ComponentToken uses REQUEST_ID = 0 because it treats all requests as fungible, but this batching approach would give you more granular control while still maintaining efficiency through batching.
+
+
+
+### Controller-Owner Relationship:
+```solidity
+// In ComponentToken.sol
+mapping(address controller => uint256 assets) pendingDepositRequest;
+mapping(address controller => uint256 assets) claimableDepositRequest;
+```
+
+The controller is used as the key for tracking requests, so users must use the same controller throughout a deposit/redeem cycle. This is because:
+
+1. When requesting:
+```solidity
+function requestDeposit(uint256 assets, address controller, address owner) {
+    // Stores request under controller's address
+    pendingDepositRequest[controller] += assets;
+}
+```
+
+
+2. When claiming:
+```solidity
+function deposit(uint256 assets, address receiver, address controller) {
+    // Looks up request using same controller address
+    require(claimableDepositRequest[controller] >= assets);
+}
+```
+
+
+As for the number of controllers, there are two common patterns:
+1. Centralized Controller Pattern (~1 controller):
+```
+Controller
+├── Owner1
+├── Owner2
+└── Owner3
+```
+
+- Used when an intermediary (like a protocol) manages deposits
+    More gas efficient for batch operations
+    Simpler to manage
+    But requires trust in the controller
+    Individual Controller Pattern (~N controllers):
+
+2. Individual Controller Pattern (~N controllers):
+```
+Owner1 → Controller1
+Owner2 → Controller2
+Owner3 → Controller3
+```
+
+- Each owner acts as their own controller
+    More decentralized
+    Better for tracking individual requests
+    No trust requirements
+
+
+The AdapterToken implementation uses the centralized pattern approach:
+
+```solidity
+if (msg.sender != address($.externalContract)) {
+    revert Unauthorized(msg.sender, address($.externalContract));
+}
+```
+
+
 ## Deployment
 
 Example deployment script for pUSD:
