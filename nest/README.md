@@ -197,20 +197,20 @@ function convertToAssets(uint256 shares) returns (uint256) {
 
 The AggregateToken essentially provides a way to create managed portfolios of ComponentTokens with controlled entry/exit prices.
 
-
-1. Controllers in Practice:
+#### Controller Patterns
+##### 1. Controllers in Practice:
 
 You can have multiple patterns:
 
-Pattern 1: 1 Controller for Many Owners
+###### Pattern 1: 1 Controller for Many Owners
 ```
   Controller1 -> [Owner1, Owner2, Owner3...]
 ```
-  - Good for batching operations
-  - Simpler management
-  - Used when a central service manages deposits/redeems
+- Good for batching operations
+- Simpler management
+- Used when a central service manages deposits/redeems
 
-Pattern 2: 1:1 Controller to Owner
+###### Pattern 2: 1:1 Controller to Owner
 
 ```
   Controller1 -> Owner1
@@ -221,7 +221,7 @@ Pattern 2: 1:1 Controller to Owner
   - More granular control
   - Each owner manages their own operations
 
-2. Batching Strategy for Slippage Protection:
+#### Batching Strategy for Slippage Protection:
 
 ```solidity
 struct Batch {
