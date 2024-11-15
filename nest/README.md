@@ -338,10 +338,10 @@ Controller
 ```
 
 - Used when an intermediary (like a protocol) manages deposits
-    More gas efficient for batch operations
-    Simpler to manage
-    But requires trust in the controller
-    Individual Controller Pattern (~N controllers):
+- More gas efficient for batch operations
+- Simpler to manage
+- But requires trust in the controller
+
 
 2. Individual Controller Pattern (~N controllers):
 ```
@@ -351,9 +351,9 @@ Owner3 → Controller3
 ```
 
 - Each owner acts as their own controller
-    More decentralized
-    Better for tracking individual requests
-    No trust requirements
+- More decentralized
+- Better for tracking individual requests
+- No trust requirements
 
 
 The AdapterToken implementation uses the centralized pattern approach:
