@@ -7,15 +7,16 @@ import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
 
 import { AggregateToken } from "../src/AggregateToken.sol";
-import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
+
 import { IComponentToken } from "../src/interfaces/IComponentToken.sol";
+import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
 
 contract UpgradeNestContracts is Script, Test {
 
-   address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
+    address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     UUPSUpgradeable private constant AGGREGATE_TOKEN_PROXY =
         UUPSUpgradeable(payable(0x659619AEdf381c3739B0375082C2d61eC1fD8835));
-    
+
     // Add the component token addresses
     address private constant ASSET_TOKEN = 0xF66DFD0A9304D3D6ba76Ac578c31C84Dc0bd4A00;
 
@@ -54,7 +55,7 @@ contract UpgradeNestContracts is Script, Test {
         // Verify the component tokens are in the list
         IComponentToken[] memory tokens = aggregateToken.getComponentTokenList();
         console2.log("Number of component tokens:", tokens.length);
-        for (uint i = 0; i < tokens.length; i++) {
+        for (uint256 i = 0; i < tokens.length; i++) {
             console2.log("Component token", i, ":", address(tokens[i]));
         }
     }

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.25;
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
@@ -59,6 +58,7 @@ contract pUSD is
         uint8 tokenDecimals;
         string tokenName;
         string tokenSymbol;
+        uint256 version;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.pUSD")) - 1)) & ~bytes32(uint256(0xff))
@@ -73,9 +73,11 @@ contract pUSD is
 
     // ========== EVENTS ==========
     event VaultChanged(address oldVault, address newVault);
+    event Reinitialized(uint256 version);
 
     // ========== ROLES ==========
     bytes32 public constant VAULT_ADMIN_ROLE = keccak256("VAULT_ADMIN_ROLE");
+    //bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     /**
      * @notice Prevent the implementation contract from being initialized or reinitialized
@@ -103,13 +105,40 @@ contract pUSD is
             revert InvalidAsset();
         }
 
-        super.initialize(owner, "Plume USD", "pUSD", asset_, false, false);
+        __UUPSUpgradeable_init(); // Add this line
+        __AccessControl_init(); // Add this line
+        __ERC20_init("Plume USD", "pUSD");
         __ReentrancyGuard_init();
+
+        super.initialize(owner, "Plume USD", "pUSD", asset_, false, false);
 
         pUSDStorage storage $ = _getpUSDStorage();
         $.vault = IVault(vault_);
+        $.version = 1; // Set initial version
 
         _grantRole(VAULT_ADMIN_ROLE, owner);
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(UPGRADER_ROLE, owner); // Grant upgrader role to owner
+    }
+
+    function reinitialize(address owner, IERC20 asset_, address vault_) public onlyRole(UPGRADER_ROLE) {
+        pUSDStorage storage $ = _getpUSDStorage();
+
+        // Increment version
+        $.version += 1;
+
+        // Reinitialize as needed
+        require(owner != address(0), "Zero address owner");
+        require(address(asset_) != address(0), "Zero address asset");
+        require(vault_ != address(0), "Zero address vault");
+
+        $.vault = IVault(vault_);
+
+        _grantRole(VAULT_ADMIN_ROLE, owner);
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(UPGRADER_ROLE, owner);
+
+        emit Reinitialized($.version);
     }
 
     // ========== ADMIN FUNCTIONS ==========
@@ -125,7 +154,6 @@ contract pUSD is
             revert InvalidVault();
         }
 
- 
         // Validate teller interface support
         // TODO: this should rather validate some function in the vault contract.
         try ITeller(newVault).isPaused() returns (bool) { }
@@ -147,6 +175,14 @@ contract pUSD is
      */
     function vault() external view returns (address) {
         return address(_getpUSDStorage().vault);
+    }
+
+    /**
+     * @notice Get the current pUSD version
+     * @return uint256 version of the pUSD contract
+     */
+    function version() public view returns (uint256) {
+        return _getpUSDStorage().version;
     }
 
     // ========== COMPONENT TOKEN INTEGRATION ==========
@@ -321,6 +357,17 @@ contract pUSD is
     ) public view virtual override(AccessControlUpgradeable, ComponentToken) returns (bool) {
         return interfaceId == type(IERC20).interfaceId || interfaceId == type(IAccessControl).interfaceId
             || super.supportsInterface(interfaceId);
+    }
+
+    /**
+     * @notice Internal function to authorize an upgrade to a new implementation
+     * @dev Only callable by addresses with UPGRADER_ROLE
+     * @param newImplementation Address of the new implementation contract
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override(ComponentToken, UUPSUpgradeable) onlyRole(UPGRADER_ROLE) {
+        super._authorizeUpgrade(newImplementation); // Call ComponentToken's checks
     }
 
 }

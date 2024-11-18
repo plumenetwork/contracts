@@ -6,6 +6,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 
+import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
 import { pUSD } from "../src/token/pUSD.sol";
 
 contract DeploypUSD is Script {

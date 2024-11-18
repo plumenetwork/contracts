@@ -176,7 +176,7 @@ abstract contract ComponentToken is
      */
     function _authorizeUpgrade(
         address newImplementation
-    ) internal override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
+    ) internal virtual override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
 
     /// @inheritdoc IERC165
     function supportsInterface(
