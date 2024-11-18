@@ -9,7 +9,10 @@ import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC2
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
+
+import { ITeller } from "../interfaces/ITeller.sol";
 import { IVault } from "../interfaces/IVault.sol";
+
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
@@ -39,10 +42,14 @@ contract pUSD is
 
     // ========== ERRORS ==========
     error ZeroAddress();
+
     error InvalidAsset();
     error InvalidReceiver();
     error InvalidController();
     error InvalidVault();
+
+    error AssetNotSupported();
+    error TellerPaused();
 
     // ========== STORAGE ==========
     /// @custom:storage-location erc7201:plume.storage.pUSD
@@ -118,8 +125,10 @@ contract pUSD is
             revert InvalidVault();
         }
 
-        // Validate vault interface support
-        try IVault(newVault).balanceOf(address(this)) returns (uint256) { }
+ 
+        // Validate teller interface support
+        // TODO: this should rather validate some function in the vault contract.
+        try ITeller(newVault).isPaused() returns (bool) { }
         catch {
             revert InvalidVault();
         }
@@ -158,21 +167,25 @@ contract pUSD is
             revert InvalidReceiver();
         }
 
+        ITeller teller = ITeller(address(_getpUSDStorage().vault));
+
+        // Verify deposit is allowed through teller
+        if (teller.isPaused()) {
+            revert TellerPaused();
+        }
+        if (!teller.isSupported(IERC20(asset()))) {
+            revert AssetNotSupported();
+        }
+
         // Calculate shares to mint
         shares = previewDeposit(assets);
 
-        // Get asset token
+        // Approve teller to spend assets
         IERC20 assetToken = IERC20(asset());
+        assetToken.safeIncreaseAllowance(address(teller), assets);
 
-        // Transfer assets from depositor using safeTransferFrom
-        assetToken.safeTransferFrom(msg.sender, address(this), assets);
-
-        // Mint shares to receiver
-        _mint(receiver, shares);
-
-        // Use safeIncreaseAllowance
-        assetToken.safeIncreaseAllowance(address(_getpUSDStorage().vault), assets);
-        _getpUSDStorage().vault.enter(address(this), address(asset()), assets, receiver, shares);
+        // Deposit through teller
+        shares = teller.deposit(IERC20(asset()), assets, shares);
 
         emit Deposit(msg.sender, receiver, assets, shares);
     }
@@ -196,20 +209,13 @@ contract pUSD is
             revert InvalidController();
         }
 
-        // Calculate the assets amount using previewRedeem
+        // Calculate expected assets
         assets = previewRedeem(shares);
 
-        // Check that the controller has enough shares
-        require(_getpUSDStorage().vault.balanceOf(controller) >= shares, "ERC20: insufficient balance");
+        ITeller teller = ITeller(address(_getpUSDStorage().vault));
 
-        // Handle the share burning before vault exit
-        if (controller != msg.sender) {
-            _spendAllowance(controller, msg.sender, shares);
-        }
-        _burn(controller, shares);
-
-        // Get assets from vault and send directly to receiver
-        _getpUSDStorage().vault.exit(receiver, address(asset()), assets, controller, shares);
+        // Use teller's bulkWithdraw for redemption
+        assets = teller.bulkWithdraw(IERC20(asset()), shares, assets, receiver);
 
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
