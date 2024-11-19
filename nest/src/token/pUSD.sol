@@ -12,6 +12,8 @@ import { IComponentToken } from "../interfaces/IComponentToken.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
 import { IVault } from "../interfaces/IVault.sol";
 
+import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
+
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
@@ -55,6 +57,7 @@ contract pUSD is
 
     struct pUSDStorage {
         IVault vault;
+        IAtomicQueue atomicqueue;
         uint8 tokenDecimals;
         string tokenName;
         string tokenSymbol;
@@ -92,6 +95,7 @@ contract pUSD is
      * @param owner Address of the owner of pUSD
      * @param asset_ Address of the underlying asset
      * @param vault_ Address of the Boring Vault
+     * @param atomicqueue_ Address of the AtomicQueue
      */
     //
     function initialize(address owner, IERC20 asset_, address vault_) public initializer {
@@ -114,6 +118,7 @@ contract pUSD is
 
         pUSDStorage storage $ = _getpUSDStorage();
         $.vault = IVault(vault_);
+        $.atomicqueue = IAtomicQueue(atomicqueue_);
         $.version = 1; // Set initial version
 
         _grantRole(VAULT_ADMIN_ROLE, owner);
@@ -133,6 +138,7 @@ contract pUSD is
         require(vault_ != address(0), "Zero address vault");
 
         $.vault = IVault(vault_);
+        $.atomicqueue = IAtomicQueue(atomicqueue_);
 
         _grantRole(VAULT_ADMIN_ROLE, owner);
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
@@ -197,7 +203,8 @@ contract pUSD is
     function deposit(
         uint256 assets,
         address receiver,
-        address controller
+        address controller,
+        uint256 minimumMint
     ) public virtual override nonReentrant returns (uint256 shares) {
         if (receiver == address(0)) {
             revert InvalidReceiver();
@@ -213,15 +220,19 @@ contract pUSD is
             revert AssetNotSupported();
         }
 
-        // Calculate shares to mint
-        shares = previewDeposit(assets);
-
         // Approve teller to spend assets
         IERC20 assetToken = IERC20(asset());
         assetToken.safeIncreaseAllowance(address(teller), assets);
 
-        // Deposit through teller
-        shares = teller.deposit(IERC20(asset()), assets, shares);
+        // Deposit through teller - using minimumMint of 0 since we already calculated shares
+        shares = teller.deposit(
+            ERC20(asset()), // depositAsset
+            assets, // depositAmount
+            minimumMint // minimumMint - for slippage protection
+        );
+
+        // Transfer shares from this contract to the receiver
+        IERC20(address(this)).safeTransfer(receiver, shares);
 
         emit Deposit(msg.sender, receiver, assets, shares);
     }
@@ -236,7 +247,8 @@ contract pUSD is
     function redeem(
         uint256 shares,
         address receiver,
-        address controller
+        address controller,
+        uint256 price
     ) public virtual override nonReentrant returns (uint256 assets) {
         if (receiver == address(0)) {
             revert InvalidReceiver();
@@ -245,13 +257,29 @@ contract pUSD is
             revert InvalidController();
         }
 
-        // Calculate expected assets
-        assets = previewRedeem(shares);
+        // Get AtomicQueue from storage
+        IAtomicQueue queue = _getpUSDStorage().atomicqueue;
 
-        ITeller teller = ITeller(address(_getpUSDStorage().vault));
+        // Create AtomicRequest struct
+        IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
+            deadline: uint64(block.timestamp + 1 hours), // deadline to fulfill request
+            atomicPrice: uint88(price), // In terms of want asset decimals
+            offerAmount: uint96(shares), // The amount of offer asset the user wants to sell.
+            inSolve: false
+        });
 
-        // Use teller's bulkWithdraw for redemption
-        assets = teller.bulkWithdraw(IERC20(asset()), shares, assets, receiver);
+        IERC20(address(this)).safeIncreaseAllowance(address(queue), shares);
+
+        // Update atomic request
+        queue.updateAtomicRequest(
+            ERC20(address(this)), // offer token (pUSD shares)
+            ERC20(asset()), // want token (underlying asset)
+            request
+        );
+
+        // Get assets received from vault and transfer to receiver
+        assets = IERC20(asset()).balanceOf(address(this));
+        IERC20(asset()).safeTransfer(receiver, assets);
 
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }

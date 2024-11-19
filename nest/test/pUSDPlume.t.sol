@@ -42,43 +42,45 @@ contract pUSDPlumeTest is Test {
     // Constants for deployed contracts
     address constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
     address constant VAULT_ADDRESS = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
-    address constant PUSD_PROXY = 0xF66DFD0A9304D3D6ba76Ac578c31C84Dc0bd4A00;
+    address constant ATOMIC_QUEUE_ADDRESS = 0x9fEcc2dFA8B64c27B42757B0B9F725fe881Ddb2a;
+
+    address constant PUSD_PROXY = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
 
     event VaultChanged(IERC4626 indexed oldVault, IERC4626 indexed newVault);
 
+    function setUp() public {
+        // Fork Plume testnet
+        string memory PLUME_RPC = vm.envString("PLUME_RPC_URL");
+        vm.createSelectFork(PLUME_RPC);
 
-function setUp() public {
-    // Fork Plume testnet
-    string memory PLUME_RPC = vm.envString("PLUME_RPC_URL");
-    vm.createSelectFork(PLUME_RPC);
+        // Setup accounts using the private key
+        uint256 privateKey = 0xf1906c3250e18e8036273019f2d6d4d5107404b84753068fe8fb170674461f1b;
+        owner = vm.addr(privateKey);
+        user1 = vm.addr(privateKey);
+        user2 = address(0x2);
 
-    // Setup accounts using the private key
-    uint256 privateKey = 0xf1906c3250e18e8036273019f2d6d4d5107404b84753068fe8fb170674461f1b;
-    owner = vm.addr(privateKey);
-    user1 = vm.addr(privateKey);
-    user2 = address(0x2);
+        // Set the default signer for all transactions
+        vm.startPrank(owner, owner);
 
-    // Set the default signer for all transactions
-    vm.startPrank(owner, owner);
+        // Connect to deployed contracts
+        token = pUSD(PUSD_PROXY);
+        asset = IERC20(USDC_ADDRESS);
+        vault = IERC4626(VAULT_ADDRESS);
+        atomicQueue = IAtomicQueue(ATOMIC_QUEUE_ADDRESS);
 
-    // Connect to deployed contracts
-    token = pUSD(PUSD_PROXY);
-    asset = IERC20(USDC_ADDRESS);
-    vault = IERC4626(VAULT_ADDRESS);
+        // No need to deal USDC if the account already has balance
+        // But we still need the approval
+        asset.approve(address(token), type(uint256).max);
 
-    // No need to deal USDC if the account already has balance
-    // But we still need the approval
-    asset.approve(address(token), type(uint256).max);
+        vm.stopPrank();
+    }
 
-    vm.stopPrank();
-}
-
-  
     function testDeposit() public {
         uint256 depositAmount = 1e6;
+        uint256 minimumMint = depositAmount; // 1:1 ratio expected
 
         vm.startPrank(user1);
-        uint256 shares = token.deposit(depositAmount, user1, user1);
+        uint256 shares = token.deposit(depositAmount, user1, user1, minimumMint);
         vm.stopPrank();
 
         assertEq(shares, depositAmount); // Assuming 1:1 ratio
@@ -89,13 +91,15 @@ function setUp() public {
 
     function testRedeem() public {
         uint256 depositAmount = 1e6;
+        uint256 price = 1e6; // 1:1 price
+        uint256 minimumMint = depositAmount;
 
         // Check initial balance
         uint256 initialBalance = asset.balanceOf(user1);
 
         vm.startPrank(user1);
-        token.deposit(depositAmount, user1, user1);
-        token.redeem(depositAmount, user1, user1);
+        token.deposit(depositAmount, user1, user1, minimumMint);
+        token.redeem(depositAmount, user1, user1, price);
         vm.stopPrank();
 
         assertEq(token.balanceOf(user1), 0);
@@ -183,7 +187,7 @@ function setUp() public {
         assertEq(vault.balanceOf(user2), amount);
         assertEq(asset.balanceOf(address(vault)), amount);
     }
-/*
+    /*
     function testSetVault() public {
         // Create a new vault (you might want to deploy a new vault or use another existing one)
         address newVaultAddr = address(0x123); // Replace with actual vault address if testing vault changes
@@ -207,7 +211,8 @@ function setUp() public {
         token.setVault(newVaultAddr);
         assertEq(address(token.vault()), newVaultAddr);
     }
-*/
+    */
+
     function testVault() public {
         // Verify the vault address matches what we set in setUp
         assertEq(address(token.vault()), address(vault));
