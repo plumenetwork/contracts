@@ -25,4 +25,5 @@ wrap_comments = true
 remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/",
   "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+  "@solmate/=lib/solmate/src/",
 ]

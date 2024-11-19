@@ -38,6 +38,7 @@ contract DeployNestContracts is Script, Test {
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     address private constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
     address private constant VAULT_ADDRESS = 0x52805adf7b3d25c013eDa66eF32b53d1696f809C;
+    address private constant ATOMIC_QUEUE = 0x9fEcc2dFA8B64c27B42757B0B9F725fe881Ddb2a; // Add your atomic queue address here
 
     function test() public { }
 
@@ -54,7 +55,8 @@ contract DeployNestContracts is Script, Test {
                 (
                     NEST_ADMIN_ADDRESS, // owner
                     IERC20(USDC_ADDRESS), // asset token
-                    VAULT_ADDRESS // vault address
+                    VAULT_ADDRESS, // vault address
+                    ATOMIC_QUEUE // vault address
                 )
             )
         );

@@ -5,6 +5,7 @@ import { MockVault } from "../src/mocks/MockVault.sol";
 import { pUSD } from "../src/token/pUSD.sol";
 
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
+import { IAtomicQueue } from "../src/interfaces/IAtomicQueue.sol";
 
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -66,7 +67,7 @@ contract pUSDPlumeTest is Test {
         token = pUSD(PUSD_PROXY);
         asset = IERC20(USDC_ADDRESS);
         vault = IERC4626(VAULT_ADDRESS);
-        atomicQueue = IAtomicQueue(ATOMIC_QUEUE_ADDRESS);
+        IAtomicQueue atomicQueue = IAtomicQueue(ATOMIC_QUEUE_ADDRESS);
 
         // No need to deal USDC if the account already has balance
         // But we still need the approval
