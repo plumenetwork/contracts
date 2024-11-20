@@ -4,7 +4,9 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import { SafeTransferLib } from "@solmate/utils/SafeTransferLib.sol";
 
@@ -14,6 +16,9 @@ interface IVault {
     function exit(address to, address asset, uint256 assetAmount, address from, uint256 shareAmount) external;
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function approve(address spender, uint256 amount) external returns (bool);
+    function balanceOf(
+        address account
+    ) external view returns (uint256);
 
 }
 
@@ -22,7 +27,7 @@ interface IVault {
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Unified Plume USD stablecoin
  */
-contract PUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable {
+contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable {
 
     using SafeTransferLib for ERC20;
 
