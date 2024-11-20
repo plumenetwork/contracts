@@ -5,9 +5,9 @@ import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/ac
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import { ERC20 } from "@solmate/tokens/ERC20.sol";
 
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
 
@@ -25,12 +25,15 @@ import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/
 import { ComponentToken } from "../ComponentToken.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+
+// TODO: REMOVE in production
+import "forge-std/console2.sol";
+
 /**
  * @title pUSD
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Unified Plume USD stablecoin
  */
-
 contract pUSD is
     Initializable,
     ERC20Upgradeable,
@@ -48,6 +51,7 @@ contract pUSD is
 
     error InvalidAsset();
     error InvalidReceiver();
+    error InvalidSender();
     error InvalidController();
     error InvalidVault();
 
@@ -100,11 +104,11 @@ contract pUSD is
      * @param atomicqueue_ Address of the AtomicQueue
      */
     //
-    function initialize(address owner, IERC20 asset_, address vault_,    address atomicqueue_) public initializer {
+    function initialize(address owner, IERC20 asset_, address vault_, address atomicqueue_) public initializer {
         require(owner != address(0), "Zero address owner");
         require(address(asset_) != address(0), "Zero address asset");
         require(vault_ != address(0), "Zero address vault");
-    require(atomicqueue_ != address(0), "Zero address atomicqueue");
+        require(atomicqueue_ != address(0), "Zero address atomicqueue");
 
         // Validate asset interface support
         try IERC20Metadata(address(asset_)).decimals() returns (uint8) { }
@@ -129,7 +133,12 @@ contract pUSD is
         _grantRole(UPGRADER_ROLE, owner); // Grant upgrader role to owner
     }
 
-    function reinitialize(address owner, IERC20 asset_, address vault_,    address atomicqueue_) public onlyRole(UPGRADER_ROLE) {
+    function reinitialize(
+        address owner,
+        IERC20 asset_,
+        address vault_,
+        address atomicqueue_
+    ) public onlyRole(UPGRADER_ROLE) {
         pUSDStorage storage $ = _getpUSDStorage();
 
         // Increment version
@@ -203,17 +212,23 @@ contract pUSD is
      * @param controller Address that will control the shares (unused in this implementation)
      * @return shares Amount of shares minted
      */
+    // ... existing code ...
+
     function deposit(
         uint256 assets,
         address receiver,
         address controller,
         uint256 minimumMint
-    ) public virtual  nonReentrant returns (uint256 shares) {
+    ) public virtual nonReentrant returns (uint256 shares) {
         if (receiver == address(0)) {
             revert InvalidReceiver();
         }
 
         ITeller teller = ITeller(address(_getpUSDStorage().vault));
+
+        // Add debug logs
+        console2.log("Asset balance before approval:", IERC20(asset()).balanceOf(msg.sender));
+        console2.log("Asset allowance before approval:", IERC20(asset()).allowance(msg.sender, address(teller)));
 
         // Verify deposit is allowed through teller
         if (teller.isPaused()) {
@@ -223,21 +238,26 @@ contract pUSD is
             revert AssetNotSupported();
         }
 
-        // Approve teller to spend assets
-        IERC20 assetToken = IERC20(asset());
-        assetToken.safeIncreaseAllowance(address(teller), assets);
+        // Transfer assets from sender to this contract first
+        SafeERC20.safeTransferFrom(IERC20(asset()), msg.sender, address(this), assets);
 
-        // Deposit through teller - using minimumMint of 0 since we already calculated shares
+        // Then approve teller to spend assets using forceApprove
+        SafeERC20.forceApprove(IERC20(asset()), address(teller), assets);
+        // Add debug log
+        console2.log("About to call teller.deposit");
+        console2.log("vault_address", address(_getpUSDStorage().vault));
+
+        // Deposit through teller
         shares = teller.deposit(
             IERC20(asset()), // depositAsset
             assets, // depositAmount
-            minimumMint // minimumMint - for slippage protection
+            minimumMint // minimumMint
         );
-
-        // Transfer shares from this contract to the receiver
-        IERC20(address(this)).safeTransfer(receiver, shares);
+        // Transfer shares to receiver
+        _mint(receiver, shares);
 
         emit Deposit(msg.sender, receiver, assets, shares);
+        return shares;
     }
 
     /**
@@ -252,7 +272,7 @@ contract pUSD is
         address receiver,
         address controller,
         uint256 price
-    ) public virtual  nonReentrant returns (uint256 assets) {
+    ) public virtual nonReentrant returns (uint256 assets) {
         if (receiver == address(0)) {
             revert InvalidReceiver();
         }
@@ -309,12 +329,20 @@ contract pUSD is
      * @param amount Amount of tokens to transfer
      * @return bool indicating whether the transfer was successful
      */
+    /*
     function transfer(
         address to,
         uint256 amount
     ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
         // Since balances are tracked in the vault, we only need to update the vault's records
         return _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
+    }
+    */
+
+    function transfer(address to, uint256 amount) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
+        address owner = _msgSender();
+        _transfer(owner, to, amount);
+        return true;
     }
 
     /**
@@ -324,6 +352,7 @@ contract pUSD is
      * @param amount Amount of tokens to transfer
      * @return bool indicating whether the transfer was successful
      */
+    /*
     function transferFrom(
         address from,
         address to,
@@ -340,7 +369,41 @@ contract pUSD is
         // Delegate the actual transfer to the vault
         return _getpUSDStorage().vault.transferFrom(from, to, amount);
     }
+    */
 
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
+        address spender = _msgSender();
+        _spendAllowance(from, spender, amount);
+        _transfer(from, to, amount);
+        return true;
+    }
+
+    /**
+     * @notice Internal transfer function that delegates to vault
+     * @param from Address to transfer from
+     * @param to Address to transfer to
+     * @param amount Amount to transfer
+     */
+    /*
+    function _transfer(
+        address from,
+        address to,
+        uint256 amount
+    ) internal  override {
+        if (from == address(0)) revert InvalidSender();
+        if (to == address(0)) revert InvalidReceiver();
+        
+        IVault vaultContract = _getpUSDStorage().vault;
+        // Delegate transfer to vault
+        vaultContract.transferFrom(from, to, amount);
+        
+        emit Transfer(from, to, amount);
+    }
+    */
     /**
      * @notice Get the token balance of an account
      * @param account Address to check balance for

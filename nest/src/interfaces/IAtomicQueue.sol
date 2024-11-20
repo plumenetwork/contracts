@@ -102,7 +102,6 @@ interface IAtomicQueue {
 
     function updateAtomicRequest(ERC20 offer, ERC20 want, AtomicRequest memory userRequest) external;
 
-
     // ========================================= SOLVER FUNCTIONS =========================================
 
     function solve(

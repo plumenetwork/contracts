@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { IAtomicQueue } from "../src/interfaces/IAtomicQueue.sol";
 import { MockVault } from "../src/mocks/MockVault.sol";
 import { pUSD } from "../src/token/pUSD.sol";
-import { IAtomicQueue } from "../src/interfaces/IAtomicQueue.sol";
 
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 
@@ -54,7 +54,8 @@ contract pUSDTest is Test {
         // Deploy through proxy
         pUSD impl = new pUSD();
         ERC1967Proxy proxy = new ERC1967Proxy(
-            address(impl), abi.encodeCall(pUSD.initialize, (owner, IERC20(address(asset)), address(vault), address(atomicQueue)))
+            address(impl),
+            abi.encodeCall(pUSD.initialize, (owner, IERC20(address(asset)), address(vault), address(atomicQueue)))
         );
         token = pUSD(address(proxy));
 
