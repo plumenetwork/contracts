@@ -65,12 +65,6 @@ contract MockVault {
         return _balances[account];
     }
 
-    function setBeforeTransferHook(
-        address
-    ) external {
-        // Mock implementation
-    }
-
     function allowance(address owner, address spender) external view returns (uint256) {
         return _allowances[owner][spender];
     }
