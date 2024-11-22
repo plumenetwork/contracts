@@ -197,7 +197,7 @@ contract pUSD is
      * @notice Get the current vault address
      * @return Address of the current vault
      */
-    function vault() external view returns (address) {
+    function getVault() external view returns (address) {
         return address(_getpUSDStorage().boringVault.vault);
     }
 
@@ -205,7 +205,7 @@ contract pUSD is
      * @notice Get the current teller address
      * @return Address of the current teller
      */
-    function teller() external view returns (address) {
+    function getTeller() external view returns (address) {
         return address(_getpUSDStorage().boringVault.teller);
     }
 
@@ -213,7 +213,7 @@ contract pUSD is
      * @notice Get the current AtomicQueue address
      * @return Address of the current AtomicQueue
      */
-    function atomicqueue() external view returns (address) {
+    function getAtomicqueue() external view returns (address) {
         return address(_getpUSDStorage().boringVault.atomicqueue);
     }
 
@@ -244,7 +244,7 @@ contract pUSD is
             revert InvalidReceiver();
         }
 
-        ITeller teller = ITeller(address(_getpUSDStorage().vault));
+        ITeller teller = ITeller(address(_getpUSDStorage().boringVault.teller));
 
         // Verify deposit is allowed through teller
         if (teller.isPaused()) {
@@ -294,7 +294,7 @@ contract pUSD is
         }
 
         // Get AtomicQueue from storage
-        IAtomicQueue queue = _getpUSDStorage().atomicqueue;
+        IAtomicQueue queue = _getpUSDStorage().boringVault.atomicqueue;
 
         // Create AtomicRequest struct
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({

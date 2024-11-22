@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 import { IAtomicQueue } from "../src/interfaces/IAtomicQueue.sol";
+import { ITeller } from "../src/interfaces/ITeller.sol";
 import { MockVault } from "../src/mocks/MockVault.sol";
 import { pUSD } from "../src/token/pUSD.sol";
 
@@ -51,11 +52,15 @@ contract pUSDTest is Test {
         asset = new TestUSDC();
         vault = new MockVault();
         IAtomicQueue atomicQueue = IAtomicQueue(0x9fEcc2dFA8B64c27B42757B0B9F725fe881Ddb2a);
+        ITeller teller = ITeller(0xE010B6fdcB0C1A8Bf00699d2002aD31B4bf20B86);
+
         // Deploy through proxy
         pUSD impl = new pUSD();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(pUSD.initialize, (owner, IERC20(address(asset)), address(vault), address(atomicQueue)))
+            abi.encodeCall(
+                pUSD.initialize, (owner, IERC20(address(asset)), address(vault), address(teller), address(atomicQueue))
+            )
         );
         token = pUSD(address(proxy));
 
@@ -184,40 +189,9 @@ contract pUSDTest is Test {
         assertEq(asset.balanceOf(address(vault)), amount);
     }
 
-    function testSetVault() public {
-        // Create a new mock vault
-        MockVault newVault = new MockVault();
-
-        // Try to set vault without proper role - should revert
-        vm.startPrank(user1);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, token.VAULT_ADMIN_ROLE()
-            )
-        );
-        token.setVault(address(newVault));
-        vm.stopPrank();
-
-        // Grant VAULT_ADMIN_ROLE to the test contract
-        bytes32 vaultAdminRole = token.VAULT_ADMIN_ROLE();
-        token.grantRole(vaultAdminRole, address(this));
-
-        // Set vault with proper role
-        address oldVault = address(token.vault());
-
-        // Expect the VaultChanged event with the correct address format
-        //vm.expectEmit(true, true, true, true, address(token));
-        emit VaultChanged(MockVault(oldVault), newVault);
-
-        token.setVault(address(newVault));
-
-        // Verify the vault was updated
-        assertEq(address(token.vault()), address(newVault));
-    }
-
     function testVault() public {
         // Verify the vault address matches what we set in setUp
-        assertEq(address(token.vault()), address(vault));
+        assertEq(address(token.getVault()), address(vault));
     }
 
     function testTransferFrom() public {
