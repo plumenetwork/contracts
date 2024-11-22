@@ -17,6 +17,7 @@ contract UpgradePUSD is Script, Test {
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     address private constant PUSD_PROXY = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
     address private constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
+
     address private constant VAULT_TOKEN = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
     address private constant ATOMIC_QUEUE = 0x9fEcc2dFA8B64c27B42757B0B9F725fe881Ddb2a;
     address private constant TELLER_ADDRESS = 0xE010B6fdcB0C1A8Bf00699d2002aD31B4bf20B86;
@@ -98,7 +99,7 @@ contract UpgradePUSD is Script, Test {
         );
 
         // Then call reinitialize separately
-        pUSD(PUSD_PROXY).reinitialize(ADMIN_ADDRESS, IERC20(USDC_ADDRESS), TELLER_ADDRESS, ATOMIC_QUEUE);
+        pUSD(PUSD_PROXY).reinitialize(ADMIN_ADDRESS, IERC20(USDC_ADDRESS), VAULT_TOKEN, TELLER_ADDRESS, ATOMIC_QUEUE);
 
         // Verify the upgrade
         uint256 newVersion = pUSD(PUSD_PROXY).version();

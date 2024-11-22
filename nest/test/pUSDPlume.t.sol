@@ -64,7 +64,6 @@ contract pUSDPlumeTest is Test {
         // Set the default signer for all transactions
         vm.startPrank(owner, owner);
 
-
         // Connect to deployed contracts
         token = pUSD(PUSD_PROXY);
         asset = IERC20(USDC_ADDRESS);
@@ -86,7 +85,6 @@ contract pUSDPlumeTest is Test {
         }
         */
 
- 
         vm.stopPrank();
     }
 
@@ -134,39 +132,39 @@ contract pUSDPlumeTest is Test {
         vm.stopPrank();
     }
 
-function testRedeem() public {
-    uint256 depositAmount = 1e6;
-    uint256 price = 1e6; // 1:1 price
-    uint256 minimumMint = depositAmount;
+    function testRedeem() public {
+        uint256 depositAmount = 1e6;
+        uint256 price = 1e6; // 1:1 price
+        uint256 minimumMint = depositAmount;
 
-    // Setup
-    deal(address(asset), user1, depositAmount);
+        // Setup
+        deal(address(asset), user1, depositAmount);
 
-    vm.startPrank(user1);
-    
-    // Approve all necessary contracts
-    asset.approve(address(token), type(uint256).max);
-    asset.approve(address(vault), type(uint256).max);
-    asset.approve(TELLER_ADDRESS, type(uint256).max);
-    
-    // Additional approval needed for the vault to transfer from pUSD
-    vm.stopPrank();
-    vm.startPrank(address(token));
-    asset.approve(address(vault), type(uint256).max);
-    vm.stopPrank();
+        vm.startPrank(user1);
 
-    vm.startPrank(user1);
-    
-    // Perform deposit and redeem
-    token.deposit(depositAmount, user1, user1, minimumMint);
-    token.redeem(depositAmount, user1, user1, price);
-    
-    vm.stopPrank();
+        // Approve all necessary contracts
+        asset.approve(address(token), type(uint256).max);
+        asset.approve(address(vault), type(uint256).max);
+        asset.approve(TELLER_ADDRESS, type(uint256).max);
 
-    // Can't verify final state as its' not implemented
-    //assertEq(token.balanceOf(user1), 0);
-    //assertEq(asset.balanceOf(user1), depositAmount);
-}
+        // Additional approval needed for the vault to transfer from pUSD
+        vm.stopPrank();
+        vm.startPrank(address(token));
+        asset.approve(address(vault), type(uint256).max);
+        vm.stopPrank();
+
+        vm.startPrank(user1);
+
+        // Perform deposit and redeem
+        token.deposit(depositAmount, user1, user1, minimumMint);
+        token.redeem(depositAmount, user1, user1, price);
+
+        vm.stopPrank();
+
+        // Can't verify final state as its' not implemented
+        //assertEq(token.balanceOf(user1), 0);
+        //assertEq(asset.balanceOf(user1), depositAmount);
+    }
     /*
     function testRedeemFrom() public {
         uint256 amount = 1e6;
@@ -224,29 +222,36 @@ function testRedeem() public {
         assertEq(token.allowance(user1, user2), type(uint256).max);
     }
     */
-    /*
+
     function testTransfer() public {
         uint256 amount = 1e6;
-        
+
         // Setup initial balance
         deal(address(asset), user1, amount * 2);
-        
+
+        vm.startPrank(address(token));
+        asset.approve(address(vault), type(uint256).max);
+        asset.approve(TELLER_ADDRESS, type(uint256).max);
+        vm.stopPrank();
+
         vm.startPrank(user1);
-        
+
         // First approve and deposit
         asset.approve(address(token), type(uint256).max);
+        asset.approve(address(vault), type(uint256).max);
+        asset.approve(TELLER_ADDRESS, type(uint256).max);
+
         token.deposit(amount, user1, user1, amount);
-        
+
         // Now test transfer
         uint256 preBalance = token.balanceOf(user1);
         token.transfer(user2, amount);
-        
+
         assertEq(token.balanceOf(user1), preBalance - amount);
         assertEq(token.balanceOf(user2), amount);
-        
+
         vm.stopPrank();
     }
-    */
 
     function testVaultIntegration() public {
         uint256 amount = 1e6;

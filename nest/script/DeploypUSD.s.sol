@@ -13,9 +13,10 @@ contract DeploypUSD is Script {
 
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     address private constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
+
     address private constant VAULT_TOKEN = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
-    address private constant ATOMIC_QUEUE = 0x9fEcc2dFA8B64c27B42757B0B9F725fe881Ddb2a; // Add your atomic queue address
-        // here
+    address private constant ATOMIC_QUEUE = 0x9fEcc2dFA8B64c27B42757B0B9F725fe881Ddb2a;
+    address private constant TELLER_ADDRESS = 0xE010B6fdcB0C1A8Bf00699d2002aD31B4bf20B86;
 
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
@@ -28,13 +29,7 @@ contract DeploypUSD is Script {
         ERC1967Proxy pUSDProxyContract = new ERC1967Proxy(
             address(pUSDToken),
             abi.encodeCall(
-                pUSD.initialize,
-                (
-                    NEST_ADMIN_ADDRESS, // owner
-                    IERC20(USDC_ADDRESS), // asset token (USDC)
-                    VAULT_TOKEN, // vault token address
-                    ATOMIC_QUEUE // atomic queue address
-                )
+                pUSD.initialize, (NEST_ADMIN_ADDRESS, IERC20(USDC_ADDRESS), VAULT_TOKEN, TELLER_ADDRESS, ATOMIC_QUEUE)
             )
         );
         console2.log("pUSD proxy deployed to:", address(pUSDProxyContract));

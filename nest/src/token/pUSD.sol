@@ -11,10 +11,9 @@ import { ERC20 } from "@solmate/tokens/ERC20.sol";
 
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
 
+import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
 import { IVault } from "../interfaces/IVault.sol";
-
-import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
 
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -59,11 +58,16 @@ contract pUSD is
     error TellerPaused();
 
     // ========== STORAGE ==========
-    /// @custom:storage-location erc7201:plume.storage.pUSD
 
-    struct pUSDStorage {
+    struct BoringVault {
+        ITeller teller;
         IVault vault;
         IAtomicQueue atomicqueue;
+    }
+
+    /// @custom:storage-location erc7201:plume.storage.pUSD
+    struct pUSDStorage {
+        BoringVault boringVault;
         uint8 tokenDecimals;
         string tokenName;
         string tokenSymbol;
@@ -86,7 +90,6 @@ contract pUSD is
 
     // ========== ROLES ==========
     bytes32 public constant VAULT_ADMIN_ROLE = keccak256("VAULT_ADMIN_ROLE");
-    //bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     /**
      * @notice Prevent the implementation contract from being initialized or reinitialized
@@ -104,11 +107,19 @@ contract pUSD is
      * @param atomicqueue_ Address of the AtomicQueue
      */
     //
-    function initialize(address owner, IERC20 asset_, address vault_, address atomicqueue_) public initializer {
+    function initialize(
+        address owner,
+        IERC20 asset_,
+        address vault_,
+        address teller_,
+        address atomicqueue_
+    ) public initializer {
         require(owner != address(0), "Zero address owner");
         require(address(asset_) != address(0), "Zero address asset");
+
         require(vault_ != address(0), "Zero address vault");
-        require(atomicqueue_ != address(0), "Zero address atomicqueue");
+        require(teller_ != address(0), "Zero address teller");
+        require(atomicqueue_ != address(0), "Zero address AtomicQueue");
 
         // Validate asset interface support
         try IERC20Metadata(address(asset_)).decimals() returns (uint8) { }
@@ -124,8 +135,12 @@ contract pUSD is
         super.initialize(owner, "Plume USD", "pUSD", asset_, false, false);
 
         pUSDStorage storage $ = _getpUSDStorage();
-        $.vault = IVault(vault_);
-        $.atomicqueue = IAtomicQueue(atomicqueue_);
+        $.boringVault.teller = ITeller(teller_);
+        $.boringVault.vault = IVault(vault_);
+        $.boringVault.atomicqueue = IAtomicQueue(atomicqueue_);
+
+        //$.vault = IVault(vault_);
+        //$.atomicqueue = IAtomicQueue(atomicqueue_);
         $.version = 1; // Set initial version
 
         _grantRole(VAULT_ADMIN_ROLE, owner);
@@ -137,20 +152,24 @@ contract pUSD is
         address owner,
         IERC20 asset_,
         address vault_,
+        address teller_,
         address atomicqueue_
     ) public onlyRole(UPGRADER_ROLE) {
+        // Reinitialize as needed
+        require(owner != address(0), "Zero address owner");
+        require(address(asset_) != address(0), "Zero address asset");
+
+        require(vault_ != address(0), "Zero address vault");
+        require(teller_ != address(0), "Zero address teller");
+        require(atomicqueue_ != address(0), "Zero address AtomicQueue");
+
         pUSDStorage storage $ = _getpUSDStorage();
 
         // Increment version
         $.version += 1;
-
-        // Reinitialize as needed
-        require(owner != address(0), "Zero address owner");
-        require(address(asset_) != address(0), "Zero address asset");
-        require(vault_ != address(0), "Zero address vault");
-
-        $.vault = IVault(vault_);
-        $.atomicqueue = IAtomicQueue(atomicqueue_);
+        $.boringVault.teller = ITeller(teller_);
+        $.boringVault.vault = IVault(vault_);
+        $.boringVault.atomicqueue = IAtomicQueue(atomicqueue_);
 
         _grantRole(VAULT_ADMIN_ROLE, owner);
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
@@ -162,27 +181,14 @@ contract pUSD is
     // ========== ADMIN FUNCTIONS ==========
 
     /**
-     * @notice Set a new vault address for the pUSD token
-     * @param newVault Address of the new vault to be set
+     * @notice Internal function to authorize an upgrade to a new implementation
+     * @dev Only callable by addresses with UPGRADER_ROLE
+     * @param newImplementation Address of the new implementation contract
      */
-    function setVault(
-        address newVault
-    ) external nonReentrant onlyRole(VAULT_ADMIN_ROLE) {
-        if (newVault == address(0)) {
-            revert InvalidVault();
-        }
-
-        // Validate teller interface support
-        // TODO: this should rather validate some function in the vault contract.
-        try ITeller(newVault).isPaused() returns (bool) { }
-        catch {
-            revert InvalidVault();
-        }
-
-        pUSDStorage storage $ = _getpUSDStorage();
-        address oldVault = address($.vault);
-        $.vault = IVault(newVault);
-        emit VaultChanged(oldVault, newVault);
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override(ComponentToken, UUPSUpgradeable) onlyRole(UPGRADER_ROLE) {
+        super._authorizeUpgrade(newImplementation); // Call ComponentToken's checks
     }
 
     // ========== VIEW FUNCTIONS ==========
@@ -192,7 +198,23 @@ contract pUSD is
      * @return Address of the current vault
      */
     function vault() external view returns (address) {
-        return address(_getpUSDStorage().vault);
+        return address(_getpUSDStorage().boringVault.vault);
+    }
+
+    /**
+     * @notice Get the current teller address
+     * @return Address of the current teller
+     */
+    function teller() external view returns (address) {
+        return address(_getpUSDStorage().boringVault.teller);
+    }
+
+    /**
+     * @notice Get the current AtomicQueue address
+     * @return Address of the current AtomicQueue
+     */
+    function atomicqueue() external view returns (address) {
+        return address(_getpUSDStorage().boringVault.atomicqueue);
     }
 
     /**
@@ -212,8 +234,6 @@ contract pUSD is
      * @param controller Address that will control the shares (unused in this implementation)
      * @return shares Amount of shares minted
      */
-    // ... existing code ...
-
     function deposit(
         uint256 assets,
         address receiver,
@@ -225,10 +245,6 @@ contract pUSD is
         }
 
         ITeller teller = ITeller(address(_getpUSDStorage().vault));
-
-        // Add debug logs
-        console2.log("Asset balance before approval:", IERC20(asset()).balanceOf(msg.sender));
-        console2.log("Asset allowance before approval:", IERC20(asset()).allowance(msg.sender, address(teller)));
 
         // Verify deposit is allowed through teller
         if (teller.isPaused()) {
@@ -243,9 +259,6 @@ contract pUSD is
 
         // Then approve teller to spend assets using forceApprove
         SafeERC20.forceApprove(IERC20(asset()), address(teller), assets);
-        // Add debug log
-        console2.log("About to call teller.deposit");
-        console2.log("vault_address", address(_getpUSDStorage().vault));
 
         // Deposit through teller
         shares = teller.deposit(
@@ -329,16 +342,6 @@ contract pUSD is
      * @param amount Amount of tokens to transfer
      * @return bool indicating whether the transfer was successful
      */
-    /*
-    function transfer(
-        address to,
-        uint256 amount
-    ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
-        // Since balances are tracked in the vault, we only need to update the vault's records
-        return _getpUSDStorage().vault.transferFrom(msg.sender, to, amount);
-    }
-    */
-
     function transfer(address to, uint256 amount) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
         address owner = _msgSender();
         _transfer(owner, to, amount);
@@ -352,25 +355,6 @@ contract pUSD is
      * @param amount Amount of tokens to transfer
      * @return bool indicating whether the transfer was successful
      */
-    /*
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
-        require(from != address(0), "ERC20: transfer from zero address");
-        require(to != address(0), "ERC20: transfer to zero address");
-
-        // Handle allowance using OpenZeppelin's ERC20 spending mechanism
-        if (from != msg.sender) {
-            _spendAllowance(from, msg.sender, amount);
-        }
-
-        // Delegate the actual transfer to the vault
-        return _getpUSDStorage().vault.transferFrom(from, to, amount);
-    }
-    */
-
     function transferFrom(
         address from,
         address to,
@@ -383,28 +367,6 @@ contract pUSD is
     }
 
     /**
-     * @notice Internal transfer function that delegates to vault
-     * @param from Address to transfer from
-     * @param to Address to transfer to
-     * @param amount Amount to transfer
-     */
-    /*
-    function _transfer(
-        address from,
-        address to,
-        uint256 amount
-    ) internal  override {
-        if (from == address(0)) revert InvalidSender();
-        if (to == address(0)) revert InvalidReceiver();
-        
-        IVault vaultContract = _getpUSDStorage().vault;
-        // Delegate transfer to vault
-        vaultContract.transferFrom(from, to, amount);
-        
-        emit Transfer(from, to, amount);
-    }
-    */
-    /**
      * @notice Get the token balance of an account
      * @param account Address to check balance for
      * @return Balance of the account
@@ -412,7 +374,7 @@ contract pUSD is
     function balanceOf(
         address account
     ) public view override(IERC20, ERC20Upgradeable) returns (uint256) {
-        return _getpUSDStorage().vault.balanceOf(account);
+        return super.balanceOf(account);
     }
 
     // ========== METADATA OVERRIDES ==========
@@ -451,17 +413,6 @@ contract pUSD is
     ) public view virtual override(AccessControlUpgradeable, ComponentToken) returns (bool) {
         return interfaceId == type(IERC20).interfaceId || interfaceId == type(IAccessControl).interfaceId
             || super.supportsInterface(interfaceId);
-    }
-
-    /**
-     * @notice Internal function to authorize an upgrade to a new implementation
-     * @dev Only callable by addresses with UPGRADER_ROLE
-     * @param newImplementation Address of the new implementation contract
-     */
-    function _authorizeUpgrade(
-        address newImplementation
-    ) internal override(ComponentToken, UUPSUpgradeable) onlyRole(UPGRADER_ROLE) {
-        super._authorizeUpgrade(newImplementation); // Call ComponentToken's checks
     }
 
 }
