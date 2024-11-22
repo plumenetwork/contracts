@@ -14,22 +14,6 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Test } from "forge-std/Test.sol";
 import { console } from "forge-std/console.sol";
 
-contract TestUSDC is ERC20 {
-
-    constructor() ERC20("USD Coin", "USDC") {
-        _mint(msg.sender, 1_000_000 * 10 ** 6);
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-    function decimals() public pure override returns (uint8) {
-        return 6;
-    }
-
-}
-
 contract pUSDPlumeTest is Test {
 
     pUSD public token;
@@ -227,5 +211,8 @@ contract pUSDPlumeTest is Test {
         bytes4 randomInterfaceId = bytes4(keccak256("random()"));
         assertFalse(token.supportsInterface(randomInterfaceId));
     }
+    // small hack to be excluded from coverage report
+
+    function test() public { }
 
 }

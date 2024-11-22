@@ -12,6 +12,7 @@ contract MockVault {
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
     IERC20 public asset;
+    address public beforeTransferHook;
 
     function enter(address from, address asset_, uint256 assetAmount, address to, uint256 shareAmount) external {
         if (assetAmount > 0) {
@@ -67,6 +68,13 @@ contract MockVault {
 
     function allowance(address owner, address spender) external view returns (uint256) {
         return _allowances[owner][spender];
+    }
+    // Add function to set hook
+
+    function setBeforeTransferHook(
+        address hook
+    ) external {
+        beforeTransferHook = hook;
     }
 
 }
