@@ -37,34 +37,12 @@ contract DeployNestContracts is Script, Test {
 
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     address private constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
-
-    address private constant VAULT_TOKEN = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
-    address private constant ATOMIC_QUEUE = 0x9fEcc2dFA8B64c27B42757B0B9F725fe881Ddb2a;
-    address private constant TELLER_ADDRESS = 0xE010B6fdcB0C1A8Bf00699d2002aD31B4bf20B86;
+    address private constant PUSD_PROXY = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
 
     function test() public { }
 
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
-
-        // Deploy pUSD
-        // Deploy pUSD
-        pUSD pUSDToken = new pUSD();
-        ERC1967Proxy pUSDProxy = new ERC1967Proxy(
-            address(pUSDToken),
-            abi.encodeCall(
-                pUSD.initialize,
-                (
-                    NEST_ADMIN_ADDRESS, // owner
-                    IERC20(USDC_ADDRESS), // asset token
-                    VAULT_TOKEN, // vault address
-                    TELLER_ADDRESS, // vault address
-                    ATOMIC_QUEUE // vault address
-                )
-            )
-        );
-
-        console2.log("pUSDProxy deployed to:", address(pUSDProxy));
 
         // Deploy ConcreteComponentToken
         ConcreteComponentToken componentToken = new ConcreteComponentToken();
@@ -76,7 +54,7 @@ contract DeployNestContracts is Script, Test {
                     NEST_ADMIN_ADDRESS, // owner
                     "Banana", // name
                     "BAN", // symbol
-                    IERC20(address(pUSDProxy)), // asset token
+                    IERC20(PUSD_PROXY), // asset token
                     false, // async deposit
                     false // async redeem
                 )
@@ -94,7 +72,7 @@ contract DeployNestContracts is Script, Test {
                     NEST_ADMIN_ADDRESS,
                     "Apple",
                     "AAPL",
-                    IComponentToken(address(pUSDProxy)),
+                    IComponentToken(PUSD_PROXY),
                     1e17, // ask price
                     1e17 // bid price
                 )
@@ -103,7 +81,7 @@ contract DeployNestContracts is Script, Test {
         console2.log("AggregateTokenProxy deployed to:", address(aggregateTokenProxy));
 
         // Add new component tokens
-        AggregateToken(address(aggregateTokenProxy)).addComponentToken(IComponentToken(address(pUSDProxy)));
+        AggregateToken(address(aggregateTokenProxy)).addComponentToken(IComponentToken(PUSD_PROXY));
         AggregateToken(address(aggregateTokenProxy)).addComponentToken(IComponentToken(address(componentTokenProxy)));
 
         // Deploy NestStaking
