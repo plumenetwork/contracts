@@ -60,6 +60,7 @@ contract DeployNestContracts is Script, Test {
                 )
             )
         );
+        
         console2.log("ComponentTokenProxy deployed to:", address(componentTokenProxy));
 
         // Deploy AggregateToken with both component tokens
