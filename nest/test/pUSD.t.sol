@@ -256,7 +256,7 @@ contract pUSDTest is Test {
 
         // Test transfer
         token.transfer(user2, amount / 2);
-/*
+        /*
 
         console.log(token.balanceOf(user1));
         console.log(token.balanceOf(user2));
@@ -271,7 +271,7 @@ contract pUSDTest is Test {
         token.transferFrom(user1, user2, amount / 2);
         assertEq(token.balanceOf(user1), 0);
         assertEq(token.balanceOf(user2), amount);
-*/
+        */
     }
 
     // Helper function for access control error message

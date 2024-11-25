@@ -12,6 +12,7 @@ import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
 
 import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
+
 import { ITeller } from "../interfaces/ITeller.sol";
 import { IVault } from "../interfaces/IVault.sol";
 
@@ -73,6 +74,10 @@ contract pUSD is
         string tokenSymbol;
         uint256 version;
     }
+
+    // ========== CONSTANTS ==========
+    address public constant USDC = 0x401eCb1D350407f13ba348573E5630B83638E30D;
+    address public constant USDT = 0x2413b8C79Ce60045882559f63d308aE3DFE0903d;
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.pUSD")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant PUSD_STORAGE_LOCATION = 0x54ae4f9578cdf7faaee986bff2a08b358f01b852b4da3af4f67309dae312ee00;
@@ -266,6 +271,7 @@ contract pUSD is
             assets, // depositAmount
             minimumMint // minimumMint
         );
+
         // Transfer shares to receiver
         _mint(receiver, shares);
 
@@ -320,18 +326,53 @@ contract pUSD is
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
 
+    /**
+     * @notice Calculate how many shares would be minted for a given amount of assets
+     * @param assets Amount of assets to deposit
+     * @return shares Amount of shares that would be minted
+     */
+    function previewDeposit(
+        uint256 assets
+    ) public view virtual override returns (uint256 shares) {
+        pUSDStorage storage $ = _getpUSDStorage();
+
+        if (address($.boringVault.vault) == address(0)) {
+            revert InvalidVault();
+        }
+        // 1:1 conversion - 1 asset = 1 share
+        return assets;
+    }
+
+    /**
+     * @notice Calculate how many assets would be withdrawn for a given amount of shares
+     * @param shares Amount of shares to redeem
+     * @return assets Amount of assets that would be withdrawn
+     */
+    function previewRedeem(
+        uint256 shares
+    ) public view virtual override returns (uint256 assets) {
+        pUSDStorage storage $ = _getpUSDStorage();
+        if (address($.boringVault.vault) == address(0)) {
+            revert InvalidVault();
+        }
+        // 1:1 conversion - 1 share = 1 asset
+        return shares;
+    }
+
     /// @inheritdoc ERC4626Upgradeable
     function convertToShares(
         uint256 assets
     ) public view virtual override returns (uint256) {
-        return _convertToShares(assets, Math.Rounding.Floor);
+        // 1:1 conversion - 1 asset = 1 share
+        return assets;
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function convertToAssets(
         uint256 shares
     ) public view virtual override returns (uint256) {
-        return _convertToAssets(shares, Math.Rounding.Floor);
+        // 1:1 conversion - 1 share = 1 asset
+        return shares;
     }
 
     // ========== ERC20 OVERRIDES ==========
@@ -375,7 +416,14 @@ contract pUSD is
         address account
     ) public view override(IERC20, ERC20Upgradeable) returns (uint256) {
         pUSDStorage storage $ = _getpUSDStorage();
-        return $.boringVault.vault.balanceOf(account);
+        address vaultAddress = address($.boringVault.vault);
+
+        // Get balances of both USDC and USDT directly
+        uint256 usdcBalance = IERC20(USDC).balanceOf(vaultAddress);
+        uint256 usdtBalance = IERC20(USDT).balanceOf(vaultAddress);
+
+        // Both USDC and USDT have 6 decimals, so we can simply add them
+        return usdcBalance + usdtBalance;
     }
 
     // ========== METADATA OVERRIDES ==========
