@@ -10,7 +10,6 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { Deposit, UserState } from "./Types.sol";
-import { console2 } from "forge-std/console2.sol";
 
 /**
  * @title YieldDistributionToken
@@ -328,7 +327,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         uint256 lastDepositIndex = userState.lastDepositIndex;
         uint256 amountSecondsAccrued;
 
-        console2.log("[Before]lastDepositIndex: %d, currentDepositIndex: %d", lastDepositIndex, currentDepositIndex);
         if (lastDepositIndex != currentDepositIndex) {
             Deposit memory deposit;
 
@@ -339,16 +337,10 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             // all variables in `userState` are updated until `lastDepositIndex`
             while (lastDepositIndex != currentDepositIndex) {
                 ++lastDepositIndex;
-                console2.log("lastDepositIndex: %d", lastDepositIndex);
 
                 deposit = $.deposits[lastDepositIndex];
-                console2.log("\tbalanceOf(user): %d", balanceOf(user));
-                console2.log("\tdeposit.timestamp: %d", deposit.timestamp);
-                console2.log("\tuserState.lastUpdate: %d", userState.lastUpdate);
 
                 amountSecondsAccrued = balanceOf(user) * (deposit.timestamp - userState.lastUpdate);
-                console2.log("\tamountSecondsAccrued %d at %d", amountSecondsAccrued, lastDepositIndex);
-
                 userState.amountSeconds += amountSecondsAccrued;
 
                 if (userState.amountSeconds > userState.amountSecondsDeduction) {
@@ -356,7 +348,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                     userState.yieldAccrued += deposit.scaledCurrencyTokenPerAmountSecond.mulDiv(
                         userState.amountSeconds - userState.amountSecondsDeduction, SCALE
                     );
-                    console2.log("\tyieldAccrued: %d", (userState.yieldAccrued - yieldAccruedBefore));
 
                     // the `amountSecondsDeduction` is updated to the value of `amountSeconds`
                     // of the last yield accrual - therefore for the current yield accrual, it is updated
@@ -372,16 +363,13 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                 // of the deposit timestamp is equal to the users last update, meaning yield has already been accrued
                 // the check ensures that the process terminates early if there are no more deposits from which to
                 // accrue yield
-                console2.log("\tamountSecondsAccrued: %d", amountSecondsAccrued);
                 if (amountSecondsAccrued == 0) {
-                    console2.log("\tamountSecondsAccrued == 0 at %d. EARLYBREAK\n\n\n", lastDepositIndex);
                     userState.lastDepositIndex = currentDepositIndex;
                     break;
                 }
 
-                console2.log("\tgasLeft %d at %d", gasleft(), lastDepositIndex);
-                // if user has a lot of deposits to accrueYield for, 
-                // we break out of the loop here instead of reverting 
+                // if user has a lot of deposits to accrueYield for,
+                // we break out of the loop here instead of reverting
                 // when gas gets too low.
                 if (gasleft() < 100_000) {
                     break;

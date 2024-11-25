@@ -9,42 +9,9 @@ import { Deposit, UserState } from "../../src/token/Types.sol";
 import { YieldDistributionTokenHarness } from "../harness/YieldDistributionTokenHarness.sol";
 import { stdError } from "forge-std/StdError.sol";
 
-import { console2 } from "forge-std/console2.sol";
+import { YieldDistributionToken } from "../../src/token/YieldDistributionToken.sol";
 
 contract YieldDistributionTokenScenarioTest is Test {
-
-    /**
-     * @notice Emitted when yield is deposited into the YieldDistributionToken
-     * @param user Address of the user who deposited the yield
-     * @param currencyTokenAmount Amount of CurrencyToken deposited as yield
-     */
-    event Deposited(address indexed user, uint256 currencyTokenAmount);
-
-    /**
-     * @notice Emitted when yield is claimed by a user
-     * @param user Address of the user who claimed the yield
-     * @param currencyTokenAmount Amount of CurrencyToken claimed as yield
-     */
-    event YieldClaimed(address indexed user, uint256 currencyTokenAmount);
-
-    /**
-     * @notice Emitted when yield is accrued to a user
-     * @param user Address of the user who accrued the yield
-     * @param currencyTokenAmount Amount of CurrencyToken accrued as yield
-     */
-    event YieldAccrued(address indexed user, uint256 currencyTokenAmount);
-
-    // Errors
-
-    /**
-     * @notice Indicates a failure because the transfer of CurrencyToken failed
-     * @param user Address of the user who tried to transfer CurrencyToken
-     * @param currencyTokenAmount Amount of CurrencyToken that failed to transfer
-     */
-    error TransferFailed(address user, uint256 currencyTokenAmount);
-
-    /// @notice Indicates a failure because a yield deposit is made in the same block as the last one
-    error DepositSameBlock();
 
     YieldDistributionTokenHarness token;
     ERC20Mock currencyTokenMock;
@@ -311,12 +278,11 @@ contract YieldDistributionTokenScenarioTest is Test {
         // use separated approve & deposit otherwise expectRevert will
         // fail if using the test `_depositYield()` call
         _approveForDepositYield(YIELD_AMOUNT);
-        // vm.expectRevert(abi.encodeWithSignature("DepositSameBlock()"));
-        vm.expectRevert(DepositSameBlock.selector);
+
+        vm.expectRevert(YieldDistributionToken.DepositSameBlock.selector);
         token.exposed_depositYield(YIELD_AMOUNT);
     }
 
-    //TODO: test failing b/c of rounding down to 0.
     function test_scenario_precisionLossHandling() public {
         // Test handling of very small amounts and precision loss
         uint256 tinyAmount = 1;
@@ -326,15 +292,10 @@ contract YieldDistributionTokenScenarioTest is Test {
         _timeskip();
         _depositYield(YIELD_AMOUNT);
 
-        uint256 aliceYieldBefore = token.getUserState(alice).yieldAccrued;
-        uint256 bobYieldBefore = token.getUserState(bob).yieldAccrued;
-
         token.claimYield(alice);
         token.claimYield(bob);
 
-        // Ensure small holders still get something if entitled
-        // NOTE: this line is failing
-        // assertGt(token.getUserState(alice).yieldWithdrawn, 0);
+        assertEq(token.getUserState(alice).yieldWithdrawn, 0);
 
         assertGt(token.getUserState(bob).yieldWithdrawn, 0);
     }
@@ -376,10 +337,9 @@ contract YieldDistributionTokenScenarioTest is Test {
 
         // Transfer tokens
         vm.expectEmit(true, true, true, true, address(token));
-        emit YieldAccrued(alice, expectedAliceYieldAccrued);
+        emit YieldDistributionToken.YieldAccrued(alice, expectedAliceYieldAccrued);
         _transferFrom(alice, bob, MINT_AMOUNT / 2);
 
-        uint256 aliceYieldAfterTransfer = token.getUserState(alice).yieldAccrued;
         token.accrueYield(bob);
         uint256 bobYield = token.getUserState(bob).yieldAccrued;
         assertEq(bobYield, 0);
@@ -423,10 +383,9 @@ contract YieldDistributionTokenScenarioTest is Test {
         uint256 aliceYieldAfterAccrue = token.getUserState(alice).yieldAccrued;
 
         // YieldAccrued should not be emitted since it was
-        // already called and nothing
-        // has changed
+        // already called and nothing has changed
         vm.expectEmit(true, true, true, true, address(token));
-        emit YieldClaimed(alice, aliceYieldAfterAccrue);
+        emit YieldDistributionToken.YieldClaimed(alice, aliceYieldAfterAccrue);
         token.claimYield(alice);
 
         uint256 aliceYieldAfterClaim = token.getUserState(alice).yieldAccrued;
@@ -576,7 +535,6 @@ contract YieldDistributionTokenScenarioTest is Test {
         // accrueYield loop will break early if gasLeft() < 100K
 
         uint256 gasLimit = 100_500;
-        console2.log("calling accrueYield with min gas");
         (bool success,) = address(token).call{ gas: gasLimit }(abi.encodeWithSignature("accrueYield(address)", alice));
         /*
         alice after minGas accrueYield
@@ -587,8 +545,6 @@ contract YieldDistributionTokenScenarioTest is Test {
             yieldAccrued: 100000000000000000000
             yieldWithdrawn: 0
         */
-        token.logUserState(alice, "alice after minGas accrueYield");
-        console2.log("finished accrueYield");
         assertTrue(success);
 
         /*
@@ -601,24 +557,14 @@ contract YieldDistributionTokenScenarioTest is Test {
             yieldWithdrawn: 0
         */
         token.accrueYield(alice);
-        token.logUserState(alice, "alice after last accrueYield");
     }
 
-    /// Notes:
-    /// - _transferFrom also calls accrueYield on both the sender & receiver
-    ///     balances aren't updated until after accrueYield is called
-    /// - is there any bug in the accrueYield early break for the amountSecondsAccrued  == 0 case?
-    /// Test:
-    /// alice with balance 
-    //  depositYield() and timeskip multiple times
-    //  
     function test_scenario_zeroBalanceThenDepositYieldThenNonZeroBalanceThenDepositYield() public {
         token.exposed_mint(alice, MINT_AMOUNT);
         _timeskip();
         // deposit1
         _depositYield(YIELD_AMOUNT);
         token.accrueYield(alice);
-        token.logUserState(alice, "alice after zero balance then deposit yield");
         uint256 aliceYield1 = token.getUserState(alice).yieldAccrued;
         assertGt(aliceYield1, 0);
 
@@ -639,16 +585,10 @@ contract YieldDistributionTokenScenarioTest is Test {
         _timeskip();
         // deposit 4
         _depositYield(YIELD_AMOUNT);
-        // alice should have yield for the time from deposit 2 to deposit 3 
-        console2.log("alice accrueYield");
+        // alice should have yield for the time from deposit 2 to deposit 3
         token.accrueYield(alice);
         uint256 aliceYield2 = token.getUserState(alice).yieldAccrued;
         assertGt(aliceYield2, aliceYield1);
-
-
-
-
-        // token.exposed_mint(alice, MINT_AMOUNT);
     }
 
 }
