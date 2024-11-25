@@ -35,8 +35,13 @@ contract pUSDPlumeTest is Test {
     event VaultChanged(IERC4626 indexed oldVault, IERC4626 indexed newVault);
 
     function setUp() public {
-        // Fork Plume testnet
-        string memory PLUME_RPC = vm.envString("PLUME_RPC_URL");
+        string memory PLUME_RPC = vm.envOr("PLUME_RPC_URL", string(""));
+        if (bytes(PLUME_RPC).length == 0) {
+            // Skip all tests if RPC URL is not defined
+            vm.skip(true);
+            return;
+        }
+
         vm.createSelectFork(PLUME_RPC);
 
         // Setup accounts using the private key
