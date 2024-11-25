@@ -374,7 +374,8 @@ contract pUSD is
     function balanceOf(
         address account
     ) public view override(IERC20, ERC20Upgradeable) returns (uint256) {
-        return super.balanceOf(account);
+        pUSDStorage storage $ = _getpUSDStorage();
+        return $.boringVault.vault.balanceOf(account);
     }
 
     // ========== METADATA OVERRIDES ==========
