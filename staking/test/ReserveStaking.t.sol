@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
+import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -17,7 +18,7 @@ import { PlumePreReserveFund } from "../src/proxy/PlumePreReserveFund.sol";
 contract MockPlumePreReserveFund is PlumePreReserveFund {
 
     constructor(address logic, bytes memory data) PlumePreReserveFund(logic, data) { }
-    function test() public { }
+    function test() public override { }
 
     function exposed_implementation() public view returns (address) {
         return _implementation();
@@ -28,6 +29,7 @@ contract MockPlumePreReserveFund is PlumePreReserveFund {
 contract ReserveStakingTest is Test {
 
     ReserveStaking staking;
+    TimelockController timelock;
     IERC20 sbtc;
     IERC20 stone;
 
@@ -52,9 +54,15 @@ contract ReserveStakingTest is Test {
 
         vm.stopPrank();
 
+        address[] memory proposers = new address[](1);
+        address[] memory executors = new address[](1);
+        proposers[0] = owner;
+        executors[0] = owner;
+        timelock = new TimelockController(0 seconds, proposers, executors, address(0));
+
         ReserveStaking stakingImpl = new ReserveStaking();
         MockPlumePreReserveFund plumeReserveFundProxy = new MockPlumePreReserveFund(
-            address(stakingImpl), abi.encodeWithSelector(stakingImpl.initialize.selector, owner, sbtc, stone)
+            address(stakingImpl), abi.encodeWithSelector(stakingImpl.initialize.selector, timelock, owner, sbtc, stone)
         );
         staking = ReserveStaking(address(plumeReserveFundProxy));
 
@@ -64,11 +72,13 @@ contract ReserveStakingTest is Test {
 
     function helper_initialStake(address user, uint256 sbtcAmount, uint256 stoneAmount) public {
         vm.startPrank(user);
+
         sbtc.approve(address(staking), sbtcAmount);
         stone.approve(address(staking), stoneAmount);
         vm.expectEmit(true, false, false, true, address(staking));
         emit ReserveStaking.Staked(user, sbtcAmount, stoneAmount);
         staking.stake(sbtcAmount, stoneAmount);
+
         vm.stopPrank();
 
         assertEq(sbtc.balanceOf(address(staking)), sbtcAmount);
@@ -96,12 +106,14 @@ contract ReserveStakingTest is Test {
     function test_constructor() public {
         ReserveStaking stakingImpl = new ReserveStaking();
         vm.expectRevert(abi.encodeWithSelector(Initializable.InvalidInitialization.selector));
-        stakingImpl.initialize(owner, sbtc, stone);
+        stakingImpl.initialize(timelock, owner, sbtc, stone);
     }
 
     function test_initialize() public view {
         assertEq(address(staking.getSBTC()), address(sbtc));
         assertEq(address(staking.getSTONE()), address(stone));
+        assertEq(staking.getMultisig(), owner);
+        assertEq(address(staking.getTimelock()), address(timelock));
         assertEq(staking.getSBTCTotalAmountStaked(), 0);
         assertEq(staking.getSTONETotalAmountStaked(), 0);
         assertEq(staking.getUsers().length, 0);
@@ -124,7 +136,6 @@ contract ReserveStakingTest is Test {
 
         assertTrue(staking.hasRole(staking.DEFAULT_ADMIN_ROLE(), owner));
         assertTrue(staking.hasRole(staking.ADMIN_ROLE(), owner));
-        assertTrue(staking.hasRole(staking.UPGRADER_ROLE(), owner));
 
         assertEq(sbtc.balanceOf(address(staking)), 0);
         assertEq(stone.balanceOf(address(staking)), 0);
@@ -136,8 +147,41 @@ contract ReserveStakingTest is Test {
         assertEq(stone.balanceOf(user2), INITIAL_BALANCE);
     }
 
-    function test_stakingEnded() public {
+    function test_reinitializeFail() public {
+        vm.startPrank(user1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, staking.ADMIN_ROLE()
+            )
+        );
+        staking.reinitialize(user1, timelock);
+
+        vm.stopPrank();
+
         vm.startPrank(owner);
+
+        staking.reinitialize(owner, timelock);
+        vm.expectRevert(abi.encodeWithSelector(Initializable.InvalidInitialization.selector));
+        staking.reinitialize(user1, timelock);
+
+        vm.stopPrank();
+    }
+
+    function test_reinitialize() public {
+        vm.startPrank(owner);
+
+        assertEq(staking.getMultisig(), owner);
+        assertEq(address(staking.getTimelock()), address(timelock));
+        staking.reinitialize(user1, TimelockController(payable(user2)));
+        assertEq(staking.getMultisig(), user1);
+        assertEq(address(staking.getTimelock()), address(user2));
+
+        vm.stopPrank();
+    }
+
+    function test_stakingEnded() public {
+        vm.startPrank(address(timelock));
         staking.adminWithdraw();
 
         vm.expectRevert(abi.encodeWithSelector(ReserveStaking.StakingEnded.selector));
@@ -150,12 +194,25 @@ contract ReserveStakingTest is Test {
         vm.stopPrank();
     }
 
+    function test_setMultisigFail() public {
+        vm.expectRevert(abi.encodeWithSelector(ReserveStaking.Unauthorized.selector, user1, address(timelock)));
+        vm.startPrank(user1);
+        staking.setMultisig(user1);
+        vm.stopPrank();
+    }
+
+    function test_setMultisig() public {
+        assertEq(staking.getMultisig(), owner);
+
+        vm.startPrank(address(timelock));
+        staking.setMultisig(user1);
+        vm.stopPrank();
+
+        assertEq(staking.getMultisig(), user1);
+    }
+
     function test_adminWithdrawFail() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, staking.ADMIN_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(ReserveStaking.Unauthorized.selector, user1, address(timelock)));
         vm.prank(user1);
         staking.adminWithdraw();
     }
@@ -196,7 +253,7 @@ contract ReserveStakingTest is Test {
         assertEq(sbtc.balanceOf(address(staking)), sbtcAmount);
         assertEq(stone.balanceOf(address(staking)), stoneAmount);
 
-        vm.startPrank(owner);
+        vm.startPrank(address(timelock));
         vm.expectEmit(true, false, false, true, address(staking));
         emit ReserveStaking.AdminWithdrawn(owner, sbtcAmount, stoneAmount);
         staking.adminWithdraw();
@@ -520,11 +577,7 @@ contract ReserveStakingTest is Test {
 
     function test_upgradeFail() public {
         address newImplementation = address(new ReserveStaking());
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, user1, staking.UPGRADER_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(ReserveStaking.Unauthorized.selector, user1, address(timelock)));
         vm.prank(user1);
         staking.upgradeToAndCall(newImplementation, "");
     }
@@ -533,6 +586,11 @@ contract ReserveStakingTest is Test {
         uint256 sbtcAmount = 100 ether;
         uint256 stoneAmount = 50 ether;
         helper_initialStake(user1, sbtcAmount, stoneAmount);
+
+        address newImplementation = address(new ReserveStaking());
+        vm.startPrank(address(timelock));
+        staking.upgradeToAndCall(newImplementation, "");
+        vm.stopPrank();
 
         // Test that all the storage variables are the same after upgrading
         assertEq(address(staking.getSBTC()), address(sbtc));

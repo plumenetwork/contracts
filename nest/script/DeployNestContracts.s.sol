@@ -1,34 +1,79 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "forge-std/Script.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Script } from "forge-std/Script.sol";
+import { Test } from "forge-std/Test.sol";
+import { console2 } from "forge-std/console2.sol";
 
 import { AggregateToken } from "../src/AggregateToken.sol";
-import { FakeComponentToken } from "../src/FakeComponentToken.sol";
+import { ComponentToken } from "../src/ComponentToken.sol";
 import { NestStaking } from "../src/NestStaking.sol";
 import { IComponentToken } from "../src/interfaces/IComponentToken.sol";
 import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
-import { FakeComponentTokenProxy } from "../src/proxy/FakeComponentTokenProxy.sol";
 import { NestStakingProxy } from "../src/proxy/NestStakingProxy.sol";
+import { pUSD } from "../src/token/pUSD.sol";
 
-contract DeployNestContracts is Script {
+// Concrete implementation of ComponentToken
+contract ConcreteComponentToken is ComponentToken {
 
-    address private constant ARC_ADMIN_ADDRESS = 0x1c9d94FAD4ccCd522804a955103899e0D6A4405a;
+    // Implement the required abstract functions
+    function convertToShares(
+        uint256 assets
+    ) public view override returns (uint256) {
+        return assets; // 1:1 conversion
+    }
+
+    function convertToAssets(
+        uint256 shares
+    ) public view override returns (uint256) {
+        return shares; // 1:1 conversion
+    }
+
+}
+
+contract DeployNestContracts is Script, Test {
+
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
-    address private constant P_ADDRESS = 0xEa0c23A2411729073Ed52fF94b38FceffE82FDE3;
+    address private constant VAULT_ADDRESS = 0x52805adf7b3d25c013eDa66eF32b53d1696f809C;
+    address private constant PUSD_ADDRESS = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
+
+    function test() public { }
 
     function run() external {
-        vm.startBroadcast(ARC_ADMIN_ADDRESS);
+        vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
-        IComponentToken currencyToken = IComponentToken(P_ADDRESS);
+        // Deploy pUSD
+        /*
+        pUSD pUSDToken = new pUSD();
+        ERC1967Proxy pUSDProxy =
+            new ERC1967Proxy(address(pUSDToken), abi.encodeCall(pUSD.initialize, (VAULT_ADDRESS, NEST_ADMIN_ADDRESS)));
+        console2.log("pUSDProxy deployed to:", address(pUSDProxy));
+        */
+        ERC1967Proxy pUSDProxy = ERC1967Proxy(payable(PUSD_ADDRESS));
 
-        FakeComponentToken fakeComponentToken = new FakeComponentToken();
-        FakeComponentTokenProxy fakeComponentTokenProxy = new FakeComponentTokenProxy(
-            address(fakeComponentToken),
-            abi.encodeCall(FakeComponentToken.initialize, (ARC_ADMIN_ADDRESS, "Banana", "BAN", currencyToken, 18))
+        // Deploy ConcreteComponentToken
+        /*
+        ConcreteComponentToken componentToken = new ConcreteComponentToken();
+        ERC1967Proxy componentTokenProxy = new ERC1967Proxy(
+            address(componentToken),
+            abi.encodeCall(
+                ComponentToken.initialize,
+                (
+                    NEST_ADMIN_ADDRESS, // owner
+                    "Banana", // name
+                    "BAN", // symbol
+                    IERC20(address(pUSDProxy)), // asset token
+                    false, // async deposit
+                    false // async redeem
+                )
+            )
         );
-        console.log("FakeComponentTokenProxy deployed to:", address(fakeComponentTokenProxy));
+        console2.log("ComponentTokenProxy deployed to:", address(componentTokenProxy));
+        */
 
+        // Deploy AggregateToken with both component tokens
         AggregateToken aggregateToken = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateToken),
@@ -36,22 +81,27 @@ contract DeployNestContracts is Script {
                 AggregateToken.initialize,
                 (
                     NEST_ADMIN_ADDRESS,
-                    "Apple",
-                    "AAPL",
-                    currencyToken,
-                    18,
-                    15e17,
-                    12e17,
-                    "https://assets.plumenetwork.xyz/metadata/mineral-vault.json"
+                    "Nest Insto Vault",
+                    "NIV",
+                    IComponentToken(address(pUSDProxy)),
+                    1e17, // ask price
+                    1e17 // bid price
                 )
             )
         );
-        console.log("AggregateTokenProxy deployed to:", address(aggregateTokenProxy));
+        console2.log("AggregateTokenProxy deployed to:", address(aggregateTokenProxy));
 
+        // Add new component tokens
+        // AggregateToken(address(aggregateTokenProxy)).addComponentToken(IComponentToken(address(pUSDProxy)));
+        // AggregateToken(address(aggregateTokenProxy)).addComponentToken(IComponentToken(address(componentTokenProxy)));
+
+        // Deploy NestStaking
+        /*
         NestStaking nestStaking = new NestStaking();
         NestStakingProxy nestStakingProxy =
             new NestStakingProxy(address(nestStaking), abi.encodeCall(NestStaking.initialize, (NEST_ADMIN_ADDRESS)));
-        console.log("NestStakingProxy deployed to:", address(nestStakingProxy));
+        console2.log("NestStakingProxy deployed to:", address(nestStakingProxy));
+        */
 
         vm.stopBroadcast();
     }

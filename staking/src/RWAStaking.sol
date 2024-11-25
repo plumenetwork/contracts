@@ -4,7 +4,9 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
@@ -24,11 +26,14 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
      *   multiplied by the number of seconds that the user has staked this amount for
      * @param amountStaked Total amount of stablecoins staked by the user
      * @param lastUpdate Timestamp of the most recent update to amountSeconds
+     * @param stablecoinAmounts Mapping of stablecoin token contract addresses
+     *   to the amount of stablecoins staked by the user
      */
     struct UserState {
         uint256 amountSeconds;
         uint256 amountStaked;
         uint256 lastUpdate;
+        mapping(IERC20 stablecoin => uint256 amount) stablecoinAmounts;
     }
 
     // Storage
@@ -49,6 +54,10 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         uint256 endTime;
         /// @dev True if the RWAStaking contract is paused for deposits, false otherwise
         bool paused;
+        /// @dev Multisig address that withdraws the tokens and proposes/executes Timelock transactions
+        address multisig;
+        /// @dev Timelock contract address
+        TimelockController timelock;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.RWAStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -65,8 +74,8 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
 
     /// @notice Role for the admin of the RWAStaking contract
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    /// @notice Role for the upgrader of the RWAStaking contract
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    /// @notice Number of decimals for the base unit of amount
+    uint8 public constant _BASE = 18;
 
     // Events
 
@@ -102,6 +111,13 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
 
     // Errors
 
+    /**
+     * @notice Indicates a failure because the sender is not authorized to perform the action
+     * @param sender Address of the sender that is not authorized
+     * @param authorizedUser Address of the authorized user who can perform the action
+     */
+    error Unauthorized(address sender, address authorizedUser);
+
     /// @notice Indicates a failure because the contract is paused for deposits
     error DepositPaused();
 
@@ -113,6 +129,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
 
     /// @notice Indicates a failure because the pre-staking period has ended
     error StakingEnded();
+
+    /// @notice Indicates a failure because the stablecoin has too many decimals
+    error TooManyDecimals();
 
     /**
      * @notice Indicates a failure because the stablecoin is already allowed to be staked
@@ -135,6 +154,16 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
      */
     error InsufficientStaked(address user, IERC20 stablecoin, uint256 amount, uint256 amountStaked);
 
+    // Modifiers
+
+    /// @notice Only the timelock contract can call this function
+    modifier onlyTimelock() {
+        if (msg.sender != address(_getRWAStakingStorage().timelock)) {
+            revert Unauthorized(msg.sender, address(_getRWAStakingStorage().timelock));
+        }
+        _;
+    }
+
     // Initializer
 
     /**
@@ -147,18 +176,31 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
 
     /**
      * @notice Initialize the RWAStaking contract
+     * @param timelock Timelock contract address
      * @param owner Address of the owner of the RWAStaking contract
      */
-    function initialize(
-        address owner
-    ) public initializer {
+    function initialize(TimelockController timelock, address owner) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
+        RWAStakingStorage storage $ = _getRWAStakingStorage();
+        $.multisig = owner;
+        $.timelock = timelock;
+
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
-        _grantRole(UPGRADER_ROLE, owner);
+    }
+
+    /**
+     * @notice Reinitialize the RWAStaking contract by adding the timelock and multisig contract address
+     * @param multisig Multisig contract address
+     * @param timelock Timelock contract address
+     */
+    function reinitialize(address multisig, TimelockController timelock) public reinitializer(2) onlyRole(ADMIN_ROLE) {
+        RWAStakingStorage storage $ = _getRWAStakingStorage();
+        $.multisig = multisig;
+        $.timelock = timelock;
     }
 
     // Override Functions
@@ -169,9 +211,19 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
      */
     function _authorizeUpgrade(
         address newImplementation
-    ) internal override onlyRole(UPGRADER_ROLE) { }
+    ) internal override onlyTimelock { }
 
     // Admin Functions
+
+    /**
+     * @notice Set the multisig address
+     * @param multisig Multisig address
+     */
+    function setMultisig(
+        address multisig
+    ) external nonReentrant onlyTimelock {
+        _getRWAStakingStorage().multisig = multisig;
+    }
 
     /**
      * @notice Allow a stablecoin to be staked into the RWAStaking contract
@@ -185,6 +237,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         if ($.allowedStablecoins[stablecoin]) {
             revert AlreadyAllowedStablecoin(stablecoin);
         }
+        if (IERC20Metadata(address(stablecoin)).decimals() > _BASE) {
+            revert TooManyDecimals();
+        }
         $.stablecoins.push(stablecoin);
         $.allowedStablecoins[stablecoin] = true;
     }
@@ -193,7 +248,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
      * @notice Stop the RWAStaking contract by withdrawing all stablecoins
      * @dev Only the admin can withdraw stablecoins from the RWAStaking contract
      */
-    function adminWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
+    function adminWithdraw() external nonReentrant onlyTimelock {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -204,8 +259,10 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         for (uint256 i = 0; i < length; ++i) {
             IERC20 stablecoin = stablecoins[i];
             uint256 amount = stablecoin.balanceOf(address(this));
-            stablecoin.safeTransfer(msg.sender, amount);
-            emit AdminWithdrawn(msg.sender, stablecoin, amount);
+            stablecoin.safeTransfer($.multisig, amount);
+            emit AdminWithdrawn(
+                $.multisig, stablecoin, amount * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals())
+            );
         }
         $.endTime = block.timestamp;
     }
@@ -262,7 +319,9 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         stablecoin.safeTransferFrom(msg.sender, address(this), amount);
 
         uint256 newBalance = stablecoin.balanceOf(address(this));
-        uint256 actualAmount = newBalance - previousBalance;
+        // Convert the amount to the base unit of amount, i.e. USDC amount gets multiplied by 10^12
+        uint256 actualAmount =
+            (newBalance - previousBalance) * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals());
 
         uint256 timestamp = block.timestamp;
         UserState storage userState = $.userStates[msg.sender];
@@ -272,6 +331,7 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         userState.amountSeconds += userState.amountStaked * (timestamp - userState.lastUpdate);
         userState.amountStaked += actualAmount;
         userState.lastUpdate = timestamp;
+        userState.stablecoinAmounts[stablecoin] += actualAmount;
         $.totalAmountStaked += actualAmount;
 
         emit Staked(msg.sender, stablecoin, actualAmount);
@@ -288,21 +348,25 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
             revert StakingEnded();
         }
 
+        uint256 baseUnitConversion = 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals());
         uint256 timestamp = block.timestamp;
         UserState storage userState = $.userStates[msg.sender];
-        if (userState.amountStaked < amount) {
-            revert InsufficientStaked(msg.sender, stablecoin, amount, userState.amountStaked);
+        if (userState.stablecoinAmounts[stablecoin] < amount * baseUnitConversion) {
+            revert InsufficientStaked(
+                msg.sender, stablecoin, amount * baseUnitConversion, userState.stablecoinAmounts[stablecoin]
+            );
         }
 
         userState.amountSeconds += userState.amountStaked * (timestamp - userState.lastUpdate);
         uint256 previousBalance = stablecoin.balanceOf(address(this));
         stablecoin.safeTransfer(msg.sender, amount);
         uint256 newBalance = stablecoin.balanceOf(address(this));
-        uint256 actualAmount = previousBalance - newBalance;
+        uint256 actualAmount = (previousBalance - newBalance) * baseUnitConversion;
 
         userState.amountSeconds -= userState.amountSeconds * actualAmount / userState.amountStaked;
         userState.amountStaked -= actualAmount;
         userState.lastUpdate = timestamp;
+        userState.stablecoinAmounts[stablecoin] -= actualAmount;
         $.totalAmountStaked -= actualAmount;
 
         emit Withdrawn(msg.sender, stablecoin, actualAmount);
@@ -323,15 +387,20 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
     /// @notice State of a user who has staked into the RWAStaking contract
     function getUserState(
         address user
-    ) external view returns (uint256, uint256, uint256) {
+    ) external view returns (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) {
         RWAStakingStorage storage $ = _getRWAStakingStorage();
-        UserState memory userState = $.userStates[user];
+        UserState storage userState = $.userStates[user];
         return (
             userState.amountSeconds
                 + userState.amountStaked * (($.endTime > 0 ? $.endTime : block.timestamp) - userState.lastUpdate),
             userState.amountStaked,
             userState.lastUpdate
         );
+    }
+
+    /// @notice Amount of stablecoins staked by a user for each stablecoin
+    function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
+        return _getRWAStakingStorage().userStates[user].stablecoinAmounts[stablecoin];
     }
 
     /// @notice List of stablecoins allowed to be staked in the RWAStaking contract
@@ -354,6 +423,16 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
     /// @notice Returns true if the RWAStaking contract is pauseWhether the RWAStaking contract is paused for deposits
     function isPaused() external view returns (bool) {
         return _getRWAStakingStorage().paused;
+    }
+
+    /// @notice Multisig address that withdraws the tokens and proposes/executes Timelock transactions
+    function getMultisig() external view returns (address) {
+        return _getRWAStakingStorage().multisig;
+    }
+
+    /// @notice Timelock contract that controls upgrades and withdrawals
+    function getTimelock() external view returns (TimelockController) {
+        return _getRWAStakingStorage().timelock;
     }
 
 }

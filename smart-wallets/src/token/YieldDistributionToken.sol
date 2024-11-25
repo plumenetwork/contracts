@@ -380,6 +380,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                 }
 
                 console2.log("\tgasLeft %d at %d", gasleft(), lastDepositIndex);
+                // if user has a lot of deposits to accrueYield for, 
+                // we break out of the loop here instead of reverting 
+                // when gas gets too low.
                 if (gasleft() < 100_000) {
                     break;
                 }
@@ -393,7 +396,10 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             emit YieldAccrued(user, userState.yieldAccrued);
         }
 
-        _updateUserAmountSeconds(user);
+        // only update this if we didn't break out of the loop early b/c of gas limit.
+        if (lastDepositIndex == currentDepositIndex) {
+            _updateUserAmountSeconds(user);
+        }
     }
 
 }
