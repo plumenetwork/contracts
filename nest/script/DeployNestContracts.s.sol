@@ -48,7 +48,7 @@ contract DeployNestContracts is Script, Test {
         /*
         pUSD pUSDToken = new pUSD();
         ERC1967Proxy pUSDProxy =
-            new ERC1967Proxy(address(pUSDToken), abi.encodeCall(pUSD.initialize, (VAULT_ADDRESS, NEST_ADMIN_ADDRESS)));
+        new ERC1967Proxy(address(pUSDToken), abi.encodeCall(pUSD.initialize, (VAULT_ADDRESS, NEST_ADMIN_ADDRESS)));
         console2.log("pUSDProxy deployed to:", address(pUSDProxy));
         */
         ERC1967Proxy pUSDProxy = ERC1967Proxy(payable(PUSD_ADDRESS));
@@ -99,7 +99,7 @@ contract DeployNestContracts is Script, Test {
         /*
         NestStaking nestStaking = new NestStaking();
         NestStakingProxy nestStakingProxy =
-            new NestStakingProxy(address(nestStaking), abi.encodeCall(NestStaking.initialize, (NEST_ADMIN_ADDRESS)));
+        new NestStakingProxy(address(nestStaking), abi.encodeCall(NestStaking.initialize, (NEST_ADMIN_ADDRESS)));
         console2.log("NestStakingProxy deployed to:", address(nestStakingProxy));
         */
 
