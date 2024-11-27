@@ -49,4 +49,11 @@ interface IVault {
         address account
     ) external view returns (uint256);
 
+    /**
+     * @notice Returns the number of decimals used for share precision
+     * @return uint8 The number of decimals used for share amounts
+     */
+    function decimals() external view returns (uint8);
+
+
 }
