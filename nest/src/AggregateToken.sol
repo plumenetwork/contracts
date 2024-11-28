@@ -133,6 +133,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         $.componentTokenMap[asset_] = true;
         $.askPrice = askPrice;
         $.bidPrice = bidPrice;
+        $.paused = false;
     }
 
     // Override Functions
