@@ -280,8 +280,6 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         emit Paused();
     }
 
-    // Errors
-
     /**
      * @notice Unpause the RWAStaking contract for deposits
      * @dev Only the admin can unpause the RWAStaking contract for deposits

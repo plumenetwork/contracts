@@ -102,7 +102,9 @@ interface IComponentToken {
      * @param owner Address to query the balance of
      * @return assets Total value held by the owner
      */
-    function assetsOf(address owner) external view returns (uint256 assets);
+    function assetsOf(
+        address owner
+    ) external view returns (uint256 assets);
 
     /**
      * @notice Equivalent amount of shares for the given amount of assets
