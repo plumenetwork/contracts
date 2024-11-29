@@ -34,11 +34,24 @@ contract pUSDPlumeTest is Test {
 
     event VaultChanged(IERC4626 indexed oldVault, IERC4626 indexed newVault);
 
+    bool private skipTests;
+
+    modifier skipIfNoRPC() {
+        if (skipTests) {
+            vm.skip(true);
+        } else {
+            _;
+        }
+    }
+
     function setUp() public {
         string memory PLUME_RPC = vm.envOr("PLUME_RPC_URL", string(""));
         if (bytes(PLUME_RPC).length == 0) {
+            console.log("PLUME_RPC_URL is not defined");
+            skipTests = true;
+
             // Skip all tests if RPC URL is not defined
-            vm.skip(true);
+            vm.skip(false);
             return;
         }
 
@@ -77,7 +90,7 @@ contract pUSDPlumeTest is Test {
         vm.stopPrank();
     }
 
-    function testDeposit() public {
+    function testDeposit() public skipIfNoRPC {
         uint256 depositAmount = 1e6;
         uint256 minimumMint = depositAmount;
 
@@ -121,7 +134,7 @@ contract pUSDPlumeTest is Test {
         vm.stopPrank();
     }
 
-    function testRedeem() public {
+    function testRedeem() public skipIfNoRPC {
         uint256 depositAmount = 1e6;
         uint256 price = 1e6; // 1:1 price
         uint256 minimumMint = depositAmount;
@@ -153,7 +166,7 @@ contract pUSDPlumeTest is Test {
         // TODO: warp time and verify final state
     }
 
-    function testTransfer() public {
+    function testTransfer() public skipIfNoRPC {
         uint256 amount = 1e6;
 
         // Setup initial balance
@@ -183,7 +196,7 @@ contract pUSDPlumeTest is Test {
         vm.stopPrank();
     }
 
-    function testVaultIntegration() public {
+    function testVaultIntegration() public skipIfNoRPC {
         uint256 amount = 1e6;
 
         vm.startPrank(user1);
@@ -196,14 +209,14 @@ contract pUSDPlumeTest is Test {
         //assertEq(asset.balanceOf(address(vault)), amount);
     }
 
-    function testVault() public {
+    function testVault() public skipIfNoRPC {
         // Verify the vault address matches what we set in setUp
         assertEq(address(token.getVault()), address(VAULT_ADDRESS));
         assertEq(address(token.getTeller()), address(TELLER_ADDRESS));
         assertEq(address(token.getAtomicqueue()), address(ATOMIC_QUEUE_ADDRESS));
     }
 
-    function testSupportsInterface() public {
+    function testSupportsInterface() public skipIfNoRPC {
         // Test for ERC20 interface
         bytes4 erc20InterfaceId = type(IERC20).interfaceId;
         assertTrue(token.supportsInterface(erc20InterfaceId));

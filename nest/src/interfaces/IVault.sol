@@ -55,5 +55,4 @@ interface IVault {
      */
     function decimals() external view returns (uint8);
 
-
 }
