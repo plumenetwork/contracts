@@ -118,9 +118,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
     }
 
     /// @notice Must pass in a message signed by the owner to call this function
-    modifier onlySignedByOwner(string calldata token, bytes32 salt, bytes calldata signature) {
+    modifier onlySignedByOwner(string calldata token, uint256 flightClass, bytes32 salt, bytes calldata signature) {
         FaucetStorage storage $ = _getFaucetStorage();
-        bytes32 message = keccak256(abi.encodePacked(msg.sender, token, salt));
+        bytes32 message = keccak256(abi.encodePacked(msg.sender, token, flightClass, salt));
 
         if ($.usedNonces[message]) {
             revert InvalidNonce();
@@ -192,9 +192,10 @@ contract Faucet is Initializable, UUPSUpgradeable {
      */
     function getToken(
         string calldata token,
+        uint256 flightClass,
         bytes32 salt,
         bytes calldata signature
-    ) external onlySignedByOwner(token, salt, signature) {
+    ) external onlySignedByOwner(token, flightClass, salt, signature) {
         FaucetStorage storage $ = _getFaucetStorage();
         address tokenAddress = $.tokens[token];
         uint256 amount = $.dripAmounts[tokenAddress];
