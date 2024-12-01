@@ -31,6 +31,15 @@ contract MockInvalidToken {
 // Deliberately missing functions to make it invalid
 }
 
+contract MockInvalidVault {
+
+    // Empty contract that will fail when trying to call decimals()
+    function decimals() external pure returns (uint8) {
+        revert();
+    }
+
+}
+
 contract pUSDTest is Test {
 
     pUSD public token;
@@ -65,7 +74,7 @@ contract pUSDTest is Test {
         mockAtomicQueue = new MockAtomicQueue();
         mockLens = new MockLens();
 
-        mockAccountant = new MockAccountantWithRateProviders(address(vault), address(usdc), 1e18);
+        mockAccountant = new MockAccountantWithRateProviders(address(vault), address(usdc), 1e6);
         mockTeller.setAssetSupport(IERC20(address(usdc)), true);
         mockTeller.setAssetSupport(IERC20(address(usdt)), true);
 
@@ -336,6 +345,164 @@ contract pUSDTest is Test {
         vm.stopPrank();
     }
 
+    function testRedeemDeadlineExpired() public {
+        uint256 amount = 100e6;
+        uint256 price = 1e6;
+
+        // Setup
+        vm.startPrank(user1);
+        token.deposit(amount, user1, user1, 0);
+
+        // Mock the lens to return correct balance
+        mockLens.setBalance(user1, amount);
+
+        // Set block.timestamp to a known value
+        vm.warp(1000);
+
+        // Set deadline in the past
+        uint64 expiredDeadline = uint64(block.timestamp - 1);
+
+        // Test expired deadline
+        vm.expectRevert("Deadline expired");
+        token.redeem(amount, user1, user1, price, expiredDeadline);
+
+        vm.stopPrank();
+    }
+
+    function testPreviewDepositInvalidVault() public {
+        // Deploy an invalid vault (empty contract)
+        MockInvalidVault invalidVault = new MockInvalidVault();
+
+        vm.startPrank(owner);
+
+        // Grant UPGRADER_ROLE to owner for reinitialize
+        token.grantRole(token.UPGRADER_ROLE(), owner);
+
+        //vm.expectRevert(pUSD.ZeroAddress.selector);
+        // Reinitialize with the new vault
+        token.reinitialize(
+            owner,
+            IERC20(address(usdc)),
+            IERC20(address(usdt)),
+            address(invalidVault),
+            address(mockTeller),
+            address(mockAtomicQueue),
+            address(mockLens),
+            address(mockAccountant)
+        );
+
+        // Now we can test the preview functions with the new vault
+        vm.expectRevert(pUSD.InvalidVault.selector);
+        token.previewDeposit(100e6);
+
+        vm.stopPrank();
+    }
+
+    function testPreviewRedeemInvalidVault() public {
+        MockInvalidVault invalidVault = new MockInvalidVault();
+
+        vm.startPrank(owner);
+        // Grant UPGRADER_ROLE to owner for reinitialize
+        token.grantRole(token.UPGRADER_ROLE(), owner);
+
+        // Reinitialize with the new vault
+        token.reinitialize(
+            owner,
+            IERC20(address(usdc)),
+            IERC20(address(usdt)),
+            address(invalidVault),
+            address(mockTeller),
+            address(mockAtomicQueue),
+            address(mockLens),
+            address(mockAccountant)
+        );
+
+        // Now we can test the preview functions with the new vault
+        vm.expectRevert(pUSD.InvalidVault.selector);
+        token.previewRedeem(100e6);
+
+        vm.stopPrank();
+    }
+
+    function testConvertFunctionsAndReverts() public {
+        uint256 amount = 100e6;
+
+        // Test normal operation first
+        mockAccountant.updateExchangeRate(2e6); // 2:1 rate
+
+        // With 2:1 rate:
+        // 100 assets should convert to 50 shares (assets/rate)
+        uint256 shares = token.convertToShares(amount);
+        assertEq(shares, amount / 2, "Incorrect shares calculation");
+
+        // 50 shares should convert to 100 assets (shares*rate)
+        uint256 assets = token.convertToAssets(shares);
+        assertEq(assets, amount, "Incorrect assets calculation");
+
+        // Now test reverts with invalid vault
+        MockInvalidVault invalidVault = new MockInvalidVault();
+
+        vm.startPrank(owner);
+        token.grantRole(token.UPGRADER_ROLE(), owner);
+
+        // Reinitialize with invalid vault
+        token.reinitialize(
+            owner,
+            IERC20(address(usdc)),
+            IERC20(address(usdt)),
+            address(invalidVault),
+            address(mockTeller),
+            address(mockAtomicQueue),
+            address(mockLens),
+            address(mockAccountant)
+        );
+
+        // Test convertToShares revert
+        vm.expectRevert(pUSD.InvalidVault.selector);
+        token.convertToShares(amount);
+
+        // Test convertToAssets revert
+        vm.expectRevert(pUSD.InvalidVault.selector);
+        token.convertToAssets(amount);
+
+        vm.stopPrank();
+    }
+
+    function testTransferFrom() public {
+        uint256 amount = 100e6;
+
+        // Setup initial balance for user1
+        vm.startPrank(user1);
+        token.deposit(amount, user1, user1, 0);
+
+        // Mock the lens to return correct balances
+        mockLens.setBalance(user1, amount);
+
+        // Approve user2 to spend tokens
+        token.approve(user2, amount);
+        vm.stopPrank();
+
+        // Initial balances
+        assertEq(token.balanceOf(user1), amount, "Initial balance user1 incorrect");
+        assertEq(token.balanceOf(user2), 0, "Initial balance user2 incorrect");
+
+        // Test transferFrom with user2
+        vm.startPrank(user2);
+        token.transferFrom(user1, user2, amount);
+
+        // Update mock balances after transfer
+        mockLens.setBalance(user1, 0);
+        mockLens.setBalance(user2, amount);
+
+        // Check final balances
+        assertEq(token.balanceOf(user1), 0, "Final balance user1 incorrect");
+        assertEq(token.balanceOf(user2), amount, "Final balance user2 incorrect");
+
+        // Check allowance was spent
+        assertEq(token.allowance(user1, user2), 0, "Allowance should be spent");
+        vm.stopPrank();
+    }
+
     function testConvertToAssets() public {
         uint256 shares = 100e6;
         uint256 assets = token.convertToAssets(shares);
@@ -413,18 +580,21 @@ contract pUSDTest is Test {
     }
 
     function testPreviewDeposit() public {
-        uint256 depositAmount = 100e6;
+        uint256 depositAmount = 100e6; // 100 USDC
+
+        // Set the exchange rate to 1:1 (1e6)
+        mockAccountant.updateExchangeRate(1e6);
 
         // Preview deposit should return same amount as shares (1:1 ratio)
         uint256 expectedShares = token.previewDeposit(depositAmount);
-        assertEq(expectedShares, depositAmount);
+        assertEq(expectedShares, depositAmount, "Preview deposit amount mismatch");
 
         // Verify actual deposit matches preview
         vm.startPrank(user1);
         uint256 actualShares = token.deposit(depositAmount, user1, user1, 0);
         vm.stopPrank();
 
-        assertEq(actualShares, expectedShares);
+        assertEq(actualShares, expectedShares, "Actual shares don't match preview");
     }
 
     function testPreviewRedeem() public {

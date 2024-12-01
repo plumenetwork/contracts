@@ -26,6 +26,7 @@ import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/
 import { ComponentToken } from "../ComponentToken.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 // TODO: REMOVE in production
 import "forge-std/console2.sol";
@@ -45,7 +46,8 @@ contract pUSD is
 {
 
     using SafeERC20 for IERC20;
-    using Math for uint256;
+    //using Math for uint256;
+    using FixedPointMathLib for uint256;
 
     // ========== ERRORS ==========
     error ZeroAddress();
@@ -347,14 +349,12 @@ contract pUSD is
      */
     function previewDeposit(
         uint256 assets
-    ) public view virtual override returns (uint256 shares) {
+    ) public view override returns (uint256) {
         pUSDStorage storage $ = _getpUSDStorage();
 
-        if (address($.boringVault.vault) == address(0)) {
-            revert InvalidVault();
-        }
-        // 1:1 conversion - 1 asset = 1 share
-        return assets;
+        return $.boringVault.lens.previewDeposit(
+            IERC20(address($.usdc)), assets, $.boringVault.vault, $.boringVault.accountant
+        );
     }
 
     /**
@@ -366,29 +366,38 @@ contract pUSD is
         uint256 shares
     ) public view virtual override returns (uint256 assets) {
         pUSDStorage storage $ = _getpUSDStorage();
-        if (address($.boringVault.vault) == address(0)) {
+
+        try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
+            assets = shares.mulDivDown($.boringVault.accountant.getRateInQuote(ERC20(asset())), 10 ** shareDecimals);
+        } catch {
             revert InvalidVault();
         }
-        // 1:1 conversion - 1 share = 1 asset
-        return shares;
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function convertToShares(
         uint256 assets
-    ) public view virtual override returns (uint256) {
-        // 1:1 conversion - 1 asset = 1 share
-        return assets;
+    ) public view virtual override returns (uint256 shares) {
+        pUSDStorage storage $ = _getpUSDStorage();
+
+        try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
+            shares = assets.mulDivDown(10 ** shareDecimals, $.boringVault.accountant.getRateInQuote(ERC20(asset())));
+        } catch {
+            revert InvalidVault();
+        }
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function convertToAssets(
         uint256 shares
-    ) public view virtual override returns (uint256) {
-        // 1:1 conversion - 1 share = 1 asset
-        return shares;
+    ) public view virtual override returns (uint256 assets) {
+        pUSDStorage storage $ = _getpUSDStorage();
+        try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
+            assets = shares.mulDivDown($.boringVault.accountant.getRateInQuote(ERC20(asset())), 10 ** shareDecimals);
+        } catch {
+            revert InvalidVault();
+        }
     }
-
     // ========== ERC20 OVERRIDES ==========
 
     /**

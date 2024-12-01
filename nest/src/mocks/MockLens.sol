@@ -7,10 +7,16 @@ import { ITeller } from "../interfaces/ITeller.sol";
 import { IVault } from "../interfaces/IVault.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
+import "forge-std/console2.sol";
 
 contract MockLens is ILens {
 
     using FixedPointMathLib for uint256;
+
+    mapping(uint256 => uint256) private previewDepositValues;
+    mapping(uint256 => uint256) private previewRedeemValues;
+    mapping(address => uint256) private balances;
+    mapping(address => mapping(address => uint256)) private vaultBalances;
 
     function totalAssets(
         IVault vault,
@@ -27,12 +33,44 @@ contract MockLens is ILens {
         IVault vault,
         IAccountantWithRateProviders accountant
     ) external view override returns (uint256 shares) {
+        // Check if we have a preset value
+        if (previewDepositValues[depositAmount] != 0) {
+            return previewDepositValues[depositAmount];
+        }
+
         uint256 rate = accountant.getRate();
-        return depositAmount.mulDivDown(10 ** 6, rate);
+
+        try vault.decimals() returns (uint8 shareDecimals) {
+            return depositAmount.mulDivDown(10 ** shareDecimals, rate);
+        } catch {
+            // Explicitly revert with InvalidVault error
+            bytes4 selector = bytes4(keccak256("InvalidVault()"));
+            assembly {
+                mstore(0, selector)
+                revert(0, 4)
+            }
+        }
     }
 
-    function balanceOf(address account, IVault vault) external view override returns (uint256 shares) {
-        shares = vault.balanceOf(account);
+    function setPreviewDeposit(uint256 assets, uint256 shares) external {
+        previewDepositValues[assets] = shares;
+    }
+
+    function setPreviewRedeem(uint256 shares, uint256 assets) external {
+        previewRedeemValues[shares] = assets;
+    }
+
+    function setBalance(address account, uint256 balance) external {
+        balances[account] = balance;
+    }
+
+    function balanceOf(address account, IVault vault) external view override returns (uint256) {
+        // First check if we have a preset balance
+        if (balances[account] != 0) {
+            return balances[account];
+        }
+        // Otherwise return the vault balance
+        return vault.balanceOf(account);
     }
 
     function balanceOfInAssets(
