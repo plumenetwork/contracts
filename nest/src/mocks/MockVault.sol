@@ -10,6 +10,7 @@ contract MockVault {
     using SafeERC20 for IERC20;
 
     mapping(address => uint256) private _balances;
+
     mapping(address => mapping(address => uint256)) private _allowances;
     IERC20 public asset;
     address public beforeTransferHook;
@@ -64,6 +65,17 @@ contract MockVault {
         address account
     ) external view returns (uint256) {
         return _balances[account];
+    }
+
+
+
+    
+    function setBalance(address token, uint256 amount) external {
+        _balances[token] = amount;
+    }
+    
+    function getBalance(address token) external view returns (uint256) {
+        return _balances[token];
     }
 
     function allowance(address owner, address spender) external view returns (uint256) {

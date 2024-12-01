@@ -138,6 +138,7 @@ contract pUSDPlumeTest is Test {
         uint256 depositAmount = 1e6;
         uint256 price = 1e6; // 1:1 price
         uint256 minimumMint = depositAmount;
+    uint64 deadline = uint64(block.timestamp + 1 hours);
 
         // Setup
         deal(address(asset), user1, depositAmount);
@@ -159,7 +160,7 @@ contract pUSDPlumeTest is Test {
 
         // Perform deposit and redeem
         token.deposit(depositAmount, user1, user1, minimumMint);
-        token.redeem(depositAmount, user1, user1, price);
+        token.redeem(depositAmount, user1, user1, price, deadline);
 
         vm.stopPrank();
 

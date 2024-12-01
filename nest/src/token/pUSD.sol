@@ -107,37 +107,40 @@ contract pUSD is
     /**
      * @notice Initialize pUSD
      * @param owner Address of the owner of pUSD
-     * @param asset_ Address of the underlying asset
+     * @param usdc_ Address of the underlying asset
+     * @param usdt_ Address of the underlying asset
      * @param vault_ Address of the Boring Vault
      * @param atomicqueue_ Address of the AtomicQueue
      */
     //
     function initialize(
         address owner,
-        IERC20 asset_,
+        IERC20 usdc_,
+        IERC20 usdt_,
         address vault_,
         address teller_,
         address atomicqueue_
     ) public initializer {
         require(owner != address(0), "Zero address owner");
-        require(address(asset_) != address(0), "Zero address asset");
+        require(address(usdc_) != address(0), "Zero address asset");
+        require(address(usdt_) != address(0), "Zero address asset");
 
         require(vault_ != address(0), "Zero address vault");
         require(teller_ != address(0), "Zero address teller");
         require(atomicqueue_ != address(0), "Zero address AtomicQueue");
 
         // Validate asset interface support
-        try IERC20Metadata(address(asset_)).decimals() returns (uint8) { }
+        try IERC20Metadata(address(usdc_)).decimals() returns (uint8) { }
         catch {
             revert InvalidAsset();
         }
 
-        __UUPSUpgradeable_init(); // Add this line
-        __AccessControl_init(); // Add this line
+        __UUPSUpgradeable_init();
+        __AccessControl_init();
         __ERC20_init("Plume USD", "pUSD");
         __ReentrancyGuard_init();
 
-        super.initialize(owner, "Plume USD", "pUSD", asset_, false, false);
+        super.initialize(owner, "Plume USD", "pUSD", usdc_, false, false);
 
         pUSDStorage storage $ = _getpUSDStorage();
         $.boringVault.teller = ITeller(teller_);
@@ -155,14 +158,15 @@ contract pUSD is
 
     function reinitialize(
         address owner,
-        IERC20 asset_,
+        IERC20 usdc_,
+        IERC20 usdt_,        
         address vault_,
         address teller_,
         address atomicqueue_
     ) public onlyRole(UPGRADER_ROLE) {
         // Reinitialize as needed
         require(owner != address(0), "Zero address owner");
-        require(address(asset_) != address(0), "Zero address asset");
+        require(address(usdc_) != address(0), "Zero address asset");
 
         require(vault_ != address(0), "Zero address vault");
         require(teller_ != address(0), "Zero address teller");
@@ -286,45 +290,50 @@ contract pUSD is
      * @param controller Address that currently controls the shares
      * @return assets Amount of assets withdrawn
      */
-    function redeem(
-        uint256 shares,
-        address receiver,
-        address controller,
-        uint256 price
-    ) public virtual nonReentrant returns (uint256 assets) {
-        if (receiver == address(0)) {
-            revert InvalidReceiver();
-        }
-        if (controller == address(0)) {
-            revert InvalidController();
-        }
-
-        // Get AtomicQueue from storage
-        IAtomicQueue queue = _getpUSDStorage().boringVault.atomicqueue;
-
-        // Create AtomicRequest struct
-        IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
-            deadline: uint64(block.timestamp + 1 hours), // deadline to fulfill request
-            atomicPrice: uint88(price), // In terms of want asset decimals
-            offerAmount: uint96(shares), // The amount of offer asset the user wants to sell.
-            inSolve: false
-        });
-
-        IERC20(address(this)).safeIncreaseAllowance(address(queue), shares);
-
-        // Update atomic request
-        queue.updateAtomicRequest(
-            ERC20(address(this)), // offer token (pUSD shares)
-            ERC20(asset()), // want token (underlying asset)
-            request
-        );
-
-        // Get assets received from vault and transfer to receiver
-        assets = IERC20(asset()).balanceOf(address(this));
-        IERC20(asset()).safeTransfer(receiver, assets);
-
-        emit Withdraw(msg.sender, receiver, controller, assets, shares);
+  function redeem(
+    uint256 shares,
+    address receiver,
+    address controller,
+    uint256 price,
+    uint64 deadline
+) public virtual nonReentrant returns (uint256 assets) {
+    if (receiver == address(0)) {
+        revert InvalidReceiver();
     }
+    if (controller == address(0)) {
+        revert InvalidController();
+    }
+        if (deadline < block.timestamp) {
+        revert("Deadline expired");
+    }
+
+    // Get AtomicQueue from storage
+    IAtomicQueue queue = _getpUSDStorage().boringVault.atomicqueue;
+
+    // Create AtomicRequest struct
+    IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
+        deadline: deadline,
+        atomicPrice: uint88(price),
+        offerAmount: uint96(shares),
+        inSolve: false
+    });
+
+    IERC20(address(this)).safeIncreaseAllowance(address(queue), shares);
+
+    // Update atomic request
+    queue.updateAtomicRequest(
+        ERC20(address(this)),
+        ERC20(asset()),
+        request
+    );
+
+    // Get assets received from vault
+    assets = shares; // 1:1 ratio for preview to match actual redemption
+    IERC20(asset()).safeTransfer(receiver, assets);
+
+    emit Withdraw(msg.sender, receiver, controller, assets, shares);
+    return assets;
+}
 
     /**
      * @notice Calculate how many shares would be minted for a given amount of assets

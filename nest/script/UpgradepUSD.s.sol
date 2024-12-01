@@ -19,6 +19,7 @@ contract UpgradePUSD is Script, Test {
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     address private constant PUSD_PROXY = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
     address private constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
+    address private constant USDT_ADDRESS = 0x2413b8C79Ce60045882559f63d308aE3DFE0903d;
 
     address private constant VAULT_TOKEN = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
     address private constant ATOMIC_QUEUE = 0x9fEcc2dFA8B64c27B42757B0B9F725fe881Ddb2a;
@@ -76,12 +77,8 @@ contract UpgradePUSD is Script, Test {
 
             pUSD upgradedToken = pUSD(PUSD_PROXY);
 
-            // Verify state preservation
-            //assertEq(upgradedToken.name(), currentName, "Name changed");
-            //assertEq(upgradedToken.symbol(), currentSymbol, "Symbol changed");
-            //assertEq(upgradedToken.decimals(), currentDecimals, "Decimals changed");
-            //assertEq(upgradedToken.getVault(), currentVault, "Vault changed");
-            //assertEq(upgradedToken.totalSupply(), currentTotalSupply, "Total supply changed");
+
+
 
             vm.stopPrank();
             console2.log("Upgrade simulation successful");
@@ -111,12 +108,25 @@ contract UpgradePUSD is Script, Test {
 
             // Then call reinitialize separately
             pUSD(PUSD_PROXY).reinitialize(
-                ADMIN_ADDRESS, IERC20(USDC_ADDRESS), VAULT_TOKEN, TELLER_ADDRESS, ATOMIC_QUEUE
+                ADMIN_ADDRESS, IERC20(USDC_ADDRESS), IERC20(USDT_ADDRESS), VAULT_TOKEN, TELLER_ADDRESS, ATOMIC_QUEUE
             );
 
             // Verify the upgrade
             uint256 newVersion = pUSD(PUSD_PROXY).version();
+            
+            pUSD upgradedToken = pUSD(PUSD_PROXY);
+
             //require(newVersion == currentVersion + 1, "Version not incremented");
+            console2.log("Updated Implementation State:");
+            console2.log("Name:", upgradedToken.name());
+            console2.log("Symbol:", upgradedToken.symbol());
+            console2.log("Decimals:", upgradedToken.decimals());
+            console2.log("Vault:", currentVault);
+            console2.log("Total Supply:", upgradedToken.totalSupply());
+
+
+
+
             console2.log("New Version:", newVersion);
 
             vm.stopBroadcast();
