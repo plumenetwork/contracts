@@ -55,7 +55,7 @@ contract pUSDTest is Test {
         usdc = new MockUSDC();
         usdt = new MockUSDC(); // Deploy USDT mock
 
-        vault = new MockVault();
+        vault = new MockVault(address(usdc), address(usdt));
         mockTeller = new MockTeller();
         mockAtomicQueue = new MockAtomicQueue();
 
@@ -255,7 +255,7 @@ contract pUSDTest is Test {
 
     function testGetters() public {
         assertEq(token.getTeller(), address(mockTeller));
-        assertEq(token.getAtomicqueue(), address(mockAtomicQueue));
+        assertEq(token.getAtomicQueue(), address(mockAtomicQueue));
         assertEq(token.version(), 1);
     }
 
@@ -429,10 +429,12 @@ contract pUSDTest is Test {
 
         // Set USDC balance in vault
         vault.setBalance(address(usdc), usdcAmount);
+        console.log("USDC balance in vault:", vault.balanceOf(address(usdc)));
         assertEq(token.balanceOf(user1), usdcAmount, "Balance after USDC deposit incorrect");
 
         // Set USDT balance in vault
         vault.setBalance(address(usdt), usdtAmount);
+        console.log("USDT balance in vault:", vault.balanceOf(address(usdt)));
         assertEq(token.balanceOf(user1), totalAmount, "Balance after USDT deposit incorrect");
 
         // Test balance updates

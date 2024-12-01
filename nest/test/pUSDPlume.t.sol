@@ -214,7 +214,7 @@ contract pUSDPlumeTest is Test {
         // Verify the vault address matches what we set in setUp
         assertEq(address(token.getVault()), address(VAULT_ADDRESS));
         assertEq(address(token.getTeller()), address(TELLER_ADDRESS));
-        assertEq(address(token.getAtomicqueue()), address(ATOMIC_QUEUE_ADDRESS));
+        assertEq(address(token.getAtomicQueue()), address(ATOMIC_QUEUE_ADDRESS));
     }
 
     function testSupportsInterface() public skipIfNoRPC {

@@ -63,7 +63,7 @@ contract pUSD is
     struct BoringVault {
         ITeller teller;
         IVault vault;
-        IAtomicQueue atomicqueue;
+        IAtomicQueue atomicQueue;
     }
 
     /// @custom:storage-location erc7201:plume.storage.pUSD
@@ -73,11 +73,9 @@ contract pUSD is
         string tokenName;
         string tokenSymbol;
         uint256 version;
+        IERC20 usdc;
+        IERC20 usdt;
     }
-
-    // ========== CONSTANTS ==========
-    address public constant USDC = 0x401eCb1D350407f13ba348573E5630B83638E30D;
-    address public constant USDT = 0x2413b8C79Ce60045882559f63d308aE3DFE0903d;
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.pUSD")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant PUSD_STORAGE_LOCATION = 0x54ae4f9578cdf7faaee986bff2a08b358f01b852b4da3af4f67309dae312ee00;
@@ -110,7 +108,7 @@ contract pUSD is
      * @param usdc_ Address of the underlying asset
      * @param usdt_ Address of the underlying asset
      * @param vault_ Address of the Boring Vault
-     * @param atomicqueue_ Address of the AtomicQueue
+     * @param atomicQueue_ Address of the AtomicQueue
      */
     //
     function initialize(
@@ -119,7 +117,7 @@ contract pUSD is
         IERC20 usdt_,
         address vault_,
         address teller_,
-        address atomicqueue_
+        address atomicQueue_
     ) public initializer {
         require(owner != address(0), "Zero address owner");
         require(address(usdc_) != address(0), "Zero address asset");
@@ -127,7 +125,7 @@ contract pUSD is
 
         require(vault_ != address(0), "Zero address vault");
         require(teller_ != address(0), "Zero address teller");
-        require(atomicqueue_ != address(0), "Zero address AtomicQueue");
+        require(atomicQueue_ != address(0), "Zero address AtomicQueue");
 
         // Validate asset interface support
         try IERC20Metadata(address(usdc_)).decimals() returns (uint8) { }
@@ -145,10 +143,10 @@ contract pUSD is
         pUSDStorage storage $ = _getpUSDStorage();
         $.boringVault.teller = ITeller(teller_);
         $.boringVault.vault = IVault(vault_);
-        $.boringVault.atomicqueue = IAtomicQueue(atomicqueue_);
+        $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
+        $.usdc = usdc_;
+        $.usdt = usdt_;
 
-        //$.vault = IVault(vault_);
-        //$.atomicqueue = IAtomicQueue(atomicqueue_);
         $.version = 1; // Set initial version
 
         _grantRole(VAULT_ADMIN_ROLE, owner);
@@ -162,7 +160,7 @@ contract pUSD is
         IERC20 usdt_,
         address vault_,
         address teller_,
-        address atomicqueue_
+        address atomicQueue_
     ) public onlyRole(UPGRADER_ROLE) {
         // Reinitialize as needed
         require(owner != address(0), "Zero address owner");
@@ -170,7 +168,7 @@ contract pUSD is
 
         require(vault_ != address(0), "Zero address vault");
         require(teller_ != address(0), "Zero address teller");
-        require(atomicqueue_ != address(0), "Zero address AtomicQueue");
+        require(atomicQueue_ != address(0), "Zero address AtomicQueue");
 
         pUSDStorage storage $ = _getpUSDStorage();
 
@@ -178,7 +176,7 @@ contract pUSD is
         $.version += 1;
         $.boringVault.teller = ITeller(teller_);
         $.boringVault.vault = IVault(vault_);
-        $.boringVault.atomicqueue = IAtomicQueue(atomicqueue_);
+        $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
 
         _grantRole(VAULT_ADMIN_ROLE, owner);
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
@@ -222,8 +220,8 @@ contract pUSD is
      * @notice Get the current AtomicQueue address
      * @return Address of the current AtomicQueue
      */
-    function getAtomicqueue() external view returns (address) {
-        return address(_getpUSDStorage().boringVault.atomicqueue);
+    function getAtomicQueue() external view returns (address) {
+        return address(_getpUSDStorage().boringVault.atomicQueue);
     }
 
     /**
@@ -308,7 +306,7 @@ contract pUSD is
         }
 
         // Get AtomicQueue from storage
-        IAtomicQueue queue = _getpUSDStorage().boringVault.atomicqueue;
+        IAtomicQueue queue = _getpUSDStorage().boringVault.atomicQueue;
 
         // Create AtomicRequest struct
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
@@ -424,8 +422,8 @@ contract pUSD is
         address vaultAddress = address($.boringVault.vault);
 
         // Get balances of both USDC and USDT directly
-        uint256 usdcBalance = IERC20(USDC).balanceOf(vaultAddress);
-        uint256 usdtBalance = IERC20(USDT).balanceOf(vaultAddress);
+        uint256 usdcBalance = $.usdc.balanceOf(vaultAddress);
+        uint256 usdtBalance = $.usdt.balanceOf(vaultAddress);
 
         // Both USDC and USDT have 6 decimals, so we can simply add them
         return usdcBalance + usdtBalance;

@@ -9,32 +9,41 @@ contract MockVault {
 
     using SafeERC20 for IERC20;
 
-    mapping(address => uint256) private _balances;
+    // token => account => balance
+    mapping(address => mapping(address => uint256)) private _balances;
 
-    mapping(address => mapping(address => uint256)) private _allowances;
+    mapping(address => mapping(address => mapping(address => uint256))) private _allowances;
+
     IERC20 public asset;
+    IERC20 public immutable usdc;
+    IERC20 public immutable usdt;
     address public beforeTransferHook;
+
+    constructor(address _usdc, address _usdt) {
+        usdc = IERC20(_usdc);
+        usdt = IERC20(_usdt);
+    }
 
     function enter(address from, address asset_, uint256 assetAmount, address to, uint256 shareAmount) external {
         if (assetAmount > 0) {
             IERC20(asset_).safeTransferFrom(from, address(this), assetAmount);
         }
-        _balances[to] = _balances[to] + shareAmount;
-        _allowances[to][msg.sender] = type(uint256).max;
+        _balances[asset_][to] += shareAmount;
+        _allowances[asset_][to][msg.sender] = type(uint256).max;
     }
 
     function exit(address to, address asset_, uint256 assetAmount, address from, uint256 shareAmount) external {
         // Change from checking 'from' balance to checking the actual owner's balance
         address owner = from == msg.sender ? to : from;
-        require(_balances[owner] >= shareAmount, "MockVault: insufficient balance");
+        require(_balances[asset_][owner] >= shareAmount, "MockVault: insufficient balance");
 
-        uint256 allowed = _allowances[owner][msg.sender];
+        uint256 allowed = _allowances[asset_][owner][msg.sender];
         if (allowed != type(uint256).max) {
             require(allowed >= shareAmount, "MockVault: insufficient allowance");
-            _allowances[owner][msg.sender] = allowed - shareAmount;
+            _allowances[asset_][owner][msg.sender] = allowed - shareAmount;
         }
 
-        _balances[owner] = _balances[owner] - shareAmount;
+        _balances[asset_][owner] -= shareAmount;
 
         // Changed: Transfer to 'to' instead of msg.sender, and always transfer if we have shares
         if (shareAmount > 0) {
@@ -42,45 +51,52 @@ contract MockVault {
         }
     }
 
-    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
-        require(_balances[from] >= amount, "MockVault: insufficient balance");
+    function transferFrom(address asset_, address from, address to, uint256 amount) external returns (bool) {
+        require(_balances[asset_][from] >= amount, "MockVault: insufficient balance");
 
-        uint256 allowed = _allowances[from][msg.sender];
+        uint256 allowed = _allowances[asset_][from][msg.sender];
         if (allowed != type(uint256).max) {
             require(allowed >= amount, "MockVault: insufficient allowance");
-            _allowances[from][msg.sender] = allowed - amount;
+            _allowances[asset_][from][msg.sender] = allowed - amount;
         }
 
-        _balances[from] = _balances[from] - amount;
-        _balances[to] = _balances[to] + amount;
+        _balances[asset_][from] -= amount;
+        _balances[asset_][to] += amount;
         return true;
     }
 
-    function approve(address spender, uint256 amount) external returns (bool) {
-        _allowances[msg.sender][spender] = amount;
+    function approve(address asset_, address spender, uint256 amount) external returns (bool) {
+        _allowances[asset_][msg.sender][spender] = amount;
         return true;
     }
 
     function balanceOf(
         address account
     ) external view returns (uint256) {
-        return _balances[account];
+        // Return total balance across all assets
+        return _balances[address(usdc)][account] + _balances[address(usdt)][account];
+    }
+
+    function totalSupply() external view returns (uint256) {
+        // Return total supply across all assets
+        return _balances[address(usdc)][address(this)] + _balances[address(usdt)][address(this)];
+    }
+
+    function decimals() external pure returns (uint8) {
+        return 6;
+    }
+
+    function tokenBalance(address token, address account) external view returns (uint256) {
+        return _balances[token][account];
     }
 
     function setBalance(address token, uint256 amount) external {
-        _balances[token] = amount;
+        _balances[token][address(this)] = amount;
     }
 
-    function getBalance(
-        address token
-    ) external view returns (uint256) {
-        return _balances[token];
+    function allowance(address asset_, address owner, address spender) external view returns (uint256) {
+        return _allowances[asset_][owner][spender];
     }
-
-    function allowance(address owner, address spender) external view returns (uint256) {
-        return _allowances[owner][spender];
-    }
-    // Add function to set hook
 
     function setBeforeTransferHook(
         address hook
