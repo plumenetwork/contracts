@@ -138,7 +138,7 @@ contract pUSDPlumeTest is Test {
         uint256 depositAmount = 1e6;
         uint256 price = 1e6; // 1:1 price
         uint256 minimumMint = depositAmount;
-    uint64 deadline = uint64(block.timestamp + 1 hours);
+        uint64 deadline = uint64(block.timestamp + 1 hours);
 
         // Setup
         deal(address(asset), user1, depositAmount);

@@ -77,9 +77,6 @@ contract UpgradePUSD is Script, Test {
 
             pUSD upgradedToken = pUSD(PUSD_PROXY);
 
-
-
-
             vm.stopPrank();
             console2.log("Upgrade simulation successful");
         }
@@ -113,7 +110,7 @@ contract UpgradePUSD is Script, Test {
 
             // Verify the upgrade
             uint256 newVersion = pUSD(PUSD_PROXY).version();
-            
+
             pUSD upgradedToken = pUSD(PUSD_PROXY);
 
             //require(newVersion == currentVersion + 1, "Version not incremented");
@@ -123,9 +120,6 @@ contract UpgradePUSD is Script, Test {
             console2.log("Decimals:", upgradedToken.decimals());
             console2.log("Vault:", currentVault);
             console2.log("Total Supply:", upgradedToken.totalSupply());
-
-
-
 
             console2.log("New Version:", newVersion);
 

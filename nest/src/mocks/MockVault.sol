@@ -67,14 +67,13 @@ contract MockVault {
         return _balances[account];
     }
 
-
-
-    
     function setBalance(address token, uint256 amount) external {
         _balances[token] = amount;
     }
-    
-    function getBalance(address token) external view returns (uint256) {
+
+    function getBalance(
+        address token
+    ) external view returns (uint256) {
         return _balances[token];
     }
 

@@ -159,7 +159,7 @@ contract pUSD is
     function reinitialize(
         address owner,
         IERC20 usdc_,
-        IERC20 usdt_,        
+        IERC20 usdt_,
         address vault_,
         address teller_,
         address atomicqueue_
@@ -290,50 +290,46 @@ contract pUSD is
      * @param controller Address that currently controls the shares
      * @return assets Amount of assets withdrawn
      */
-  function redeem(
-    uint256 shares,
-    address receiver,
-    address controller,
-    uint256 price,
-    uint64 deadline
-) public virtual nonReentrant returns (uint256 assets) {
-    if (receiver == address(0)) {
-        revert InvalidReceiver();
-    }
-    if (controller == address(0)) {
-        revert InvalidController();
-    }
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address controller,
+        uint256 price,
+        uint64 deadline
+    ) public virtual nonReentrant returns (uint256 assets) {
+        if (receiver == address(0)) {
+            revert InvalidReceiver();
+        }
+        if (controller == address(0)) {
+            revert InvalidController();
+        }
         if (deadline < block.timestamp) {
-        revert("Deadline expired");
+            revert("Deadline expired");
+        }
+
+        // Get AtomicQueue from storage
+        IAtomicQueue queue = _getpUSDStorage().boringVault.atomicqueue;
+
+        // Create AtomicRequest struct
+        IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
+            deadline: deadline,
+            atomicPrice: uint88(price),
+            offerAmount: uint96(shares),
+            inSolve: false
+        });
+
+        IERC20(address(this)).safeIncreaseAllowance(address(queue), shares);
+
+        // Update atomic request
+        queue.updateAtomicRequest(ERC20(address(this)), ERC20(asset()), request);
+
+        // Get assets received from vault
+        assets = shares; // 1:1 ratio for preview to match actual redemption
+        IERC20(asset()).safeTransfer(receiver, assets);
+
+        emit Withdraw(msg.sender, receiver, controller, assets, shares);
+        return assets;
     }
-
-    // Get AtomicQueue from storage
-    IAtomicQueue queue = _getpUSDStorage().boringVault.atomicqueue;
-
-    // Create AtomicRequest struct
-    IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
-        deadline: deadline,
-        atomicPrice: uint88(price),
-        offerAmount: uint96(shares),
-        inSolve: false
-    });
-
-    IERC20(address(this)).safeIncreaseAllowance(address(queue), shares);
-
-    // Update atomic request
-    queue.updateAtomicRequest(
-        ERC20(address(this)),
-        ERC20(asset()),
-        request
-    );
-
-    // Get assets received from vault
-    assets = shares; // 1:1 ratio for preview to match actual redemption
-    IERC20(asset()).safeTransfer(receiver, assets);
-
-    emit Withdraw(msg.sender, receiver, controller, assets, shares);
-    return assets;
-}
 
     /**
      * @notice Calculate how many shares would be minted for a given amount of assets
