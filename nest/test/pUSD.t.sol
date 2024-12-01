@@ -43,6 +43,7 @@ contract pUSDTest is Test {
     MockLens public mockLens;
     MockAccountantWithRateProviders public mockAccountant;
 
+    address public payout_address = vm.addr(7_777_777);
     address public owner;
     address public user1;
     address public user2;
@@ -62,7 +63,9 @@ contract pUSDTest is Test {
         vault = new MockVault(address(usdc), address(usdt));
         mockTeller = new MockTeller();
         mockAtomicQueue = new MockAtomicQueue();
+        mockLens = new MockLens();
 
+        mockAccountant = new MockAccountantWithRateProviders(address(vault), address(usdc), 1e18);
         mockTeller.setAssetSupport(IERC20(address(usdc)), true);
         mockTeller.setAssetSupport(IERC20(address(usdt)), true);
 
@@ -447,30 +450,31 @@ contract pUSDTest is Test {
     }
 
     function testBalanceOf() public {
-        uint256 usdcAmount = 100e6;
-        uint256 usdtAmount = 50e6;
-        uint256 totalAmount = usdcAmount + usdtAmount;
+        uint256 depositAmount = 100e6;
 
-        // Initial balance should be 0
-        assertEq(token.balanceOf(user1), 0, "Initial balance should be 0");
+        // Initial balances should be 0
+        assertEq(token.balanceOf(user1), 0, "Initial share balance should be 0");
+        assertEq(token.balanceOfInAssets(user1), 0, "Initial asset balance should be 0");
 
-        // Setup: Mock the vault balances
+        // Setup initial rate in accountant
+        mockAccountant.updateExchangeRate(1e6); // 1:1 rate
+
         vm.startPrank(user1);
 
-        // Set USDC balance in vault
-        vault.setBalance(address(usdc), usdcAmount);
-        console.log("USDC balance in vault:", vault.balanceOf(address(usdc)));
-        assertEq(token.balanceOf(user1), usdcAmount, "Balance after USDC deposit incorrect");
+        // Deposit through vault
+        vault.enter(user1, address(usdc), depositAmount, user1, depositAmount);
 
-        // Set USDT balance in vault
-        vault.setBalance(address(usdt), usdtAmount);
-        console.log("USDT balance in vault:", vault.balanceOf(address(usdt)));
-        assertEq(token.balanceOf(user1), totalAmount, "Balance after USDT deposit incorrect");
+        // Check both balances
+        assertEq(token.balanceOf(user1), depositAmount, "Share balance after deposit incorrect");
+        assertEq(token.balanceOfInAssets(user1), depositAmount, "Asset balance after deposit incorrect with 1:1 rate");
 
-        // Test balance updates
-        vault.setBalance(address(usdc), usdcAmount / 2);
-        vault.setBalance(address(usdt), usdtAmount / 2);
-        assertEq(token.balanceOf(user1), (totalAmount / 2), "Balance after partial withdrawal incorrect");
+        // Test with different exchange rate
+        mockAccountant.updateExchangeRate(2e6); // 2:1 rate
+
+        // Share balance should remain the same
+        assertEq(token.balanceOf(user1), depositAmount, "Share balance should not change with rate");
+        // Asset balance should double
+        assertEq(token.balanceOfInAssets(user1), depositAmount * 2, "Asset balance incorrect with 2:1 rate");
 
         vm.stopPrank();
     }

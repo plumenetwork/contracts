@@ -421,6 +421,11 @@ contract pUSD is
         return true;
     }
 
+    /**
+     * @notice Get the balance of shares for an account
+     * @param account The address to check the balance for
+     * @return The number of shares owned by the account
+     */
     function balanceOf(
         address account
     ) public view override(IERC20, ERC20Upgradeable) returns (uint256) {
@@ -428,6 +433,11 @@ contract pUSD is
         return $.boringVault.lens.balanceOf(account, $.boringVault.vault);
     }
 
+    /**
+     * @notice Get the balance in terms of assets for an account
+     * @param account The address to check the balance for
+     * @return The value of shares in terms of assets owned by the account
+     */
     function balanceOfInAssets(
         address account
     ) public view returns (uint256) {

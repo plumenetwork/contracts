@@ -32,7 +32,7 @@ contract MockLens is ILens {
     }
 
     function balanceOf(address account, IVault vault) external view override returns (uint256 shares) {
-        return vault.balanceOf(account);
+        shares = vault.balanceOf(account);
     }
 
     function balanceOfInAssets(
@@ -42,7 +42,9 @@ contract MockLens is ILens {
     ) external view override returns (uint256 assets) {
         uint256 shares = vault.balanceOf(account);
         uint256 rate = accountant.getRate();
-        return shares.mulDivDown(rate, 10 ** 6);
+        uint8 shareDecimals = vault.decimals();
+
+        assets = shares.mulDivDown(rate, 10 ** shareDecimals);
     }
 
     function exchangeRate(
