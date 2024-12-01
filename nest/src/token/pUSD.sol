@@ -450,9 +450,9 @@ contract pUSD is
      * @param account The address to check the balance for
      * @return The value of shares in terms of assets owned by the account
      */
-    function balanceOfInAssets(
+    function assetsOf(
         address account
-    ) public view returns (uint256) {
+    ) public view virtual override(ComponentToken) returns (uint256) {
         pUSDStorage storage $ = _getpUSDStorage();
         return $.boringVault.lens.balanceOfInAssets(account, $.boringVault.vault, $.boringVault.accountant);
     }

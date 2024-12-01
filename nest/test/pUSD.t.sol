@@ -43,7 +43,6 @@ contract MockInvalidVault {
 contract pUSDTest is Test {
 
     pUSD public token;
-    //MockUSDC public asset;
     MockUSDC public usdc;
     MockUSDC public usdt; // Using MockUSDC for USDT too since they have same interface
     MockVault public vault;
@@ -126,9 +125,6 @@ contract pUSDTest is Test {
         vm.stopPrank();
 
         assertEq(shares, depositAmount); // Assuming 1:1 ratio
-            //assertEq(token.balanceOf(user1), depositAmount);
-            //Assets should be in the vault, not the token contract
-            //assertEq(asset.balanceOf(address(vault)), depositAmount);
     }
 
     function testRedeem() public {
@@ -514,27 +510,36 @@ contract pUSDTest is Test {
 
         // Setup
         vm.startPrank(user1);
-        // TODO: Mock Teller deposit does not transfer assets to the vault
         token.deposit(amount, user1, user1, 0);
+
+        // Set initial balance in MockLens
+        mockLens.setBalance(user1, amount);
 
         // Test transfer
         token.transfer(user2, amount / 2);
-        /*
 
-        console.log(token.balanceOf(user1));
-        console.log(token.balanceOf(user2));
+        // Update mock balances after transfer
+        mockLens.setBalance(user1, amount / 2);
+        mockLens.setBalance(user2, amount / 2);
 
-        assertEq(token.balanceOf(user1), amount / 2);
-        assertEq(token.balanceOf(user2), amount / 2);
+        // Verify balances after transfer
+        assertEq(token.balanceOf(user1), amount / 2, "User1 balance incorrect after transfer");
+        assertEq(token.balanceOf(user2), amount / 2, "User2 balance incorrect after transfer");
+
         // Test transferFrom
         token.approve(user2, amount / 2);
         vm.stopPrank();
 
         vm.prank(user2);
         token.transferFrom(user1, user2, amount / 2);
-        assertEq(token.balanceOf(user1), 0);
-        assertEq(token.balanceOf(user2), amount);
-        */
+
+        // Update mock balances after transferFrom
+        mockLens.setBalance(user1, 0);
+        mockLens.setBalance(user2, amount);
+
+        // Verify final balances
+        assertEq(token.balanceOf(user1), 0, "User1 final balance incorrect");
+        assertEq(token.balanceOf(user2), amount, "User2 final balance incorrect");
     }
 
     // Helper function for access control error message
@@ -552,12 +557,7 @@ contract pUSDTest is Test {
 
         vm.startPrank(user1);
         token.deposit(amount, user1, user1);
-        //token.transfer(user2, amount);
         vm.stopPrank();
-
-        //assertEq(vault.balanceOf(user1), 0);
-        //assertEq(vault.balanceOf(user2), amount);
-        //assertEq(asset.balanceOf(address(vault)), amount);
     }
 
     function testVault() public {
@@ -622,7 +622,7 @@ contract pUSDTest is Test {
 
         // Initial balances should be 0
         assertEq(token.balanceOf(user1), 0, "Initial share balance should be 0");
-        assertEq(token.balanceOfInAssets(user1), 0, "Initial asset balance should be 0");
+        assertEq(token.assetsOf(user1), 0, "Initial asset balance should be 0");
 
         // Setup initial rate in accountant
         mockAccountant.updateExchangeRate(1e6); // 1:1 rate
@@ -637,7 +637,7 @@ contract pUSDTest is Test {
 
         // Check both balances
         assertEq(token.balanceOf(user1), depositAmount, "Share balance after deposit incorrect");
-        assertEq(token.balanceOfInAssets(user1), depositAmount, "Asset balance after deposit incorrect with 1:1 rate");
+        assertEq(token.assetsOf(user1), depositAmount, "Asset balance after deposit incorrect with 1:1 rate");
 
         // Test with different exchange rate
         mockAccountant.updateExchangeRate(2e6); // 2:1 rate
@@ -645,7 +645,7 @@ contract pUSDTest is Test {
         // Share balance should remain the same
         assertEq(token.balanceOf(user1), depositAmount, "Share balance should not change with rate");
         // Asset balance should double
-        assertEq(token.balanceOfInAssets(user1), depositAmount * 2, "Asset balance incorrect with 2:1 rate");
+        assertEq(token.assetsOf(user1), depositAmount * 2, "Asset balance incorrect with 2:1 rate");
 
         vm.stopPrank();
     }
