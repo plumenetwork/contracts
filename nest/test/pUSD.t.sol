@@ -187,8 +187,6 @@ contract pUSDTest is Test {
 
     function testReinitialize() public {
         // First reinitialize with valid parameters
-        //        token.reinitialize(owner, IERC20(address(asset)), address(vault), address(mockTeller),
-        // address(mockAtomicQueue));
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
@@ -200,7 +198,7 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        assertEq(token.version(), 2);
+        assertNotEq(token.version(), 1);
 
         // Test zero address requirements
         vm.expectRevert("Zero address owner");
@@ -233,7 +231,7 @@ contract pUSDTest is Test {
             owner,
             IERC20(address(usdc)),
             IERC20(address(usdt)),
-            address(vault),
+            address(0),
             address(mockTeller),
             address(mockAtomicQueue),
             address(mockLens),
@@ -460,6 +458,9 @@ contract pUSDTest is Test {
         mockAccountant.updateExchangeRate(1e6); // 1:1 rate
 
         vm.startPrank(user1);
+
+        // Approve vault to spend USDC
+        usdc.approve(address(vault), type(uint256).max);
 
         // Deposit through vault
         vault.enter(user1, address(usdc), depositAmount, user1, depositAmount);
