@@ -36,34 +36,15 @@ contract ConcreteComponentToken is ComponentToken {
 contract DeployNestContracts is Script, Test {
 
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
-    address private constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
-    address private constant PUSD_PROXY = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
+    address private constant VAULT_ADDRESS = 0x52805adf7b3d25c013eDa66eF32b53d1696f809C;
+    address private constant PUSD_ADDRESS = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
 
     function test() public { }
 
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
+        ERC1967Proxy pUSDProxy = ERC1967Proxy(payable(PUSD_ADDRESS));
 
-        // Deploy ConcreteComponentToken
-        ConcreteComponentToken componentToken = new ConcreteComponentToken();
-        ERC1967Proxy componentTokenProxy = new ERC1967Proxy(
-            address(componentToken),
-            abi.encodeCall(
-                ComponentToken.initialize,
-                (
-                    NEST_ADMIN_ADDRESS, // owner
-                    "Banana", // name
-                    "BAN", // symbol
-                    IERC20(PUSD_PROXY), // asset token
-                    false, // async deposit
-                    false // async redeem
-                )
-            )
-        );
-
-        console2.log("ComponentTokenProxy deployed to:", address(componentTokenProxy));
-
-        // Deploy AggregateToken with both component tokens
         AggregateToken aggregateToken = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateToken),
@@ -71,25 +52,15 @@ contract DeployNestContracts is Script, Test {
                 AggregateToken.initialize,
                 (
                     NEST_ADMIN_ADDRESS,
-                    "Apple",
-                    "AAPL",
-                    IComponentToken(PUSD_PROXY),
+                    "Nest Insto Vault",
+                    "NIV",
+                    IComponentToken(address(pUSDProxy)),
                     1e17, // ask price
                     1e17 // bid price
                 )
             )
         );
         console2.log("AggregateTokenProxy deployed to:", address(aggregateTokenProxy));
-
-        // Add new component tokens
-        AggregateToken(address(aggregateTokenProxy)).addComponentToken(IComponentToken(PUSD_PROXY));
-        AggregateToken(address(aggregateTokenProxy)).addComponentToken(IComponentToken(address(componentTokenProxy)));
-
-        // Deploy NestStaking
-        NestStaking nestStaking = new NestStaking();
-        NestStakingProxy nestStakingProxy =
-            new NestStakingProxy(address(nestStaking), abi.encodeCall(NestStaking.initialize, (NEST_ADMIN_ADDRESS)));
-        console2.log("NestStakingProxy deployed to:", address(nestStakingProxy));
 
         vm.stopBroadcast();
     }

@@ -44,6 +44,8 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     // Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 private constant _BASE = 1e18;
+    /// @notice Role for the price updater of the AggregateToken
+    bytes32 public constant PRICE_UPDATER_ROLE = keccak256("PRICE_UPDATER_ROLE");
 
     // Errors
 
@@ -255,7 +257,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      */
     function setAskPrice(
         uint256 askPrice
-    ) external onlyRole(ADMIN_ROLE) {
+    ) external onlyRole(PRICE_UPDATER_ROLE) {
         _getAggregateTokenStorage().askPrice = askPrice;
     }
 
@@ -266,7 +268,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      */
     function setBidPrice(
         uint256 bidPrice
-    ) external onlyRole(ADMIN_ROLE) {
+    ) external onlyRole(PRICE_UPDATER_ROLE) {
         _getAggregateTokenStorage().bidPrice = bidPrice;
     }
 

@@ -208,6 +208,16 @@ abstract contract ComponentToken is
         return super.totalAssets();
     }
 
+    /// @notice Total value held by the given owner
+    /// @dev Reverts with Unimplemented() until convertToAssets is implemented by the concrete contract
+    /// @param owner Address to query the balance of
+    /// @return assets Total value held by the owner
+    function assetsOf(
+        address owner
+    ) public view virtual returns (uint256 assets) {
+        return convertToAssets(balanceOf(owner));
+    }
+
     /// @inheritdoc IERC4626
     function convertToShares(
         uint256 assets
