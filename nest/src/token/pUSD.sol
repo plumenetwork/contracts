@@ -406,7 +406,10 @@ contract pUSD is
      * @param amount Amount of tokens to transfer
      * @return bool indicating whether the transfer was successful
      */
-    function transfer(address to, uint256 amount) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
+    function transfer(
+        address to,
+        uint256 amount
+    ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
         address owner = _msgSender();
         _transfer(owner, to, amount);
         return true;
@@ -423,7 +426,7 @@ contract pUSD is
         address from,
         address to,
         uint256 amount
-    ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
+    ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
         address spender = _msgSender();
         _spendAllowance(from, spender, amount);
         _transfer(from, to, amount);
