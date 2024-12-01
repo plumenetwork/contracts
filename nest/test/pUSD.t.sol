@@ -7,6 +7,8 @@ import { ITeller } from "../src/interfaces/ITeller.sol";
 import { MockAtomicQueue } from "../src/mocks/MockAtomicQueue.sol";
 import { MockTeller } from "../src/mocks/MockTeller.sol";
 
+import { MockAccountantWithRateProviders } from "../src/mocks/MockAccountantWithRateProviders.sol";
+import { MockLens } from "../src/mocks/MockLens.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 import { MockVault } from "../src/mocks/MockVault.sol";
 
@@ -38,6 +40,8 @@ contract pUSDTest is Test {
     MockVault public vault;
     MockTeller public mockTeller;
     MockAtomicQueue public mockAtomicQueue;
+    MockLens public mockLens;
+    MockAccountantWithRateProviders public mockAccountant;
 
     address public owner;
     address public user1;
@@ -77,7 +81,9 @@ contract pUSDTest is Test {
                     IERC20(address(usdt)),
                     address(vault),
                     address(mockTeller),
-                    address(mockAtomicQueue)
+                    address(mockAtomicQueue),
+                    address(mockLens),
+                    address(mockAccountant)
                 )
             )
         );
@@ -166,7 +172,9 @@ contract pUSDTest is Test {
                 IERC20(address(invalidAsset)),
                 address(vault),
                 address(mockTeller),
-                address(mockAtomicQueue)
+                address(mockAtomicQueue),
+                address(mockLens),
+                address(mockAccountant)
             )
         );
 
@@ -184,7 +192,9 @@ contract pUSDTest is Test {
             IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
-            address(mockAtomicQueue)
+            address(mockAtomicQueue),
+            address(mockLens),
+            address(mockAccountant)
         );
 
         assertEq(token.version(), 2);
@@ -197,7 +207,9 @@ contract pUSDTest is Test {
             IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
-            address(mockAtomicQueue)
+            address(mockAtomicQueue),
+            address(mockLens),
+            address(mockAccountant)
         );
 
         vm.expectRevert("Zero address asset");
@@ -208,7 +220,9 @@ contract pUSDTest is Test {
             IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
-            address(mockAtomicQueue)
+            address(mockAtomicQueue),
+            address(mockLens),
+            address(mockAccountant)
         );
 
         vm.expectRevert("Zero address vault");
@@ -218,17 +232,33 @@ contract pUSDTest is Test {
             IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
-            address(mockAtomicQueue)
+            address(mockAtomicQueue),
+            address(mockLens),
+            address(mockAccountant)
         );
 
         vm.expectRevert("Zero address teller");
         token.reinitialize(
-            owner, IERC20(address(usdc)), IERC20(address(usdt)), address(vault), address(0), address(mockAtomicQueue)
+            owner,
+            IERC20(address(usdc)),
+            IERC20(address(usdt)),
+            address(vault),
+            address(0),
+            address(mockAtomicQueue),
+            address(mockLens),
+            address(mockAccountant)
         );
 
         vm.expectRevert("Zero address AtomicQueue");
         token.reinitialize(
-            owner, IERC20(address(usdc)), IERC20(address(usdt)), address(vault), address(mockTeller), address(0)
+            owner,
+            IERC20(address(usdc)),
+            IERC20(address(usdt)),
+            address(vault),
+            address(mockTeller),
+            address(0),
+            address(mockLens),
+            address(mockAccountant)
         );
     }
 

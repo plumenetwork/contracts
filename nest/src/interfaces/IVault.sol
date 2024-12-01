@@ -41,6 +41,12 @@ interface IVault {
     function approve(address spender, uint256 amount) external returns (bool);
 
     /**
+     * @notice Returns the total supply of vault shares
+     * @return uint256 Total number of shares in existence
+     */
+    function totalSupply() external view returns (uint256);
+
+    /**
      * @notice Returns the number of vault shares owned by an account
      * @param account Address to check balance for
      * @return uint256 Number of shares owned by the account

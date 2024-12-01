@@ -11,11 +11,12 @@ import { ERC20 } from "@solmate/tokens/ERC20.sol";
 
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
 
+import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
 
+import { ILens } from "../interfaces/ILens.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
 import { IVault } from "../interfaces/IVault.sol";
-
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
@@ -64,6 +65,8 @@ contract pUSD is
         ITeller teller;
         IVault vault;
         IAtomicQueue atomicQueue;
+        ILens lens;
+        IAccountantWithRateProviders accountant;
     }
 
     /// @custom:storage-location erc7201:plume.storage.pUSD
@@ -117,7 +120,9 @@ contract pUSD is
         IERC20 usdt_,
         address vault_,
         address teller_,
-        address atomicQueue_
+        address atomicQueue_,
+        address lens_,
+        address accountant_
     ) public initializer {
         require(owner != address(0), "Zero address owner");
         require(address(usdc_) != address(0), "Zero address asset");
@@ -144,6 +149,8 @@ contract pUSD is
         $.boringVault.teller = ITeller(teller_);
         $.boringVault.vault = IVault(vault_);
         $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
+        $.boringVault.lens = ILens(lens_);
+        $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
         $.usdc = usdc_;
         $.usdt = usdt_;
 
@@ -160,7 +167,9 @@ contract pUSD is
         IERC20 usdt_,
         address vault_,
         address teller_,
-        address atomicQueue_
+        address atomicQueue_,
+        address lens_,
+        address accountant_
     ) public onlyRole(UPGRADER_ROLE) {
         // Reinitialize as needed
         require(owner != address(0), "Zero address owner");
@@ -177,6 +186,8 @@ contract pUSD is
         $.boringVault.teller = ITeller(teller_);
         $.boringVault.vault = IVault(vault_);
         $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
+        $.boringVault.lens = ILens(lens_);
+        $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
 
         _grantRole(VAULT_ADMIN_ROLE, owner);
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
@@ -410,23 +421,18 @@ contract pUSD is
         return true;
     }
 
-    /**
-     * @notice Get the token balance of an account
-     * @param account Address to check balance for
-     * @return Balance of the account
-     */
     function balanceOf(
         address account
     ) public view override(IERC20, ERC20Upgradeable) returns (uint256) {
         pUSDStorage storage $ = _getpUSDStorage();
-        address vaultAddress = address($.boringVault.vault);
+        return $.boringVault.lens.balanceOf(account, $.boringVault.vault);
+    }
 
-        // Get balances of both USDC and USDT directly
-        uint256 usdcBalance = $.usdc.balanceOf(vaultAddress);
-        uint256 usdtBalance = $.usdt.balanceOf(vaultAddress);
-
-        // Both USDC and USDT have 6 decimals, so we can simply add them
-        return usdcBalance + usdtBalance;
+    function balanceOfInAssets(
+        address account
+    ) public view returns (uint256) {
+        pUSDStorage storage $ = _getpUSDStorage();
+        return $.boringVault.lens.balanceOfInAssets(account, $.boringVault.vault, $.boringVault.accountant);
     }
 
     // ========== METADATA OVERRIDES ==========
