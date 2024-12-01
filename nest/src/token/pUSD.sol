@@ -446,18 +446,15 @@ contract pUSD is
     }
 
     /**
-     * @notice Get the total value in assets held by an account
-     * @param account Address to query the balance of
-     * @return assets Total value in assets held by the owner
+     * @notice Get the balance in terms of assets for an account
+     * @param account The address to check the balance for
+     * @return The value of shares in terms of assets owned by the account
      */
-    function assetsOf(
+    function balanceOfInAssets(
         address account
-    ) public view override(ComponentToken) returns (uint256 assets) {
+    ) public view returns (uint256) {
         pUSDStorage storage $ = _getpUSDStorage();
-
-        // Use the lens directly
         return $.boringVault.lens.balanceOfInAssets(account, $.boringVault.vault, $.boringVault.accountant);
-
     }
 
     // ========== METADATA OVERRIDES ==========
