@@ -197,7 +197,10 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      * @param componentToken ComponentToken to approve
      * @param amount Amount of `asset` to approve
      */
-    function approveComponentToken(IComponentToken componentToken, uint256 amount) external onlyRole(ADMIN_ROLE) {
+    function approveComponentToken(
+        IComponentToken componentToken,
+        uint256 amount
+    ) external nonReentrant onlyRole(ADMIN_ROLE) {
         IERC20(componentToken.asset()).approve(address(componentToken), amount);
     }
 
@@ -208,7 +211,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      */
     function addComponentToken(
         IComponentToken componentToken
-    ) external onlyRole(ADMIN_ROLE) {
+    ) external nonReentrant onlyRole(ADMIN_ROLE) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
         if ($.componentTokenMap[componentToken]) {
             revert ComponentTokenAlreadyListed(componentToken);
@@ -225,7 +228,10 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      * @param componentToken ComponentToken to buy
      * @param assets Amount of `asset` to pay to receive the ComponentToken
      */
-    function buyComponentToken(IComponentToken componentToken, uint256 assets) public onlyRole(ADMIN_ROLE) {
+    function buyComponentToken(
+        IComponentToken componentToken,
+        uint256 assets
+    ) public nonReentrant onlyRole(ADMIN_ROLE) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
 
         if (!$.componentTokenMap[componentToken]) {
@@ -248,7 +254,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     function sellComponentToken(
         IComponentToken componentToken,
         uint256 componentTokenAmount
-    ) public onlyRole(ADMIN_ROLE) {
+    ) public nonReentrant onlyRole(ADMIN_ROLE) {
         uint256 assets = componentToken.redeem(componentTokenAmount, address(this), address(this));
         emit ComponentTokenSold(msg.sender, componentToken, componentTokenAmount, assets);
     }
@@ -260,7 +266,10 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      * @param componentToken ComponentToken to buy
      * @param assets Amount of `asset` to pay to receive the ComponentToken
      */
-    function requestBuyComponentToken(IComponentToken componentToken, uint256 assets) public onlyRole(ADMIN_ROLE) {
+    function requestBuyComponentToken(
+        IComponentToken componentToken,
+        uint256 assets
+    ) public nonReentrant onlyRole(ADMIN_ROLE) {
         uint256 requestId = componentToken.requestDeposit(assets, address(this), address(this));
         emit ComponentTokenBuyRequested(msg.sender, componentToken, assets, requestId);
     }
@@ -275,7 +284,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     function requestSellComponentToken(
         IComponentToken componentToken,
         uint256 componentTokenAmount
-    ) public onlyRole(ADMIN_ROLE) {
+    ) public nonReentrant onlyRole(ADMIN_ROLE) {
         uint256 requestId = componentToken.requestRedeem(componentTokenAmount, address(this), address(this));
         emit ComponentTokenSellRequested(msg.sender, componentToken, componentTokenAmount, requestId);
     }
@@ -289,7 +298,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      */
     function setAskPrice(
         uint256 askPrice
-    ) external onlyRole(PRICE_UPDATER_ROLE) {
+    ) external nonReentrant onlyRole(PRICE_UPDATER_ROLE) {
         _getAggregateTokenStorage().askPrice = askPrice;
     }
 
@@ -300,7 +309,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      */
     function setBidPrice(
         uint256 bidPrice
-    ) external onlyRole(PRICE_UPDATER_ROLE) {
+    ) external nonReentrant onlyRole(PRICE_UPDATER_ROLE) {
         _getAggregateTokenStorage().bidPrice = bidPrice;
     }
 
@@ -321,7 +330,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      * @notice Unpause the AggregateToken contract for deposits
      * @dev Only the owner can unpause the AggregateToken contract for deposits
      */
-    function unpause() external onlyRole(ADMIN_ROLE) {
+    function unpause() external nonReentrant onlyRole(ADMIN_ROLE) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
         if (!$.paused) {
             revert NotPaused();
