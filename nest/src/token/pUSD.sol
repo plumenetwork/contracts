@@ -11,7 +11,6 @@ import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.so
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
@@ -41,7 +40,6 @@ contract pUSD is
 {
 
     using SafeERC20 for IERC20;
-    //using Math for uint256;
     using FixedPointMathLib for uint256;
 
     // ========== ERRORS ==========
@@ -55,6 +53,7 @@ contract pUSD is
 
     error AssetNotSupported();
     error TellerPaused();
+    error DeadlineExpired();
 
     // ========== STORAGE ==========
 
@@ -153,9 +152,11 @@ contract pUSD is
 
         $.version = 1; // Set initial version
 
+        _grantRole(ADMIN_ROLE, owner); 
         _grantRole(VAULT_ADMIN_ROLE, owner);
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
-        _grantRole(UPGRADER_ROLE, owner); // Grant upgrader role to owner
+        _grantRole(UPGRADER_ROLE, owner); 
+
     }
 
     function reinitialize(
@@ -186,6 +187,7 @@ contract pUSD is
         $.boringVault.lens = ILens(lens_);
         $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
 
+        _grantRole(ADMIN_ROLE, owner); 
         _grantRole(VAULT_ADMIN_ROLE, owner);
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(UPGRADER_ROLE, owner);
@@ -259,7 +261,7 @@ contract pUSD is
             revert InvalidReceiver();
         }
 
-        ITeller teller = ITeller(address(_getpUSDStorage().boringVault.teller));
+        ITeller teller = _getpUSDStorage().boringVault.teller;
 
         // Verify deposit is allowed through teller
         if (teller.isPaused()) {
@@ -310,7 +312,7 @@ contract pUSD is
             revert InvalidController();
         }
         if (deadline < block.timestamp) {
-            revert("Deadline expired");
+            revert DeadlineExpired();
         }
 
         // Get AtomicQueue from storage
