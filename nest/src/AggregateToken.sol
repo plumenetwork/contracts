@@ -28,6 +28,8 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 askPrice;
         /// @dev Price at which users can sell the AggregateToken to receive `asset`, times the base
         uint256 bidPrice;
+        /// @dev True if the AggregateToken contract is paused for deposits, false otherwise
+        bool paused;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AggregateToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -46,6 +48,14 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     uint256 private constant _BASE = 1e18;
     /// @notice Role for the price updater of the AggregateToken
     bytes32 public constant PRICE_UPDATER_ROLE = keccak256("PRICE_UPDATER_ROLE");
+
+    // Events
+
+    /// @notice Emitted when the AggregateToken contract is paused for deposits
+    event Paused();
+
+    /// @notice Emitted when the AggregateToken contract is unpaused for deposits
+    event Unpaused();
 
     // Errors
 
@@ -79,6 +89,15 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      * @param asset Actual `asset` for the AggregateToken
      */
     error InvalidAsset(IERC20 invalidAsset, IERC20 asset);
+
+    /// @notice Indicates a failure because the contract is paused for deposits
+    error DepositPaused();
+
+    /// @notice Indicates a failure because the contract is already paused for deposits
+    error AlreadyPaused();
+
+    /// @notice Indicates a failure because the contract is not paused for deposits
+    error NotPaused();
 
     // Initializer
 
@@ -114,6 +133,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         $.componentTokenMap[asset_] = true;
         $.askPrice = askPrice;
         $.bidPrice = bidPrice;
+        $.paused = false;
     }
 
     // Override Functions
@@ -141,6 +161,18 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     /// @inheritdoc IComponentToken
     function asset() public view override(ComponentToken, IComponentToken) returns (address assetTokenAddress) {
         return super.asset();
+    }
+
+    /// @inheritdoc IComponentToken
+    function deposit(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public override(ComponentToken, IComponentToken) returns (uint256 shares) {
+        if (_getAggregateTokenStorage().paused) {
+            revert DepositPaused();
+        }
+        return super.deposit(assets, receiver, controller);
     }
 
     /// @inheritdoc IComponentToken
@@ -248,7 +280,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         emit ComponentTokenSellRequested(msg.sender, componentToken, componentTokenAmount, requestId);
     }
 
-    // Admin Setter Functions
+    // Admin Functions
 
     /**
      * @notice Set the price at which users can buy the AggregateToken using `asset`
@@ -272,6 +304,32 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         _getAggregateTokenStorage().bidPrice = bidPrice;
     }
 
+    /**
+     * @notice Pause the AggregateToken contract for deposits
+     * @dev Only the owner can pause the AggregateToken contract for deposits
+     */
+    function pause() external onlyRole(ADMIN_ROLE) {
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        if ($.paused) {
+            revert AlreadyPaused();
+        }
+        $.paused = true;
+        emit Paused();
+    }
+
+    /**
+     * @notice Unpause the AggregateToken contract for deposits
+     * @dev Only the owner can unpause the AggregateToken contract for deposits
+     */
+    function unpause() external onlyRole(ADMIN_ROLE) {
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        if (!$.paused) {
+            revert NotPaused();
+        }
+        $.paused = false;
+        emit Unpaused();
+    }
+
     // Getter View Functions
 
     /// @notice Price at which users can buy the AggregateToken using `asset`, times the base
@@ -287,6 +345,11 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     /// @notice Get all ComponentTokens that have ever been added to the AggregateToken
     function getComponentTokenList() public view returns (IComponentToken[] memory) {
         return _getAggregateTokenStorage().componentTokenList;
+    }
+
+    /// @notice Returns true if the AggregateToken contract is paused for deposits
+    function isPaused() external view returns (bool) {
+        return _getAggregateTokenStorage().paused;
     }
 
     /**
