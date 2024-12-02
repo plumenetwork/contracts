@@ -4,7 +4,7 @@ pragma solidity ^0.8.25;
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { ILens } from "../interfaces/ILens.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
-import { IVault } from "../interfaces/IVault.sol";
+import { IVault } from "../interfaces/IBoringVault.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 import "forge-std/console2.sol";

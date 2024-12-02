@@ -16,7 +16,7 @@ import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
 
 import { ILens } from "../interfaces/ILens.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
-import { IVault } from "../interfaces/IVault.sol";
+import { IVault } from "../interfaces/IBoringVault.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";

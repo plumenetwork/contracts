@@ -122,7 +122,6 @@ contract UpgradePUSD is Script, Test {
 
             pUSD upgradedToken = pUSD(PUSD_PROXY);
 
-            //require(newVersion == currentVersion + 1, "Version not incremented");
             console2.log("Updated Implementation State:");
             console2.log("Name:", upgradedToken.name());
             console2.log("Symbol:", upgradedToken.symbol());
