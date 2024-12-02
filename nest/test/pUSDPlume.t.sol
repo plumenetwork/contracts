@@ -79,14 +79,6 @@ contract pUSDPlumeTest is Test {
         asset.approve(address(vault), type(uint256).max);
         asset.approve(TELLER_ADDRESS, type(uint256).max);
 
-        /*
-        // Additional setup for the vault if needed
-        if (IAccessControl(address(vault)).hasRole(keccak256("APPROVER_ROLE"), owner)) {
-            vault.approve(address(token), type(uint256).max);
-            vault.approve(TELLER_ADDRESS, type(uint256).max);
-        }
-        */
-
         vm.stopPrank();
     }
 
@@ -123,13 +115,6 @@ contract pUSDPlumeTest is Test {
         uint256 shares = token.deposit(depositAmount, user1, user1, minimumMint);
 
         console.log("Shares received:", shares);
-        // TODO: Add assertions
-
-        //console.log("pUSD balance after deposit:", token.balanceOf(user1));
-        //console.log("Asset balance in vault:", asset.balanceOf(address(vault)));
-        //assertEq(shares, depositAmount);
-        //assertEq(token.balanceOf(user1), depositAmount);
-        //assertEq(asset.balanceOf(address(vault)), depositAmount);
 
         vm.stopPrank();
     }
@@ -164,7 +149,6 @@ contract pUSDPlumeTest is Test {
 
         vm.stopPrank();
 
-        // TODO: warp time and verify final state
     }
 
     function testTransfer() public skipIfNoRPC {
@@ -205,9 +189,7 @@ contract pUSDPlumeTest is Test {
         //token.transfer(user2, amount);
         vm.stopPrank();
 
-        //assertEq(vault.balanceOf(user1), 0);
-        //assertEq(vault.balanceOf(user2), amount);
-        //assertEq(asset.balanceOf(address(vault)), amount);
+
     }
 
     function testVault() public skipIfNoRPC {
@@ -230,8 +212,6 @@ contract pUSDPlumeTest is Test {
         bytes4 randomInterfaceId = bytes4(keccak256("random()"));
         assertFalse(token.supportsInterface(randomInterfaceId));
     }
-    // small hack to be excluded from coverage report
 
-    function test() public { }
 
 }
