@@ -406,7 +406,7 @@ contract pUSD is
         address to,
         uint256 amount
     ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
-        address owner = _msgSender();
+        address owner = msg.sender;
         _transfer(owner, to, amount);
         return true;
     }
@@ -423,7 +423,7 @@ contract pUSD is
         address to,
         uint256 amount
     ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
-        address spender = _msgSender();
+        address spender = msg.sender;
         _spendAllowance(from, spender, amount);
         _transfer(from, to, amount);
         return true;
