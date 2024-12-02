@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-interface IVault {
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+interface IVault is IERC20, IERC20Metadata {
 
     /**
      * @notice Deposits assets into the vault in exchange for shares
@@ -22,43 +25,5 @@ interface IVault {
      * @param shareAmount Amount of shares to burn
      */
     function exit(address to, address asset, uint256 assetAmount, address from, uint256 shareAmount) external;
-
-    /**
-     * @notice Transfers vault shares from one address to another
-     * @param from Address sending the shares
-     * @param to Address receiving the shares
-     * @param amount Number of shares to transfer
-     * @return bool Success of the transfer operation
-     */
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-
-    /**
-     * @notice Approves another address to spend vault shares
-     * @param spender Address authorized to spend shares
-     * @param amount Number of shares approved to spend
-     * @return bool Success of the approval operation
-     */
-    function approve(address spender, uint256 amount) external returns (bool);
-
-    /**
-     * @notice Returns the total supply of vault shares
-     * @return uint256 Total number of shares in existence
-     */
-    function totalSupply() external view returns (uint256);
-
-    /**
-     * @notice Returns the number of vault shares owned by an account
-     * @param account Address to check balance for
-     * @return uint256 Number of shares owned by the account
-     */
-    function balanceOf(
-        address account
-    ) external view returns (uint256);
-
-    /**
-     * @notice Returns the number of decimals used for share precision
-     * @return uint8 The number of decimals used for share amounts
-     */
-    function decimals() external view returns (uint8);
 
 }

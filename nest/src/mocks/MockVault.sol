@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ERC721Holder } from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import { Auth, Authority } from "@solmate/auth/Auth.sol";
 
-contract MockVault {
+import { IVault } from "../interfaces/IBoringVault.sol";
+
+contract MockVault is ERC20, Auth, ERC721Holder, ERC1155Holder, IVault {
 
     using SafeERC20 for IERC20;
 
@@ -19,9 +25,13 @@ contract MockVault {
     IERC20 public immutable usdt;
     address public beforeTransferHook;
 
-    constructor(address _usdc, address _usdt) {
+    constructor(
+        address _owner,
+        string memory _name,
+        string memory _symbol,
+        address _usdc
+    ) ERC20(_name, _symbol) Auth(_owner, Authority(address(0))) {
         usdc = IERC20(_usdc);
-        usdt = IERC20(_usdt);
     }
 
     function enter(address from, address asset_, uint256 assetAmount, address to, uint256 shareAmount) external {
@@ -72,17 +82,17 @@ contract MockVault {
 
     function balanceOf(
         address account
-    ) external view returns (uint256) {
+    ) public view virtual override(ERC20, IERC20) returns (uint256) {
         // Return total balance across all assets
         return _balances[address(usdc)][account] + _balances[address(usdt)][account];
     }
 
-    function totalSupply() external view returns (uint256) {
+    function totalSupply() public view virtual override(ERC20, IERC20) returns (uint256) {
         // Return total supply across all assets
         return _balances[address(usdc)][address(this)] + _balances[address(usdt)][address(this)];
     }
 
-    function decimals() external pure returns (uint8) {
+    function decimals() public pure virtual override(ERC20, IERC20Metadata) returns (uint8) {
         return 6;
     }
 

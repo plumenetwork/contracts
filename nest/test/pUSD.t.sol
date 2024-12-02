@@ -45,7 +45,6 @@ contract pUSDTest is Test {
 
     pUSD public token;
     MockUSDC public usdc;
-    MockUSDC public usdt; // Using MockUSDC for USDT too since they have same interface
     MockVault public vault;
     MockTeller public mockTeller;
     MockAtomicQueue public mockAtomicQueue;
@@ -67,16 +66,14 @@ contract pUSDTest is Test {
         // Deploy contracts
         //asset = new MockUSDC();
         usdc = new MockUSDC();
-        usdt = new MockUSDC(); // Deploy USDT mock
 
-        vault = new MockVault(address(usdc), address(usdt));
+        vault = new MockVault(owner, "Mock Vault", "mVault", address(usdc));
         mockTeller = new MockTeller();
         mockAtomicQueue = new MockAtomicQueue();
         mockLens = new MockLens();
 
         mockAccountant = new MockAccountantWithRateProviders(address(vault), address(usdc), 1e6);
         mockTeller.setAssetSupport(IERC20(address(usdc)), true);
-        mockTeller.setAssetSupport(IERC20(address(usdt)), true);
 
         // Set the MockTeller as the beforeTransferHook in the vault
         vault.setBeforeTransferHook(address(mockTeller));
@@ -102,10 +99,9 @@ contract pUSDTest is Test {
 
         // Setup balances
         usdc.mint(user1, 1000e6);
-        usdt.mint(user1, 1000e6);
+
         vm.prank(user1);
         usdc.approve(address(token), type(uint256).max);
-        usdt.approve(address(token), type(uint256).max);
     }
 
     function testInitialize() public {
@@ -134,7 +130,6 @@ contract pUSDTest is Test {
 
         // Setup
         deal(address(usdc), user1, depositAmount);
-        deal(address(usdt), user1, depositAmount);
 
         vm.startPrank(user1);
 
@@ -143,15 +138,10 @@ contract pUSDTest is Test {
         usdc.approve(address(vault), type(uint256).max);
         usdc.approve(address(mockTeller), type(uint256).max);
 
-        usdt.approve(address(token), type(uint256).max);
-        usdt.approve(address(vault), type(uint256).max);
-        usdt.approve(address(mockTeller), type(uint256).max);
-
         // Additional approval needed for the vault to transfer from pUSD
         vm.stopPrank();
         vm.startPrank(address(token));
         usdc.approve(address(vault), type(uint256).max);
-        usdt.approve(address(vault), type(uint256).max);
         vm.stopPrank();
 
         vm.startPrank(user1);
@@ -307,7 +297,6 @@ contract pUSDTest is Test {
         // Test asset not supported
         mockTeller.setPaused(false);
         mockTeller.setAssetSupport(IERC20(address(usdc)), false);
-        mockTeller.setAssetSupport(IERC20(address(usdt)), false);
         vm.startPrank(user1);
         vm.expectRevert(pUSD.AssetNotSupported.selector);
         token.deposit(depositAmount, user1, user1, 0);
