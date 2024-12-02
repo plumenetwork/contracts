@@ -43,37 +43,8 @@ contract DeployNestContracts is Script, Test {
 
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
-
-        // Deploy pUSD
-        /*
-        pUSD pUSDToken = new pUSD();
-        ERC1967Proxy pUSDProxy =
-        new ERC1967Proxy(address(pUSDToken), abi.encodeCall(pUSD.initialize, (VAULT_ADDRESS, NEST_ADMIN_ADDRESS)));
-        console2.log("pUSDProxy deployed to:", address(pUSDProxy));
-        */
         ERC1967Proxy pUSDProxy = ERC1967Proxy(payable(PUSD_ADDRESS));
 
-        // Deploy ConcreteComponentToken
-        /*
-        ConcreteComponentToken componentToken = new ConcreteComponentToken();
-        ERC1967Proxy componentTokenProxy = new ERC1967Proxy(
-            address(componentToken),
-            abi.encodeCall(
-                ComponentToken.initialize,
-                (
-                    NEST_ADMIN_ADDRESS, // owner
-                    "Banana", // name
-                    "BAN", // symbol
-                    IERC20(address(pUSDProxy)), // asset token
-                    false, // async deposit
-                    false // async redeem
-                )
-            )
-        );
-        console2.log("ComponentTokenProxy deployed to:", address(componentTokenProxy));
-        */
-
-        // Deploy AggregateToken with both component tokens
         AggregateToken aggregateToken = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateToken),
@@ -90,18 +61,6 @@ contract DeployNestContracts is Script, Test {
             )
         );
         console2.log("AggregateTokenProxy deployed to:", address(aggregateTokenProxy));
-
-        // Add new component tokens
-        // AggregateToken(address(aggregateTokenProxy)).addComponentToken(IComponentToken(address(pUSDProxy)));
-        // AggregateToken(address(aggregateTokenProxy)).addComponentToken(IComponentToken(address(componentTokenProxy)));
-
-        // Deploy NestStaking
-        /*
-        NestStaking nestStaking = new NestStaking();
-        NestStakingProxy nestStakingProxy =
-        new NestStakingProxy(address(nestStaking), abi.encodeCall(NestStaking.initialize, (NEST_ADMIN_ADDRESS)));
-        console2.log("NestStakingProxy deployed to:", address(nestStakingProxy));
-        */
 
         vm.stopBroadcast();
     }
