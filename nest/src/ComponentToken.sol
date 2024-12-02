@@ -5,6 +5,8 @@ import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/ac
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -26,6 +28,7 @@ abstract contract ComponentToken is
     ERC4626Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
+    ReentrancyGuardUpgradeable,
     ERC165,
     IERC7540
 {
@@ -155,6 +158,7 @@ abstract contract ComponentToken is
         __ERC4626_init(asset_);
         __AccessControl_init();
         __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
@@ -236,7 +240,7 @@ abstract contract ComponentToken is
         uint256 assets,
         address controller,
         address owner
-    ) public virtual returns (uint256 requestId) {
+    ) public virtual nonReentrant returns (uint256 requestId) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -264,7 +268,7 @@ abstract contract ComponentToken is
      * @param shares Amount of shares to receive in exchange
      * @param controller Controller of the request
      */
-    function _notifyDeposit(uint256 assets, uint256 shares, address controller) internal virtual {
+    function _notifyDeposit(uint256 assets, uint256 shares, address controller) internal virtual nonReentrant {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -285,7 +289,11 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IComponentToken
-    function deposit(uint256 assets, address receiver, address controller) public virtual returns (uint256 shares) {
+    function deposit(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public virtual nonReentrant returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -314,7 +322,11 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IERC7540
-    function mint(uint256 shares, address receiver, address controller) public virtual returns (uint256 assets) {
+    function mint(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public virtual nonReentrant returns (uint256 assets) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -347,7 +359,7 @@ abstract contract ComponentToken is
         uint256 shares,
         address controller,
         address owner
-    ) public virtual returns (uint256 requestId) {
+    ) public virtual nonReentrant returns (uint256 requestId) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -373,7 +385,7 @@ abstract contract ComponentToken is
      * @param shares Amount of shares that was redeemed by `requestRedeem`
      * @param controller Controller of the request
      */
-    function _notifyRedeem(uint256 assets, uint256 shares, address controller) internal virtual {
+    function _notifyRedeem(uint256 assets, uint256 shares, address controller) internal virtual nonReentrant {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -398,7 +410,7 @@ abstract contract ComponentToken is
         uint256 shares,
         address receiver,
         address controller
-    ) public virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
+    ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 assets) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -431,7 +443,7 @@ abstract contract ComponentToken is
         uint256 assets,
         address receiver,
         address controller
-    ) public virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
+    ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
         }
