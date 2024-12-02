@@ -32,11 +32,11 @@ import { ComponentToken } from "../ComponentToken.sol";
  */
 contract pUSD is
     Initializable,
-    ERC20Upgradeable,
+    ERC4626Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    ComponentToken,
-    ReentrancyGuardUpgradeable
+    ReentrancyGuardUpgradeable,
+    ComponentToken
 {
 
     using SafeERC20 for IERC20;
@@ -152,11 +152,10 @@ contract pUSD is
 
         $.version = 1; // Set initial version
 
-        _grantRole(ADMIN_ROLE, owner); 
+        _grantRole(ADMIN_ROLE, owner);
         _grantRole(VAULT_ADMIN_ROLE, owner);
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
-        _grantRole(UPGRADER_ROLE, owner); 
-
+        _grantRole(UPGRADER_ROLE, owner);
     }
 
     function reinitialize(
@@ -187,7 +186,7 @@ contract pUSD is
         $.boringVault.lens = ILens(lens_);
         $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
 
-        _grantRole(ADMIN_ROLE, owner); 
+        _grantRole(ADMIN_ROLE, owner);
         _grantRole(VAULT_ADMIN_ROLE, owner);
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(UPGRADER_ROLE, owner);
@@ -346,7 +345,7 @@ contract pUSD is
      */
     function previewDeposit(
         uint256 assets
-    ) public view override returns (uint256) {
+    ) public view override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
         pUSDStorage storage $ = _getpUSDStorage();
 
         return $.boringVault.lens.previewDeposit(
@@ -361,7 +360,7 @@ contract pUSD is
      */
     function previewRedeem(
         uint256 shares
-    ) public view virtual override returns (uint256 assets) {
+    ) public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256 assets) {
         pUSDStorage storage $ = _getpUSDStorage();
 
         try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
@@ -374,7 +373,7 @@ contract pUSD is
     /// @inheritdoc ERC4626Upgradeable
     function convertToShares(
         uint256 assets
-    ) public view virtual override returns (uint256 shares) {
+    ) public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256 shares) {
         pUSDStorage storage $ = _getpUSDStorage();
 
         try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
@@ -387,7 +386,7 @@ contract pUSD is
     /// @inheritdoc ERC4626Upgradeable
     function convertToAssets(
         uint256 shares
-    ) public view virtual override returns (uint256 assets) {
+    ) public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256 assets) {
         pUSDStorage storage $ = _getpUSDStorage();
         try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
             assets = shares.mulDivDown($.boringVault.accountant.getRateInQuote(ERC20(asset())), 10 ** shareDecimals);
@@ -454,13 +453,40 @@ contract pUSD is
         return $.boringVault.lens.balanceOfInAssets(account, $.boringVault.vault, $.boringVault.accountant);
     }
 
+
+    function asset() public view virtual override(ComponentToken, ERC4626Upgradeable) returns (address) {
+        return super.asset();
+    }
+
+    function totalAssets() public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
+        return super.totalAssets();
+    }
+
+    function previewMint(uint256 shares) public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
+        return super.previewMint(shares);
+    }
+
+    function previewWithdraw(uint256 assets) public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
+        return super.previewWithdraw(assets);
+    }
+
+    function redeem(uint256 shares, address receiver, address owner)
+        public virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
+        return super.redeem(shares, receiver, owner);
+    }
+
+    function withdraw(uint256 assets, address receiver, address owner) 
+        public virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
+        return super.withdraw(assets, receiver, owner);
+    }
+
     // ========== METADATA OVERRIDES ==========
 
     /**
      * @notice Get the number of decimals for the token
      * @return Number of decimals (6)
      */
-    function decimals() public pure override(ERC4626Upgradeable, ERC20Upgradeable, IERC20Metadata) returns (uint8) {
+    function decimals() public pure override(ERC4626Upgradeable, IERC20Metadata) returns (uint8) {
         return 6;
     }
 

@@ -360,7 +360,7 @@ contract pUSDTest is Test {
         uint64 expiredDeadline = uint64(block.timestamp - 1);
 
         // Test expired deadline
-        vm.expectRevert("Deadline expired");
+        vm.expectRevert(pUSD.DeadlineExpired.selector);
         token.redeem(amount, user1, user1, price, expiredDeadline);
 
         vm.stopPrank();

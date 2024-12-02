@@ -11,6 +11,8 @@ import { ERC20 } from "@solmate/tokens/ERC20.sol";
 
 interface ILens {
 
+    error InvalidVault();
+
     function totalAssets(
         IVault vault,
         IAccountantWithRateProviders accountant
