@@ -29,7 +29,7 @@ contract DeploypUSD is Script {
         console2.log("pUSD implementation deployed to:", address(pUSDToken));
 
         // Deploy pUSD proxy
-        ERC1967Proxy pUSDProxyContract = new ERC1967Proxy(
+        ERC1967Proxy pUSDProxyContract = new pUSDProxy(
             address(pUSDToken),
             abi.encodeCall(
                 pUSD.initialize,

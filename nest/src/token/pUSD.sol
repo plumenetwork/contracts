@@ -28,8 +28,6 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
-// TODO: REMOVE in production
-import "forge-std/console2.sol";
 
 /**
  * @title pUSD

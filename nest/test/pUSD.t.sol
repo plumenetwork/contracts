@@ -13,6 +13,7 @@ import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 import { MockVault } from "../src/mocks/MockVault.sol";
 
 import { pUSD } from "../src/token/pUSD.sol";
+import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -82,7 +83,7 @@ contract pUSDTest is Test {
 
         // Deploy through proxy
         pUSD impl = new pUSD();
-        ERC1967Proxy proxy = new ERC1967Proxy(
+        ERC1967Proxy proxy = new pUSDProxy(
             address(impl),
             abi.encodeCall(
                 pUSD.initialize,

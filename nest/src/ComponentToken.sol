@@ -12,7 +12,6 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { console } from "forge-std/console.sol";
 
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
 import { IERC7540 } from "./interfaces/IERC7540.sol";
