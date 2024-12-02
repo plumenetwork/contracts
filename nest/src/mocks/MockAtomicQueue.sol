@@ -2,14 +2,14 @@
 pragma solidity ^0.8.25;
 
 import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
-import { ERC20 } from "@solmate/tokens/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract MockAtomicQueue is IAtomicQueue {
 
     bool private _paused;
 
     // State variables
-    mapping(address => mapping(ERC20 => mapping(ERC20 => AtomicRequest))) private _userAtomicRequest;
+    mapping(address => mapping(IERC20 => mapping(IERC20 => AtomicRequest))) private _userAtomicRequest;
     uint256 private _mockRate;
     uint256 private constant _MAX_DISCOUNT = 0.01e6;
 
@@ -34,7 +34,7 @@ contract MockAtomicQueue is IAtomicQueue {
         }
     }
 
-    function userAtomicRequest(address user, ERC20 offer, ERC20 want) external view returns (AtomicRequest memory) {
+    function userAtomicRequest(address user, IERC20 offer, IERC20 want) external view returns (AtomicRequest memory) {
         return _userAtomicRequest[user][offer][want];
     }
 
@@ -54,7 +54,7 @@ contract MockAtomicQueue is IAtomicQueue {
     }
 
     // Core functions
-    function updateAtomicRequest(ERC20 offer, ERC20 want, AtomicRequest memory userRequest) external {
+    function updateAtomicRequest(IERC20 offer, IERC20 want, AtomicRequest memory userRequest) external {
         require(!_paused, "AtomicQueue: paused");
         _userAtomicRequest[msg.sender][offer][want] = userRequest;
         emit AtomicRequestUpdated(
@@ -68,7 +68,7 @@ contract MockAtomicQueue is IAtomicQueue {
         );
     }
 
-    function getUserAtomicRequest(address user, ERC20 offer, ERC20 want) external view returns (AtomicRequest memory) {
+    function getUserAtomicRequest(address user, IERC20 offer, IERC20 want) external view returns (AtomicRequest memory) {
         return _userAtomicRequest[user][offer][want];
     }
 
@@ -81,7 +81,7 @@ contract MockAtomicQueue is IAtomicQueue {
     }
 
     function isAtomicRequestValid(
-        ERC20 offer,
+        IERC20 offer,
         address user,
         AtomicRequest calldata userRequest
     ) external view returns (bool) {
@@ -89,8 +89,8 @@ contract MockAtomicQueue is IAtomicQueue {
     }
 
     function solve(
-        ERC20 offer,
-        ERC20 want,
+        IERC20 offer,
+        IERC20 want,
         address[] calldata users,
         bytes calldata runData,
         address solver
@@ -99,16 +99,16 @@ contract MockAtomicQueue is IAtomicQueue {
     }
 
     function viewSolveMetaData(
-        ERC20 offer,
-        ERC20 want,
+        IERC20 offer,
+        IERC20 want,
         address[] calldata users
     ) external view returns (SolveMetaData[] memory metaData, uint256 totalAssetsForWant, uint256 totalAssetsToOffer) {
         // Mock implementation
     }
 
     function viewVerboseSolveMetaData(
-        ERC20 offer,
-        ERC20 want,
+        IERC20 offer,
+        IERC20 want,
         address[] calldata users
     )
         external

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.25;
 
-import { ERC20 } from "@solmate/tokens/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title IAtomicQueue
@@ -82,7 +82,7 @@ interface IAtomicQueue {
 
     // ========================================= STATE VARIABLES =========================================
 
-    function userAtomicRequest(address user, ERC20 offer, ERC20 want) external view returns (AtomicRequest memory);
+    function userAtomicRequest(address user, IERC20 offer, IERC20 want) external view returns (AtomicRequest memory);
     function isPaused() external view returns (bool);
 
     // ========================================= ADMIN FUNCTIONS =========================================
@@ -92,35 +92,35 @@ interface IAtomicQueue {
 
     // ========================================= USER FUNCTIONS =========================================
 
-    function getUserAtomicRequest(address user, ERC20 offer, ERC20 want) external view returns (AtomicRequest memory);
+    function getUserAtomicRequest(address user, IERC20 offer, IERC20 want) external view returns (AtomicRequest memory);
 
     function isAtomicRequestValid(
-        ERC20 offer,
+        IERC20 offer,
         address user,
         AtomicRequest calldata userRequest
     ) external view returns (bool);
 
-    function updateAtomicRequest(ERC20 offer, ERC20 want, AtomicRequest memory userRequest) external;
+    function updateAtomicRequest(IERC20 offer, IERC20 want, AtomicRequest memory userRequest) external;
 
     // ========================================= SOLVER FUNCTIONS =========================================
 
     function solve(
-        ERC20 offer,
-        ERC20 want,
+        IERC20 offer,
+        IERC20 want,
         address[] calldata users,
         bytes calldata runData,
         address solver
     ) external;
 
     function viewSolveMetaData(
-        ERC20 offer,
-        ERC20 want,
+        IERC20 offer,
+        IERC20 want,
         address[] calldata users
     ) external view returns (SolveMetaData[] memory metaData, uint256 totalAssetsForWant, uint256 totalAssetsToOffer);
 
     function viewVerboseSolveMetaData(
-        ERC20 offer,
-        ERC20 want,
+        IERC20 offer,
+        IERC20 want,
         address[] calldata users
     )
         external

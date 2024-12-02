@@ -120,13 +120,17 @@ contract pUSD is
         address lens_,
         address accountant_
     ) public initializer {
-        require(owner != address(0), "Zero address owner");
-        require(address(usdc_) != address(0), "Zero address asset");
-        require(address(usdt_) != address(0), "Zero address asset");
 
-        require(vault_ != address(0), "Zero address vault");
-        require(teller_ != address(0), "Zero address teller");
-        require(atomicQueue_ != address(0), "Zero address AtomicQueue");
+        if (owner == address(0) || 
+            address(usdc_) == address(0) || 
+            address(usdt_) == address(0) || 
+            vault_ == address(0) || 
+            teller_ == address(0) || 
+            atomicQueue_ == address(0)) {
+            revert ZeroAddress();
+        }
+
+
 
         // Validate asset interface support
         try IERC20Metadata(address(usdc_)).decimals() returns (uint8) { }
@@ -169,12 +173,14 @@ contract pUSD is
         address accountant_
     ) public onlyRole(UPGRADER_ROLE) {
         // Reinitialize as needed
-        require(owner != address(0), "Zero address owner");
-        require(address(usdc_) != address(0), "Zero address asset");
-
-        require(vault_ != address(0), "Zero address vault");
-        require(teller_ != address(0), "Zero address teller");
-        require(atomicQueue_ != address(0), "Zero address AtomicQueue");
+        if (owner == address(0) || 
+            address(usdc_) == address(0) || 
+            address(usdt_) == address(0) || 
+            vault_ == address(0) || 
+            teller_ == address(0) || 
+            atomicQueue_ == address(0)) {
+            revert ZeroAddress();
+        }
 
         pUSDStorage storage $ = _getpUSDStorage();
 
@@ -328,7 +334,7 @@ contract pUSD is
         IERC20(address(this)).safeIncreaseAllowance(address(queue), shares);
 
         // Update atomic request
-        queue.updateAtomicRequest(ERC20(address(this)), ERC20(asset()), request);
+        queue.updateAtomicRequest(IERC20(address(this)), IERC20(asset()), request);
 
         // Get assets received from vault
         assets = shares; // 1:1 ratio for preview to match actual redemption
