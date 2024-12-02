@@ -453,7 +453,6 @@ contract pUSD is
         return $.boringVault.lens.balanceOfInAssets(account, $.boringVault.vault, $.boringVault.accountant);
     }
 
-
     function asset() public view virtual override(ComponentToken, ERC4626Upgradeable) returns (address) {
         return super.asset();
     }
@@ -462,21 +461,31 @@ contract pUSD is
         return super.totalAssets();
     }
 
-    function previewMint(uint256 shares) public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
+    function previewMint(
+        uint256 shares
+    ) public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
         return super.previewMint(shares);
     }
 
-    function previewWithdraw(uint256 assets) public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
+    function previewWithdraw(
+        uint256 assets
+    ) public view virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
         return super.previewWithdraw(assets);
     }
 
-    function redeem(uint256 shares, address receiver, address owner)
-        public virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address owner
+    ) public virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
         return super.redeem(shares, receiver, owner);
     }
 
-    function withdraw(uint256 assets, address receiver, address owner) 
-        public virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
+    function withdraw(
+        uint256 assets,
+        address receiver,
+        address owner
+    ) public virtual override(ComponentToken, ERC4626Upgradeable) returns (uint256) {
         return super.withdraw(assets, receiver, owner);
     }
 
