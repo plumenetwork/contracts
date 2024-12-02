@@ -12,6 +12,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { console } from "forge-std/console.sol";
 
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
 import { IERC7540 } from "./interfaces/IERC7540.sol";
@@ -73,6 +74,8 @@ abstract contract ComponentToken is
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the ComponentToken
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
+    uint256 private constant _BASE = 1e18;
 
     // Events
 
@@ -153,7 +156,7 @@ abstract contract ComponentToken is
         IERC20 asset_,
         bool asyncDeposit,
         bool asyncRedeem
-    ) public initializer {
+    ) public onlyInitializing {
         __ERC20_init(name, symbol);
         __ERC4626_init(asset_);
         __AccessControl_init();
@@ -177,7 +180,7 @@ abstract contract ComponentToken is
      */
     function _authorizeUpgrade(
         address newImplementation
-    ) internal override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
+    ) internal virtual override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
 
     /// @inheritdoc IERC165
     function supportsInterface(
@@ -513,7 +516,8 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncDeposit) {
             revert Unimplemented();
         }
-        shares = super.previewDeposit(assets);
+        // Returns how many shares would be minted for given assets
+        return convertToShares(assets);
     }
 
     /**
@@ -539,7 +543,8 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncRedeem) {
             revert Unimplemented();
         }
-        assets = super.previewRedeem(shares);
+        // Returns how many assets would be withdrawn for given shares
+        return convertToAssets(shares);
     }
 
     /**
