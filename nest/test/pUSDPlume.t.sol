@@ -143,9 +143,23 @@ contract pUSDPlumeTest is Test {
 
         vm.startPrank(user1);
 
-        // Perform deposit and redeem
+        // Step 1: Deposit first
         token.deposit(depositAmount, user1, user1, minimumMint);
-        token.redeem(depositAmount, user1, user1, price, deadline);
+
+        // Step 2: Request redemption
+        token.requestRedeem(depositAmount, user1, user1, price, deadline);
+
+        // Step 3: Mock atomic queue notification (in real scenario this would come from the queue)
+        vm.stopPrank();
+        vm.prank(address(token.getAtomicQueue()));
+        token.notifyRedeem(depositAmount, depositAmount, user1);
+
+        // Step 4: Complete redemption
+        vm.prank(user1);
+        uint256 redeemedAssets = token.redeem(depositAmount, user1, user1);
+
+        // Verify redemption amount
+        assertEq(redeemedAssets, depositAmount, "Redeemed assets should match deposit amount");
 
         vm.stopPrank();
     }

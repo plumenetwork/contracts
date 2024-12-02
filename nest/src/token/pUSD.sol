@@ -284,19 +284,20 @@ contract pUSD is
     }
 
     /**
-     * @notice Burn shares and withdraw corresponding assets
+     * @notice Request to redeem shares for assets through the atomic queue
      * @param shares Amount of shares to burn
      * @param receiver Address that will receive the assets
-     * @param controller Address that currently controls the shares
-     * @return assets Amount of assets withdrawn
+     * @param controller Address that will control the redemption
+     * @param price Price in terms of underlying asset (e.g., USDC) per share
+     * @param deadline Deadline for the atomic request
      */
-    function redeem(
+    function requestRedeem(
         uint256 shares,
         address receiver,
         address controller,
         uint256 price,
         uint64 deadline
-    ) public virtual nonReentrant returns (uint256 assets) {
+    ) public virtual nonReentrant returns (uint256) {
         if (receiver == address(0)) {
             revert InvalidReceiver();
         }
@@ -307,28 +308,46 @@ contract pUSD is
             revert DeadlineExpired();
         }
 
-        // Get AtomicQueue from storage
-        IAtomicQueue queue = _getpUSDStorage().boringVault.atomicQueue;
+        // Request the redeem through ComponentToken (burns shares and records pending request)
+        super.requestRedeem(shares, controller, msg.sender);
 
-        // Create AtomicRequest struct
+        // Create and submit atomic request
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
             deadline: deadline,
-            atomicPrice: uint88(price),
+            atomicPrice: uint88(price), // Price per share in terms of asset
             offerAmount: uint96(shares),
             inSolve: false
         });
 
-        IERC20(address(this)).safeIncreaseAllowance(address(queue), shares);
-
-        // Update atomic request
+        IAtomicQueue queue = _getpUSDStorage().boringVault.atomicQueue;
         queue.updateAtomicRequest(IERC20(address(this)), IERC20(asset()), request);
 
-        // TODO: Fix this
-        //assets = shares; // 1:1 ratio for preview to match actual redemption
-        //IERC20(asset()).safeTransfer(receiver, assets);
+        return 0; // ComponentToken's standard REQUEST_ID
+    }
 
-        emit Withdraw(msg.sender, receiver, controller, assets, shares);
-        return assets;
+    /**
+     * @notice Called by protocol after atomic queue processes the redemption
+     * @param assets Amount of assets received from atomic queue
+     * @param shares Amount of shares redeemed
+     * @param controller Address that controls the redemption
+     */
+    function notifyRedeem(uint256 assets, uint256 shares, address controller) external onlyRole(ADMIN_ROLE) {
+        _notifyRedeem(assets, shares, controller);
+    }
+
+    /**
+     * @notice Complete the redemption after atomic queue processing
+     * @param shares Amount of shares to redeem
+     * @param receiver Address that will receive the assets
+     * @param controller Address that controls the redemption
+     */
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public virtual override(ComponentToken) nonReentrant returns (uint256 assets) {
+        // Check claimableRedeemRequest, Transfer assets to receiver, Clean up request state.
+        return super.redeem(shares, receiver, controller);
     }
 
     /**
