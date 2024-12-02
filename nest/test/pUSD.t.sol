@@ -204,7 +204,7 @@ contract pUSDTest is Test {
         assertNotEq(token.version(), 1);
 
         // Test zero address requirements
-        vm.expectRevert("Zero address owner");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
         token.reinitialize(
             address(0),
             IERC20(address(usdc)),
@@ -215,7 +215,7 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert("Zero address asset");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
 
         token.reinitialize(
             owner,
@@ -227,7 +227,7 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert("Zero address vault");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
@@ -238,7 +238,7 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert("Zero address teller");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
@@ -249,7 +249,7 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert("Zero address AtomicQueue");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
