@@ -7,7 +7,6 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -324,9 +323,9 @@ contract pUSD is
         // Update atomic request
         queue.updateAtomicRequest(IERC20(address(this)), IERC20(asset()), request);
 
-        // Get assets received from vault
-        assets = shares; // 1:1 ratio for preview to match actual redemption
-        IERC20(asset()).safeTransfer(receiver, assets);
+        // TODO: Fix this
+        //assets = shares; // 1:1 ratio for preview to match actual redemption
+        //IERC20(asset()).safeTransfer(receiver, assets);
 
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
         return assets;
@@ -480,9 +479,8 @@ contract pUSD is
      */
     function supportsInterface(
         bytes4 interfaceId
-    ) public view virtual override(AccessControlUpgradeable, ComponentToken) returns (bool) {
-        return interfaceId == type(IERC20).interfaceId || interfaceId == type(IAccessControl).interfaceId
-            || super.supportsInterface(interfaceId);
+    ) public view virtual override(ComponentToken, AccessControlUpgradeable) returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 
 }
