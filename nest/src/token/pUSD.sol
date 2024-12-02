@@ -72,8 +72,7 @@ contract pUSD is
         string tokenName;
         string tokenSymbol;
         uint256 version;
-        IERC20 usdc;
-        IERC20 usdt;
+        IERC20 asset;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.pUSD")) - 1)) & ~bytes32(uint256(0xff))
@@ -104,36 +103,29 @@ contract pUSD is
     /**
      * @notice Initialize pUSD
      * @param owner Address of the owner of pUSD
-     * @param usdc_ Address of the underlying asset
-     * @param usdt_ Address of the underlying asset
+     * @param asset_ Address of the underlying asset
      * @param vault_ Address of the Boring Vault
      * @param atomicQueue_ Address of the AtomicQueue
      */
     //
     function initialize(
         address owner,
-        IERC20 usdc_,
-        IERC20 usdt_,
+        IERC20 asset_,
         address vault_,
         address teller_,
         address atomicQueue_,
         address lens_,
         address accountant_
     ) public initializer {
-
-        if (owner == address(0) || 
-            address(usdc_) == address(0) || 
-            address(usdt_) == address(0) || 
-            vault_ == address(0) || 
-            teller_ == address(0) || 
-            atomicQueue_ == address(0)) {
+        if (
+            owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
+                || atomicQueue_ == address(0)
+        ) {
             revert ZeroAddress();
         }
 
-
-
         // Validate asset interface support
-        try IERC20Metadata(address(usdc_)).decimals() returns (uint8) { }
+        try IERC20Metadata(address(asset_)).decimals() returns (uint8) { }
         catch {
             revert InvalidAsset();
         }
@@ -143,7 +135,7 @@ contract pUSD is
         __ERC20_init("Plume USD", "pUSD");
         __ReentrancyGuard_init();
 
-        super.initialize(owner, "Plume USD", "pUSD", usdc_, false, false);
+        super.initialize(owner, "Plume USD", "pUSD", asset_, false, false);
 
         pUSDStorage storage $ = _getpUSDStorage();
         $.boringVault.teller = ITeller(teller_);
@@ -151,8 +143,7 @@ contract pUSD is
         $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
         $.boringVault.lens = ILens(lens_);
         $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
-        $.usdc = usdc_;
-        $.usdt = usdt_;
+        $.asset = asset_;
 
         $.version = 1; // Set initial version
 
@@ -164,8 +155,7 @@ contract pUSD is
 
     function reinitialize(
         address owner,
-        IERC20 usdc_,
-        IERC20 usdt_,
+        IERC20 asset_,
         address vault_,
         address teller_,
         address atomicQueue_,
@@ -173,12 +163,10 @@ contract pUSD is
         address accountant_
     ) public onlyRole(UPGRADER_ROLE) {
         // Reinitialize as needed
-        if (owner == address(0) || 
-            address(usdc_) == address(0) || 
-            address(usdt_) == address(0) || 
-            vault_ == address(0) || 
-            teller_ == address(0) || 
-            atomicQueue_ == address(0)) {
+        if (
+            owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
+                || atomicQueue_ == address(0)
+        ) {
             revert ZeroAddress();
         }
 
@@ -355,7 +343,7 @@ contract pUSD is
         pUSDStorage storage $ = _getpUSDStorage();
 
         return $.boringVault.lens.previewDeposit(
-            IERC20(address($.usdc)), assets, $.boringVault.vault, $.boringVault.accountant
+            IERC20(address($.asset)), assets, $.boringVault.vault, $.boringVault.accountant
         );
     }
 

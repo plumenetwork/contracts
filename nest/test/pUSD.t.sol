@@ -90,7 +90,6 @@ contract pUSDTest is Test {
                 (
                     owner,
                     IERC20(address(usdc)),
-                    IERC20(address(usdt)),
                     address(vault),
                     address(mockTeller),
                     address(mockAtomicQueue),
@@ -178,7 +177,6 @@ contract pUSDTest is Test {
             (
                 owner,
                 IERC20(address(invalidAsset)),
-                IERC20(address(invalidAsset)),
                 address(vault),
                 address(mockTeller),
                 address(mockAtomicQueue),
@@ -196,7 +194,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -211,7 +208,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             address(0),
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -224,7 +220,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(0)),
-            IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -236,7 +231,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(0),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -248,7 +242,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(vault),
             address(0),
             address(mockAtomicQueue),
@@ -260,7 +253,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
             address(0),
@@ -380,7 +372,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(invalidVault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -406,7 +397,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(invalidVault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -446,7 +436,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(invalidVault),
             address(mockTeller),
             address(mockAtomicQueue),

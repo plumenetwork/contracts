@@ -68,7 +68,11 @@ contract MockAtomicQueue is IAtomicQueue {
         );
     }
 
-    function getUserAtomicRequest(address user, IERC20 offer, IERC20 want) external view returns (AtomicRequest memory) {
+    function getUserAtomicRequest(
+        address user,
+        IERC20 offer,
+        IERC20 want
+    ) external view returns (AtomicRequest memory) {
         return _userAtomicRequest[user][offer][want];
     }
 

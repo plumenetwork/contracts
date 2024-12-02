@@ -92,7 +92,11 @@ interface IAtomicQueue {
 
     // ========================================= USER FUNCTIONS =========================================
 
-    function getUserAtomicRequest(address user, IERC20 offer, IERC20 want) external view returns (AtomicRequest memory);
+    function getUserAtomicRequest(
+        address user,
+        IERC20 offer,
+        IERC20 want
+    ) external view returns (AtomicRequest memory);
 
     function isAtomicRequestValid(
         IERC20 offer,
