@@ -148,7 +148,6 @@ contract pUSDPlumeTest is Test {
         token.redeem(depositAmount, user1, user1, price, deadline);
 
         vm.stopPrank();
-
     }
 
     function testTransfer() public skipIfNoRPC {
@@ -188,8 +187,6 @@ contract pUSDPlumeTest is Test {
         token.deposit(amount, user1, user1);
         //token.transfer(user2, amount);
         vm.stopPrank();
-
-
     }
 
     function testVault() public skipIfNoRPC {
@@ -212,6 +209,5 @@ contract pUSDPlumeTest is Test {
         bytes4 randomInterfaceId = bytes4(keccak256("random()"));
         assertFalse(token.supportsInterface(randomInterfaceId));
     }
-
 
 }

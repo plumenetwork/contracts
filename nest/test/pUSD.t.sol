@@ -12,8 +12,8 @@ import { MockLens } from "../src/mocks/MockLens.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 import { MockVault } from "../src/mocks/MockVault.sol";
 
-import { pUSD } from "../src/token/pUSD.sol";
 import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
+import { pUSD } from "../src/token/pUSD.sol";
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
