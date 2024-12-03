@@ -15,7 +15,6 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
-
 import { IVault } from "../interfaces/IBoringVault.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
 import { ILens } from "../interfaces/ILens.sol";
@@ -24,9 +23,9 @@ import { ITeller } from "../interfaces/ITeller.sol";
 import { ComponentToken } from "../ComponentToken.sol";
 
 /**
- * @title pUSD
+ * @title BoringVaultAdapter
  * @author Eugene Y. Q. Shen, Alp Guneysel
- * @notice Unified Plume USD stablecoin
+ * @notice ComponentToken adapter for BoringVault
  */
 contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable, ComponentToken {
 
@@ -56,32 +55,30 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         IAccountantWithRateProviders accountant;
     }
 
-    /// @custom:storage-location erc7201:plume.storage.pUSD
-    struct pUSDStorage {
+    /// @custom:storage-location erc7201:plume.storage.BoringVaultAdapter
+    struct BoringVaultAdapterStorage {
         BoringVault boringVault;
-        uint8 tokenDecimals;
-        string tokenName;
-        string tokenSymbol;
         uint256 version;
         IERC20 asset;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("plume.storage.pUSD")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant PUSD_STORAGE_LOCATION = 0x54ae4f9578cdf7faaee986bff2a08b358f01b852b4da3af4f67309dae312ee00;
+    // keccak256(abi.encode(uint256(keccak256("plume.storage.BoringVaultAdapter")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant BORING_VAULT_ADAPTER_STORAGE_LOCATION =
+        0xe9c78db21140f8c0fa40a4ee265a8dbdd963fe6e2feb8d1e0ba55235ac089900;
 
-    function _getpUSDStorage() private pure returns (pUSDStorage storage $) {
-        bytes32 position = PUSD_STORAGE_LOCATION;
+    function _getBoringVaultAdapterStorage() private pure returns (BoringVaultAdapterStorage storage $) {
+        bytes32 position = BORING_VAULT_ADAPTER_STORAGE_LOCATION;
         assembly {
             $.slot := position
         }
     }
 
     // ========== EVENTS ==========
+
     event VaultChanged(address oldVault, address newVault);
     event Reinitialized(uint256 version);
 
-    // ========== ROLES ==========
-    bytes32 public constant VAULT_ADMIN_ROLE = keccak256("VAULT_ADMIN_ROLE");
+    // ========== INITIALIZERS ==========
 
     /**
      * @notice Prevent the implementation contract from being initialized or reinitialized
@@ -92,10 +89,10 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     }
 
     /**
-     * @notice Initialize pUSD
-     * @param owner Address of the owner of pUSD
+     * @notice Initialize BoringVaultAdapter
+     * @param owner Address of the owner of BoringVaultAdapter
      * @param asset_ Address of the underlying asset
-     * @param vault_ Address of the Boring Vault
+     * @param vault_ Address of the BoringVault
      * @param atomicQueue_ Address of the AtomicQueue
      */
     //
@@ -106,7 +103,9 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address teller_,
         address atomicQueue_,
         address lens_,
-        address accountant_
+        address accountant_,
+        string memory name,
+        string memory symbol
     ) public initializer {
         if (
             owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
@@ -121,16 +120,10 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
             revert InvalidAsset();
         }
 
-        // No need to initialize ReentrancyGuard, as it's inherited from ComponentToken.
-        // Having ReentrancyGuard here would cause double initialization.
-        __UUPSUpgradeable_init();
-        __AccessControl_init();
-        __ERC20_init("Plume USD", "pUSD");
-
         // Set async redeem to true
-        super.initialize(owner, "Plume USD", "pUSD", asset_, false, true);
+        super.initialize(owner, name, symbol, asset_, false, true);
 
-        pUSDStorage storage $ = _getpUSDStorage();
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
         $.boringVault.teller = ITeller(teller_);
         $.boringVault.vault = IVault(vault_);
         $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
@@ -139,11 +132,6 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         $.asset = asset_;
 
         $.version = 1; // Set initial version
-
-        _grantRole(ADMIN_ROLE, owner);
-        _grantRole(VAULT_ADMIN_ROLE, owner);
-        _grantRole(DEFAULT_ADMIN_ROLE, owner);
-        _grantRole(UPGRADER_ROLE, owner);
     }
 
     function reinitialize(
@@ -163,7 +151,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
             revert ZeroAddress();
         }
 
-        pUSDStorage storage $ = _getpUSDStorage();
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
 
         // Increment version
         $.version += 1;
@@ -172,11 +160,6 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
         $.boringVault.lens = ILens(lens_);
         $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
-
-        _grantRole(ADMIN_ROLE, owner);
-        _grantRole(VAULT_ADMIN_ROLE, owner);
-        _grantRole(DEFAULT_ADMIN_ROLE, owner);
-        _grantRole(UPGRADER_ROLE, owner);
 
         emit Reinitialized($.version);
     }
@@ -201,7 +184,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
      * @return Address of the current vault
      */
     function getVault() external view returns (address) {
-        return address(_getpUSDStorage().boringVault.vault);
+        return address(_getBoringVaultAdapterStorage().boringVault.vault);
     }
 
     /**
@@ -209,7 +192,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
      * @return Address of the current teller
      */
     function getTeller() external view returns (address) {
-        return address(_getpUSDStorage().boringVault.teller);
+        return address(_getBoringVaultAdapterStorage().boringVault.teller);
     }
 
     /**
@@ -217,15 +200,15 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
      * @return Address of the current AtomicQueue
      */
     function getAtomicQueue() external view returns (address) {
-        return address(_getpUSDStorage().boringVault.atomicQueue);
+        return address(_getBoringVaultAdapterStorage().boringVault.atomicQueue);
     }
 
     /**
-     * @notice Get the current pUSD version
-     * @return uint256 version of the pUSD contract
+     * @notice Get the current BoringVaultAdapter version
+     * @return uint256 version of the BoringVaultAdapter contract
      */
     function version() public view returns (uint256) {
-        return _getpUSDStorage().version;
+        return _getBoringVaultAdapterStorage().version;
     }
 
     // ========== COMPONENT TOKEN INTEGRATION ==========
@@ -247,7 +230,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
             revert InvalidReceiver();
         }
 
-        ITeller teller = _getpUSDStorage().boringVault.teller;
+        ITeller teller = _getBoringVaultAdapterStorage().boringVault.teller;
 
         // Verify deposit is allowed through teller
         if (teller.isPaused()) {
@@ -313,7 +296,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
             inSolve: false
         });
 
-        IAtomicQueue queue = _getpUSDStorage().boringVault.atomicQueue;
+        IAtomicQueue queue = _getBoringVaultAdapterStorage().boringVault.atomicQueue;
         queue.updateAtomicRequest(IERC20(address(this)), IERC20(asset()), request);
 
         return 0; // ComponentToken's standard REQUEST_ID
@@ -352,7 +335,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     function previewDeposit(
         uint256 assets
     ) public view virtual override(ComponentToken) returns (uint256) {
-        pUSDStorage storage $ = _getpUSDStorage();
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
 
         return $.boringVault.lens.previewDeposit(
             IERC20(address($.asset)), assets, $.boringVault.vault, $.boringVault.accountant
@@ -367,7 +350,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     function previewRedeem(
         uint256 shares
     ) public view virtual override(ComponentToken) returns (uint256 assets) {
-        pUSDStorage storage $ = _getpUSDStorage();
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
 
         try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
             assets = shares.mulDivDown($.boringVault.accountant.getRateInQuote(ERC20(asset())), 10 ** shareDecimals);
@@ -380,7 +363,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     function convertToShares(
         uint256 assets
     ) public view virtual override(ComponentToken) returns (uint256 shares) {
-        pUSDStorage storage $ = _getpUSDStorage();
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
 
         try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
             shares = assets.mulDivDown(10 ** shareDecimals, $.boringVault.accountant.getRateInQuote(ERC20(asset())));
@@ -393,13 +376,14 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     function convertToAssets(
         uint256 shares
     ) public view virtual override(ComponentToken) returns (uint256 assets) {
-        pUSDStorage storage $ = _getpUSDStorage();
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
         try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
             assets = shares.mulDivDown($.boringVault.accountant.getRateInQuote(ERC20(asset())), 10 ** shareDecimals);
         } catch {
             revert InvalidVault();
         }
     }
+
     // ========== ERC20 OVERRIDES ==========
 
     /**
@@ -409,8 +393,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
      * @return bool indicating whether the transfer was successful
      */
     function transfer(address to, uint256 amount) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
-        address owner = msg.sender;
-        _transfer(owner, to, amount);
+        _transfer(msg.sender, to, amount);
         return true;
     }
 
@@ -426,8 +409,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address to,
         uint256 amount
     ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
-        address spender = msg.sender;
-        _spendAllowance(from, spender, amount);
+        _spendAllowance(from, msg.sender, amount);
         _transfer(from, to, amount);
         return true;
     }
@@ -440,7 +422,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     function balanceOf(
         address account
     ) public view override(IERC20, ERC20Upgradeable) returns (uint256) {
-        pUSDStorage storage $ = _getpUSDStorage();
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
         return $.boringVault.lens.balanceOf(account, $.boringVault.vault);
     }
 
@@ -452,7 +434,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     function assetsOf(
         address account
     ) public view virtual override(ComponentToken) returns (uint256) {
-        pUSDStorage storage $ = _getpUSDStorage();
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
         return $.boringVault.lens.balanceOfInAssets(account, $.boringVault.vault, $.boringVault.accountant);
     }
 
@@ -467,22 +449,6 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     }
 
     /**
-     * @notice Get the name of the token
-     * @return Name of the token
-     */
-    function name() public pure override(ERC20Upgradeable, IERC20Metadata) returns (string memory) {
-        return "Plume USD";
-    }
-
-    /**
-     * @notice Get the symbol of the token
-     * @return Symbol of the token
-     */
-    function symbol() public pure override(ERC20Upgradeable, IERC20Metadata) returns (string memory) {
-        return "pUSD";
-    }
-
-    /**
      * @notice Check if the contract supports a given interface
      * @param interfaceId Interface identifier to check
      * @return bool indicating whether the interface is supported
@@ -492,5 +458,4 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
     ) public view virtual override(ComponentToken, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
-
 }

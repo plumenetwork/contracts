@@ -91,7 +91,9 @@ contract pUSDTest is Test {
                     address(mockTeller),
                     address(mockAtomicQueue),
                     address(mockLens),
-                    address(mockAccountant)
+                    address(mockAccountant),
+                    "Plume USD",
+                    "pUSD"
                 )
             )
         );
@@ -120,7 +122,6 @@ contract pUSDTest is Test {
         assertEq(token.symbol(), "pUSD");
         assertEq(token.decimals(), 6);
         assertTrue(token.hasRole(token.DEFAULT_ADMIN_ROLE(), owner));
-        assertTrue(token.hasRole(token.VAULT_ADMIN_ROLE(), owner));
         assertTrue(token.hasRole(token.UPGRADER_ROLE(), owner));
     }
 
@@ -223,7 +224,9 @@ contract pUSDTest is Test {
                 address(mockTeller),
                 address(mockAtomicQueue),
                 address(mockLens),
-                address(mockAccountant)
+                address(mockAccountant),
+                "Plume USD",
+                "pUSD"
             )
         );
 
