@@ -57,8 +57,14 @@ contract pUSDPlumeTest is Test {
 
         vm.createSelectFork(PLUME_RPC);
 
-        // Setup accounts using the private key
-        uint256 privateKey = 0xf1906c3250e18e8036273019f2d6d4d5107404b84753068fe8fb170674461f1b;
+        // Get private key from environment variable
+        uint256 privateKey = uint256(vm.envOr("PRIVATE_KEY", bytes32(0)));
+        if (privateKey == 0) {
+            console.log("PRIVATE_KEY is not defined");
+            skipTests = true;
+            vm.skip(false);
+            return;
+        }
         owner = vm.addr(privateKey);
         user1 = vm.addr(privateKey);
         user2 = address(0x2);
