@@ -15,7 +15,7 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
-import { IVault } from "../interfaces/IBoringVault.sol";
+import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
 import { ILens } from "../interfaces/ILens.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
@@ -55,7 +55,7 @@ abstract contract BoringVaultAdapter is
 
     struct BoringVault {
         ITeller teller;
-        IVault vault;
+        IBoringVault vault;
         IAtomicQueue atomicQueue;
         ILens lens;
         IAccountantWithRateProviders accountant;
@@ -131,7 +131,7 @@ abstract contract BoringVaultAdapter is
 
         BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
         $.boringVault.teller = ITeller(teller_);
-        $.boringVault.vault = IVault(vault_);
+        $.boringVault.vault = IBoringVault(vault_);
         $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
         $.boringVault.lens = ILens(lens_);
         $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
@@ -162,7 +162,7 @@ abstract contract BoringVaultAdapter is
         // Increment version
         $.version += 1;
         $.boringVault.teller = ITeller(teller_);
-        $.boringVault.vault = IVault(vault_);
+        $.boringVault.vault = IBoringVault(vault_);
         $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
         $.boringVault.lens = ILens(lens_);
         $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
