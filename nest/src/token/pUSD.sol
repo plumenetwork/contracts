@@ -121,10 +121,13 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
             revert InvalidAsset();
         }
 
+        // No need to initialize ReentrancyGuard, as it's inherited from ComponentToken.
+        // Having ReentrancyGuard here would cause double initialization.
         __UUPSUpgradeable_init();
         __AccessControl_init();
         __ERC20_init("Plume USD", "pUSD");
 
+        // Set async redeem to true
         super.initialize(owner, "Plume USD", "pUSD", asset_, false, true);
 
         pUSDStorage storage $ = _getpUSDStorage();
