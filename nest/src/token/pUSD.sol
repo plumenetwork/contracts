@@ -340,7 +340,7 @@ contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPS
         address receiver,
         address controller
     ) public virtual override(ComponentToken) returns (uint256 assets) {
-        // Check claimableRedeemRequest, Transfer assets to receiver, Clean up request state.
+        // Check claimableRedeemRequest, transfer assets to receiver, clean up request state.
         return super.redeem(shares, receiver, controller);
     }
 
