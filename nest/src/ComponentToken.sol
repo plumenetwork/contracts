@@ -69,7 +69,7 @@ abstract contract ComponentToken is
     // Constants
 
     /// @notice All ComponentToken requests are fungible and all have ID = 0
-    uint256 private constant REQUEST_ID = 0;
+    uint256 internal constant REQUEST_ID = 0;
     /// @notice Role for the admin of the ComponentToken
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the ComponentToken

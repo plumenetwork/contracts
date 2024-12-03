@@ -305,7 +305,7 @@ abstract contract BoringVaultAdapter is
         IAtomicQueue queue = _getBoringVaultAdapterStorage().boringVault.atomicQueue;
         queue.updateAtomicRequest(IERC20(address(this)), IERC20(asset()), request);
 
-        return 0; // ComponentToken's standard REQUEST_ID
+        return REQUEST_ID;
     }
 
     /**
