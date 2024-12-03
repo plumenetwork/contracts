@@ -5,14 +5,14 @@ import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/ac
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
-
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+
+import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { console } from "forge-std/console.sol";
 
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
 import { IERC7540 } from "./interfaces/IERC7540.sol";
@@ -27,10 +27,10 @@ import { IERC7575 } from "./interfaces/IERC7575.sol";
 abstract contract ComponentToken is
     Initializable,
     ERC4626Upgradeable,
+    ERC165,
     AccessControlUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuardUpgradeable,
-    ERC165,
     IERC7540
 {
 
@@ -186,14 +186,11 @@ abstract contract ComponentToken is
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(AccessControlUpgradeable, ERC165, IERC165) returns (bool supported) {
-        if (
-            super.supportsInterface(interfaceId) || interfaceId == type(IERC7575).interfaceId
-                || interfaceId == 0xe3bc4e65
-        ) {
-            return true;
-        }
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        return ($.asyncDeposit && interfaceId == 0xce3bbe50) || ($.asyncRedeem && interfaceId == 0x620ee8e4);
+        return super.supportsInterface(interfaceId) || interfaceId == type(IERC20).interfaceId
+            || interfaceId == type(IAccessControl).interfaceId || interfaceId == type(IERC7575).interfaceId
+            || interfaceId == 0xe3bc4e65 || ($.asyncDeposit && interfaceId == 0xce3bbe50)
+            || ($.asyncRedeem && interfaceId == 0x620ee8e4);
     }
 
     /// @inheritdoc IERC4626

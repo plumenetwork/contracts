@@ -12,6 +12,7 @@ import { MockLens } from "../src/mocks/MockLens.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 import { MockVault } from "../src/mocks/MockVault.sol";
 
+import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
 import { pUSD } from "../src/token/pUSD.sol";
 
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -44,7 +45,6 @@ contract pUSDTest is Test {
 
     pUSD public token;
     MockUSDC public usdc;
-    MockUSDC public usdt; // Using MockUSDC for USDT too since they have same interface
     MockVault public vault;
     MockTeller public mockTeller;
     MockAtomicQueue public mockAtomicQueue;
@@ -66,30 +66,27 @@ contract pUSDTest is Test {
         // Deploy contracts
         //asset = new MockUSDC();
         usdc = new MockUSDC();
-        usdt = new MockUSDC(); // Deploy USDT mock
 
-        vault = new MockVault(address(usdc), address(usdt));
+        vault = new MockVault(owner, "Mock Vault", "mVault", address(usdc));
         mockTeller = new MockTeller();
         mockAtomicQueue = new MockAtomicQueue();
         mockLens = new MockLens();
 
         mockAccountant = new MockAccountantWithRateProviders(address(vault), address(usdc), 1e6);
         mockTeller.setAssetSupport(IERC20(address(usdc)), true);
-        mockTeller.setAssetSupport(IERC20(address(usdt)), true);
 
         // Set the MockTeller as the beforeTransferHook in the vault
         vault.setBeforeTransferHook(address(mockTeller));
 
         // Deploy through proxy
         pUSD impl = new pUSD();
-        ERC1967Proxy proxy = new ERC1967Proxy(
+        ERC1967Proxy proxy = new pUSDProxy(
             address(impl),
             abi.encodeCall(
                 pUSD.initialize,
                 (
                     owner,
                     IERC20(address(usdc)),
-                    IERC20(address(usdt)),
                     address(vault),
                     address(mockTeller),
                     address(mockAtomicQueue),
@@ -100,12 +97,22 @@ contract pUSDTest is Test {
         );
         token = pUSD(address(proxy));
 
+        vm.startPrank(owner);
+
+        // Grant ATOMIC_QUEUE_ROLE to mockAtomicQueue
+        bytes32 ATOMIC_QUEUE_ROLE = keccak256("ATOMIC_QUEUE_ROLE");
+        token.grantRole(ATOMIC_QUEUE_ROLE, address(mockAtomicQueue));
+
+        // Grant ADMIN_ROLE to mockAtomicQueue
+        token.grantRole(token.ADMIN_ROLE(), address(mockAtomicQueue));
+
+        vm.stopPrank();
+
         // Setup balances
         usdc.mint(user1, 1000e6);
-        usdt.mint(user1, 1000e6);
+
         vm.prank(user1);
         usdc.approve(address(token), type(uint256).max);
-        usdt.approve(address(token), type(uint256).max);
     }
 
     function testInitialize() public {
@@ -130,11 +137,10 @@ contract pUSDTest is Test {
     function testRedeem() public {
         uint256 depositAmount = 1e6;
         uint256 price = 1e6; // 1:1 price
-        uint256 minimumMint = depositAmount;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
 
         // Setup
         deal(address(usdc), user1, depositAmount);
-        deal(address(usdt), user1, depositAmount);
 
         vm.startPrank(user1);
 
@@ -143,28 +149,64 @@ contract pUSDTest is Test {
         usdc.approve(address(vault), type(uint256).max);
         usdc.approve(address(mockTeller), type(uint256).max);
 
-        usdt.approve(address(token), type(uint256).max);
-        usdt.approve(address(vault), type(uint256).max);
-        usdt.approve(address(mockTeller), type(uint256).max);
-
         // Additional approval needed for the vault to transfer from pUSD
         vm.stopPrank();
         vm.startPrank(address(token));
         usdc.approve(address(vault), type(uint256).max);
-        usdt.approve(address(vault), type(uint256).max);
         vm.stopPrank();
 
         vm.startPrank(user1);
 
-        // Perform deposit and redeem
-        token.deposit(depositAmount, user1, user1, minimumMint);
+        // Perform deposit
+        token.deposit(depositAmount, user1, user1, 0);
 
+        // Request redemption
+        token.requestRedeem(depositAmount, user1, user1, price, deadline);
+
+        // Mock atomic queue fulfillment
+        vm.stopPrank();
+        vm.prank(address(mockAtomicQueue));
+        token.notifyRedeem(depositAmount, depositAmount, user1);
+
+        // Complete redemption
+        vm.prank(user1);
+        uint256 assets = token.redeem(depositAmount, user1, user1);
+
+        assertEq(assets, depositAmount);
+        vm.stopPrank();
+    }
+
+    function testPreviewRedeem() public {
+        uint256 depositAmount = 100e6;
+        uint256 redeemAmount = 50e6;
+        uint256 price = 1e6;
         uint64 deadline = uint64(block.timestamp + 1 hours);
-        token.redeem(depositAmount, user1, user1, price, deadline);
 
+        // Setup: First deposit some tokens
+        vm.startPrank(user1);
+        token.deposit(depositAmount, user1, user1, 0);
         vm.stopPrank();
 
-        // TODO: warp time and verify final state
+        // Preview redeem should return same amount as assets (1:1 ratio)
+        uint256 expectedAssets = token.previewRedeem(redeemAmount);
+        assertEq(expectedAssets, redeemAmount);
+
+        // Mock the lens to return correct balance
+        mockLens.setBalance(user1, depositAmount);
+
+        // Request redemption
+        vm.prank(user1);
+        token.requestRedeem(redeemAmount, user1, user1, price, deadline);
+
+        // Simulate atomic queue fulfillment
+        vm.prank(address(mockAtomicQueue));
+        token.notifyRedeem(redeemAmount, redeemAmount, user1);
+
+        // Complete redemption
+        vm.prank(user1);
+        uint256 actualAssets = token.redeem(redeemAmount, user1, user1);
+
+        assertEq(actualAssets, expectedAssets, "Redeem amount doesn't match preview");
     }
 
     function testInitializeInvalidAsset() public {
@@ -176,7 +218,6 @@ contract pUSDTest is Test {
             pUSD.initialize,
             (
                 owner,
-                IERC20(address(invalidAsset)),
                 IERC20(address(invalidAsset)),
                 address(vault),
                 address(mockTeller),
@@ -195,7 +236,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -206,11 +246,10 @@ contract pUSDTest is Test {
         assertNotEq(token.version(), 1);
 
         // Test zero address requirements
-        vm.expectRevert("Zero address owner");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
         token.reinitialize(
             address(0),
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -218,12 +257,11 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert("Zero address asset");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
 
         token.reinitialize(
             owner,
             IERC20(address(0)),
-            IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -231,11 +269,10 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert("Zero address vault");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(0),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -243,11 +280,10 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert("Zero address teller");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(vault),
             address(0),
             address(mockAtomicQueue),
@@ -255,11 +291,10 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert("Zero address AtomicQueue");
+        vm.expectRevert(pUSD.ZeroAddress.selector);
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(vault),
             address(mockTeller),
             address(0),
@@ -314,7 +349,6 @@ contract pUSDTest is Test {
         // Test asset not supported
         mockTeller.setPaused(false);
         mockTeller.setAssetSupport(IERC20(address(usdc)), false);
-        mockTeller.setAssetSupport(IERC20(address(usdt)), false);
         vm.startPrank(user1);
         vm.expectRevert(pUSD.AssetNotSupported.selector);
         token.deposit(depositAmount, user1, user1, 0);
@@ -332,11 +366,11 @@ contract pUSDTest is Test {
 
         // Test invalid receiver
         vm.expectRevert(pUSD.InvalidReceiver.selector);
-        token.redeem(amount, address(0), user1, price, deadline);
+        token.requestRedeem(amount, address(0), user1, price, deadline);
 
         // Test invalid controller
         vm.expectRevert(pUSD.InvalidController.selector);
-        token.redeem(amount, user1, address(0), price, deadline);
+        token.requestRedeem(amount, user1, address(0), price, deadline);
 
         vm.stopPrank();
     }
@@ -359,8 +393,8 @@ contract pUSDTest is Test {
         uint64 expiredDeadline = uint64(block.timestamp - 1);
 
         // Test expired deadline
-        vm.expectRevert("Deadline expired");
-        token.redeem(amount, user1, user1, price, expiredDeadline);
+        vm.expectRevert(pUSD.DeadlineExpired.selector);
+        token.requestRedeem(amount, user1, user1, price, expiredDeadline);
 
         vm.stopPrank();
     }
@@ -379,7 +413,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(invalidVault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -405,7 +438,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(invalidVault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -445,7 +477,6 @@ contract pUSDTest is Test {
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
-            IERC20(address(usdt)),
             address(invalidVault),
             address(mockTeller),
             address(mockAtomicQueue),
@@ -597,26 +628,6 @@ contract pUSDTest is Test {
         assertEq(actualShares, expectedShares, "Actual shares don't match preview");
     }
 
-    function testPreviewRedeem() public {
-        uint256 depositAmount = 100e6;
-        uint256 redeemAmount = 50e6;
-        uint64 deadline = uint64(block.timestamp + 1 hours);
-
-        // Setup: First deposit some tokens
-        vm.startPrank(user1);
-        token.deposit(depositAmount, user1, user1, 0);
-
-        // Preview redeem should return same amount as assets (1:1 ratio)
-        uint256 expectedAssets = token.previewRedeem(redeemAmount);
-        assertEq(expectedAssets, redeemAmount);
-
-        // Verify actual redeem matches preview
-        uint256 actualAssets = token.redeem(redeemAmount, user1, user1, 1e6, deadline);
-        vm.stopPrank();
-
-        assertEq(actualAssets, expectedAssets, "Redeem amount doesn't match preview");
-    }
-
     function testBalanceOf() public {
         uint256 depositAmount = 100e6;
 
@@ -649,8 +660,5 @@ contract pUSDTest is Test {
 
         vm.stopPrank();
     }
-
-    // small hack to be excluded from coverage report
-    function test() public { }
 
 }
