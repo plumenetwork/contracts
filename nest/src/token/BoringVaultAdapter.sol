@@ -112,7 +112,7 @@ abstract contract BoringVaultAdapter is
         address accountant_,
         string memory name,
         string memory symbol
-    ) public initializer {
+    ) public onlyInitializing {
         if (
             owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
                 || atomicQueue_ == address(0)
