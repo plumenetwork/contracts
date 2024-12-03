@@ -1,23 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { IAtomicQueue } from "../src/interfaces/IAtomicQueue.sol";
-import { ITeller } from "../src/interfaces/ITeller.sol";
-
-import { MockAtomicQueue } from "../src/mocks/MockAtomicQueue.sol";
-import { MockTeller } from "../src/mocks/MockTeller.sol";
-
-import { MockAccountantWithRateProviders } from "../src/mocks/MockAccountantWithRateProviders.sol";
-import { MockLens } from "../src/mocks/MockLens.sol";
-import { MockUSDC } from "../src/mocks/MockUSDC.sol";
-import { MockVault } from "../src/mocks/MockVault.sol";
-
-import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
-import { pUSD } from "../src/token/pUSD.sol";
-
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
-
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -26,6 +11,21 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 
 import { Test } from "forge-std/Test.sol";
 import { console } from "forge-std/console.sol";
+
+import { IAtomicQueue } from "../src/interfaces/IAtomicQueue.sol";
+import { ITeller } from "../src/interfaces/ITeller.sol";
+
+import { MockAccountantWithRateProviders } from "../src/mocks/MockAccountantWithRateProviders.sol";
+import { MockAtomicQueue } from "../src/mocks/MockAtomicQueue.sol";
+import { MockLens } from "../src/mocks/MockLens.sol";
+import { MockTeller } from "../src/mocks/MockTeller.sol";
+import { MockUSDC } from "../src/mocks/MockUSDC.sol";
+import { MockVault } from "../src/mocks/MockVault.sol";
+
+import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
+
+import { BoringVaultAdapter } from "../src/token/BoringVaultAdapter.sol";
+import { pUSD } from "../src/token/pUSD.sol";
 
 // Mock contract for testing invalid asset
 contract MockInvalidToken {
@@ -91,9 +91,7 @@ contract pUSDTest is Test {
                     address(mockTeller),
                     address(mockAtomicQueue),
                     address(mockLens),
-                    address(mockAccountant),
-                    "Plume USD",
-                    "pUSD"
+                    address(mockAccountant)
                 )
             )
         );
@@ -224,13 +222,11 @@ contract pUSDTest is Test {
                 address(mockTeller),
                 address(mockAtomicQueue),
                 address(mockLens),
-                address(mockAccountant),
-                "Plume USD",
-                "pUSD"
+                address(mockAccountant)
             )
         );
 
-        vm.expectRevert(pUSD.InvalidAsset.selector);
+        vm.expectRevert(BoringVaultAdapter.InvalidAsset.selector);
         new ERC1967Proxy(address(impl), initData);
     }
 
@@ -249,7 +245,7 @@ contract pUSDTest is Test {
         assertNotEq(token.version(), 1);
 
         // Test zero address requirements
-        vm.expectRevert(pUSD.ZeroAddress.selector);
+        vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
         token.reinitialize(
             address(0),
             IERC20(address(usdc)),
@@ -260,7 +256,7 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert(pUSD.ZeroAddress.selector);
+        vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
 
         token.reinitialize(
             owner,
@@ -272,7 +268,7 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert(pUSD.ZeroAddress.selector);
+        vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
@@ -283,7 +279,7 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert(pUSD.ZeroAddress.selector);
+        vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
@@ -294,7 +290,7 @@ contract pUSDTest is Test {
             address(mockAccountant)
         );
 
-        vm.expectRevert(pUSD.ZeroAddress.selector);
+        vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
         token.reinitialize(
             owner,
             IERC20(address(usdc)),
@@ -338,14 +334,14 @@ contract pUSDTest is Test {
 
         // Test invalid receiver
         vm.startPrank(user1);
-        vm.expectRevert(pUSD.InvalidReceiver.selector);
+        vm.expectRevert(BoringVaultAdapter.InvalidReceiver.selector);
         token.deposit(depositAmount, address(0), user1, 0);
         vm.stopPrank();
 
         // Test teller paused
         mockTeller.setPaused(true);
         vm.startPrank(user1);
-        vm.expectRevert(pUSD.TellerPaused.selector);
+        vm.expectRevert(BoringVaultAdapter.TellerPaused.selector);
         token.deposit(depositAmount, user1, user1, 0);
         vm.stopPrank();
 
@@ -353,7 +349,7 @@ contract pUSDTest is Test {
         mockTeller.setPaused(false);
         mockTeller.setAssetSupport(IERC20(address(usdc)), false);
         vm.startPrank(user1);
-        vm.expectRevert(pUSD.AssetNotSupported.selector);
+        vm.expectRevert(BoringVaultAdapter.AssetNotSupported.selector);
         token.deposit(depositAmount, user1, user1, 0);
         vm.stopPrank();
     }
@@ -368,11 +364,11 @@ contract pUSDTest is Test {
         token.deposit(amount, user1, user1, 0);
 
         // Test invalid receiver
-        vm.expectRevert(pUSD.InvalidReceiver.selector);
+        vm.expectRevert(BoringVaultAdapter.InvalidReceiver.selector);
         token.requestRedeem(amount, address(0), user1, price, deadline);
 
         // Test invalid controller
-        vm.expectRevert(pUSD.InvalidController.selector);
+        vm.expectRevert(BoringVaultAdapter.InvalidController.selector);
         token.requestRedeem(amount, user1, address(0), price, deadline);
 
         vm.stopPrank();
@@ -396,7 +392,7 @@ contract pUSDTest is Test {
         uint64 expiredDeadline = uint64(block.timestamp - 1);
 
         // Test expired deadline
-        vm.expectRevert(pUSD.DeadlineExpired.selector);
+        vm.expectRevert(BoringVaultAdapter.DeadlineExpired.selector);
         token.requestRedeem(amount, user1, user1, price, expiredDeadline);
 
         vm.stopPrank();
@@ -411,7 +407,7 @@ contract pUSDTest is Test {
         // Grant UPGRADER_ROLE to owner for reinitialize
         token.grantRole(token.UPGRADER_ROLE(), owner);
 
-        //vm.expectRevert(pUSD.ZeroAddress.selector);
+        //vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
         // Reinitialize with the new vault
         token.reinitialize(
             owner,
@@ -424,7 +420,7 @@ contract pUSDTest is Test {
         );
 
         // Now we can test the preview functions with the new vault
-        vm.expectRevert(pUSD.InvalidVault.selector);
+        vm.expectRevert(BoringVaultAdapter.InvalidVault.selector);
         token.previewDeposit(100e6);
 
         vm.stopPrank();
@@ -449,7 +445,7 @@ contract pUSDTest is Test {
         );
 
         // Now we can test the preview functions with the new vault
-        vm.expectRevert(pUSD.InvalidVault.selector);
+        vm.expectRevert(BoringVaultAdapter.InvalidVault.selector);
         token.previewRedeem(100e6);
 
         vm.stopPrank();
@@ -488,11 +484,11 @@ contract pUSDTest is Test {
         );
 
         // Test convertToShares revert
-        vm.expectRevert(pUSD.InvalidVault.selector);
+        vm.expectRevert(BoringVaultAdapter.InvalidVault.selector);
         token.convertToShares(amount);
 
         // Test convertToAssets revert
-        vm.expectRevert(pUSD.InvalidVault.selector);
+        vm.expectRevert(BoringVaultAdapter.InvalidVault.selector);
         token.convertToAssets(amount);
 
         vm.stopPrank();
