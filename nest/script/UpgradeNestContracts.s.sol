@@ -20,7 +20,7 @@ contract UpgradeNestContracts is Script, Test {
     // Add the component token addresses
     address private constant ASSET_TOKEN = 0xF66DFD0A9304D3D6ba76Ac578c31C84Dc0bd4A00;
 
-    // LiquidContinuousMultiTokenVault
+    // LiquidContinuousMultiTokenVault - Credbull
     address private constant COMPONENT_TOKEN = 0x4B1fC984F324D2A0fDD5cD83925124b61175f5C6;
 
     function test() public { }
@@ -47,7 +47,7 @@ contract UpgradeNestContracts is Script, Test {
 
         if (!aggregateToken.getComponentToken(IComponentToken(COMPONENT_TOKEN))) {
             aggregateToken.addComponentToken(IComponentToken(COMPONENT_TOKEN));
-            console2.log("Added SECOND_TOKEN to component list");
+            console2.log("Added CREDBULL_COMPONENT_TOKEN to component list");
         }
 
         vm.stopBroadcast();

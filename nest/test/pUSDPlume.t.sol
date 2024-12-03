@@ -57,8 +57,14 @@ contract pUSDPlumeTest is Test {
 
         vm.createSelectFork(PLUME_RPC);
 
-        // Setup accounts using the private key
-        uint256 privateKey = 0xf1906c3250e18e8036273019f2d6d4d5107404b84753068fe8fb170674461f1b;
+        // Get private key from environment variable
+        uint256 privateKey = uint256(vm.envOr("PRIVATE_KEY", bytes32(0)));
+        if (privateKey == 0) {
+            console.log("PRIVATE_KEY is not defined");
+            skipTests = true;
+            vm.skip(false);
+            return;
+        }
         owner = vm.addr(privateKey);
         user1 = vm.addr(privateKey);
         user2 = address(0x2);
@@ -78,14 +84,6 @@ contract pUSDPlumeTest is Test {
         asset.approve(address(token), type(uint256).max);
         asset.approve(address(vault), type(uint256).max);
         asset.approve(TELLER_ADDRESS, type(uint256).max);
-
-        /*
-        // Additional setup for the vault if needed
-        if (IAccessControl(address(vault)).hasRole(keccak256("APPROVER_ROLE"), owner)) {
-            vault.approve(address(token), type(uint256).max);
-            vault.approve(TELLER_ADDRESS, type(uint256).max);
-        }
-        */
 
         vm.stopPrank();
     }
@@ -123,13 +121,6 @@ contract pUSDPlumeTest is Test {
         uint256 shares = token.deposit(depositAmount, user1, user1, minimumMint);
 
         console.log("Shares received:", shares);
-        // TODO: Add assertions
-
-        //console.log("pUSD balance after deposit:", token.balanceOf(user1));
-        //console.log("Asset balance in vault:", asset.balanceOf(address(vault)));
-        //assertEq(shares, depositAmount);
-        //assertEq(token.balanceOf(user1), depositAmount);
-        //assertEq(asset.balanceOf(address(vault)), depositAmount);
 
         vm.stopPrank();
     }
@@ -158,13 +149,25 @@ contract pUSDPlumeTest is Test {
 
         vm.startPrank(user1);
 
-        // Perform deposit and redeem
+        // Step 1: Deposit first
         token.deposit(depositAmount, user1, user1, minimumMint);
-        token.redeem(depositAmount, user1, user1, price, deadline);
+
+        // Step 2: Request redemption
+        token.requestRedeem(depositAmount, user1, user1, price, deadline);
+
+        // Step 3: Mock atomic queue notification (in real scenario this would come from the queue)
+        vm.stopPrank();
+        vm.prank(address(token.getAtomicQueue()));
+        token.notifyRedeem(depositAmount, depositAmount, user1);
+
+        // Step 4: Complete redemption
+        vm.prank(user1);
+        uint256 redeemedAssets = token.redeem(depositAmount, user1, user1);
+
+        // Verify redemption amount
+        assertEq(redeemedAssets, depositAmount, "Redeemed assets should match deposit amount");
 
         vm.stopPrank();
-
-        // TODO: warp time and verify final state
     }
 
     function testTransfer() public skipIfNoRPC {
@@ -204,10 +207,6 @@ contract pUSDPlumeTest is Test {
         token.deposit(amount, user1, user1);
         //token.transfer(user2, amount);
         vm.stopPrank();
-
-        //assertEq(vault.balanceOf(user1), 0);
-        //assertEq(vault.balanceOf(user2), amount);
-        //assertEq(asset.balanceOf(address(vault)), amount);
     }
 
     function testVault() public skipIfNoRPC {
@@ -230,8 +229,5 @@ contract pUSDPlumeTest is Test {
         bytes4 randomInterfaceId = bytes4(keccak256("random()"));
         assertFalse(token.supportsInterface(randomInterfaceId));
     }
-    // small hack to be excluded from coverage report
-
-    function test() public { }
 
 }
