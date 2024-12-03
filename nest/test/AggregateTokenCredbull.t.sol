@@ -5,21 +5,31 @@ import "../src/AggregateToken.sol";
 import "../src/interfaces/IComponentToken.sol";
 import "../src/proxy/AggregateTokenProxy.sol";
 import "forge-std/Test.sol";
+import "forge-std/console2.sol";
 
 interface IUSDT {
-    function balanceOf(address account) external view returns (uint256);
+
+    function balanceOf(
+        address account
+    ) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
     function decimals() external view returns (uint8);
+
 }
 
 interface IUSDC {
-    function balanceOf(address account) external view returns (uint256);
+
+    function balanceOf(
+        address account
+    ) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
     function decimals() external view returns (uint8);
     function allowance(address owner, address spender) external view returns (uint256);
+
 }
 
 interface ICredbullVault is IComponentToken {
+
     function currentPeriod() external view returns (uint256);
     function noticePeriod() external view returns (uint256);
     function balanceOf(address account, uint256 id) external view returns (uint256);
@@ -32,14 +42,18 @@ interface ICredbullVault is IComponentToken {
     function grantRole(bytes32 role, address account) external;
     function revokeRole(bytes32 role, address account) external;
     function getRoleMember(bytes32 role, uint256 index) external view returns (address);
-    function getRoleMemberCount(bytes32 role) external view returns (uint256);
+    function getRoleMemberCount(
+        bytes32 role
+    ) external view returns (uint256);
 
     // Also helpful to have these for debugging
     function unlockRequestAmount(address owner, uint256 requestId) external view returns (uint256);
     function claimableRedeemRequest(uint256 requestId, address controller) external view returns (uint256);
+
 }
 
 contract AggregateTokenCredbullTest is Test {
+
     // Contract addresses - testnet addresses
     // run with: forge test -vvvv --rpc-url $PLUME_RPC_URL --match-contract AggregateTokenCredbullTest
 
@@ -59,9 +73,38 @@ contract AggregateTokenCredbullTest is Test {
     AggregateToken public token;
     address public account;
 
+    bool private skipTests;
+
+    modifier skipIfNoRPC() {
+        if (skipTests) {
+            vm.skip(true);
+        } else {
+            _;
+        }
+    }
+
     function setUp() public {
-        // needs to have some USDC
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        string memory PLUME_RPC = vm.envOr("PLUME_RPC_URL", string(""));
+        if (bytes(PLUME_RPC).length == 0) {
+            console.log("PLUME_RPC_URL is not defined");
+            skipTests = true;
+
+            // Skip all tests if RPC URL is not defined
+            vm.skip(false);
+            return;
+        }
+
+        vm.createSelectFork(PLUME_RPC);
+
+        // Get private key from environment variable, needs to have some USDC
+        uint256 privateKey = uint256(vm.envOr("PRIVATE_KEY", bytes32(0)));
+        if (privateKey == 0) {
+            console.log("PRIVATE_KEY is not defined");
+            skipTests = true;
+            vm.skip(false);
+            return;
+        }
+
         account = vm.addr(privateKey);
         address controller = vm.addr(privateKey);
 
@@ -69,7 +112,7 @@ contract AggregateTokenCredbullTest is Test {
         console.log("Test amount:", TEST_AMOUNT);
 
         vm.startBroadcast(privateKey);
-
+        deal(USDC_ADDRESS, account, TEST_AMOUNT);
         // First check if we need to become admin
         bytes32 adminRole = CREDBULL_VAULT.DEFAULT_ADMIN_ROLE();
         bool isAdmin = CREDBULL_VAULT.hasRole(adminRole, controller);
@@ -139,7 +182,7 @@ contract AggregateTokenCredbullTest is Test {
         console.log("Credbull Asset:", CREDBULL_VAULT.asset());
     }
 
-    function testComponentTokenFlow() public {
+    function testComponentTokenFlow() public skipIfNoRPC {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         address controller = vm.addr(privateKey);
         vm.startBroadcast(privateKey);
@@ -186,7 +229,7 @@ contract AggregateTokenCredbullTest is Test {
         vm.stopBroadcast();
     }
 
-    function testQueryBalances() public view {
+    function testQueryBalances() public skipIfNoRPC {
         console.log("\n=== Current Balances ===");
         console.log("USDC Balance:", USDC.balanceOf(account));
         console.log("USDC Allowance (AggregateToken):", USDC.allowance(account, address(token)));
@@ -203,4 +246,5 @@ contract AggregateTokenCredbullTest is Test {
         console.log("Unlock Request Amount:", CREDBULL_VAULT.unlockRequestAmount(address(token), currentPeriod));
         console.log("Claimable Request Amount:", CREDBULL_VAULT.claimableRedeemRequest(currentPeriod, address(token)));
     }
+
 }
