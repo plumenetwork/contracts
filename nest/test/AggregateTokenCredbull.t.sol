@@ -1,31 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
 import "../src/AggregateToken.sol";
 import "../src/interfaces/IComponentToken.sol";
 import "../src/proxy/AggregateTokenProxy.sol";
 import "forge-std/Test.sol";
 import "forge-std/console2.sol";
 
-interface IUSDT {
-
-    function balanceOf(
-        address account
-    ) external view returns (uint256);
-    function approve(address spender, uint256 amount) external returns (bool);
-    function decimals() external view returns (uint8);
-
+interface IUSDT is IERC20Metadata {
+// All functions are inherited from IERC20Metadata
 }
 
-interface IUSDC {
-
-    function balanceOf(
-        address account
-    ) external view returns (uint256);
-    function approve(address spender, uint256 amount) external returns (bool);
-    function decimals() external view returns (uint8);
-    function allowance(address owner, address spender) external view returns (uint256);
-
+interface IUSDC is IERC20Metadata {
+// All functions are inherited from IERC20Metadata
 }
 
 interface ICredbullVault is IComponentToken {
@@ -34,8 +23,8 @@ interface ICredbullVault is IComponentToken {
     function noticePeriod() external view returns (uint256);
     function balanceOf(address account, uint256 id) external view returns (uint256);
     function setApprovalForAll(address operator, bool approved) external;
-    function asset() external view returns (address);
-    // Add these role-related functions
+
+    // Role-related functions
     function OPERATOR_ROLE() external view returns (bytes32);
     function DEFAULT_ADMIN_ROLE() external view returns (bytes32);
     function hasRole(bytes32 role, address account) external view returns (bool);
@@ -46,7 +35,7 @@ interface ICredbullVault is IComponentToken {
         bytes32 role
     ) external view returns (uint256);
 
-    // Also helpful to have these for debugging
+    // Debug helpers
     function unlockRequestAmount(address owner, uint256 requestId) external view returns (uint256);
     function claimableRedeemRequest(uint256 requestId, address controller) external view returns (uint256);
 
@@ -54,12 +43,13 @@ interface ICredbullVault is IComponentToken {
 
 contract AggregateTokenCredbullTest is Test {
 
-    // Contract addresses - testnet addresses
+    // need to set PRIVATE_KEY and PLUME_RPC_URL for these tests to run. 
     // run with: forge test -vvvv --rpc-url $PLUME_RPC_URL --match-contract AggregateTokenCredbullTest
 
     address constant USDT_ADDRESS = 0x2413b8C79Ce60045882559f63d308aE3DFE0903d;
     address constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
     address constant CREDBULL_ADDRESS = 0x4B1fC984F324D2A0fDD5cD83925124b61175f5C6;
+    address constant NEV_ADDRESS = 0x659619AEdf381c3739B0375082C2d61eC1fD8835;
 
     ICredbullVault public constant CREDBULL_VAULT = ICredbullVault(CREDBULL_ADDRESS);
     IUSDT public constant USDT = IUSDT(USDT_ADDRESS);
@@ -96,7 +86,7 @@ contract AggregateTokenCredbullTest is Test {
 
         vm.createSelectFork(PLUME_RPC);
 
-        // Get private key from environment variable, needs to have some USDC
+        // Get private key from environment variable
         uint256 privateKey = uint256(vm.envOr("PRIVATE_KEY", bytes32(0)));
         if (privateKey == 0) {
             console.log("PRIVATE_KEY is not defined");
@@ -112,7 +102,7 @@ contract AggregateTokenCredbullTest is Test {
         console.log("Test amount:", TEST_AMOUNT);
 
         vm.startBroadcast(privateKey);
-        deal(USDC_ADDRESS, account, TEST_AMOUNT);
+        deal(USDC_ADDRESS, account, TEST_AMOUNT*100);
         // First check if we need to become admin
         bytes32 adminRole = CREDBULL_VAULT.DEFAULT_ADMIN_ROLE();
         bool isAdmin = CREDBULL_VAULT.hasRole(adminRole, controller);
@@ -136,10 +126,10 @@ contract AggregateTokenCredbullTest is Test {
         bytes memory initData = abi.encodeCall(
             AggregateToken.initialize,
             (
-                account, // owner
-                "Test Aggregate USD", // name
-                "tAUSD", // symbol
-                IComponentToken(USDC_ADDRESS), // USDC as asset token
+                account,
+                "Test Aggregate USD",
+                "tAUSD",
+                IComponentToken(USDC_ADDRESS),
                 BASE, // ask price
                 BASE // bid price
             )
@@ -229,7 +219,7 @@ contract AggregateTokenCredbullTest is Test {
         vm.stopBroadcast();
     }
 
-    function testQueryBalances() public skipIfNoRPC {
+    function printQueryBalances() public view {
         console.log("\n=== Current Balances ===");
         console.log("USDC Balance:", USDC.balanceOf(account));
         console.log("USDC Allowance (AggregateToken):", USDC.allowance(account, address(token)));
@@ -245,6 +235,10 @@ contract AggregateTokenCredbullTest is Test {
         console.log("AggregateToken Balance in Vault:", CREDBULL_VAULT.balanceOf(address(token), currentPeriod));
         console.log("Unlock Request Amount:", CREDBULL_VAULT.unlockRequestAmount(address(token), currentPeriod));
         console.log("Claimable Request Amount:", CREDBULL_VAULT.claimableRedeemRequest(currentPeriod, address(token)));
+    }
+
+    function testQueryBalances() public skipIfNoRPC {
+        printQueryBalances();
     }
 
 }
