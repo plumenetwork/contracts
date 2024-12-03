@@ -175,31 +175,6 @@ contract pUSDTest is Test {
         assertEq(assets, depositAmount);
         vm.stopPrank();
     }
-    /*
-    function testRedeemReverts() public {
-    uint256 amount = 100e6;
-    uint256 price = 1e6;
-    uint64 deadline = uint64(block.timestamp + 1 hours);
-
-    vm.startPrank(user1);
-    token.deposit(amount, user1, user1, 0);
-
-    // Test zero address receiver
-    vm.expectRevert(pUSD.InvalidReceiver.selector);
-    token.requestRedeem(amount, address(0), user1, price, deadline);
-
-    // Test zero address controller
-    vm.expectRevert(pUSD.InvalidController.selector);
-    token.requestRedeem(amount, user1, address(0), price, deadline);
-
-    // Test expired deadline
-    vm.warp(deadline + 1);
-    vm.expectRevert(pUSD.DeadlineExpired.selector);
-    token.requestRedeem(amount, user1, user1, price, deadline);
-
-    vm.stopPrank();
-    }
-    */
 
     function testPreviewRedeem() public {
         uint256 depositAmount = 100e6;
@@ -399,27 +374,6 @@ contract pUSDTest is Test {
 
         vm.stopPrank();
     }
-    /*
-    function testRedeemReverts() public {
-        uint256 amount = 100e6;
-        uint256 price = 1e6;
-        uint64 deadline = uint64(block.timestamp + 1 hours);
-
-        // Setup
-        vm.startPrank(user1);
-        token.deposit(amount, user1, user1, 0);
-
-        // Test invalid receiver
-        vm.expectRevert(pUSD.InvalidReceiver.selector);
-        token.redeem(amount, address(0), user1, price, deadline);
-
-        // Test invalid controller
-        vm.expectRevert(pUSD.InvalidController.selector);
-        token.redeem(amount, user1, address(0), price, deadline);
-
-        vm.stopPrank();
-    }
-    */
 
     function testRedeemDeadlineExpired() public {
         uint256 amount = 100e6;
@@ -673,27 +627,6 @@ contract pUSDTest is Test {
 
         assertEq(actualShares, expectedShares, "Actual shares don't match preview");
     }
-    /*
-    function testPreviewRedeem() public {
-        uint256 depositAmount = 100e6;
-        uint256 redeemAmount = 50e6;
-        uint64 deadline = uint64(block.timestamp + 1 hours);
-
-        // Setup: First deposit some tokens
-        vm.startPrank(user1);
-        token.deposit(depositAmount, user1, user1, 0);
-
-        // Preview redeem should return same amount as assets (1:1 ratio)
-        uint256 expectedAssets = token.previewRedeem(redeemAmount);
-        assertEq(expectedAssets, redeemAmount);
-
-        // Verify actual redeem matches preview
-        uint256 actualAssets = token.redeem(redeemAmount, user1, user1, 1e6, deadline);
-        vm.stopPrank();
-
-        assertEq(actualAssets, expectedAssets, "Redeem amount doesn't match preview");
-    }
-    */
 
     function testBalanceOf() public {
         uint256 depositAmount = 100e6;
@@ -727,8 +660,5 @@ contract pUSDTest is Test {
 
         vm.stopPrank();
     }
-
-    // small hack to be excluded from coverage report
-    function test() public { }
 
 }
