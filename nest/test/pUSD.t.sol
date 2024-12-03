@@ -97,6 +97,17 @@ contract pUSDTest is Test {
         );
         token = pUSD(address(proxy));
 
+        vm.startPrank(owner);
+
+        // Grant ATOMIC_QUEUE_ROLE to mockAtomicQueue
+        bytes32 ATOMIC_QUEUE_ROLE = keccak256("ATOMIC_QUEUE_ROLE");
+        token.grantRole(ATOMIC_QUEUE_ROLE, address(mockAtomicQueue));
+
+        // Grant ADMIN_ROLE to mockAtomicQueue
+        token.grantRole(token.ADMIN_ROLE(), address(mockAtomicQueue));
+
+        vm.stopPrank();
+
         // Setup balances
         usdc.mint(user1, 1000e6);
 
@@ -193,25 +204,30 @@ contract pUSDTest is Test {
     function testPreviewRedeem() public {
         uint256 depositAmount = 100e6;
         uint256 redeemAmount = 50e6;
+        uint256 price = 1e6;
         uint64 deadline = uint64(block.timestamp + 1 hours);
 
         // Setup: First deposit some tokens
         vm.startPrank(user1);
         token.deposit(depositAmount, user1, user1, 0);
-
-        // Request redemption
-        token.requestRedeem(redeemAmount, user1, user1, 1e6, deadline);
-
-        // Mock atomic queue fulfillment
         vm.stopPrank();
-        vm.prank(address(mockAtomicQueue));
-        token.notifyRedeem(redeemAmount, redeemAmount, user1);
 
         // Preview redeem should return same amount as assets (1:1 ratio)
         uint256 expectedAssets = token.previewRedeem(redeemAmount);
         assertEq(expectedAssets, redeemAmount);
 
-        // Verify actual redeem matches preview
+        // Mock the lens to return correct balance
+        mockLens.setBalance(user1, depositAmount);
+
+        // Request redemption
+        vm.prank(user1);
+        token.requestRedeem(redeemAmount, user1, user1, price, deadline);
+
+        // Simulate atomic queue fulfillment
+        vm.prank(address(mockAtomicQueue));
+        token.notifyRedeem(redeemAmount, redeemAmount, user1);
+
+        // Complete redemption
         vm.prank(user1);
         uint256 actualAssets = token.redeem(redeemAmount, user1, user1);
 

@@ -6,7 +6,6 @@ import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/I
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -29,14 +28,7 @@ import { ComponentToken } from "../ComponentToken.sol";
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Unified Plume USD stablecoin
  */
-contract pUSD is
-    Initializable,
-    ERC20Upgradeable,
-    AccessControlUpgradeable,
-    UUPSUpgradeable,
-    ReentrancyGuardUpgradeable,
-    ComponentToken
-{
+contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable, ComponentToken {
 
     using SafeERC20 for IERC20;
     using FixedPointMathLib for uint256;
@@ -132,9 +124,8 @@ contract pUSD is
         __UUPSUpgradeable_init();
         __AccessControl_init();
         __ERC20_init("Plume USD", "pUSD");
-        __ReentrancyGuard_init();
 
-        super.initialize(owner, "Plume USD", "pUSD", asset_, false, false);
+        super.initialize(owner, "Plume USD", "pUSD", asset_, false, true);
 
         pUSDStorage storage $ = _getpUSDStorage();
         $.boringVault.teller = ITeller(teller_);
@@ -248,7 +239,7 @@ contract pUSD is
         address receiver,
         address controller,
         uint256 minimumMint
-    ) public virtual nonReentrant returns (uint256 shares) {
+    ) public virtual returns (uint256 shares) {
         if (receiver == address(0)) {
             revert InvalidReceiver();
         }
@@ -297,7 +288,7 @@ contract pUSD is
         address controller,
         uint256 price,
         uint64 deadline
-    ) public virtual nonReentrant returns (uint256) {
+    ) public virtual returns (uint256) {
         if (receiver == address(0)) {
             revert InvalidReceiver();
         }
@@ -345,7 +336,7 @@ contract pUSD is
         uint256 shares,
         address receiver,
         address controller
-    ) public virtual override(ComponentToken) nonReentrant returns (uint256 assets) {
+    ) public virtual override(ComponentToken) returns (uint256 assets) {
         // Check claimableRedeemRequest, Transfer assets to receiver, Clean up request state.
         return super.redeem(shares, receiver, controller);
     }
@@ -414,10 +405,7 @@ contract pUSD is
      * @param amount Amount of tokens to transfer
      * @return bool indicating whether the transfer was successful
      */
-    function transfer(
-        address to,
-        uint256 amount
-    ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
+    function transfer(address to, uint256 amount) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
         address owner = msg.sender;
         _transfer(owner, to, amount);
         return true;
@@ -434,7 +422,7 @@ contract pUSD is
         address from,
         address to,
         uint256 amount
-    ) public virtual override(ERC20Upgradeable, IERC20) nonReentrant returns (bool) {
+    ) public virtual override(ERC20Upgradeable, IERC20) returns (bool) {
         address spender = msg.sender;
         _spendAllowance(from, spender, amount);
         _transfer(from, to, amount);
