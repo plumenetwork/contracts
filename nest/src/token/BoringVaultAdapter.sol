@@ -27,7 +27,7 @@ import { ComponentToken } from "../ComponentToken.sol";
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice ComponentToken adapter for BoringVault
  */
-contract pUSD is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable, ComponentToken {
+abstract contract BoringVaultAdapter is Initializable, ERC20Upgradeable, AccessControlUpgradeable, UUPSUpgradeable, ComponentToken {
 
     using SafeERC20 for IERC20;
     using FixedPointMathLib for uint256;
