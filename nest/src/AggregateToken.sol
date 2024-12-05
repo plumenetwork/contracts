@@ -201,7 +201,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         IComponentToken componentToken,
         uint256 amount
     ) external nonReentrant onlyRole(ADMIN_ROLE) {
-        // Verify the componentToken is in our list
+        // Verify the componentToken is in componentTokenMap
         if (!_getAggregateTokenStorage().componentTokenMap[componentToken]) {
             revert ComponentTokenNotListed(componentToken);
         }
