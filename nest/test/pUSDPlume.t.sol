@@ -97,21 +97,6 @@ contract pUSDPlumeTest is Test {
 
         vm.startPrank(user1);
 
-        // Approve both token and vault
-        asset.approve(address(token), type(uint256).max);
-        asset.approve(address(vault), type(uint256).max);
-        asset.approve(TELLER_ADDRESS, type(uint256).max);
-
-        // Additional approval needed for the vault to transfer from pUSD
-        vm.stopPrank();
-
-        // Add approval from pUSD to vault
-        vm.startPrank(address(token));
-        asset.approve(address(vault), type(uint256).max);
-        vm.stopPrank();
-
-        vm.startPrank(user1);
-
         console.log("Asset balance before deposit:", asset.balanceOf(user1));
         console.log("Asset allowance for token:", asset.allowance(user1, address(token)));
         console.log("Asset allowance for vault:", asset.allowance(user1, address(vault)));
