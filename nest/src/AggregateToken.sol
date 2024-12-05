@@ -168,11 +168,64 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 assets,
         address receiver,
         address controller
-    ) public override(ComponentToken, IComponentToken) returns (uint256 shares) {
+    ) public override(ComponentToken, IComponentToken, ERC4626Upgradeable) returns (uint256 shares) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
         return super.deposit(assets, receiver, controller);
+    }
+
+    /**
+     * @inheritdoc ERC4626Upgradeable
+     * @dev Overridden to add pause check before deposit
+     * @param assets Amount of assets to deposit
+     * @param receiver Address that will receive the shares
+     * @return shares Amount of shares minted
+     */
+    function deposit(
+        uint256 assets,
+        address receiver
+    ) public virtual override(ERC4626Upgradeable) returns (uint256 shares) {
+        if (_getAggregateTokenStorage().paused) {
+            revert DepositPaused();
+        }
+        return super.deposit(assets, receiver);
+    }
+
+    /**
+     * @inheritdoc ComponentToken
+     * @dev Overridden to add pause check before minting
+     * @param shares Amount of shares to mint
+     * @param receiver Address that will receive the shares
+     * @param controller Address that controls the minting
+     * @return assets Amount of assets deposited
+     */
+    function mint(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public virtual override(ComponentToken) returns (uint256 assets) {
+        if (_getAggregateTokenStorage().paused) {
+            revert DepositPaused();
+        }
+        return super.mint(shares, receiver, controller);
+    }
+
+    /**
+     * @inheritdoc ERC4626Upgradeable
+     * @dev Overridden to add pause check before minting
+     * @param shares Amount of shares to mint
+     * @param receiver Address that will receive the shares
+     * @return assets Amount of assets deposited
+     */
+    function mint(
+        uint256 shares,
+        address receiver
+    ) public virtual override(ERC4626Upgradeable) returns (uint256 assets) {
+        if (_getAggregateTokenStorage().paused) {
+            revert DepositPaused();
+        }
+        return super.mint(shares, receiver);
     }
 
     /// @inheritdoc IComponentToken
