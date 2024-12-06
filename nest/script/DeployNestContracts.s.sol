@@ -14,6 +14,7 @@ import { IComponentToken } from "../src/interfaces/IComponentToken.sol";
 import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
 import { NestStakingProxy } from "../src/proxy/NestStakingProxy.sol";
 import { pUSD } from "../src/token/pUSD.sol";
+import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
 
 // Concrete implementation of ComponentToken
 contract ConcreteComponentToken is ComponentToken {
@@ -43,7 +44,8 @@ contract DeployNestContracts is Script, Test {
 
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
-        ERC1967Proxy pUSDProxy = ERC1967Proxy(payable(PUSD_ADDRESS));
+
+
 
         AggregateToken aggregateToken = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
@@ -52,9 +54,9 @@ contract DeployNestContracts is Script, Test {
                 AggregateToken.initialize,
                 (
                     NEST_ADMIN_ADDRESS,
-                    "Nest Insto Vault",
-                    "NIV",
-                    IComponentToken(address(pUSDProxy)),
+                    "Nest Egg Vault",
+                    "NEV",
+                    IComponentToken(PUSD_ADDRESS),
                     1e17, // ask price
                     1e17 // bid price
                 )
