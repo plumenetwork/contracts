@@ -13,8 +13,9 @@ import { NestStaking } from "../src/NestStaking.sol";
 import { IComponentToken } from "../src/interfaces/IComponentToken.sol";
 import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
 import { NestStakingProxy } from "../src/proxy/NestStakingProxy.sol";
-import { pUSD } from "../src/token/pUSD.sol";
+
 import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
+import { pUSD } from "../src/token/pUSD.sol";
 
 // Concrete implementation of ComponentToken
 contract ConcreteComponentToken is ComponentToken {
@@ -44,8 +45,6 @@ contract DeployNestContracts is Script, Test {
 
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
-
-
 
         AggregateToken aggregateToken = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(

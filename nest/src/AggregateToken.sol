@@ -38,14 +38,11 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     bytes32 private constant AGGREGATE_TOKEN_STORAGE_LOCATION =
         0xd3be8f8d43881152ac95daeff8f4c57e01616286ffd74814a5517f422a6b6200;
 
-
     function _getAggregateTokenStorage() private pure returns (AggregateTokenStorage storage $) {
         assembly {
             $.slot := AGGREGATE_TOKEN_STORAGE_LOCATION
         }
     }
-
-
 
     // Constants
 
@@ -268,8 +265,6 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
         emit ComponentTokenUnlisted(componentToken);
     }
-
-    
 
     /**
      * @notice Buy ComponentToken using `asset`

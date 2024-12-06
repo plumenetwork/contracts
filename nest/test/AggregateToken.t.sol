@@ -2,49 +2,18 @@
 pragma solidity ^0.8.25;
 
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { Test } from "forge-std/Test.sol";
-import { console } from "forge-std/console.sol";
 
 import { AggregateToken } from "../src/AggregateToken.sol";
 import { IComponentToken } from "../src/interfaces/IComponentToken.sol";
-
 import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
+import { Test } from "forge-std/Test.sol";
+import { console } from "forge-std/console.sol";
 
-contract MockUSDC is ERC20 {
-
-    constructor() ERC20("Invalid Token", "INVALID") {
-        _mint(msg.sender, 1_000_000 * 10 ** decimals());
-    }
-
-    function decimals() public pure override returns (uint8) {
-        return 12; // Different from USDC's 6 decimals
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-}
-
-contract MockInvalidToken is ERC20 {
-
-    constructor() ERC20("Invalid Token", "INVALID") {
-        _mint(msg.sender, 1_000_000 * 10 ** decimals());
-    }
-
-    function decimals() public pure override returns (uint8) {
-        return 12; // Different from USDC's 6 decimals
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-}
+import { MockInvalidToken } from "../src/mocks/MockInvalidToken.sol";
+import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 
 contract AggregateTokenTest is Test {
 
@@ -65,6 +34,9 @@ contract AggregateTokenTest is Test {
     event ComponentTokenSold(
         address indexed seller, IComponentToken indexed componentToken, uint256 componentTokenAmount, uint256 assets
     );
+    event Paused();
+    event Unpaused();
+    event ComponentTokenRemoved(IComponentToken indexed componentToken);
 
     function setUp() public {
         owner = makeAddr("owner");
@@ -97,6 +69,93 @@ contract AggregateTokenTest is Test {
         usdc.mint(user1, 1000e6);
         vm.prank(user1);
         usdc.approve(address(token), type(uint256).max);
+    }
+
+    function testAddComponentToken() public {
+        vm.startPrank(owner);
+
+        // Should succeed first time
+        token.addComponentToken(IComponentToken(address(newUsdc)));
+
+        // Should fail second time
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                AggregateToken.ComponentTokenAlreadyListed.selector, IComponentToken(address(newUsdc))
+            )
+        );
+        token.addComponentToken(IComponentToken(address(newUsdc)));
+
+        vm.stopPrank();
+    }
+
+    function testRemoveComponentToken() public {
+        vm.startPrank(owner);
+
+        // Add a token first
+        token.addComponentToken(IComponentToken(address(newUsdc)));
+
+        // Should fail when trying to remove current asset
+        vm.expectRevert(
+            abi.encodeWithSelector(AggregateToken.ComponentTokenIsAsset.selector, IComponentToken(address(usdc)))
+        );
+        token.removeComponentToken(IComponentToken(address(usdc)));
+
+        // Should succeed with non-asset token
+        token.removeComponentToken(IComponentToken(address(newUsdc)));
+
+        // Should fail when trying to remove non-existent token
+        vm.expectRevert(
+            abi.encodeWithSelector(AggregateToken.ComponentTokenNotListed.selector, IComponentToken(address(newUsdc)))
+        );
+        token.removeComponentToken(IComponentToken(address(newUsdc)));
+
+        vm.stopPrank();
+    }
+
+    function testPauseUnpause() public {
+        vm.startPrank(owner);
+
+        // Should start unpaused
+        assertFalse(token.isPaused());
+
+        // Should pause
+        vm.expectEmit(address(token));
+        emit Paused();
+        token.pause();
+        assertTrue(token.isPaused());
+
+        // Should fail when already paused
+        vm.expectRevert(AggregateToken.AlreadyPaused.selector);
+        token.pause();
+
+        // Should unpause
+        vm.expectEmit(address(token));
+        emit Unpaused();
+        token.unpause();
+        assertFalse(token.isPaused());
+
+        // Should fail when already unpaused
+        vm.expectRevert(AggregateToken.NotPaused.selector);
+        token.unpause();
+
+        vm.stopPrank();
+    }
+
+    function testSetPrices() public {
+        // Grant price updater role
+        bytes32 priceUpdaterRole = token.PRICE_UPDATER_ROLE();
+        vm.startPrank(owner);
+        token.grantRole(priceUpdaterRole, owner);
+
+        // Test ask price
+        token.setAskPrice(2e18);
+        assertEq(token.getAskPrice(), 2e18);
+
+        // Test bid price
+        token.setBidPrice(1.5e18);
+        assertEq(token.getBidPrice(), 1.5e18);
+
+        vm.stopPrank();
     }
 
     // Helper function for access control error message
