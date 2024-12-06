@@ -46,10 +46,20 @@ contract AggregateTokenCredbullTest is Test {
     // need to set PRIVATE_KEY and PLUME_RPC_URL for these tests to run. 
     // run with: forge test -vvvv --rpc-url $PLUME_RPC_URL --match-contract AggregateTokenCredbullTest
 
+    // TESTNET ADDRESSES
     address constant USDT_ADDRESS = 0x2413b8C79Ce60045882559f63d308aE3DFE0903d;
     address constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
     address constant CREDBULL_ADDRESS = 0x4B1fC984F324D2A0fDD5cD83925124b61175f5C6;
     address constant NEV_ADDRESS = 0x659619AEdf381c3739B0375082C2d61eC1fD8835;
+
+/*
+    // MAINNET ADDRESSES
+    address constant USDT_ADDRESS = 0x2086f755A6d9254045C257ea3d382ef854849B0f;
+    address constant USDC_ADDRESS = 0x28E0f0eed8d6A6a96033feEe8b2D7F32EB5CCc48;
+    address constant CREDBULL_ADDRESS = 0x2b9d2023DbF3c7473f1cec42F78713d09DdC9FBF;
+    address constant NEV_ADDRESS = 0x81537d879ACc8a290a1846635a0cAA908f8ca3a6;
+*/
+
 
     ICredbullVault public constant CREDBULL_VAULT = ICredbullVault(CREDBULL_ADDRESS);
     IUSDT public constant USDT = IUSDT(USDT_ADDRESS);
