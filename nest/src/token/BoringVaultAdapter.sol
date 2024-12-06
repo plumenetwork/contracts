@@ -115,7 +115,7 @@ abstract contract BoringVaultAdapter is
     ) public onlyInitializing {
         if (
             owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
-                || atomicQueue_ == address(0)
+                || atomicQueue_ == address(0) || lens_ == address(0) || accountant_ == address(0)
         ) {
             revert ZeroAddress();
         }
@@ -152,7 +152,7 @@ abstract contract BoringVaultAdapter is
         // Reinitialize as needed
         if (
             owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
-                || atomicQueue_ == address(0)
+                || atomicQueue_ == address(0) || lens_ == address(0) || accountant_ == address(0)
         ) {
             revert ZeroAddress();
         }
