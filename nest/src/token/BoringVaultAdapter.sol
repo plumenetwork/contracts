@@ -138,6 +138,16 @@ abstract contract BoringVaultAdapter is
         $.asset = asset_;
 
         $.version = 1; // Set initial version
+
+        // Set approvals for the underlying asset
+        SafeERC20.forceApprove(asset_, vault_, type(uint256).max);
+        SafeERC20.forceApprove(asset_, teller_, type(uint256).max);
+        SafeERC20.forceApprove(asset_, atomicQueue_, type(uint256).max);
+
+        // Set approvals for the pUSD token itself
+        _approve(address(this), vault_, type(uint256).max);
+        _approve(address(this), teller_, type(uint256).max);
+        _approve(address(this), atomicQueue_, type(uint256).max);
     }
 
     function reinitialize(
@@ -148,7 +158,7 @@ abstract contract BoringVaultAdapter is
         address atomicQueue_,
         address lens_,
         address accountant_
-    ) public onlyRole(UPGRADER_ROLE) {
+    ) public virtual onlyRole(UPGRADER_ROLE) {
         // Reinitialize as needed
         if (
             owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
@@ -166,6 +176,16 @@ abstract contract BoringVaultAdapter is
         $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
         $.boringVault.lens = ILens(lens_);
         $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
+
+        // Set approvals for the underlying asset
+        SafeERC20.forceApprove(asset_, vault_, type(uint256).max);
+        SafeERC20.forceApprove(asset_, teller_, type(uint256).max);
+        SafeERC20.forceApprove(asset_, atomicQueue_, type(uint256).max);
+
+        // Set approvals for the pUSD token itself
+        _approve(address(this), vault_, type(uint256).max);
+        _approve(address(this), teller_, type(uint256).max);
+        _approve(address(this), atomicQueue_, type(uint256).max);
 
         emit Reinitialized($.version);
     }
