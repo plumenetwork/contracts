@@ -69,14 +69,14 @@ abstract contract ComponentToken is
     // Constants
 
     /// @notice All ComponentToken requests are fungible and all have ID = 0
-    uint256 private constant REQUEST_ID = 0;
+    uint256 internal constant REQUEST_ID = 0;
     /// @notice Role for the admin of the ComponentToken
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the ComponentToken
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
-    uint256 private constant _BASE = 1e18;
-
+    uint256 internal constant _BASE = 1e18;
+    
     // Events
 
     /**

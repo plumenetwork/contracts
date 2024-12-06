@@ -9,9 +9,9 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { ERC721Holder } from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import { Auth, Authority } from "@solmate/auth/Auth.sol";
 
-import { IVault } from "../interfaces/IBoringVault.sol";
+import { IBoringVault } from "../interfaces/IBoringVault.sol";
 
-contract MockVault is ERC20, Auth, ERC721Holder, ERC1155Holder, IVault {
+contract MockVault is ERC20, Auth, ERC721Holder, ERC1155Holder, IBoringVault {
 
     using SafeERC20 for IERC20;
 

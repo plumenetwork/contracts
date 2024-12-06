@@ -3,7 +3,7 @@ pragma solidity ^0.8.25;
 
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 
-import { IVault } from "../interfaces/IBoringVault.sol";
+import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { ILens } from "../interfaces/ILens.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -20,7 +20,7 @@ contract MockLens is ILens {
     mapping(address => mapping(address => uint256)) private vaultBalances;
 
     function totalAssets(
-        IVault vault,
+        IBoringVault vault,
         IAccountantWithRateProviders accountant
     ) external view override returns (IERC20 asset, uint256 assets) {
         uint256 totalSupply = vault.totalSupply();
@@ -31,7 +31,7 @@ contract MockLens is ILens {
     function previewDeposit(
         IERC20 depositAsset,
         uint256 depositAmount,
-        IVault vault,
+        IBoringVault vault,
         IAccountantWithRateProviders accountant
     ) external view override returns (uint256 shares) {
         // Check if we have a preset value
@@ -44,12 +44,7 @@ contract MockLens is ILens {
         try vault.decimals() returns (uint8 shareDecimals) {
             return depositAmount.mulDivDown(10 ** shareDecimals, rate);
         } catch {
-            // Explicitly revert with InvalidVault error
-            bytes4 selector = bytes4(keccak256("InvalidVault()"));
-            assembly {
-                mstore(0, selector)
-                revert(0, 4)
-            }
+            revert InvalidVault();
         }
     }
 
@@ -65,7 +60,7 @@ contract MockLens is ILens {
         balances[account] = balance;
     }
 
-    function balanceOf(address account, IVault vault) external view override returns (uint256) {
+    function balanceOf(address account, IBoringVault vault) external view override returns (uint256) {
         // First check if we have a preset balance
         if (balances[account] != 0) {
             return balances[account];
@@ -76,7 +71,7 @@ contract MockLens is ILens {
 
     function balanceOfInAssets(
         address account,
-        IVault vault,
+        IBoringVault vault,
         IAccountantWithRateProviders accountant
     ) external view override returns (uint256 assets) {
         uint256 shares = vault.balanceOf(account);
@@ -96,7 +91,7 @@ contract MockLens is ILens {
         address account,
         IERC20 depositAsset,
         uint256 depositAmount,
-        IVault vault,
+        IBoringVault vault,
         ITeller teller
     ) external view override returns (bool) {
         if (depositAsset.balanceOf(account) < depositAmount) {

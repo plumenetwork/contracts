@@ -56,12 +56,12 @@ contract UpgradePUSD is Script, Test {
                 console2.log("Vault:", currentVault);
                 console2.log("Total Supply:", currentTotalSupply);
             } else {
-                vm.assume(true);
+                vm.skip(true);
                 isConnected = false;
             }
         } catch {
             console2.log("No implementation found - skipping");
-            vm.assume(true);
+            vm.skip(true);
             isConnected = false;
         }
     }
@@ -69,7 +69,7 @@ contract UpgradePUSD is Script, Test {
     function testSimulateUpgrade() public {
         // Deploy new implementation in test environment
         if (!isConnected) {
-            vm.assume(true);
+            vm.skip(true);
         } else {
             vm.startPrank(ADMIN_ADDRESS);
 
@@ -85,7 +85,7 @@ contract UpgradePUSD is Script, Test {
 
     function run() external {
         if (!isConnected) {
-            vm.assume(true);
+            vm.skip(true);
         } else {
             vm.startBroadcast(ADMIN_ADDRESS);
 
