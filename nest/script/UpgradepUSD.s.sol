@@ -5,7 +5,6 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { ERC1967Utils } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import { Script } from "forge-std/Script.sol";
-import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
 
 import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
@@ -13,7 +12,7 @@ import { pUSD } from "../src/token/pUSD.sol";
 
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 
-contract UpgradePUSD is Script, Test {
+contract UpgradePUSD is Script {
 
     // Constants
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
@@ -34,6 +33,9 @@ contract UpgradePUSD is Script, Test {
     address public currentVault;
     uint256 public currentTotalSupply;
     bool public isConnected;
+
+    // small hack to be excluded from coverage report
+    function test() public { }
 
     function setUp() public {
         // Try to read implementation slot from proxy, this only works with RPC
@@ -56,12 +58,13 @@ contract UpgradePUSD is Script, Test {
                 console2.log("Vault:", currentVault);
                 console2.log("Total Supply:", currentTotalSupply);
             } else {
-                vm.skip(true);
+                //TODO: Check this again
+                vm.skip(false);
                 isConnected = false;
             }
         } catch {
             console2.log("No implementation found - skipping");
-            vm.skip(true);
+            vm.skip(false);
             isConnected = false;
         }
     }
