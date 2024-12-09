@@ -527,7 +527,7 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncDeposit) {
             revert Unimplemented();
         }
-        assets = super.previewDeposit(shares);
+        assets = convertToAssets(shares);
     }
 
     /**
@@ -554,7 +554,7 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncRedeem) {
             revert Unimplemented();
         }
-        shares = super.previewWithdraw(assets);
+        shares = convertToShares(assets);
     }
 
     /// @inheritdoc IERC7540
