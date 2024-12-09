@@ -76,7 +76,7 @@ abstract contract ComponentToken is
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 internal constant _BASE = 1e18;
-    
+
     // Events
 
     /**
@@ -109,6 +109,46 @@ abstract contract ComponentToken is
      * @param authorizedUser Address of the authorized user who can perform the action
      */
     error Unauthorized(address sender, address authorizedUser);
+
+    /**
+     * @notice Indicates a failure because the operation was called in async mode
+     * @dev This error is thrown when trying to perform a synchronous operation while async mode is enabled
+     */
+    error AsyncOperationsEnabled();
+
+    /**
+     * @notice Indicates a failure because the operation was called in sync mode
+     * @dev This error is thrown when trying to perform an asynchronous operation while async mode is disabled
+     */
+    error AsyncOperationsDisabled();
+
+    /**
+     * @notice Indicates a failure because there are no claimable deposits for the controller
+     * @dev This error is thrown when trying to claim a deposit but either the assets
+     *   or shares amount in the request is zero
+     */
+    error NoClaimableDeposit();
+
+    /**
+     * @notice Indicates a failure because there are no claimable redemptions for the controller
+     * @dev This error is thrown when trying to claim a redemption but either the assets
+     *   or shares amount in the request is zero
+     */
+    error NoClaimableRedeem();
+
+    /**
+     * @notice Indicates a failure because the deposit amount doesn't match the claimable amount
+     * @param provided Amount of assets provided for deposit
+     * @param required Amount of assets required (claimable amount)
+     */
+    error InvalidDepositAmount(uint256 provided, uint256 required);
+
+    /**
+     * @notice Indicates a failure because the redeem amount doesn't match the claimable amount
+     * @param provided Amount of shares provided for redemption
+     * @param required Amount of shares required (claimable amount)
+     */
+    error InvalidRedeemAmount(uint256 provided, uint256 required);
 
     /**
      * @notice Indicates a failure because the controller does not have enough requested
@@ -302,14 +342,24 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
+
         if ($.asyncDeposit) {
-            if ($.claimableDepositRequest[controller] < assets) {
-                revert InsufficientRequestBalance(controller, assets, 1);
-            }
+            // For async deposits, we must use the full claimable amount
+            uint256 claimableAssets = $.claimableDepositRequest[controller];
             shares = $.sharesDepositRequest[controller];
-            $.claimableDepositRequest[controller] -= assets;
-            $.sharesDepositRequest[controller] -= shares;
+
+            if (claimableAssets == 0 || shares == 0) {
+                revert NoClaimableDeposit();
+            }
+            if (assets != claimableAssets) {
+                revert InvalidDepositAmount(assets, claimableAssets);
+            }
+
+            // Reset state atomically
+            $.claimableDepositRequest[controller] = 0;
+            $.sharesDepositRequest[controller] = 0;
         } else {
+            // For sync deposits, process normally
             if (!IERC20(asset()).transferFrom(controller, address(this), assets)) {
                 revert InsufficientBalance(IERC20(asset()), controller, assets);
             }
@@ -317,8 +367,8 @@ abstract contract ComponentToken is
         }
 
         _mint(receiver, shares);
-
         emit Deposit(controller, receiver, assets, shares);
+        return shares;
     }
 
     /// @inheritdoc IERC7540
@@ -405,7 +455,14 @@ abstract contract ComponentToken is
         emit RedeemNotified(controller, assets, shares);
     }
 
-    /// @inheritdoc IERC7540
+    /**
+     * @notice Fulfill a synchronous request to redeem assets by transferring assets to the receiver
+     * @dev This function can only be called when async redemptions are disabled
+     * @param shares Amount of shares to redeem
+     * @param receiver Address to receive the assets
+     * @param controller Controller of the request
+     * @return assets Amount of assets sent to the receiver
+     */
     function redeem(
         uint256 shares,
         address receiver,
@@ -419,14 +476,24 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
+
         if ($.asyncRedeem) {
-            if ($.claimableRedeemRequest[controller] < shares) {
-                revert InsufficientRequestBalance(controller, shares, 3);
-            }
+            // For async redemptions, we must use the full claimable amount
+            uint256 claimableShares = $.claimableRedeemRequest[controller];
             assets = $.assetsRedeemRequest[controller];
-            $.claimableRedeemRequest[controller] -= shares;
-            $.assetsRedeemRequest[controller] -= assets;
+
+            if (claimableShares == 0 || assets == 0) {
+                revert NoClaimableRedeem();
+            }
+            if (shares != claimableShares) {
+                revert InvalidRedeemAmount(shares, claimableShares);
+            }
+
+            // Reset state atomically
+            $.claimableRedeemRequest[controller] = 0;
+            $.assetsRedeemRequest[controller] = 0;
         } else {
+            // For sync redemptions, process normally
             _burn(controller, shares);
             assets = convertToAssets(shares);
         }
@@ -436,6 +503,49 @@ abstract contract ComponentToken is
         }
 
         emit Withdraw(controller, receiver, controller, assets, shares);
+        return assets;
+    }
+
+    /**
+     * @notice Claim an approved asynchronous redeem request and transfer assets to the receiver
+     * @dev This function can only be called when async redemptions are enabled
+     *   and will revert if there are no claimable redemptions for the controller.
+     *   All state for the request is atomically reset after a successful claim.
+     * @param receiver Address to receive the redeemed assets
+     * @param controller Controller of the redeem request
+     * @return assets Amount of assets sent to the receiver
+     * @return shares Amount of shares that were redeemed
+     */
+    function claimRedeem(
+        address receiver,
+        address controller
+    ) public virtual nonReentrant returns (uint256 assets, uint256 shares) {
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        if (!$.asyncRedeem) {
+            revert AsyncOperationsDisabled();
+        }
+
+        shares = $.claimableRedeemRequest[controller];
+        assets = $.assetsRedeemRequest[controller];
+
+        if (shares == 0 || assets == 0) {
+            revert NoClaimableRedeem();
+        }
+
+        // Reset state atomically
+        $.claimableRedeemRequest[controller] = 0;
+        $.assetsRedeemRequest[controller] = 0;
+
+        if (!IERC20(asset()).transfer(receiver, assets)) {
+            revert InsufficientBalance(IERC20(asset()), address(this), assets);
+        }
+
+        emit Withdraw(controller, receiver, controller, assets, shares);
+        return (assets, shares);
     }
 
     /// @inheritdoc IERC7540
@@ -452,15 +562,26 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        shares = convertToShares(assets);
 
         if ($.asyncRedeem) {
-            if ($.claimableRedeemRequest[controller] < shares) {
-                revert InsufficientRequestBalance(controller, shares, 3);
+            // For async redemptions, we must use the full claimable amount
+            uint256 claimableShares = $.claimableRedeemRequest[controller];
+            uint256 claimableAssets = $.assetsRedeemRequest[controller];
+
+            if (claimableShares == 0 || claimableAssets == 0) {
+                revert NoClaimableRedeem();
             }
-            $.claimableRedeemRequest[controller] -= shares;
-            $.assetsRedeemRequest[controller] -= assets;
+            if (assets != claimableAssets) {
+                revert InvalidRedeemAmount(convertToShares(assets), claimableShares);
+            }
+
+            shares = claimableShares;
+
+            // Reset state atomically
+            $.claimableRedeemRequest[controller] = 0;
+            $.assetsRedeemRequest[controller] = 0;
         } else {
+            shares = convertToShares(assets);
             _burn(controller, shares);
         }
 
@@ -469,6 +590,7 @@ abstract contract ComponentToken is
         }
 
         emit Withdraw(controller, receiver, controller, assets, shares);
+        return shares;
     }
 
     // Getter View Functions
