@@ -232,41 +232,6 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     }
 
     /**
-     * @notice Remove a ComponentToken from the component token list
-     * @dev Only the owner can call this function. The ComponentToken must have zero balance to be removed.
-     * @param componentToken ComponentToken to remove
-     */
-    function removeComponentToken(
-        IComponentToken componentToken
-    ) external nonReentrant onlyRole(ADMIN_ROLE) {
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-
-        // Check if component token exists
-        if (!$.componentTokenMap[componentToken]) {
-            revert ComponentTokenNotListed(componentToken);
-        }
-
-        // Check if it's the current asset
-        if (address(componentToken) == asset()) {
-            revert ComponentTokenIsAsset(componentToken);
-        }
-
-        // Remove from mapping
-        $.componentTokenMap[componentToken] = false;
-
-        // Remove from array by finding and replacing with last element
-        for (uint256 i = 0; i < $.componentTokenList.length; i++) {
-            if ($.componentTokenList[i] == componentToken) {
-                $.componentTokenList[i] = $.componentTokenList[$.componentTokenList.length - 1];
-                $.componentTokenList.pop();
-                break;
-            }
-        }
-
-        emit ComponentTokenUnlisted(componentToken);
-    }
-
-    /**
      * @notice Buy ComponentToken using `asset`
      * @dev Only the owner can call this function, will revert if
      *   the AggregateToken does not have enough `asset` to buy the ComponentToken
