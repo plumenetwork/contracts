@@ -11,6 +11,8 @@ import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.so
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
@@ -76,7 +78,7 @@ abstract contract ComponentToken is
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 internal constant _BASE = 1e18;
-    
+
     // Events
 
     /**
@@ -253,11 +255,8 @@ abstract contract ComponentToken is
             revert Unimplemented();
         }
 
-        if (!IERC20(asset()).transferFrom(owner, address(this), assets)) {
-            revert InsufficientBalance(IERC20(asset()), owner, assets);
-        }
+        SafeERC20.safeTransferFrom(IERC20(asset()), owner, address(this), assets);
         $.pendingDepositRequest[controller] += assets;
-
         emit DepositRequest(controller, owner, REQUEST_ID, owner, assets);
         return REQUEST_ID;
     }
@@ -310,9 +309,7 @@ abstract contract ComponentToken is
             $.claimableDepositRequest[controller] -= assets;
             $.sharesDepositRequest[controller] -= shares;
         } else {
-            if (!IERC20(asset()).transferFrom(controller, address(this), assets)) {
-                revert InsufficientBalance(IERC20(asset()), controller, assets);
-            }
+            SafeERC20.safeTransferFrom(IERC20(asset()), controller, address(this), assets);
             shares = convertToShares(assets);
         }
 
@@ -344,9 +341,7 @@ abstract contract ComponentToken is
             $.claimableDepositRequest[controller] -= assets;
             $.sharesDepositRequest[controller] -= shares;
         } else {
-            if (!IERC20(asset()).transferFrom(controller, address(this), assets)) {
-                revert InsufficientBalance(IERC20(asset()), controller, assets);
-            }
+            SafeERC20.safeTransferFrom(IERC20(asset()), controller, address(this), assets);
         }
 
         _mint(receiver, shares);
@@ -431,9 +426,7 @@ abstract contract ComponentToken is
             assets = convertToAssets(shares);
         }
 
-        if (!IERC20(asset()).transfer(receiver, assets)) {
-            revert InsufficientBalance(IERC20(asset()), address(this), assets);
-        }
+        SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
 
         emit Withdraw(controller, receiver, controller, assets, shares);
     }
@@ -464,9 +457,7 @@ abstract contract ComponentToken is
             _burn(controller, shares);
         }
 
-        if (!IERC20(asset()).transfer(receiver, assets)) {
-            revert InsufficientBalance(IERC20(asset()), address(this), assets);
-        }
+        SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
 
         emit Withdraw(controller, receiver, controller, assets, shares);
     }
