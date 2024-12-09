@@ -385,26 +385,23 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        assets = convertToAssets(shares);
 
         if ($.asyncDeposit) {
-            // For async mints, use pre-calculated values
-            if ($.sharesDepositRequest[controller] < shares) {
-                revert InsufficientRequestBalance(controller, shares, 1);
+            if ($.claimableDepositRequest[controller] < assets) {
+                revert InsufficientRequestBalance(controller, assets, 1);
             }
-            assets = $.claimableDepositRequest[controller];
-            $.claimableDepositRequest[controller] = 0;
-            $.sharesDepositRequest[controller] = 0;
+            $.claimableDepositRequest[controller] -= assets;
+            $.sharesDepositRequest[controller] -= shares;
         } else {
-            // For sync mints, calculate and transfer in same transaction
-            assets = convertToAssets(shares);
             if (!IERC20(asset()).transferFrom(controller, address(this), assets)) {
                 revert InsufficientBalance(IERC20(asset()), controller, assets);
             }
         }
 
         _mint(receiver, shares);
+
         emit Deposit(controller, receiver, assets, shares);
-        return assets;
     }
 
     /// @inheritdoc IComponentToken
@@ -567,15 +564,23 @@ abstract contract ComponentToken is
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
 
         if ($.asyncRedeem) {
-            // For async withdraws, use pre-calculated values
-            if ($.assetsRedeemRequest[controller] < assets) {
-                revert InsufficientRequestBalance(controller, assets, 3);
+            // For async redemptions, we must use the full claimable amount
+            uint256 claimableShares = $.claimableRedeemRequest[controller];
+            uint256 claimableAssets = $.assetsRedeemRequest[controller];
+
+            if (claimableShares == 0 || claimableAssets == 0) {
+                revert NoClaimableRedeem();
             }
-            shares = $.claimableRedeemRequest[controller];
+            if (assets != claimableAssets) {
+                revert InvalidRedeemAmount(convertToShares(assets), claimableShares);
+            }
+
+            shares = claimableShares;
+
+            // Reset state atomically
             $.claimableRedeemRequest[controller] = 0;
             $.assetsRedeemRequest[controller] = 0;
         } else {
-            // For sync withdraws, calculate and burn in same transaction
             shares = convertToShares(assets);
             _burn(controller, shares);
         }
