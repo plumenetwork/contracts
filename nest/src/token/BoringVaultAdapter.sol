@@ -360,12 +360,14 @@ abstract contract BoringVaultAdapter is
      */
     function previewDeposit(
         uint256 assets
-    ) public view virtual override(ComponentToken) returns (uint256) {
+    ) public view virtual override(ComponentToken) returns (uint256 shares) {
         BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
 
-        return $.boringVault.lens.previewDeposit(
-            IERC20(address($.asset)), assets, $.boringVault.vault, $.boringVault.accountant
-        );
+        try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
+            shares = assets.mulDivDown(10 ** shareDecimals, $.boringVault.accountant.getRateInQuote(ERC20(asset())));
+        } catch {
+            revert InvalidVault();
+        }
     }
 
     /**
