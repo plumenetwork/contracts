@@ -76,7 +76,7 @@ abstract contract ComponentToken is
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 internal constant _BASE = 1e18;
-    
+
     // Events
 
     /**
