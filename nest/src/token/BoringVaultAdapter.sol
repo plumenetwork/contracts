@@ -46,6 +46,7 @@ abstract contract BoringVaultAdapter is
     error InvalidSender();
     error InvalidController();
     error InvalidVault();
+    error InvalidAccountant();
 
     error AssetNotSupported();
     error TellerPaused();
@@ -360,12 +361,18 @@ abstract contract BoringVaultAdapter is
      */
     function previewDeposit(
         uint256 assets
-    ) public view virtual override(ComponentToken) returns (uint256) {
+    ) public view override(ComponentToken) returns (uint256 shares) {
         BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
 
-        return $.boringVault.lens.previewDeposit(
-            IERC20(address($.asset)), assets, $.boringVault.vault, $.boringVault.accountant
-        );
+        try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
+            try $.boringVault.accountant.getRateInQuote(ERC20(asset())) returns (uint256 rate) {
+                shares = assets.mulDivDown(10 ** shareDecimals, rate);
+            } catch {
+                revert InvalidAccountant(); // Or could create a new error like `InvalidAccountant`
+            }
+        } catch {
+            revert InvalidVault();
+        }
     }
 
     /**
