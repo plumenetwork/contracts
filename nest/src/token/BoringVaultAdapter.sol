@@ -459,9 +459,7 @@ abstract contract BoringVaultAdapter is
     function assetsOf(
         address account
     ) public view virtual override(ComponentToken) returns (uint256) {
-        // Convert the user's shares to assets using the conversion rate
-        uint256 shares = super.balanceOf(account);
-        return convertToAssets(shares);
+        return super.assetsOf(account);
     }
 
     // ========== METADATA OVERRIDES ==========
