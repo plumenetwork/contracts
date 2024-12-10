@@ -4,6 +4,8 @@ pragma solidity ^0.8.25;
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { StorageSlot } from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
@@ -55,6 +57,9 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     /// @notice Emitted when the AggregateToken contract is unpaused for deposits
     event Unpaused();
 
+    /// @notice Emitted when the asset token is updated
+    event AssetTokenUpdated(IERC20 indexed oldAsset, IERC20 indexed newAsset);
+
     // Errors
 
     /**
@@ -62,6 +67,9 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      * @param componentToken ComponentToken that is already in the component token list
      */
     error ComponentTokenAlreadyListed(IComponentToken componentToken);
+
+    /// @notice Emitted when a ComponentToken is removed from the component token list
+    event ComponentTokenRemoved(IComponentToken indexed componentToken);
 
     /**
      * @notice Indicates a failure because the ComponentToken is not in the component token list
@@ -124,7 +132,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 askPrice,
         uint256 bidPrice
     ) public initializer {
-        super.initialize(owner, name, symbol, IERC20(address(asset_)), false, false);
+        super.initialize(owner, name, symbol, IERC20(address(asset_)), false, true);
 
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
         $.componentTokenList.push(asset_);
@@ -166,11 +174,64 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 assets,
         address receiver,
         address controller
-    ) public override(ComponentToken, IComponentToken) returns (uint256 shares) {
+    ) public override(ComponentToken, IComponentToken, ERC4626Upgradeable) returns (uint256 shares) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
         return super.deposit(assets, receiver, controller);
+    }
+
+    /**
+     * @inheritdoc ERC4626Upgradeable
+     * @dev Overridden to add pause check before deposit
+     * @param assets Amount of assets to deposit
+     * @param receiver Address that will receive the shares
+     * @return shares Amount of shares minted
+     */
+    function deposit(
+        uint256 assets,
+        address receiver
+    ) public virtual override(ERC4626Upgradeable) returns (uint256 shares) {
+        if (_getAggregateTokenStorage().paused) {
+            revert DepositPaused();
+        }
+        return super.deposit(assets, receiver);
+    }
+
+    /**
+     * @inheritdoc ComponentToken
+     * @dev Overridden to add pause check before minting
+     * @param shares Amount of shares to mint
+     * @param receiver Address that will receive the shares
+     * @param controller Address that controls the minting
+     * @return assets Amount of assets deposited
+     */
+    function mint(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public virtual override(ComponentToken) returns (uint256 assets) {
+        if (_getAggregateTokenStorage().paused) {
+            revert DepositPaused();
+        }
+        return super.mint(shares, receiver, controller);
+    }
+
+    /**
+     * @inheritdoc ERC4626Upgradeable
+     * @dev Overridden to add pause check before minting
+     * @param shares Amount of shares to mint
+     * @param receiver Address that will receive the shares
+     * @return assets Amount of assets deposited
+     */
+    function mint(
+        uint256 shares,
+        address receiver
+    ) public virtual override(ERC4626Upgradeable) returns (uint256 assets) {
+        if (_getAggregateTokenStorage().paused) {
+            revert DepositPaused();
+        }
+        return super.mint(shares, receiver);
     }
 
     /// @inheritdoc IComponentToken
@@ -221,6 +282,41 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         $.componentTokenList.push(componentToken);
         $.componentTokenMap[componentToken] = true;
         emit ComponentTokenListed(componentToken);
+    }
+
+    /**
+     * @notice Remove a ComponentToken from the component token list
+     * @dev Only the owner can call this function. The ComponentToken must have zero balance to be removed.
+     * @param componentToken ComponentToken to remove
+     */
+    function removeComponentToken(
+        IComponentToken componentToken
+    ) external nonReentrant onlyRole(ADMIN_ROLE) {
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+
+        // Check if component token exists
+        if (!$.componentTokenMap[componentToken]) {
+            revert ComponentTokenNotListed(componentToken);
+        }
+
+        // Check if it's the current asset
+        if (address(componentToken) == asset()) {
+            revert ComponentTokenIsAsset(componentToken);
+        }
+
+        // Remove from mapping
+        $.componentTokenMap[componentToken] = false;
+
+        // Remove from array by finding and replacing with last element
+        for (uint256 i = 0; i < $.componentTokenList.length; i++) {
+            if ($.componentTokenList[i] == componentToken) {
+                $.componentTokenList[i] = $.componentTokenList[$.componentTokenList.length - 1];
+                $.componentTokenList.pop();
+                break;
+            }
+        }
+
+        emit ComponentTokenUnlisted(componentToken);
     }
 
     /**

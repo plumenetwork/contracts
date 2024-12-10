@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Script } from "forge-std/Script.sol";
 import { Test } from "forge-std/Test.sol";
@@ -13,6 +12,8 @@ import { NestStaking } from "../src/NestStaking.sol";
 import { IComponentToken } from "../src/interfaces/IComponentToken.sol";
 import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
 import { NestStakingProxy } from "../src/proxy/NestStakingProxy.sol";
+
+import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
 import { pUSD } from "../src/token/pUSD.sol";
 
 // Concrete implementation of ComponentToken
@@ -43,7 +44,6 @@ contract DeployNestContracts is Script, Test {
 
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
-        ERC1967Proxy pUSDProxy = ERC1967Proxy(payable(PUSD_ADDRESS));
 
         AggregateToken aggregateToken = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
@@ -52,9 +52,9 @@ contract DeployNestContracts is Script, Test {
                 AggregateToken.initialize,
                 (
                     NEST_ADMIN_ADDRESS,
-                    "Nest Insto Vault",
-                    "NIV",
-                    IComponentToken(address(pUSDProxy)),
+                    "Nest RWA Vault",
+                    "nRWA",
+                    IComponentToken(PUSD_ADDRESS),
                     1e17, // ask price
                     1e17 // bid price
                 )

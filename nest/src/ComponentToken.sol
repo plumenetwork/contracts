@@ -10,7 +10,8 @@ import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
@@ -293,9 +294,7 @@ abstract contract ComponentToken is
             revert Unimplemented();
         }
 
-        if (!IERC20(asset()).transferFrom(owner, address(this), assets)) {
-            revert InsufficientBalance(IERC20(asset()), owner, assets);
-        }
+        SafeERC20.safeTransferFrom(IERC20(asset()), owner, address(this), assets);
         $.pendingDepositRequest[controller] += assets;
 
         emit DepositRequest(controller, owner, REQUEST_ID, owner, assets);
@@ -359,10 +358,7 @@ abstract contract ComponentToken is
             $.claimableDepositRequest[controller] = 0;
             $.sharesDepositRequest[controller] = 0;
         } else {
-            // For sync deposits, process normally
-            if (!IERC20(asset()).transferFrom(controller, address(this), assets)) {
-                revert InsufficientBalance(IERC20(asset()), controller, assets);
-            }
+            SafeERC20.safeTransferFrom(IERC20(asset()), controller, address(this), assets);
             shares = convertToShares(assets);
         }
 
@@ -385,23 +381,22 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        assets = convertToAssets(shares);
-
         if ($.asyncDeposit) {
-            if ($.claimableDepositRequest[controller] < assets) {
-                revert InsufficientRequestBalance(controller, assets, 1);
+            // Check shares directly instead of converting to assets
+            if ($.sharesDepositRequest[controller] < shares) {
+                revert InsufficientRequestBalance(controller, shares, 1);
             }
-            $.claimableDepositRequest[controller] -= assets;
-            $.sharesDepositRequest[controller] -= shares;
+            // Use the pre-calculated assets amount from when deposit was notified
+            assets = $.claimableDepositRequest[controller];
+            $.claimableDepositRequest[controller] = 0;
+            $.sharesDepositRequest[controller] = 0;
         } else {
-            if (!IERC20(asset()).transferFrom(controller, address(this), assets)) {
-                revert InsufficientBalance(IERC20(asset()), controller, assets);
-            }
+            assets = previewMint(shares);
+            _deposit(msg.sender, receiver, assets, shares);
         }
-
         _mint(receiver, shares);
-
-        emit Deposit(controller, receiver, assets, shares);
+        emit Deposit(msg.sender, receiver, assets, shares);
+        return assets;
     }
 
     /// @inheritdoc IComponentToken
@@ -498,9 +493,7 @@ abstract contract ComponentToken is
             assets = convertToAssets(shares);
         }
 
-        if (!IERC20(asset()).transfer(receiver, assets)) {
-            revert InsufficientBalance(IERC20(asset()), address(this), assets);
-        }
+        SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
 
         emit Withdraw(controller, receiver, controller, assets, shares);
         return assets;
@@ -554,7 +547,7 @@ abstract contract ComponentToken is
         address receiver,
         address controller
     ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 shares) {
-        if (assets == 0) {
+        if (shares == 0) {
             revert ZeroAmount();
         }
         if (msg.sender != controller) {
@@ -562,34 +555,20 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-
         if ($.asyncRedeem) {
-            // For async redemptions, we must use the full claimable amount
-            uint256 claimableShares = $.claimableRedeemRequest[controller];
-            uint256 claimableAssets = $.assetsRedeemRequest[controller];
-
-            if (claimableShares == 0 || claimableAssets == 0) {
-                revert NoClaimableRedeem();
+            // Use the pre-calculated assets amount from when redeem was notified
+            if ($.assetsRedeemRequest[controller] < assets) {
+                revert InsufficientRequestBalance(controller, assets, 3);
             }
-            if (assets != claimableAssets) {
-                revert InvalidRedeemAmount(convertToShares(assets), claimableShares);
-            }
-
-            shares = claimableShares;
-
-            // Reset state atomically
+            shares = $.claimableRedeemRequest[controller];
             $.claimableRedeemRequest[controller] = 0;
             $.assetsRedeemRequest[controller] = 0;
         } else {
-            shares = convertToShares(assets);
-            _burn(controller, shares);
+            shares = previewWithdraw(assets);
+            _withdraw(msg.sender, receiver, msg.sender, assets, shares);
         }
-
-        if (!IERC20(asset()).transfer(receiver, assets)) {
-            revert InsufficientBalance(IERC20(asset()), address(this), assets);
-        }
-
-        emit Withdraw(controller, receiver, controller, assets, shares);
+        _burn(msg.sender, shares);
+        emit Withdraw(msg.sender, receiver, msg.sender, assets, shares);
         return shares;
     }
 
@@ -649,7 +628,7 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncDeposit) {
             revert Unimplemented();
         }
-        assets = super.previewDeposit(shares);
+        assets = convertToAssets(shares);
     }
 
     /**
@@ -676,7 +655,7 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncRedeem) {
             revert Unimplemented();
         }
-        shares = super.previewWithdraw(assets);
+        shares = convertToShares(assets);
     }
 
     /// @inheritdoc IERC7540
