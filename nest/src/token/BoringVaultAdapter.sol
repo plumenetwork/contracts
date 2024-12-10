@@ -360,7 +360,7 @@ abstract contract BoringVaultAdapter is
      */
     function previewDeposit(
         uint256 assets
-    ) public view virtual override(ComponentToken) returns (uint256 shares) {
+    ) public view override(ComponentToken) returns (uint256 shares) {
         BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
 
         try $.boringVault.vault.decimals() returns (uint8 shareDecimals) {
