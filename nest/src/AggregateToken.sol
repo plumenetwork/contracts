@@ -174,7 +174,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 assets,
         address receiver,
         address controller
-    ) public override(ComponentToken, IComponentToken, ERC4626Upgradeable) returns (uint256 shares) {
+    ) public override(ComponentToken, IComponentToken) returns (uint256 shares) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }

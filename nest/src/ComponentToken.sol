@@ -386,13 +386,21 @@ abstract contract ComponentToken is
             if ($.sharesDepositRequest[controller] < shares) {
                 revert InsufficientRequestBalance(controller, shares, 1);
             }
-            // Use the pre-calculated assets amount from when deposit was notified
+
+            // Get the pre-calculated values
+            uint256 claimableShares = $.sharesDepositRequest[controller];
+
+            // Verify shares match exactly
+            if (shares != claimableShares) {
+                revert InvalidDepositAmount(shares, claimableShares);
+            }
+
             assets = $.claimableDepositRequest[controller];
             $.claimableDepositRequest[controller] = 0;
             $.sharesDepositRequest[controller] = 0;
         } else {
             assets = previewMint(shares);
-            _deposit(msg.sender, receiver, assets, shares);
+            SafeERC20.safeTransferFrom(IERC20(asset()), controller, address(this), assets);
         }
         _mint(receiver, shares);
         emit Deposit(msg.sender, receiver, assets, shares);
@@ -547,7 +555,7 @@ abstract contract ComponentToken is
         address receiver,
         address controller
     ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 shares) {
-        if (shares == 0) {
+        if (assets == 0) {
             revert ZeroAmount();
         }
         if (msg.sender != controller) {
@@ -556,19 +564,29 @@ abstract contract ComponentToken is
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if ($.asyncRedeem) {
-            // Use the pre-calculated assets amount from when redeem was notified
             if ($.assetsRedeemRequest[controller] < assets) {
                 revert InsufficientRequestBalance(controller, assets, 3);
             }
+            // Get the pre-calculated values
+            uint256 claimableAssets = $.assetsRedeemRequest[controller];
             shares = $.claimableRedeemRequest[controller];
+
+            // Verify assets match exactly
+            if (assets != claimableAssets) {
+                revert InvalidRedeemAmount(assets, claimableAssets);
+            }
+
+            // Reset state atomically
             $.claimableRedeemRequest[controller] = 0;
             $.assetsRedeemRequest[controller] = 0;
+
+            // No _burn needed here as shares were already burned in requestRedeem
+            SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
+            emit Withdraw(controller, receiver, controller, assets, shares);
         } else {
             shares = previewWithdraw(assets);
-            _withdraw(msg.sender, receiver, msg.sender, assets, shares);
+            _withdraw(controller, receiver, controller, assets, shares);
         }
-        _burn(msg.sender, shares);
-        emit Withdraw(msg.sender, receiver, msg.sender, assets, shares);
         return shares;
     }
 
