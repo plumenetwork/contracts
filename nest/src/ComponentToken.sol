@@ -327,6 +327,13 @@ abstract contract ComponentToken is
         address receiver,
         address controller
     ) public virtual nonReentrant returns (uint256 assets) {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if ($.asyncDeposit) {
             // Check shares directly instead of converting to assets
@@ -436,6 +443,13 @@ abstract contract ComponentToken is
         address receiver,
         address controller
     ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 shares) {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         if ($.asyncRedeem) {
             // Use the pre-calculated assets amount from when redeem was notified
