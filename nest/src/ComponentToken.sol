@@ -581,7 +581,7 @@ abstract contract ComponentToken is
             $.claimableRedeemRequest[controller] = 0;
             $.assetsRedeemRequest[controller] = 0;
 
-        // No _burn needed here as shares were already burned in requestRedeem
+            // No _burn needed here as shares were already burned in requestRedeem
             SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
         } else {
             shares = previewWithdraw(assets);
