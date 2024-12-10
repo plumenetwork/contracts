@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { StorageSlot } from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
@@ -174,7 +173,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 assets,
         address receiver,
         address controller
-    ) public override(ComponentToken, IComponentToken) returns (uint256 shares) {
+    ) public override(ComponentToken, IComponentToken) nonReentrant returns (uint256 shares) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
@@ -191,7 +190,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     function deposit(
         uint256 assets,
         address receiver
-    ) public virtual override(ERC4626Upgradeable) returns (uint256 shares) {
+    ) public override(ERC4626Upgradeable, IERC4626) nonReentrant returns (uint256 shares) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
@@ -210,7 +209,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 shares,
         address receiver,
         address controller
-    ) public virtual override(ComponentToken) returns (uint256 assets) {
+    ) public override(ComponentToken) nonReentrant returns (uint256 assets) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
@@ -227,7 +226,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     function mint(
         uint256 shares,
         address receiver
-    ) public virtual override(ERC4626Upgradeable) returns (uint256 assets) {
+    ) public override(ERC4626Upgradeable, IERC4626) nonReentrant returns (uint256 assets) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
@@ -239,7 +238,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 shares,
         address receiver,
         address controller
-    ) public override(ComponentToken, IComponentToken) returns (uint256 assets) {
+    ) public override(ComponentToken, IComponentToken) nonReentrant returns (uint256 assets) {
         return super.redeem(shares, receiver, controller);
     }
 
