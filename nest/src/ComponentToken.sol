@@ -583,12 +583,11 @@ abstract contract ComponentToken is
 
             // No _burn needed here as shares were already burned in requestRedeem
             SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
+            emit Withdraw(controller, receiver, controller, assets, shares);
         } else {
             shares = previewWithdraw(assets);
-            _burn(msg.sender, shares);
-            SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
+            _withdraw(controller, receiver, controller, assets, shares);
         }
-        emit Withdraw(msg.sender, receiver, msg.sender, assets, shares);
         return shares;
     }
 
