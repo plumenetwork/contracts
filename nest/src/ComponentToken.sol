@@ -76,7 +76,7 @@ abstract contract ComponentToken is
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 internal constant _BASE = 1e18;
-    
+
     // Events
 
     /**
@@ -527,7 +527,7 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncDeposit) {
             revert Unimplemented();
         }
-        assets = super.previewDeposit(shares);
+        assets = convertToAssets(shares);
     }
 
     /**
@@ -554,7 +554,7 @@ abstract contract ComponentToken is
         if (_getComponentTokenStorage().asyncRedeem) {
             revert Unimplemented();
         }
-        shares = super.previewWithdraw(assets);
+        shares = convertToShares(assets);
     }
 
     /// @inheritdoc IERC7540
