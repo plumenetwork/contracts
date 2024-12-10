@@ -389,14 +389,13 @@ abstract contract ComponentToken is
 
             // Get the pre-calculated values
             uint256 claimableShares = $.sharesDepositRequest[controller];
-            assets = $.claimableDepositRequest[controller];
 
             // Verify shares match exactly
             if (shares != claimableShares) {
                 revert InvalidDepositAmount(shares, claimableShares);
             }
 
-            // Reset state atomically
+            assets = $.claimableDepositRequest[controller];
             $.claimableDepositRequest[controller] = 0;
             $.sharesDepositRequest[controller] = 0;
         } else {
