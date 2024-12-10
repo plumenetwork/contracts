@@ -448,8 +448,7 @@ abstract contract BoringVaultAdapter is
     function balanceOf(
         address account
     ) public view override(IERC20, ERC20Upgradeable) returns (uint256) {
-        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
-        return $.boringVault.lens.balanceOf(account, $.boringVault.vault);
+        return super.balanceOf(account);
     }
 
     /**
@@ -460,8 +459,7 @@ abstract contract BoringVaultAdapter is
     function assetsOf(
         address account
     ) public view virtual override(ComponentToken) returns (uint256) {
-        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
-        return $.boringVault.lens.balanceOfInAssets(account, $.boringVault.vault, $.boringVault.accountant);
+        return super.assetsOf(account);
     }
 
     // ========== METADATA OVERRIDES ==========
