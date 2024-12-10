@@ -334,23 +334,22 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        assets = convertToAssets(shares);
-
         if ($.asyncDeposit) {
-            if ($.claimableDepositRequest[controller] < assets) {
-                revert InsufficientRequestBalance(controller, assets, 1);
+            // Check shares directly instead of converting to assets
+            if ($.sharesDepositRequest[controller] < shares) {
+                revert InsufficientRequestBalance(controller, shares, 1);
             }
-            $.claimableDepositRequest[controller] -= assets;
-            $.sharesDepositRequest[controller] -= shares;
+            // Use the pre-calculated assets amount from when deposit was notified
+            assets = $.claimableDepositRequest[controller];
+            $.claimableDepositRequest[controller] = 0;
+            $.sharesDepositRequest[controller] = 0;
         } else {
-            if (!IERC20(asset()).transferFrom(controller, address(this), assets)) {
-                revert InsufficientBalance(IERC20(asset()), controller, assets);
-            }
+            assets = previewMint(shares);
+            _deposit(msg.sender, receiver, assets, shares);
         }
-
         _mint(receiver, shares);
-
-        emit Deposit(controller, receiver, assets, shares);
+        emit Deposit(msg.sender, receiver, assets, shares);
+        return assets;
     }
 
     /// @inheritdoc IComponentToken
@@ -443,7 +442,7 @@ abstract contract ComponentToken is
         address receiver,
         address controller
     ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 shares) {
-        if (assets == 0) {
+        if (shares == 0) {
             revert ZeroAmount();
         }
         if (msg.sender != controller) {
@@ -451,23 +450,21 @@ abstract contract ComponentToken is
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
-        shares = convertToShares(assets);
-
         if ($.asyncRedeem) {
-            if ($.claimableRedeemRequest[controller] < shares) {
-                revert InsufficientRequestBalance(controller, shares, 3);
+            // Use the pre-calculated assets amount from when redeem was notified
+            if ($.assetsRedeemRequest[controller] < assets) {
+                revert InsufficientRequestBalance(controller, assets, 3);
             }
-            $.claimableRedeemRequest[controller] -= shares;
-            $.assetsRedeemRequest[controller] -= assets;
+            shares = $.claimableRedeemRequest[controller];
+            $.claimableRedeemRequest[controller] = 0;
+            $.assetsRedeemRequest[controller] = 0;
         } else {
-            _burn(controller, shares);
+            shares = previewWithdraw(assets);
+            _withdraw(msg.sender, receiver, msg.sender, assets, shares);
         }
-
-        if (!IERC20(asset()).transfer(receiver, assets)) {
-            revert InsufficientBalance(IERC20(asset()), address(this), assets);
-        }
-
-        emit Withdraw(controller, receiver, controller, assets, shares);
+        _burn(msg.sender, shares);
+        emit Withdraw(msg.sender, receiver, msg.sender, assets, shares);
+        return shares;
     }
 
     // Getter View Functions
