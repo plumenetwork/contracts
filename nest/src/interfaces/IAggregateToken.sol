@@ -27,11 +27,11 @@ interface IAggregateToken is IComponentToken {
 
     /**
      * @notice Check if an address is a registered component token
-     * @param componentToken Address to check
+     * @param componentToken ComponentToken to check
      * @return bool indicating whether the address is a component token
      */
     function getComponentToken(
-        address componentToken
+        IComponentToken componentToken
     ) external view returns (bool);
 
     /**
@@ -46,90 +46,80 @@ interface IAggregateToken is IComponentToken {
      * @notice Add a new component token to the aggregate token
      * @dev Only callable by ADMIN_ROLE
      * @param componentToken Address of the component token to add
-     * @return bool indicating whether the operation was successful
      */
     function addComponentToken(
-        address componentToken
-    ) external returns (bool);
+        IComponentToken componentToken
+    ) external;
 
     /**
      * @notice Approve a component token to spend aggregate token's assets
      * @dev Only callable by ADMIN_ROLE
      * @param componentToken Address of the component token to approve
      * @param amount Amount of assets to approve
-     * @return bool indicating whether the operation was successful
      */
-    function approveComponentToken(address componentToken, uint256 amount) external returns (bool);
+    function approveComponentToken(IComponentToken componentToken, uint256 amount) external;
 
     /**
      * @notice Buy component tokens using the aggregate token's assets
      * @dev Only callable by ADMIN_ROLE
      * @param componentToken Address of the component token to buy
-     * @param amount Amount of component tokens to buy
-     * @return uint256 Amount of assets spent
+     * @param assets Amount of assets to spend
      */
-    function buyComponentToken(address componentToken, uint256 amount) external returns (uint256);
+    function buyComponentToken(IComponentToken componentToken, uint256 assets) external;
 
     /**
      * @notice Sell component tokens to receive aggregate token's assets
      * @dev Only callable by ADMIN_ROLE
      * @param componentToken Address of the component token to sell
-     * @param amount Amount of component tokens to sell
-     * @return uint256 Amount of assets received
+     * @param componentTokenAmount Amount of component tokens to sell
      */
-    function sellComponentToken(address componentToken, uint256 amount) external returns (uint256);
+    function sellComponentToken(IComponentToken componentToken, uint256 componentTokenAmount) external;
 
     /**
      * @notice Request to buy component tokens (for async operations)
      * @dev Only callable by ADMIN_ROLE
      * @param componentToken Address of the component token to buy
-     * @param amount Amount of component tokens to buy
-     * @return uint256 Request ID for tracking the buy request
+     * @param assets Amount of assets to spend
      */
-    function requestBuyComponentToken(address componentToken, uint256 amount) external returns (uint256);
+    function requestBuyComponentToken(IComponentToken componentToken, uint256 assets) external;
 
     /**
      * @notice Request to sell component tokens (for async operations)
      * @dev Only callable by ADMIN_ROLE
      * @param componentToken Address of the component token to sell
-     * @param amount Amount of component tokens to sell
-     * @return uint256 Request ID for tracking the sell request
+     * @param componentTokenAmount Amount of component tokens to sell
      */
-    function requestSellComponentToken(address componentToken, uint256 amount) external returns (uint256);
+    function requestSellComponentToken(IComponentToken componentToken, uint256 componentTokenAmount) external;
 
     /**
      * @notice Set the ask price for the aggregate token
      * @dev Only callable by PRICE_UPDATER_ROLE
      * @param newAskPrice New ask price to set
-     * @return bool indicating whether the operation was successful
      */
     function setAskPrice(
         uint256 newAskPrice
-    ) external returns (bool);
+    ) external;
 
     /**
      * @notice Set the bid price for the aggregate token
      * @dev Only callable by PRICE_UPDATER_ROLE
      * @param newBidPrice New bid price to set
-     * @return bool indicating whether the operation was successful
      */
     function setBidPrice(
         uint256 newBidPrice
-    ) external returns (bool);
+    ) external;
 
     /**
      * @notice Pause all trading operations
      * @dev Only callable by ADMIN_ROLE
-     * @return bool indicating whether the operation was successful
      */
-    function pause() external returns (bool);
+    function pause() external;
 
     /**
      * @notice Unpause all trading operations
      * @dev Only callable by ADMIN_ROLE
-     * @return bool indicating whether the operation was successful
      */
-    function unpause() external returns (bool);
+    function unpause() external;
 
     // Events
 
