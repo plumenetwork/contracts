@@ -173,7 +173,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 assets,
         address receiver,
         address controller
-    ) public override(ComponentToken, IComponentToken) nonReentrant returns (uint256 shares) {
+    ) public override(ComponentToken, IComponentToken) returns (uint256 shares) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
@@ -190,7 +190,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     function deposit(
         uint256 assets,
         address receiver
-    ) public override(ERC4626Upgradeable, IERC4626) nonReentrant returns (uint256 shares) {
+    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
@@ -209,7 +209,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 shares,
         address receiver,
         address controller
-    ) public override(ComponentToken) nonReentrant returns (uint256 assets) {
+    ) public override(ComponentToken) returns (uint256 assets) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
@@ -226,7 +226,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     function mint(
         uint256 shares,
         address receiver
-    ) public override(ERC4626Upgradeable, IERC4626) nonReentrant returns (uint256 assets) {
+    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 assets) {
         if (_getAggregateTokenStorage().paused) {
             revert DepositPaused();
         }
@@ -238,7 +238,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 shares,
         address receiver,
         address controller
-    ) public override(ComponentToken, IComponentToken) nonReentrant returns (uint256 assets) {
+    ) public override(ComponentToken, IComponentToken) returns (uint256 assets) {
         return super.redeem(shares, receiver, controller);
     }
 
