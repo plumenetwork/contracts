@@ -14,11 +14,13 @@ import { AggregateTokenProxy } from "../src/proxy/AggregateTokenProxy.sol";
 contract UpgradeNestContracts is Script, Test {
 
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
+    address private constant BORING_VAULT_ADDRESS = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
+
     UUPSUpgradeable private constant AGGREGATE_TOKEN_PROXY =
         UUPSUpgradeable(payable(0x659619AEdf381c3739B0375082C2d61eC1fD8835));
 
     // Add the component token addresses
-    address private constant ASSET_TOKEN = 0xF66DFD0A9304D3D6ba76Ac578c31C84Dc0bd4A00;
+    address private constant ASSET_TOKEN = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
 
     // LiquidContinuousMultiTokenVault - Credbull
     address private constant COMPONENT_TOKEN = 0x4B1fC984F324D2A0fDD5cD83925124b61175f5C6;
