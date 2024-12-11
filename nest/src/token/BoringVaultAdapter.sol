@@ -482,7 +482,8 @@ abstract contract BoringVaultAdapter is
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ComponentToken, AccessControlUpgradeable) returns (bool) {
-        return super.supportsInterface(interfaceId);
+        // BoringVaultAdapter interface ID - calculated in CalculateBoringVaultAdapterInterfaceId.s.sol
+        return super.supportsInterface(interfaceId) || interfaceId == 0xa28474c8;
     }
 
 }

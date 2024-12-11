@@ -377,7 +377,8 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ComponentToken, ERC1155Holder) returns (bool) {
-        return super.supportsInterface(interfaceId);
+        // IAggregateToken interface ID - calculated in CalculateAggregateTokenInterfaceId.s.sol
+        return super.supportsInterface(interfaceId) || interfaceId == 0x5f3838d6;
     }
 
 }
