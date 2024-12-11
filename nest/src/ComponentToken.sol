@@ -230,10 +230,8 @@ abstract contract ComponentToken is
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         return super.supportsInterface(interfaceId) || interfaceId == type(IERC20).interfaceId
             || interfaceId == type(IAccessControl).interfaceId || interfaceId == type(IERC7575).interfaceId
-            || interfaceId == 0x1816b2a2 // IComponentToken interface ID - Calculated in
-            // CalculateComponentTokenInterfaceId.s.sol
-            || interfaceId == 0xe3bc4e65 || ($.asyncDeposit && interfaceId == 0xce3bbe50)
-            || ($.asyncRedeem && interfaceId == 0x620ee8e4);
+            || interfaceId == type(IComponentToken).interfaceId || interfaceId == 0xe3bc4e65
+            || ($.asyncDeposit && interfaceId == 0xce3bbe50) || ($.asyncRedeem && interfaceId == 0x620ee8e4);
     }
 
     /// @inheritdoc IERC4626

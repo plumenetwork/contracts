@@ -16,6 +16,7 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
 import { IBoringVault } from "../interfaces/IBoringVault.sol";
+import { IBoringVaultAdapter } from "../interfaces/IBoringVaultAdapter.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
 import { ILens } from "../interfaces/ILens.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
@@ -487,8 +488,7 @@ abstract contract BoringVaultAdapter is
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ComponentToken, AccessControlUpgradeable) returns (bool) {
-        // BoringVaultAdapter interface ID - calculated in CalculateBoringVaultAdapterInterfaceId.s.sol
-        return super.supportsInterface(interfaceId) || interfaceId == 0x265bbbe2;
+        return super.supportsInterface(interfaceId) || interfaceId == type(IBoringVaultAdapter).interfaceId;
     }
 
 }
