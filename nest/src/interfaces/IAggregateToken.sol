@@ -5,6 +5,122 @@ import { IComponentToken } from "./IComponentToken.sol";
 
 interface IAggregateToken is IComponentToken {
 
+    // ========== PUBLIC VIEW FUNCTIONS ==========
+
+    /**
+     * @notice Get the current ask price for buying the AggregateToken
+     * @return uint256 Current ask price
+     */
+    function getAskPrice() external view returns (uint256);
+
+    /**
+     * @notice Get the current bid price for selling the AggregateToken
+     * @return uint256 Current bid price
+     */
+    function getBidPrice() external view returns (uint256);
+
+    /**
+     * @notice Get the list of all component tokens ever added
+     * @return IComponentToken[] Array of component token addresses
+     */
+    function getComponentTokenList() external view returns (IComponentToken[] memory);
+
+    /**
+     * @notice Check if an address is a registered component token
+     * @param componentToken ComponentToken to check
+     * @return bool indicating whether the address is a component token
+     */
+    function getComponentToken(
+        IComponentToken componentToken
+    ) external view returns (bool);
+
+    /**
+     * @notice Check if trading operations are paused
+     * @return bool indicating whether trading is paused
+     */
+    function isPaused() external view returns (bool);
+
+    // ========== ADMIN FUNCTIONS ==========
+
+    /**
+     * @notice Add a new component token to the aggregate token
+     * @dev Only callable by ADMIN_ROLE
+     * @param componentToken Address of the component token to add
+     */
+    function addComponentToken(
+        IComponentToken componentToken
+    ) external;
+
+    /**
+     * @notice Approve a component token to spend aggregate token's assets
+     * @dev Only callable by ADMIN_ROLE
+     * @param componentToken Address of the component token to approve
+     * @param amount Amount of assets to approve
+     */
+    function approveComponentToken(IComponentToken componentToken, uint256 amount) external;
+
+    /**
+     * @notice Buy component tokens using the aggregate token's assets
+     * @dev Only callable by ADMIN_ROLE
+     * @param componentToken Address of the component token to buy
+     * @param assets Amount of assets to spend
+     */
+    function buyComponentToken(IComponentToken componentToken, uint256 assets) external;
+
+    /**
+     * @notice Sell component tokens to receive aggregate token's assets
+     * @dev Only callable by ADMIN_ROLE
+     * @param componentToken Address of the component token to sell
+     * @param componentTokenAmount Amount of component tokens to sell
+     */
+    function sellComponentToken(IComponentToken componentToken, uint256 componentTokenAmount) external;
+
+    /**
+     * @notice Request to buy component tokens (for async operations)
+     * @dev Only callable by ADMIN_ROLE
+     * @param componentToken Address of the component token to buy
+     * @param assets Amount of assets to spend
+     */
+    function requestBuyComponentToken(IComponentToken componentToken, uint256 assets) external;
+
+    /**
+     * @notice Request to sell component tokens (for async operations)
+     * @dev Only callable by ADMIN_ROLE
+     * @param componentToken Address of the component token to sell
+     * @param componentTokenAmount Amount of component tokens to sell
+     */
+    function requestSellComponentToken(IComponentToken componentToken, uint256 componentTokenAmount) external;
+
+    /**
+     * @notice Set the ask price for the aggregate token
+     * @dev Only callable by PRICE_UPDATER_ROLE
+     * @param newAskPrice New ask price to set
+     */
+    function setAskPrice(
+        uint256 newAskPrice
+    ) external;
+
+    /**
+     * @notice Set the bid price for the aggregate token
+     * @dev Only callable by PRICE_UPDATER_ROLE
+     * @param newBidPrice New bid price to set
+     */
+    function setBidPrice(
+        uint256 newBidPrice
+    ) external;
+
+    /**
+     * @notice Pause all trading operations
+     * @dev Only callable by ADMIN_ROLE
+     */
+    function pause() external;
+
+    /**
+     * @notice Unpause all trading operations
+     * @dev Only callable by ADMIN_ROLE
+     */
+    function unpause() external;
+
     // Events
 
     /**
