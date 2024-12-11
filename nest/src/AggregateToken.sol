@@ -169,6 +169,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     }
 
     /// @inheritdoc IComponentToken
+    /// @dev Do not add reentrancy guard here, as it is already handled in the parent contract
     function deposit(
         uint256 assets,
         address receiver,
@@ -182,7 +183,8 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /**
      * @inheritdoc ERC4626Upgradeable
-     * @dev Overridden to add pause check before deposit
+     * @dev Overridden to add pause check before deposit. Do not add reentrancy guard here, as it is already handled in
+     * the parent contract
      * @param assets Amount of assets to deposit
      * @param receiver Address that will receive the shares
      * @return shares Amount of shares minted
@@ -199,7 +201,8 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /**
      * @inheritdoc ComponentToken
-     * @dev Overridden to add pause check before minting
+     * @dev Overridden to add pause check before minting. Do not add reentrancy guard here, as it is already handled in
+     * the parent contract
      * @param shares Amount of shares to mint
      * @param receiver Address that will receive the shares
      * @param controller Address that controls the minting
@@ -218,7 +221,8 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /**
      * @inheritdoc ERC4626Upgradeable
-     * @dev Overridden to add pause check before minting
+     * @dev Overridden to add pause check before minting. Do not add reentrancy guard here, as it is already handled in
+     * the parent contract
      * @param shares Amount of shares to mint
      * @param receiver Address that will receive the shares
      * @return assets Amount of assets deposited
@@ -234,6 +238,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     }
 
     /// @inheritdoc IComponentToken
+    /// @dev Do not add reentrancy guard here, as it is already handled in the parent contract
     function redeem(
         uint256 shares,
         address receiver,
