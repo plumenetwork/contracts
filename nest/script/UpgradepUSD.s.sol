@@ -13,8 +13,8 @@ import { pUSD } from "../src/token/pUSD.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 
 contract UpgradePUSD is Script {
-
-    // Constants
+/*
+    // Constants - DEVNET
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     address private constant PUSD_PROXY = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
     address private constant USDC_ADDRESS = 0x401eCb1D350407f13ba348573E5630B83638E30D;
@@ -24,6 +24,22 @@ contract UpgradePUSD is Script {
     address private constant TELLER_ADDRESS = 0xE010B6fdcB0C1A8Bf00699d2002aD31B4bf20B86;
     address private constant LENS_ADDRESS = 0x39e4A070c3af7Ea1Cc51377D6790ED09D761d274;
     address private constant ACCOUNTANT_ADDRESS = 0x607e6E4dC179Bf754f88094C09d9ee9Af990482a;
+*/
+    // Constants - MAINNET
+    address private constant ADMIN_ADDRESS = 0xDE1509CC56D740997c70E1661BA687e950B4a241;
+    address private constant PUSD_PROXY = 0x360822f796975cEccD8095c10720c57567b4199f;
+    address private constant USDC_ADDRESS = 0x3938A812c54304fEffD266C7E2E70B48F9475aD6;
+
+    address private constant VAULT_TOKEN = 0xdddD73F5Df1F0DC31373357beAC77545dC5A6f3F;
+    address private constant ATOMIC_QUEUE = 0x7f69e1A09472EEb7a5dA7552bD59Ca022c341193;
+    address private constant TELLER_ADDRESS = 0x16424eDF021697E34b800e1D98857536B0f2287B;
+    address private constant LENS_ADDRESS = 0x3D2021776e385601857E7b7649de955525E21d23;
+    address private constant ACCOUNTANT_ADDRESS = 0xbB2fAA1e1D6183EE3c4177476ce0d70CBd55A388;
+
+
+
+
+
 
     // Current state tracking
     pUSD public currentImplementation;
