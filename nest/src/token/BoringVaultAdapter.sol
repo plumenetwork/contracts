@@ -159,9 +159,10 @@ abstract contract BoringVaultAdapter is
         address teller_,
         address atomicQueue_,
         address lens_,
-        address accountant_
-    ) public virtual onlyRole(UPGRADER_ROLE) {
-        // Reinitialize as needed
+        address accountant_,
+        string memory name,
+        string memory symbol
+    ) public onlyRole(UPGRADER_ROLE) reinitializer(3) {
         if (
             owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
                 || atomicQueue_ == address(0) || lens_ == address(0) || accountant_ == address(0)
@@ -169,15 +170,22 @@ abstract contract BoringVaultAdapter is
             revert ZeroAddress();
         }
 
-        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
+        try IERC20Metadata(address(asset_)).decimals() returns (uint8) { }
+        catch {
+            revert InvalidAsset();
+        }
 
-        // Increment version
-        $.version += 1;
+        // Set async redeem to true
+        super.reinitialize(owner, name, symbol, asset_, false, true);
+
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
         $.boringVault.teller = ITeller(teller_);
         $.boringVault.vault = IBoringVault(vault_);
         $.boringVault.atomicQueue = IAtomicQueue(atomicQueue_);
         $.boringVault.lens = ILens(lens_);
         $.boringVault.accountant = IAccountantWithRateProviders(accountant_);
+
+        $.version += 1; // Increment version
 
         // Set approvals for the underlying asset
         SafeERC20.forceApprove(asset_, vault_, type(uint256).max);
@@ -369,7 +377,7 @@ abstract contract BoringVaultAdapter is
             try $.boringVault.accountant.getRateInQuote(ERC20(asset())) returns (uint256 rate) {
                 shares = assets.mulDivDown(10 ** shareDecimals, rate);
             } catch {
-                revert InvalidAccountant(); // Or could create a new error like `InvalidAccountant`
+                revert InvalidAccountant();
             }
         } catch {
             revert InvalidVault();
