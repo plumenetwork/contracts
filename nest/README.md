@@ -1,58 +1,166 @@
 ## Nest Smart Contracts
 
-A protocol for creating and managing tokenized asset portfolios with asynchronous deposits and redemptions.
+A protocol for creating and managing tokenized asset portfolios with support for both synchronous and asynchronous operations. Built on ERC4626, ERC7540, and ERC7575 standards.
 
 ## Table of Contents
 1. [Overview](#overview)
 2. [Architecture](#architecture)
 3. [Key Components](#key-components)
 4. [Core Concepts](#core-concepts)
-5. [Contract Interactions](#contract-interactions)
-6. [Deployment](#deployment)
-7. [Development](#development)
-8. [Testing](#testing)
+5. [Development](#development)
 
 ## Overview
-Nest Smart Contracts enables the creation of tokenized portfolios with support for both synchronous and asynchronous operations. The protocol implements ERC4626, ERC7540, and ERC7575 standards for vault interactions.
+Nest Smart Contracts enables the creation of tokenized portfolios through a composable system of vaults. The protocol implements:
+- ERC4626 for basic vault functionality
+- ERC7540 for operator controls
+- ERC7575 for asynchronous operations
+
+## Core Standards
+
+### ERC-4626: Tokenized Vaults
+The base standard for tokenized vaults that:
+- Provides a standard API for yield-bearing vaults
+- Handles deposits and withdrawals of tokens
+- Manages share tokens representing ownership
+- Includes methods for asset/share conversion
+- Supports preview functions for simulating operations
+
+https://eips.ethereum.org/EIPS/eip-4626
+
+### ERC-7540: Asynchronous Operations
+Extends ERC-4626 to support asynchronous operations by:
+- Adding request/claim pattern for deposits and redemptions
+- Supporting controller-based request management
+- Enabling operator approvals for request management
+- Providing view functions for pending and claimable requests
+
+https://eips.ethereum.org/EIPS/eip-7540
+
+### ERC-7575: Multi-Asset Support
+Adapts ERC-4626 for multi-asset scenarios by:
+- Allowing multiple entry points for the same share token
+- Supporting conversion between arbitrary tokens
+- Enabling external share token implementations
+- Providing vault-to-share lookup functionality
+
+https://eips.ethereum.org/EIPS/eip-7575
 
 ## Architecture
 
-
 ```mermaid
 graph TD
-A[pUSD] --> B[ComponentToken]
-C[AggregateToken] --> B[ComponentToken]
-D[AdapterToken] --> B[ComponentToken]
-B --> T[ERC7540]
-T[ERC7540] --> E[ERC4626]
-B --> g[ERC7575]
-g[ERC7575] --> E[ERC4626]
+    A[pUSD] --> B[BoringVaultAdapter]
+    B --> C[ComponentToken]
+    D[AggregateToken] --> C
+    C --> E[ERC4626]
+    C --> F[ERC7540]
+    C --> G[ERC7575]
 ```
-
 
 ## Key Components
 
-### pUSD
-The unified Plume USD stablecoin implementation that interfaces with a vault for balance management.
-
 ### ComponentToken
-The base implementation supporting both synchronous and asynchronous deposit/redeem operations.
+The base abstract contract that implements core vault functionality:
+- Asynchronous deposit/redeem operations (ERC-7540)
+- Multi-asset support (ERC-7575)
+- Core vault functionality (ERC-4626)
+- Supports both synchronous and asynchronous deposit/redeem operations
+- Uses a controller pattern for request management
+- Tracks pending and claimable requests
 
+### AggregateToken
+A specialized implementation of ComponentToken that manages a portfolio of other ComponentTokens:
 
-### AdapterToken
-An implementation that interfaces with external assets, enabling integration with other protocols.
+```solidity
+struct AggregateTokenStorage {
+    IComponentToken[] componentTokenList;
+    mapping(IComponentToken => bool) componentTokenMap;
+    uint256 askPrice;  // Price for buying using asset
+    uint256 bidPrice;  // Price for selling to receive asset
+    bool paused;       // Deposit pause state
+}
+```
+
+Key features:
+- Manages a basket of ComponentTokens
+- Supports pausing deposits
+- Handles portfolio rebalancing
+- Configurable ask/bid prices
+- Admin functions for portfolio management
+
+### BoringVaultAdapter
+An abstract adapter contract that interfaces with BoringVault:
+- Handles vault interactions
+- Manages atomic operations
+- Provides price conversion functionality
+- Supports asynchronous redemptions
+
+### pUSD
+The unified Plume USD stablecoin implementation:
+- Built on BoringVaultAdapter
+- Standardized name ("Plume USD") and symbol ("pUSD")
+
 
 ## Core Concepts
 
 ### Asynchronous Operations
-- Deposits and redemptions can be processed asynchronously
-- Uses a request-notify-claim pattern
-- Supports both controller and operator roles
+The protocol supports both synchronous and asynchronous operations:
 
-### Price Management
-- AggregateToken implements bid/ask pricing
-- Prices are scaled by BASE (1e18)
-- Supports dynamic price updates by admin
+### Controller Pattern
+The protocol uses a controller pattern for managing deposit and redemption requests:
+
+1. **Controller Responsibilities**
+   - Executes final deposit/redeem operations
+   - Tracks pending and claimable requests
+   - Acts as an intermediary between users and the vault
+
+2. **Request Flow**
+```solidity
+event DepositRequest(
+    address indexed controller,
+    address indexed owner,
+    uint256 indexed requestId,
+    address sender,
+    uint256 assets
+);
+```
+3. **Implementation Patterns**
+
+
+Single Controller:
+```
+Controller
+├── Owner1
+├── Owner2
+└── Owner3
+```
+- Efficient for batching operations
+- Simpler management
+- Suitable for centralized services
+
+Individual Controllers:
+```
+Owner1 --> Controller1
+Owner2 --> Controller2
+Owner3 --> Controller3
+```
+- Better request tracking
+- More granular control
+- Direct owner management
+
+
+### Asynchronous Operations
+The protocol supports both synchronous and asynchronous operations:
+
+1. **Deposit Flow**
+   - Request deposit (transfers assets)
+   - Wait for approval
+   - Claim shares
+
+2. **Redemption Flow**
+   - Request redemption (burns shares)
+   - Wait for approval
+   - Claim assets
 
 ## Contract Interactions
 
