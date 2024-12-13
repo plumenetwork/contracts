@@ -10,6 +10,18 @@ import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {
+    ILayerZeroEndpointV2,
+    MessagingFee,
+    MessagingParams,
+    MessagingReceipt,
+    Origin
+} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+
+import { OApp } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
+import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import { Context } from "@openzeppelin/contracts/utils/Context.sol";
+
 import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
@@ -33,6 +45,7 @@ abstract contract BoringVaultAdapter is
     ERC20Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
+    OApp,
     ComponentToken
 {
 
@@ -68,6 +81,9 @@ abstract contract BoringVaultAdapter is
         BoringVault boringVault;
         uint256 version;
         IERC20 asset;
+        // V2 specific storage
+        mapping(uint32 => uint256) msgLibraryLookup; // For custom message libraries
+        mapping(uint32 => uint256) minDstGasLookup;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.BoringVaultAdapter")) - 1)) & ~bytes32(uint256(0xff))
@@ -86,37 +102,59 @@ abstract contract BoringVaultAdapter is
     event VaultChanged(address oldVault, address newVault);
     event Reinitialized(uint256 version);
 
+    // LZ V2 specific events
+    event SendToChain(uint32 _dstChainId, address _from, bytes32 _toAddress, uint256 _amount);
+    event ReceiveFromChain(uint32 _srcChainId, bytes32 _from, address _to, uint256 _amount);
+
+    // ========== ERRORS ==========
+
+    error InvalidEndpoint();
+    error InvalidQuote();
+    error InsufficientGas();
+
     // ========== INITIALIZERS ==========
 
     /**
      * @notice Prevent the implementation contract from being initialized or reinitialized
      * @custom:oz-upgrades-unsafe-allow constructor
      */
-    constructor() {
+    constructor(
+        address _endpoint,
+        address _delegate,
+        address initialOwner
+    ) ComponentToken(_endpoint, _delegate, initialOwner) OApp(_endpoint, _delegate) {
         _disableInitializers();
     }
 
     /**
      * @notice Initialize BoringVaultAdapter
-     * @param owner Address of the owner of BoringVaultAdapter
+     * @param initialOwner Address of the owner of BoringVaultAdapter  // Changed from owner to initialOwner
      * @param asset_ Address of the underlying asset
      * @param vault_ Address of the BoringVault
+     * @param teller_ Address of the Teller
      * @param atomicQueue_ Address of the AtomicQueue
+     * @param lens_ Address of the Lens
+     * @param accountant_ Address of the Accountant
+     * @param endpoint_ Address of the LayerZero endpoint
+     * @param _eid Chain ID for LayerZero
+     * @param name Token name
+     * @param symbol Token symbol
      */
-    //
     function initialize(
-        address owner,
+        address initialOwner,
         IERC20 asset_,
         address vault_,
         address teller_,
         address atomicQueue_,
         address lens_,
         address accountant_,
+        address endpoint_,
+        uint32 _eid,
         string memory name,
         string memory symbol
     ) public onlyInitializing {
         if (
-            owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
+            initialOwner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
                 || atomicQueue_ == address(0) || lens_ == address(0) || accountant_ == address(0)
         ) {
             revert ZeroAddress();
@@ -129,7 +167,7 @@ abstract contract BoringVaultAdapter is
         }
 
         // Set async redeem to true
-        super.initialize(owner, name, symbol, asset_, false, true);
+        super.initialize(initialOwner, name, symbol, asset_, false, true);
 
         BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
         $.boringVault.teller = ITeller(teller_);
@@ -153,7 +191,7 @@ abstract contract BoringVaultAdapter is
     }
 
     function reinitialize(
-        address owner,
+        address initialOwner, // Changed from owner to initialOwner
         IERC20 asset_,
         address vault_,
         address teller_,
@@ -163,7 +201,7 @@ abstract contract BoringVaultAdapter is
     ) public virtual onlyRole(UPGRADER_ROLE) {
         // Reinitialize as needed
         if (
-            owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
+            initialOwner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
                 || atomicQueue_ == address(0) || lens_ == address(0) || accountant_ == address(0)
         ) {
             revert ZeroAddress();
@@ -489,6 +527,122 @@ abstract contract BoringVaultAdapter is
         bytes4 interfaceId
     ) public view virtual override(ComponentToken, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId) || interfaceId == type(IBoringVaultAdapter).interfaceId;
+    }
+
+    // ========== LZ V2 OVERRIDES ==========
+
+    // We must implement _lzReceive since it's abstract in OAppReceiver
+    function _lzReceive(
+        Origin calldata _origin,
+        bytes32 _guid,
+        bytes calldata _message,
+        address _executor,
+        bytes calldata _extraData
+    ) internal virtual override {
+        (bytes32 fromAddress, uint256 amount) = abi.decode(_message, (bytes32, uint256));
+        address to = address(uint160(uint256(fromAddress)));
+        _mint(to, amount);
+        emit ReceiveFromChain(_origin.srcEid, fromAddress, to, amount);
+    }
+
+    //Getters for V2 specific storage
+    function getMsgLibrary(
+        uint32 _eid
+    ) external view returns (uint256) {
+        return _getBoringVaultAdapterStorage().msgLibraryLookup[_eid];
+    }
+
+    function getMinDstGas(
+        uint32 _eid
+    ) external view returns (uint256) {
+        return _getBoringVaultAdapterStorage().minDstGasLookup[_eid];
+    }
+
+    // V2 Send Function
+    function sendFrom(
+        address _from,
+        uint32 _dstEid,
+        bytes32 _toAddress,
+        uint256 _amount,
+        address payable _refundAddress,
+        bytes calldata _options
+    ) public payable virtual {
+        // Burn tokens from sender
+        _burn(_from, _amount);
+
+        // Prepare message payload
+        bytes memory payload = abi.encode(_toAddress, _amount);
+
+        // Fix: Use MessagingParams struct for quote
+        MessagingFee memory fee =
+            endpoint.quote(MessagingParams(_dstEid, _getPeerOrRevert(_dstEid), payload, _options, false), address(this));
+
+        if (msg.value < fee.nativeFee) {
+            revert InsufficientGas();
+        }
+
+        // Send message using OApp pattern
+        _lzSend(_dstEid, payload, _options, fee, _refundAddress);
+
+        emit SendToChain(_dstEid, _from, _toAddress, _amount);
+    }
+
+    // V2 Quote function
+    function quoteSendFee(
+        uint32 _dstEid,
+        bytes32 _toAddress,
+        uint256 _amount,
+        bytes calldata _options
+    ) public view returns (MessagingFee memory fee) {
+        bytes memory payload = abi.encode(_toAddress, _amount);
+        return
+            endpoint.quote(MessagingParams(_dstEid, _getPeerOrRevert(_dstEid), payload, _options, false), address(this));
+    }
+    // Admin functions for V2 configuration
+
+    function setReceiveLibrary(uint32 _eid, uint256 _newLib) external onlyOwner {
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
+        $.msgLibraryLookup[_eid] = _newLib;
+    }
+
+    function setMinDstGas(uint32 _eid, uint256 _minGas) external onlyOwner {
+        BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
+        $.minDstGasLookup[_eid] = _minGas;
+    }
+
+    // ========== OWNER FUNCTIONS ==========
+    // We only need to override ComponentToken's functions since it already has Ownable
+    function owner() public view virtual override returns (address) {
+        return super.owner();
+    }
+
+    function transferOwnership(
+        address newOwner
+    ) public virtual override onlyOwner {
+        super.transferOwnership(newOwner);
+    }
+
+    function renounceOwnership() public virtual override onlyOwner {
+        super.renounceOwnership();
+    }
+
+    function _transferOwnership(
+        address newOwner
+    ) internal virtual override {
+        super._transferOwnership(newOwner);
+    }
+
+    // Add these overrides to resolve the Context conflicts
+    function _msgSender() internal view virtual override(Context, ContextUpgradeable) returns (address) {
+        return super._msgSender();
+    }
+
+    function _msgData() internal view virtual override(Context, ContextUpgradeable) returns (bytes calldata) {
+        return super._msgData();
+    }
+
+    function _contextSuffixLength() internal view virtual override(Context, ContextUpgradeable) returns (uint256) {
+        return 0;
     }
 
 }

@@ -55,6 +55,9 @@ contract pUSDTest is Test {
     address public owner;
     address public user1;
     address public user2;
+    address private constant LZ_ENDPOINT = 0x1234567890123456789012345678901234567890; // Replace with actual endpoint
+    uint32 private constant CHAIN_ID = 1; // Replace with your chain's LZ ID
+    address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
 
     event VaultChanged(MockVault indexed oldVault, MockVault indexed newVault);
 
@@ -79,7 +82,12 @@ contract pUSDTest is Test {
         vault.setBeforeTransferHook(address(mockTeller));
 
         // Deploy through proxy
-        pUSD impl = new pUSD();
+        pUSD impl = new pUSD(
+            LZ_ENDPOINT, // LayerZero endpoint
+            ADMIN_ADDRESS, // Using admin as delegate - adjust if needed
+            ADMIN_ADDRESS // Initial owner
+        );
+
         ERC1967Proxy proxy = new pUSDProxy(
             address(impl),
             abi.encodeCall(
@@ -91,7 +99,9 @@ contract pUSDTest is Test {
                     address(mockTeller),
                     address(mockAtomicQueue),
                     address(mockLens),
-                    address(mockAccountant)
+                    address(mockAccountant),
+                    LZ_ENDPOINT, // Add LayerZero endpoint
+                    CHAIN_ID // Add chain ID
                 )
             )
         );
@@ -211,7 +221,11 @@ contract pUSDTest is Test {
     function testInitializeInvalidAsset() public {
         // Deploy an invalid token that doesn't implement IERC20Metadata
         MockInvalidToken invalidAsset = new MockInvalidToken();
-        pUSD impl = new pUSD();
+        pUSD impl = new pUSD(
+            LZ_ENDPOINT, // LayerZero endpoint
+            ADMIN_ADDRESS, // Using admin as delegate - adjust if needed
+            ADMIN_ADDRESS // Initial owner
+        );
 
         bytes memory initData = abi.encodeCall(
             pUSD.initialize,
@@ -222,7 +236,9 @@ contract pUSDTest is Test {
                 address(mockTeller),
                 address(mockAtomicQueue),
                 address(mockLens),
-                address(mockAccountant)
+                address(mockAccountant),
+                LZ_ENDPOINT, // Add LayerZero endpoint
+                CHAIN_ID // Add chain ID
             )
         );
 
@@ -303,7 +319,12 @@ contract pUSDTest is Test {
     }
 
     function testAuthorizeUpgrade() public {
-        address newImplementation = address(new pUSD());
+        //address newImplementation = address(new pUSD());
+        pUSD newImplementation = new pUSD(
+            LZ_ENDPOINT, // LayerZero endpoint
+            ADMIN_ADDRESS, // Using admin as delegate - adjust if needed
+            ADMIN_ADDRESS // Initial owner
+        );
 
         // Test with non-upgrader role
         vm.startPrank(user1);
@@ -314,12 +335,12 @@ contract pUSDTest is Test {
             )
         );
 
-        token.upgradeToAndCall(newImplementation, "");
+        token.upgradeToAndCall(address(newImplementation), "");
         vm.stopPrank();
 
         // Test successful upgrade
         vm.startPrank(owner);
-        token.upgradeToAndCall(newImplementation, "");
+        token.upgradeToAndCall(address(newImplementation), "");
         vm.stopPrank();
     }
 

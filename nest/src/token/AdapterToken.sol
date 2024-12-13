@@ -64,7 +64,11 @@ contract AdapterToken is ComponentToken {
      * @notice Prevent the implementation contract from being initialized or reinitialized
      * @custom:oz-upgrades-unsafe-allow constructor
      */
-    constructor() {
+    constructor(
+        address _endpoint,
+        address _delegate,
+        address initialOwner
+    ) ComponentToken(_endpoint, _delegate, initialOwner) {
         _disableInitializers();
     }
 

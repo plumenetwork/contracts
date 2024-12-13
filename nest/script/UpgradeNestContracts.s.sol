@@ -15,6 +15,8 @@ contract UpgradeNestContracts is Script, Test {
 
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     address private constant BORING_VAULT_ADDRESS = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
+    address private constant LZ_ENDPOINT_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
+    address private constant LZ_DELEGATE_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
 
     UUPSUpgradeable private constant AGGREGATE_TOKEN_PROXY =
         UUPSUpgradeable(payable(0x659619AEdf381c3739B0375082C2d61eC1fD8835));
@@ -31,7 +33,11 @@ contract UpgradeNestContracts is Script, Test {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
         // Deploy new implementation
-        AggregateToken newAggregateTokenImpl = new AggregateToken();
+        AggregateToken newAggregateTokenImpl = new AggregateToken(
+            LZ_ENDPOINT_ADDRESS, // assuming endpoint is defined
+            LZ_DELEGATE_ADDRESS, // assuming delegate is defined
+            NEST_ADMIN_ADDRESS // assuming owner is defined
+        );
         assertGt(address(newAggregateTokenImpl).code.length, 0, "AggregateToken should be deployed");
         console2.log("New AggregateToken Implementation deployed to:", address(newAggregateTokenImpl));
 

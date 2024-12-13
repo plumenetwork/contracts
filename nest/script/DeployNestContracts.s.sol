@@ -19,6 +19,14 @@ import { pUSD } from "../src/token/pUSD.sol";
 // Concrete implementation of ComponentToken
 contract ConcreteComponentToken is ComponentToken {
 
+    constructor(
+        address _endpoint,
+        address _delegate,
+        address initialOwner
+    ) ComponentToken(_endpoint, _delegate, initialOwner) {
+        _disableInitializers();
+    }
+
     // Implement the required abstract functions
     function convertToShares(
         uint256 assets
@@ -39,13 +47,19 @@ contract DeployNestContracts is Script, Test {
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     address private constant VAULT_ADDRESS = 0x52805adf7b3d25c013eDa66eF32b53d1696f809C;
     address private constant PUSD_ADDRESS = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
+    address private constant LZ_ENDPOINT_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
+    address private constant LZ_DELEGATE_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
 
     function test() public { }
 
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
-        AggregateToken aggregateToken = new AggregateToken();
+        AggregateToken aggregateToken = new AggregateToken(
+            LZ_ENDPOINT_ADDRESS, // assuming endpoint is defined
+            LZ_DELEGATE_ADDRESS, // assuming delegate is defined
+            NEST_ADMIN_ADDRESS // assuming owner is defined
+        );
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateToken),
             abi.encodeCall(

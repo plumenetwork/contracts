@@ -3,6 +3,8 @@ pragma solidity ^0.8.25;
 
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 
@@ -19,8 +21,12 @@ contract pUSD is BoringVaultAdapter {
      * @notice Prevent the implementation contract from being initialized or reinitialized
      * @custom:oz-upgrades-unsafe-allow constructor
      */
-    constructor() {
-        _disableInitializers();
+    constructor(
+        address _endpoint,
+        address _delegate,
+        address initialOwner
+    ) BoringVaultAdapter(_endpoint, _delegate, initialOwner) {
+        // The constructor body can remain empty as we're just passing parameters to the parent
     }
 
     /**
@@ -38,9 +44,13 @@ contract pUSD is BoringVaultAdapter {
         address teller_,
         address atomicQueue_,
         address lens_,
-        address accountant_
+        address accountant_,
+        address endpoint_,
+        uint32 _eid
     ) public initializer {
-        super.initialize(owner, asset_, vault_, teller_, atomicQueue_, lens_, accountant_, "Plume USD", "pUSD");
+        super.initialize(
+            owner, asset_, vault_, teller_, atomicQueue_, lens_, accountant_, endpoint_, _eid, "Plume USD", "pUSD"
+        );
     }
 
     // ========== METADATA OVERRIDES ==========

@@ -12,7 +12,8 @@ import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+//import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import { ERC165Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
@@ -28,7 +29,7 @@ import { IERC7575 } from "./interfaces/IERC7575.sol";
 abstract contract ComponentToken is
     Initializable,
     ERC4626Upgradeable,
-    ERC165,
+    ERC165Upgradeable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuardUpgradeable,
@@ -177,7 +178,7 @@ abstract contract ComponentToken is
      * @notice Prevent the implementation contract from being initialized or reinitialized
      * @custom:oz-upgrades-unsafe-allow constructor
      */
-    constructor() {
+    constructor(address _endpoint, address _delegate, address initialOwner) {
         _disableInitializers();
     }
 
@@ -226,7 +227,7 @@ abstract contract ComponentToken is
     /// @inheritdoc IERC165
     function supportsInterface(
         bytes4 interfaceId
-    ) public view virtual override(AccessControlUpgradeable, ERC165, IERC165) returns (bool supported) {
+    ) public view virtual override(AccessControlUpgradeable, ERC165Upgradeable, IERC165) returns (bool supported) {
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
         return super.supportsInterface(interfaceId) || interfaceId == type(IERC20).interfaceId
             || interfaceId == type(IAccessControl).interfaceId || interfaceId == type(IERC7575).interfaceId

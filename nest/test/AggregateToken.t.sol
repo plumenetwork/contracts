@@ -23,6 +23,8 @@ contract AggregateTokenTest is Test {
     address public owner;
     address public user1;
     address public user2;
+    address private constant LZ_ENDPOINT_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
+    address private constant LZ_DELEGATE_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
 
     // Events
     event AssetTokenUpdated(IERC20 indexed oldAsset, IERC20 indexed newAsset);
@@ -56,7 +58,11 @@ contract AggregateTokenTest is Test {
         newUsdc = new MockUSDC();
 
         // Deploy through proxy
-        AggregateToken impl = new AggregateToken();
+        AggregateToken impl = new AggregateToken(
+            address(LZ_ENDPOINT_ADDRESS), // or appropriate mock endpoint
+            address(LZ_DELEGATE_ADDRESS), // or appropriate mock delegate
+            address(this) // or appropriate owner address for testing
+        );
         ERC1967Proxy proxy = new AggregateTokenProxy(
             address(impl),
             abi.encodeCall(

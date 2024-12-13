@@ -20,11 +20,19 @@ contract DeploypUSD is Script {
     address private constant LENS_ADDRESS = 0x39e4A070c3af7Ea1Cc51377D6790ED09D761d274;
     address private constant ACCOUNTANT_ADDRESS = 0x607e6E4dC179Bf754f88094C09d9ee9Af990482a;
 
+    address private constant LZ_ENDPOINT = 0x1234567890123456789012345678901234567890; // Replace with actual endpoint
+    uint32 private constant CHAIN_ID = 1; // Replace with your chain's LZ ID
+
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
         // Deploy pUSD implementation
-        pUSD pUSDToken = new pUSD();
+        pUSD pUSDToken = new pUSD(
+            LZ_ENDPOINT, // LayerZero endpoint
+            NEST_ADMIN_ADDRESS, // Using admin as delegate - adjust if needed
+            NEST_ADMIN_ADDRESS // Initial owner
+        );
+
         console2.log("pUSD implementation deployed to:", address(pUSDToken));
 
         // Deploy pUSD proxy
@@ -39,7 +47,9 @@ contract DeploypUSD is Script {
                     TELLER_ADDRESS,
                     ATOMIC_QUEUE,
                     LENS_ADDRESS,
-                    ACCOUNTANT_ADDRESS
+                    ACCOUNTANT_ADDRESS,
+                    LZ_ENDPOINT, // Add LayerZero endpoint
+                    CHAIN_ID // Add chain ID
                 )
             )
         );
