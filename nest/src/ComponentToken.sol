@@ -213,6 +213,35 @@ abstract contract ComponentToken is
         $.asyncRedeem = asyncRedeem;
     }
 
+    /**
+     * @notice Reinitialize the ComponentToken
+     * @param owner Address of the owner of the ComponentToken
+     * @param name Name of the ComponentToken
+     * @param symbol Symbol of the ComponentToken
+     * @param asset_ Asset used to mint and burn the ComponentToken
+     * @param asyncDeposit True if deposits are asynchronous; false otherwise
+     * @param asyncRedeem True if redemptions are asynchronous; false otherwise
+     */
+    function reinitialize(
+        address owner,
+        string memory name,
+        string memory symbol,
+        IERC20 asset_,
+        bool asyncDeposit,
+        bool asyncRedeem
+    ) public onlyInitializing {
+        __ERC20_init(name, symbol);
+        __ERC4626_init(asset_);
+
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(ADMIN_ROLE, owner);
+        _grantRole(UPGRADER_ROLE, owner);
+
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        $.asyncDeposit = asyncDeposit;
+        $.asyncRedeem = asyncRedeem;
+    }
+
     // Override Functions
 
     /**

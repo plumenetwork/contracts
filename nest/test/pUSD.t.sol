@@ -239,7 +239,9 @@ contract pUSDTest is Test {
             address(mockTeller),
             address(mockAtomicQueue),
             address(mockLens),
-            address(mockAccountant)
+            address(mockAccountant),
+            "Plume USD",
+            "pUSD"
         );
 
         assertNotEq(token.version(), 1);
@@ -253,7 +255,9 @@ contract pUSDTest is Test {
             address(mockTeller),
             address(mockAtomicQueue),
             address(mockLens),
-            address(mockAccountant)
+            address(mockAccountant),
+            "Plume USD",
+            "pUSD"
         );
 
         vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
@@ -265,7 +269,9 @@ contract pUSDTest is Test {
             address(mockTeller),
             address(mockAtomicQueue),
             address(mockLens),
-            address(mockAccountant)
+            address(mockAccountant),
+            "Plume USD",
+            "pUSD"
         );
 
         vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
@@ -276,7 +282,9 @@ contract pUSDTest is Test {
             address(mockTeller),
             address(mockAtomicQueue),
             address(mockLens),
-            address(mockAccountant)
+            address(mockAccountant),
+            "Plume USD",
+            "pUSD"
         );
 
         vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
@@ -287,7 +295,9 @@ contract pUSDTest is Test {
             address(0),
             address(mockAtomicQueue),
             address(mockLens),
-            address(mockAccountant)
+            address(mockAccountant),
+            "Plume USD",
+            "pUSD"
         );
 
         vm.expectRevert(BoringVaultAdapter.ZeroAddress.selector);
@@ -298,7 +308,9 @@ contract pUSDTest is Test {
             address(mockTeller),
             address(0),
             address(mockLens),
-            address(mockAccountant)
+            address(mockAccountant),
+            "Plume USD",
+            "pUSD"
         );
     }
 
@@ -416,7 +428,9 @@ contract pUSDTest is Test {
             address(mockTeller),
             address(mockAtomicQueue),
             address(mockLens),
-            address(mockAccountant)
+            address(mockAccountant),
+            "Plume USD",
+            "pUSD"
         );
 
         // Now we can test the preview functions with the new vault
@@ -441,7 +455,9 @@ contract pUSDTest is Test {
             address(mockTeller),
             address(mockAtomicQueue),
             address(mockLens),
-            address(mockAccountant)
+            address(mockAccountant),
+            "Plume USD",
+            "pUSD"
         );
 
         // Now we can test the preview functions with the new vault
@@ -480,7 +496,9 @@ contract pUSDTest is Test {
             address(mockTeller),
             address(mockAtomicQueue),
             address(mockLens),
-            address(mockAccountant)
+            address(mockAccountant),
+            "Plume USD",
+            "pUSD"
         );
 
         // Test convertToShares revert
