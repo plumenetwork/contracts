@@ -84,7 +84,7 @@ contract pUSDTest is Test {
         // Deploy through proxy
         pUSD impl = new pUSD(
             LZ_ENDPOINT, // LayerZero endpoint
-            ADMIN_ADDRESS, // Using admin as delegate - adjust if needed
+            ADMIN_ADDRESS, // Delegate
             ADMIN_ADDRESS // Initial owner
         );
 
@@ -223,7 +223,7 @@ contract pUSDTest is Test {
         MockInvalidToken invalidAsset = new MockInvalidToken();
         pUSD impl = new pUSD(
             LZ_ENDPOINT, // LayerZero endpoint
-            ADMIN_ADDRESS, // Using admin as delegate - adjust if needed
+            ADMIN_ADDRESS, // Delegate
             ADMIN_ADDRESS // Initial owner
         );
 
@@ -322,7 +322,7 @@ contract pUSDTest is Test {
         //address newImplementation = address(new pUSD());
         pUSD newImplementation = new pUSD(
             LZ_ENDPOINT, // LayerZero endpoint
-            ADMIN_ADDRESS, // Using admin as delegate - adjust if needed
+            ADMIN_ADDRESS, // Delegate
             ADMIN_ADDRESS // Initial owner
         );
 
