@@ -56,9 +56,9 @@ contract DeployNestContracts is Script, Test {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
         AggregateToken aggregateToken = new AggregateToken(
-            LZ_ENDPOINT_ADDRESS, // assuming endpoint is defined
-            LZ_DELEGATE_ADDRESS, // assuming delegate is defined
-            NEST_ADMIN_ADDRESS // assuming owner is defined
+            LZ_ENDPOINT_ADDRESS, 
+            LZ_DELEGATE_ADDRESS,
+            NEST_ADMIN_ADDRESS
         );
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateToken),

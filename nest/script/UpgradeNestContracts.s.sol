@@ -34,9 +34,9 @@ contract UpgradeNestContracts is Script, Test {
 
         // Deploy new implementation
         AggregateToken newAggregateTokenImpl = new AggregateToken(
-            LZ_ENDPOINT_ADDRESS, // assuming endpoint is defined
-            LZ_DELEGATE_ADDRESS, // assuming delegate is defined
-            NEST_ADMIN_ADDRESS // assuming owner is defined
+            LZ_ENDPOINT_ADDRESS, 
+            LZ_DELEGATE_ADDRESS,
+            NEST_ADMIN_ADDRESS
         );
         assertGt(address(newAggregateTokenImpl).code.length, 0, "AggregateToken should be deployed");
         console2.log("New AggregateToken Implementation deployed to:", address(newAggregateTokenImpl));

@@ -28,9 +28,9 @@ contract DeploypUSD is Script {
 
         // Deploy pUSD implementation
         pUSD pUSDToken = new pUSD(
-            LZ_ENDPOINT, // LayerZero endpoint
-            NEST_ADMIN_ADDRESS, // Using admin as delegate - adjust if needed
-            NEST_ADMIN_ADDRESS // Initial owner
+            LZ_ENDPOINT, 
+            NEST_ADMIN_ADDRESS,
+            NEST_ADMIN_ADDRESS
         );
 
         console2.log("pUSD implementation deployed to:", address(pUSDToken));

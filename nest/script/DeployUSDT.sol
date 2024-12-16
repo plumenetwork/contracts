@@ -21,9 +21,9 @@ contract DeployUSDT is Script {
         console2.log("USDT Asset deployed to:", address(usdtAsset));
 
         USDT usdt = new USDT(
-            LZ_ENDPOINT_ADDRESS, // assuming endpoint is defined
-            LZ_DELEGATE_ADDRESS, // assuming delegate is defined
-            NEST_ADMIN_ADDRESS // assuming owner is defined
+            LZ_ENDPOINT_ADDRESS,
+            LZ_DELEGATE_ADDRESS,
+            NEST_ADMIN_ADDRESS
         );
         USDTProxy usdtProxy =
             new USDTProxy(address(usdt), abi.encodeCall(USDT.initialize, (NEST_ADMIN_ADDRESS, usdtAsset)));

@@ -25,8 +25,8 @@ contract pUSD is BoringVaultAdapter {
         address _endpoint,
         address _delegate,
         address initialOwner
-    ) BoringVaultAdapter(_endpoint, _delegate, initialOwner) {
-        // The constructor body can remain empty as we're just passing parameters to the parent
+    ) BoringVaultAdapter(_endpoint, _delegate, initialOwner) Ownable(initialOwner) {
+        _disableInitializers();
     }
 
     /**

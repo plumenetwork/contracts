@@ -103,9 +103,9 @@ contract UpgradePUSD is Script {
 
             // Deploy new implementation
             pUSD newImplementation = new pUSD(
-                LZ_ENDPOINT, // LayerZero endpoint
-                ADMIN_ADDRESS, // Using admin as delegate - adjust if needed
-                ADMIN_ADDRESS // Initial owner
+                LZ_ENDPOINT,
+                ADMIN_ADDRESS,
+                ADMIN_ADDRESS
             );
 
             console2.log("New Implementation Address:", address(newImplementation));
