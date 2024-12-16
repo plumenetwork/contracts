@@ -20,11 +20,7 @@ contract DeployUSDT is Script {
         USDTAsset usdtAsset = new USDTAsset(NEST_ADMIN_ADDRESS);
         console2.log("USDT Asset deployed to:", address(usdtAsset));
 
-        USDT usdt = new USDT(
-            LZ_ENDPOINT_ADDRESS,
-            LZ_DELEGATE_ADDRESS,
-            NEST_ADMIN_ADDRESS
-        );
+        USDT usdt = new USDT(LZ_ENDPOINT_ADDRESS, LZ_DELEGATE_ADDRESS, NEST_ADMIN_ADDRESS);
         USDTProxy usdtProxy =
             new USDTProxy(address(usdt), abi.encodeCall(USDT.initialize, (NEST_ADMIN_ADDRESS, usdtAsset)));
         console2.log("USDT Component Token Proxy deployed to:", address(usdtProxy));

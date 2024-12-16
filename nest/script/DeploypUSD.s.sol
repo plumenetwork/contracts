@@ -27,11 +27,7 @@ contract DeploypUSD is Script {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
         // Deploy pUSD implementation
-        pUSD pUSDToken = new pUSD(
-            LZ_ENDPOINT, 
-            NEST_ADMIN_ADDRESS,
-            NEST_ADMIN_ADDRESS
-        );
+        pUSD pUSDToken = new pUSD(LZ_ENDPOINT, NEST_ADMIN_ADDRESS, NEST_ADMIN_ADDRESS);
 
         console2.log("pUSD implementation deployed to:", address(pUSDToken));
 

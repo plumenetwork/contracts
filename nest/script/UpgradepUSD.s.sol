@@ -102,11 +102,7 @@ contract UpgradePUSD is Script {
             vm.startBroadcast(ADMIN_ADDRESS);
 
             // Deploy new implementation
-            pUSD newImplementation = new pUSD(
-                LZ_ENDPOINT,
-                ADMIN_ADDRESS,
-                ADMIN_ADDRESS
-            );
+            pUSD newImplementation = new pUSD(LZ_ENDPOINT, ADMIN_ADDRESS, ADMIN_ADDRESS);
 
             console2.log("New Implementation Address:", address(newImplementation));
 

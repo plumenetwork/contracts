@@ -55,11 +55,7 @@ contract DeployNestContracts is Script, Test {
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
-        AggregateToken aggregateToken = new AggregateToken(
-            LZ_ENDPOINT_ADDRESS, 
-            LZ_DELEGATE_ADDRESS,
-            NEST_ADMIN_ADDRESS
-        );
+        AggregateToken aggregateToken = new AggregateToken(LZ_ENDPOINT_ADDRESS, LZ_DELEGATE_ADDRESS, NEST_ADMIN_ADDRESS);
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateToken),
             abi.encodeCall(
