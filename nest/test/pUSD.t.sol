@@ -55,8 +55,8 @@ contract pUSDTest is Test {
     address public owner;
     address public user1;
     address public user2;
-    address private constant LZ_ENDPOINT = 0x1234567890123456789012345678901234567890; // Replace with actual endpoint
-    uint32 private constant CHAIN_ID = 1; // Replace with your chain's LZ ID
+    address private constant LZ_ENDPOINT = 0x1234567890123456789012345678901234567890;
+    uint32 private constant CHAIN_ID = 1;
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
 
     event VaultChanged(MockVault indexed oldVault, MockVault indexed newVault);

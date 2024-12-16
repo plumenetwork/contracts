@@ -20,8 +20,8 @@ contract DeploypUSD is Script {
     address private constant LENS_ADDRESS = 0x39e4A070c3af7Ea1Cc51377D6790ED09D761d274;
     address private constant ACCOUNTANT_ADDRESS = 0x607e6E4dC179Bf754f88094C09d9ee9Af990482a;
 
-    address private constant LZ_ENDPOINT = 0x1234567890123456789012345678901234567890; // Replace with actual endpoint
-    uint32 private constant CHAIN_ID = 1; // Replace with your chain's LZ ID
+    address private constant LZ_ENDPOINT = 0x1234567890123456789012345678901234567890;
+    uint32 private constant CHAIN_ID = 1;
 
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
