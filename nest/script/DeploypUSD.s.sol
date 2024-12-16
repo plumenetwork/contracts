@@ -44,8 +44,8 @@ contract DeploypUSD is Script {
                     ATOMIC_QUEUE,
                     LENS_ADDRESS,
                     ACCOUNTANT_ADDRESS,
-                    LZ_ENDPOINT, // Add LayerZero endpoint
-                    CHAIN_ID // Add chain ID
+                    LZ_ENDPOINT, 
+                    CHAIN_ID 
                 )
             )
         );

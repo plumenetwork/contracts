@@ -100,8 +100,8 @@ contract pUSDTest is Test {
                     address(mockAtomicQueue),
                     address(mockLens),
                     address(mockAccountant),
-                    LZ_ENDPOINT, // Add LayerZero endpoint
-                    CHAIN_ID // Add chain ID
+                    LZ_ENDPOINT,
+                    CHAIN_ID
                 )
             )
         );
@@ -237,8 +237,8 @@ contract pUSDTest is Test {
                 address(mockAtomicQueue),
                 address(mockLens),
                 address(mockAccountant),
-                LZ_ENDPOINT, // Add LayerZero endpoint
-                CHAIN_ID // Add chain ID
+                LZ_ENDPOINT,
+                CHAIN_ID
             )
         );
 
