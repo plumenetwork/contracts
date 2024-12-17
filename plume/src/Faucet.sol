@@ -188,6 +188,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
     /**
      * @notice Get tokens from the faucet
      * @param token Name of the token requested
+     * @param flightClass User's flight class
      * @param salt Random value to prevent replay attacks
      * @param signature Signature of the message signed by the owner
      */
@@ -205,25 +206,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
             revert InvalidToken();
         }
 
-        // Apply multiplier based on flightClass
-        uint256 multiplier;
-        if (flightClass == 1) {
-            multiplier = 1;
-        } else if (flightClass == 2) {
-            multiplier = 11;
-        } else if (flightClass == 3) {
-            multiplier = 125;
-        } else if (flightClass == 4) {
-            multiplier = 200;
-        } else if (flightClass == 5) {
-            multiplier = 300;
-        } else if (flightClass == 6) {
-            multiplier = 500;
-        } else {
-            revert InvalidFlightClass(flightClass);
-        }
-
-        uint256 amount = (baseAmount * multiplier) / 100;
+        uint256 amount = _calculateDripAmount(baseAmount, flightClass);
 
         if (tokenAddress == ETH_ADDRESS) {
             if (address(this).balance < amount) {
@@ -276,6 +259,33 @@ contract Faucet is Initializable, UUPSUpgradeable {
     }
 
     /**
+     * @notice Calculate the amount of tokens to mint based on the base amount and flight class
+     * @dev Internal function to calculate the drip amount based on the flight class multiplier
+     * @param baseAmount Base amount of tokens to mint
+     * @param flightClass User flight class
+     */
+    function _calculateDripAmount(uint256 baseAmount, uint256 flightClass) internal pure returns (uint256) {
+        uint256 multiplier;
+        if (flightClass == 1) {
+            multiplier = 1; // 1x
+        } else if (flightClass == 2) {
+            multiplier = 11; // 1.1x (scaled by 10)
+        } else if (flightClass == 3) {
+            multiplier = 125; // 1.25x (scaled by 100)
+        } else if (flightClass == 4) {
+            multiplier = 200; // 2x (scaled by 100)
+        } else if (flightClass == 5) {
+            multiplier = 300; // 3x (scaled by 100)
+        } else if (flightClass == 6) {
+            multiplier = 500; // 5x (scaled by 100)
+        } else {
+            revert InvalidFlightClass(flightClass);
+        }
+
+        return (baseAmount * multiplier) / 100; // Normalize for scaling
+    }
+
+    /**
      * @notice Set ownership of the faucet contract to the given address
      * @dev Only the owner can call this function
      * @param newOwner New owner of the faucet
@@ -322,13 +332,31 @@ contract Faucet is Initializable, UUPSUpgradeable {
     }
 
     /**
-     * @notice Get the amount of tokens to mint per faucet call for the given token
+     * @notice Get the base amount of tokens to mint per faucet call for the given token
      * @param token Name of the token to get the amount for
-     * @return dripAmount Amount of tokens to mint per faucet call
+     * @return dripAmount Base amount of tokens to mint per faucet call
      */
     function getDripAmount(string calldata token) public view returns (uint256 dripAmount) {
         FaucetStorage storage $ = _getFaucetStorage();
         return $.dripAmounts[$.tokens[token]];
+    }
+
+    /**
+     * @notice Get the amount of tokens to mint per user call for the given token
+     * @param token Name of the token to get the amount for
+     * @param flightClass User's flight class
+     * @return dripAmount Amount of tokens to mint per faucet call
+     */
+    function getDripAmount(string calldata token, uint256 flightClass) public view returns (uint256 dripAmount) {
+        FaucetStorage storage $ = _getFaucetStorage();
+        address tokenAddress = $.tokens[token];
+        uint256 baseAmount = $.dripAmounts[tokenAddress];
+
+        if (tokenAddress == address(0) || baseAmount == 0) {
+            revert InvalidToken();
+        }
+
+        return _calculateDripAmount(baseAmount, flightClass);
     }
 
     /**
