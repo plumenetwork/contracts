@@ -15,9 +15,17 @@ import { MockTeller } from "../src/mocks/MockTeller.sol";
 
 import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
 import { IBoringVaultAdapter } from "../src/interfaces/IBoringVaultAdapter.sol";
+import { BoringVaultAdapter } from "../src/token/BoringVaultAdapter.sol";
+
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 import { MockVault } from "../src/mocks/MockVault.sol";
 import { pUSD } from "../src/token/pUSD.sol";
+
+import { OFTCore } from "@layerzerolabs/oft-evm/contracts/OFTCore.sol";
+import { SendParam, MessagingFee } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
+import { ILayerZeroEndpointV2 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import { SetConfigParam } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
+
 
 interface BoringVault {
 
@@ -57,63 +65,166 @@ contract pUSD_LZTest is Test {
     string PLUME_MAINNET_RPC = vm.envString("PLUME_MAINNET_RPC");
     string ETH_MAINNET_RPC = vm.envString("ETH_MAINNET_RPC");
 
-    uint256 plumeMainnetFork;
     uint256 ethMainnetFork;
+    uint256 plumeMainnetFork;
 
-    // Test contracts
-    pUSD public ethImplementation;
-    pUSD public plumeImplementation;
-    pUSD public ethProxy;
-    pUSD public plumeProxy;
+    address owner;
+    address user;
 
-    // Test accounts
-    address public owner;
-    address public user;
+    pUSD ethImplementation;
+    pUSD plumeImplementation;
+    pUSD ethProxy;
+    pUSD plumeProxy;
 
-    // Create mock addresses for ETH mainnet deployment
-    // Mock contracts for ETH mainnet
-    MockVault public mockVault;
-    MockTeller public mockTeller;
-    MockAtomicQueue public mockQueue;
-    MockLens public mockLens;
-    MockAccountantWithRateProviders public mockAccountant;
-    MockUSDC public mockUSDC;
+    // Interfaces for vault and OFT functionality
+    IBoringVaultAdapter ethVault;
+    IBoringVaultAdapter plumeVault;
+    OFTCore ethOFT;
+    OFTCore plumeOFT;
 
-    IBoringVault vault;
-    IBoringVaultAdapter adapter;
+function setUp() public {
+    // Create forks
+    ethMainnetFork = vm.createFork(vm.envString("ETH_MAINNET_RPC"));
+    plumeMainnetFork = vm.createFork(vm.envString("PLUME_MAINNET_RPC"));
 
-    function setUp() public {
-        // Create forks
-        ethMainnetFork = vm.createFork(vm.envString("ETH_MAINNET_RPC"));
-        plumeMainnetFork = vm.createFork(vm.envString("PLUME_MAINNET_RPC"));
+    // Create users
+    owner = makeAddr("owner");
+    user = makeAddr("user");
 
-        vm.selectFork(plumeMainnetFork);
-        uint256 chainId;
-        assembly {
-            chainId := chainid()
-        }
-        console.log("Plume mainnet forked, chainId:", chainId);
-        require(chainId == 98_865, "Not connected to Plume mainnet: chainId");
+    // Deploy on ETH mainnet
+    vm.selectFork(ethMainnetFork);
+    ethImplementation = new pUSD(
+        ETH_LZ_ENDPOINT,
+        ETH_LZ_DELEGATE,
+        owner
+    );
+    vm.makePersistent(address(ethImplementation));
 
-        // Create users
-        owner = makeAddr("owner");
-        user = makeAddr("user");
+    // Deploy and initialize ETH proxy
+    ERC1967Proxy ethProxyContract = new ERC1967Proxy(
+        address(ethImplementation),
+        abi.encodeCall(
+            pUSD.initialize,
+            (
+                owner,
+                IERC20(ETH_USDC),
+                VAULT_TOKEN,
+                TELLER_ADDRESS,
+                ATOMIC_QUEUE,
+                LENS_ADDRESS,
+                ACCOUNTANT_ADDRESS,
+                ETH_LZ_ENDPOINT,
+                ETH_EID
+            )
+        )
+    );
+    ethProxy = pUSD(address(ethProxyContract));
 
-        // Make contracts persistent
-        vm.makePersistent(ETH_pUSD);
-        vm.makePersistent(PLUME_pUSD);
-        vm.makePersistent(ETH_USDC);
-        vm.makePersistent(PLUME_USDC);
+    // Make ETH contracts and endpoints persistent on ETH fork
+    vm.makePersistent(address(ethProxy));
+    vm.makePersistent(address(ethProxyContract));
+    vm.makePersistent(ETH_LZ_ENDPOINT);
 
-        // Use existing deployed contracts instead of deploying new ones
-        ethProxy = pUSD(ETH_pUSD);
-        plumeProxy = pUSD(PLUME_pUSD);
-        vault = IBoringVault(VAULT_TOKEN);
-        adapter = IBoringVaultAdapter(ETH_pUSD); // Need to add this constant
+    // Deploy on Plume
+    vm.selectFork(plumeMainnetFork);
+    plumeImplementation = new pUSD(
+        PLUME_LZ_ENDPOINT,
+        PLUME_LZ_DELEGATE,
+        owner
+    );
+    vm.makePersistent(address(plumeImplementation));
 
-        // Verify contracts exist
-        require(address(ETH_pUSD).code.length > 0, "ETH pUSD not found");
-        require(address(PLUME_pUSD).code.length > 0, "Plume pUSD not found");
+    // Deploy and initialize Plume proxy
+    ERC1967Proxy plumeProxyContract = new ERC1967Proxy(
+        address(plumeImplementation),
+        abi.encodeCall(
+            pUSD.initialize,
+            (
+                owner,
+                IERC20(PLUME_USDC),
+                VAULT_TOKEN,
+                TELLER_ADDRESS,
+                ATOMIC_QUEUE,
+                LENS_ADDRESS,
+                ACCOUNTANT_ADDRESS,
+                PLUME_LZ_ENDPOINT,
+                PLUME_EID
+            )
+        )
+    );
+    plumeProxy = pUSD(address(plumeProxyContract));
+
+    // Make Plume contracts and endpoints persistent on Plume fork
+    vm.makePersistent(address(plumeProxy));
+    vm.makePersistent(address(plumeProxyContract));
+    vm.makePersistent(PLUME_LZ_ENDPOINT);
+
+    // Make contracts persistent on opposite forks
+    vm.selectFork(ethMainnetFork);
+    vm.makePersistent(address(plumeProxy));
+    vm.makePersistent(PLUME_LZ_ENDPOINT);
+    
+    vm.selectFork(plumeMainnetFork);
+    vm.makePersistent(address(ethProxy));
+    vm.makePersistent(ETH_LZ_ENDPOINT);
+
+    // Cast proxies to both interfaces
+    ethVault = IBoringVaultAdapter(address(ethProxy));
+    plumeVault = IBoringVaultAdapter(address(plumeProxy));
+    ethOFT = OFTCore(address(ethProxy));
+    plumeOFT = OFTCore(address(plumeProxy));
+
+    vm.selectFork(ethMainnetFork);
+    vm.startPrank(owner);
+    
+    // On ETH chain, set Plume as peer
+    bytes32 plumePeer = bytes32(uint256(uint160(address(plumeProxy))));
+    ethOFT.setPeer(PLUME_EID, plumePeer);
+
+    // Configure DVN for ETH -> Plume path
+    SetConfigParam[] memory params = new SetConfigParam[](1);
+    params[0] = SetConfigParam({
+        lib: address(ethOFT),
+        config: abi.encode(
+            uint8(1),           // number of confirmations required
+            address(0),         // optional oracle address (0x0 for default)
+            uint256(0),         // optional oracle fee (0 for default)
+            address(0),         // optional relayer address (0x0 for default)
+            uint256(0)          // optional relayer fee (0 for default)
+        )
+    });
+    ILayerZeroEndpointV2(ETH_LZ_ENDPOINT).setConfig(params);
+    vm.stopPrank();
+
+    // Set up peers and DVN configurations on Plume chain
+    vm.selectFork(plumeMainnetFork);
+    vm.startPrank(owner);
+    
+    // On Plume chain, set ETH as peer
+    bytes32 ethPeer = bytes32(uint256(uint160(address(ethProxy))));
+    plumeOFT.setPeer(ETH_EID, ethPeer);
+
+    // Configure DVN for Plume -> ETH path
+    params = new SetConfigParam[](1);
+    params[0] = SetConfigParam({
+        lib: address(plumeOFT),
+        config: abi.encode(
+            uint8(1),           // number of confirmations required
+            address(0),         // optional oracle address (0x0 for default)
+            uint256(0),         // optional oracle fee (0 for default)
+            address(0),         // optional relayer address (0x0 for default)
+            uint256(0)          // optional relayer fee (0 for default)
+        )
+    });
+    ILayerZeroEndpointV2(PLUME_LZ_ENDPOINT).setConfig(params);
+    vm.stopPrank();
+}
+
+    // Helper function to convert address to bytes32
+    function addressToBytes32(
+        address _addr
+    ) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(_addr)));
     }
 
     function testInitialization() public {
@@ -126,50 +237,63 @@ contract pUSD_LZTest is Test {
     function testCrossChainTransfer() public {
         // Start on Ethereum mainnet
         vm.selectFork(ethMainnetFork);
-        uint256 amount = 1e9; // 1000 pUSD
+        uint256 amount = 1e6; // 1 USDC (6 decimals)
 
-        // Give user some pUSD on Ethereum
-        deal(address(ethProxy), user, amount);
+        // Give user some USDC on Ethereum
+        deal(ETH_USDC, user, amount);
 
         vm.startPrank(user);
 
-        // Verify initial balance on Ethereum
-        assertEq(ethProxy.balanceOf(user), amount);
+        // Approve adapter to spend USDC
+        IERC20(ETH_USDC).approve(address(ethVault), amount);
 
-        // Perform cross-chain transfer to Plume
-        bytes memory options = "";
-        ethProxy.sendFrom{ value: 1 ether }(
-            user, PLUME_EID, bytes32(uint256(uint160(user))), amount, payable(user), options
+        // Get expected shares using vault interface
+        uint256 minimumMint = ethVault.previewDeposit(amount);
+
+        // First deposit USDC into adapter using vault interface
+        ethVault.deposit(
+            amount,
+            user, // receiver
+            user, // controller
+            minimumMint
+        );
+
+        // Then initiate cross-chain transfer using OFT interface
+        vm.deal(user, 1 ether); // For LZ fees
+
+        // Create SendParam for OFT
+        SendParam memory params = SendParam({
+            dstEid: PLUME_EID,
+            to: bytes32(uint256(uint160(user))),
+            amountLD: amount,
+            minAmountLD: amount,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        // Get messaging fee
+        MessagingFee memory fee = ethOFT.quoteSend(params, false);
+
+        // Send tokens cross-chain
+        ethOFT.send{ value: fee.nativeFee }(
+            params,
+            fee,
+            payable(user) // refundAddress
         );
         vm.stopPrank();
 
-        // Verify balance decreased on ETH mainnet
-        assertEq(ethProxy.balanceOf(user), 0);
+        // Verify USDC was taken from user on Ethereum
+        assertEq(IERC20(ETH_USDC).balanceOf(user), 0);
 
         // Switch to Plume mainnet to verify receipt
         vm.selectFork(plumeMainnetFork);
 
-        // Verify pUSD arrived on Plume
-        assertEq(plumeProxy.balanceOf(user), amount);
+        // Verify user received shares in the Plume vault
+        assertEq(IBoringVault(VAULT_TOKEN).balanceOf(user), minimumMint);
 
-        // User needs to approve adapter to spend their pUSD
-        vm.startPrank(user);
-        plumeProxy.approve(address(adapter), amount);
-
-        // Deposit into vault through adapter
-        uint256 minimumMint = adapter.previewDeposit(amount); // Get expected shares
-        uint256 shares = adapter.deposit(
-            amount, // assets
-            user, // receiver
-            user, // controller
-            minimumMint // minimumMint
-        );
-        vm.stopPrank();
-
-        // Verify vault shares
-        assertEq(vault.balanceOf(user), shares);
         // Verify adapter's record of user's assets
-        assertEq(adapter.assetsOf(user), amount);
+        assertEq(plumeVault.assetsOf(user), amount);
     }
 
 }

@@ -5,6 +5,31 @@ import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 
 interface IBoringVaultAdapter {
 
+    // LayerZero functions
+    function setTrustedRemote(uint16 _remoteChainId, bytes calldata _path) external;
+    function getTrustedRemote(
+        uint16 _remoteChainId
+    ) external view returns (bytes memory);
+    function setMinDstGas(uint16 _dstChainId, uint16 _packetType, uint256 _minGas) external;
+    function setConfig(uint16 _version, uint16 _chainId, uint256 _configType, bytes calldata _config) external;
+    function setSendVersion(
+        uint16 _version
+    ) external;
+    function setReceiveVersion(
+        uint16 _version
+    ) external;
+    function forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress) external;
+
+    // OFT functions
+    function sendFrom(
+        address _from,
+        uint16 _dstChainId,
+        bytes32 _toAddress,
+        uint256 _amount,
+        address payable _refundAddress,
+        bytes calldata _payload
+    ) external payable;
+
     // View Functions
     function getVault() external view returns (address);
     function getTeller() external view returns (address);
@@ -56,5 +81,9 @@ interface IBoringVaultAdapter {
     // Events
     event VaultChanged(address oldVault, address newVault);
     event Reinitialized(uint256 version);
+
+    // LZ Events
+    event SetTrustedRemote(uint16 _remoteChainId, bytes _path);
+    event SetMinDstGas(uint16 _dstChainId, uint16 _packetType, uint256 _minGas);
 
 }
