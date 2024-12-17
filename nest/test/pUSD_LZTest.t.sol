@@ -8,17 +8,15 @@ import { console } from "forge-std/console.sol";
 import { pUSD } from "../src/token/pUSD.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 
-
-
-import { pUSD } from "../src/token/pUSD.sol";
-import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import { MockVault } from "../src/mocks/MockVault.sol";
-import { MockTeller } from "../src/mocks/MockTeller.sol";
+import { MockAccountantWithRateProviders } from "../src/mocks/MockAccountantWithRateProviders.sol";
 import { MockAtomicQueue } from "../src/mocks/MockAtomicQueue.sol";
 import { MockLens } from "../src/mocks/MockLens.sol";
-import { MockAccountantWithRateProviders } from "../src/mocks/MockAccountantWithRateProviders.sol";
-import { MockUSDC } from "../src/mocks/MockUSDC.sol";
+import { MockTeller } from "../src/mocks/MockTeller.sol";
 
+import { MockUSDC } from "../src/mocks/MockUSDC.sol";
+import { MockVault } from "../src/mocks/MockVault.sol";
+import { pUSD } from "../src/token/pUSD.sol";
+import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 
 contract pUSD_LZTest is Test {
 
@@ -49,37 +47,6 @@ contract pUSD_LZTest is Test {
     address private constant LENS_ADDRESS = 0x3D2021776e385601857E7b7649de955525E21d23;
     address private constant ACCOUNTANT_ADDRESS = 0xbB2fAA1e1D6183EE3c4177476ce0d70CBd55A388;
 
-
-/*
-pUSD
-
-BoringVault 
-0xdddD73F5Df1F0DC31373357beAC77545dC5A6f3F
-
-Accountant
-0xbB2fAA1e1D6183EE3c4177476ce0d70CBd55A388
-
-Teller
-0x16424eDF021697E34b800e1D98857536B0f2287B
-
-Manager
-0x42A683CAc2215aFCe22e2822F883fF9CD57f08D5
-
-**BoringVault contract addresses are always identical on Ethereum and Plume
-
-—— Plume Mainnet Only ——
-
-AtomicQueue 
-0x7f69e1A09472EEb7a5dA7552bD59Ca022c341193
-
-Lens 
-0x3D2021776e385601857E7b7649de955525E21d23
-*/
-
-
-
-
-
     string PLUME_MAINNET_RPC = vm.envString("PLUME_MAINNET_RPC");
     string ETH_MAINNET_RPC = vm.envString("ETH_MAINNET_RPC");
 
@@ -96,8 +63,7 @@ Lens
     address public owner;
     address public user;
 
-
-            // Create mock addresses for ETH mainnet deployment
+    // Create mock addresses for ETH mainnet deployment
     // Mock contracts for ETH mainnet
     MockVault public mockVault;
     MockTeller public mockTeller;
@@ -106,44 +72,42 @@ Lens
     MockAccountantWithRateProviders public mockAccountant;
     MockUSDC public mockUSDC;
 
-   function setUp() public {
+    function setUp() public {
         // Create forks
         ethMainnetFork = vm.createFork(vm.envString("ETH_MAINNET_RPC"));
         plumeMainnetFork = vm.createFork(vm.envString("PLUME_MAINNET_RPC"));
 
-    vm.selectFork(plumeMainnetFork);
-     uint256 chainId;
-    assembly {
-        chainId := chainid()
-    }
-    console.log("Plume mainnet forked, chainId:", chainId);
-    require(chainId == 98865, "Not connected to Plume mainnet: chainId");
+        vm.selectFork(plumeMainnetFork);
+        uint256 chainId;
+        assembly {
+            chainId := chainid()
+        }
+        console.log("Plume mainnet forked, chainId:", chainId);
+        require(chainId == 98_865, "Not connected to Plume mainnet: chainId");
 
+        // Create users
+        owner = makeAddr("owner");
+        user = makeAddr("user");
 
+        // Make contracts persistent
+        vm.makePersistent(ETH_pUSD);
+        vm.makePersistent(PLUME_pUSD);
+        vm.makePersistent(ETH_USDC);
+        vm.makePersistent(PLUME_USDC);
+
+        // Use existing deployed contracts instead of deploying new ones
+        ethProxy = pUSD(ETH_pUSD);
+        plumeProxy = pUSD(PLUME_pUSD);
+
+        // Verify contracts exist
+        require(address(ETH_pUSD).code.length > 0, "ETH pUSD not found");
+        require(address(PLUME_pUSD).code.length > 0, "Plume pUSD not found");
+
+        /*
     // Create users
     owner = makeAddr("owner");
     user = makeAddr("user");
-    
-    // Make contracts persistent
-    vm.makePersistent(ETH_pUSD);
-    vm.makePersistent(PLUME_pUSD);
-    vm.makePersistent(ETH_USDC);
-    vm.makePersistent(PLUME_USDC);
 
-    // Use existing deployed contracts instead of deploying new ones
-    ethProxy = pUSD(ETH_pUSD);
-    plumeProxy = pUSD(PLUME_pUSD);
-
-    // Verify contracts exist
-    require(address(ETH_pUSD).code.length > 0, "ETH pUSD not found");
-    require(address(PLUME_pUSD).code.length > 0, "Plume pUSD not found");
-
-
-/*
-    // Create users
-    owner = makeAddr("owner");
-    user = makeAddr("user");
-    
     // Make contracts persistent
     vm.makePersistent(ETH_USDC);
     vm.makePersistent(PLUME_USDC);
@@ -210,14 +174,13 @@ Lens
         */
     }
 
-
     function testInitialization() public {
         vm.selectFork(ethMainnetFork);
         assertEq(ethProxy.name(), "Plume USD");
         assertEq(ethProxy.symbol(), "pUSD");
         assertEq(address(ethProxy.owner()), owner);
     }
-/*
+    /*
     function testCrossChainTransfer() public {
         vm.selectFork(ethMainnetFork);
         uint256 amount = 1e9; // 1000 USDC (6 decimals)
@@ -251,40 +214,35 @@ Lens
         vm.selectFork(plumeMainnetFork);
         assertEq(plumeProxy.balanceOf(user), amount);
     }
-*/
+    */
 
+    function testCrossChainTransfer() public {
+        vm.selectFork(ethMainnetFork);
+        uint256 amount = 1e9; // 1000 pUSD
 
-function testCrossChainTransfer() public {
-    vm.selectFork(ethMainnetFork);
-    uint256 amount = 1e9; // 1000 pUSD
+        // Give user some USDC for deposit
+        deal(ETH_USDC, user, amount);
 
-    // Give user some USDC for deposit
-    deal(ETH_USDC, user, amount);
+        vm.startPrank(user);
+        IERC20(ETH_USDC).approve(address(ethProxy), amount);
+        ethProxy.deposit(amount, user);
 
-    vm.startPrank(user);
-    IERC20(ETH_USDC).approve(address(ethProxy), amount);
-    ethProxy.deposit(amount, user);
+        // Verify initial balance
+        assertEq(ethProxy.balanceOf(user), amount);
 
-    // Verify initial balance
-    assertEq(ethProxy.balanceOf(user), amount);
+        // Perform cross-chain transfer
+        bytes memory options = "";
+        ethProxy.sendFrom{ value: 1 ether }(
+            user, PLUME_EID, bytes32(uint256(uint160(user))), amount, payable(user), options
+        );
+        vm.stopPrank();
 
-    // Perform cross-chain transfer
-    bytes memory options = "";
-    ethProxy.sendFrom{value: 1 ether}(
-        user,
-        PLUME_EID,
-        bytes32(uint256(uint160(user))),
-        amount,
-        payable(user),
-        options
-    );
-    vm.stopPrank();
+        // Verify balance decreased on ETH mainnet
+        assertEq(ethProxy.balanceOf(user), 0);
 
-    // Verify balance decreased on ETH mainnet
-    assertEq(ethProxy.balanceOf(user), 0);
+        // Switch to Plume mainnet to verify receipt
+        vm.selectFork(plumeMainnetFork);
+        assertEq(plumeProxy.balanceOf(user), amount);
+    }
 
-    // Switch to Plume mainnet to verify receipt
-    vm.selectFork(plumeMainnetFork);
-    assertEq(plumeProxy.balanceOf(user), amount);
-}
 }

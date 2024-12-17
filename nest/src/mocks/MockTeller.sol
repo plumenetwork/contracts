@@ -33,7 +33,6 @@ contract MockTeller is ITeller {
         _supportedAssets[asset] = supported;
     }
 
-
     function deposit(
         IERC20 depositAsset,
         uint256 depositAmount,

@@ -39,7 +39,9 @@ contract MockAtomicQueue is IAtomicQueue {
         supportedAssets[asset] = supported;
     }
 
-    function isSupportedAsset(IERC20 asset) external view returns (bool) {
+    function isSupportedAsset(
+        IERC20 asset
+    ) external view returns (bool) {
         return supportedAssets[asset];
     }
 
