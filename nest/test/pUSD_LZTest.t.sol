@@ -13,10 +13,17 @@ import { MockAtomicQueue } from "../src/mocks/MockAtomicQueue.sol";
 import { MockLens } from "../src/mocks/MockLens.sol";
 import { MockTeller } from "../src/mocks/MockTeller.sol";
 
+import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
+import { IBoringVaultAdapter } from "../src/interfaces/IBoringVaultAdapter.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 import { MockVault } from "../src/mocks/MockVault.sol";
 import { pUSD } from "../src/token/pUSD.sol";
-import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
+
+interface BoringVault {
+
+    function enter(address from, IERC20 asset, uint256 assetAmount, address to, uint256 shareAmount) external;
+
+}
 
 contract pUSD_LZTest is Test {
 
@@ -72,6 +79,9 @@ contract pUSD_LZTest is Test {
     MockAccountantWithRateProviders public mockAccountant;
     MockUSDC public mockUSDC;
 
+    IBoringVault vault;
+    IBoringVaultAdapter adapter;
+
     function setUp() public {
         // Create forks
         ethMainnetFork = vm.createFork(vm.envString("ETH_MAINNET_RPC"));
@@ -98,80 +108,12 @@ contract pUSD_LZTest is Test {
         // Use existing deployed contracts instead of deploying new ones
         ethProxy = pUSD(ETH_pUSD);
         plumeProxy = pUSD(PLUME_pUSD);
+        vault = IBoringVault(VAULT_TOKEN);
+        adapter = IBoringVaultAdapter(ETH_pUSD); // Need to add this constant
 
         // Verify contracts exist
         require(address(ETH_pUSD).code.length > 0, "ETH pUSD not found");
         require(address(PLUME_pUSD).code.length > 0, "Plume pUSD not found");
-
-        /*
-    // Create users
-    owner = makeAddr("owner");
-    user = makeAddr("user");
-
-    // Make contracts persistent
-    vm.makePersistent(ETH_USDC);
-    vm.makePersistent(PLUME_USDC);
-    vm.makePersistent(VAULT_TOKEN);
-    vm.makePersistent(ATOMIC_QUEUE);
-    vm.makePersistent(TELLER_ADDRESS);
-    vm.makePersistent(LENS_ADDRESS);
-    vm.makePersistent(ACCOUNTANT_ADDRESS);
-
-    // Verify contracts exist on Plume
-    require(address(VAULT_TOKEN).code.length > 0, "Vault not found on Plume");
-    require(address(ATOMIC_QUEUE).code.length > 0, "Queue not found on Plume");
-    require(address(TELLER_ADDRESS).code.length > 0, "Teller not found on Plume");
-    require(address(LENS_ADDRESS).code.length > 0, "Lens not found on Plume");
-    require(address(ACCOUNTANT_ADDRESS).code.length > 0, "Accountant not found on Plume");
-
-        // Deploy on ETH mainnet
-        vm.selectFork(ethMainnetFork);
-        ethImplementation = new pUSD(ETH_LZ_ENDPOINT, ETH_LZ_DELEGATE, owner);
-
-        ERC1967Proxy ethProxy_ = new ERC1967Proxy(
-            address(ethImplementation),
-            abi.encodeCall(
-                pUSD.initialize,
-                (
-                    owner,
-                    IERC20(ETH_USDC),
-                    VAULT_TOKEN,
-                    TELLER_ADDRESS,
-                    ATOMIC_QUEUE,
-                    LENS_ADDRESS,
-                    ACCOUNTANT_ADDRESS,
-                    ETH_LZ_ENDPOINT,
-                    ETH_EID
-                )
-            )
-        );
-        ethProxy = pUSD(address(ethProxy_));
-
-        // Deploy on Plume mainnet
-        vm.selectFork(plumeMainnetFork);
-        plumeImplementation = new pUSD(PLUME_LZ_ENDPOINT, PLUME_LZ_DELEGATE, owner);
-
-        ERC1967Proxy plumeProxy_ = new ERC1967Proxy(
-            address(plumeImplementation),
-            abi.encodeCall(
-                pUSD.initialize,
-                (
-                    owner,
-                    IERC20(PLUME_USDC),
-                    VAULT_TOKEN,
-                    TELLER_ADDRESS,
-                    ATOMIC_QUEUE,
-                    LENS_ADDRESS,
-                    ACCOUNTANT_ADDRESS,
-                    PLUME_LZ_ENDPOINT,
-                    PLUME_EID
-                )
-            )
-        );
-        plumeProxy = pUSD(address(plumeProxy_));
-
-
-        */
     }
 
     function testInitialization() public {
@@ -180,57 +122,21 @@ contract pUSD_LZTest is Test {
         assertEq(ethProxy.symbol(), "pUSD");
         assertEq(address(ethProxy.owner()), owner);
     }
-    /*
-    function testCrossChainTransfer() public {
-        vm.selectFork(ethMainnetFork);
-        uint256 amount = 1e9; // 1000 USDC (6 decimals)
-
-        // Give user some USDC
-        deal(ETH_USDC, user, amount);
-
-        vm.startPrank(user);
-        IERC20(ETH_USDC).approve(address(ethProxy), amount);
-        ethProxy.deposit(amount, user);
-
-        // Verify initial balance
-        assertEq(ethProxy.balanceOf(user), amount);
-
-        // Perform cross-chain transfer
-        bytes memory options = ""; // Add necessary LZ options if needed
-        ethProxy.sendFrom{value: 1 ether}( // Need to send some ETH for LZ fees
-            user,
-            30318, // Plume EID
-            bytes32(uint256(uint160(user))),
-            amount,
-            payable(user),
-            options
-        );
-        vm.stopPrank();
-
-        // Verify balance decreased on ETH mainnet
-        assertEq(ethProxy.balanceOf(user), 0);
-
-        // Switch to Plume mainnet to verify receipt
-        vm.selectFork(plumeMainnetFork);
-        assertEq(plumeProxy.balanceOf(user), amount);
-    }
-    */
 
     function testCrossChainTransfer() public {
+        // Start on Ethereum mainnet
         vm.selectFork(ethMainnetFork);
         uint256 amount = 1e9; // 1000 pUSD
 
-        // Give user some USDC for deposit
-        deal(ETH_USDC, user, amount);
+        // Give user some pUSD on Ethereum
+        deal(address(ethProxy), user, amount);
 
         vm.startPrank(user);
-        IERC20(ETH_USDC).approve(address(ethProxy), amount);
-        ethProxy.deposit(amount, user);
 
-        // Verify initial balance
+        // Verify initial balance on Ethereum
         assertEq(ethProxy.balanceOf(user), amount);
 
-        // Perform cross-chain transfer
+        // Perform cross-chain transfer to Plume
         bytes memory options = "";
         ethProxy.sendFrom{ value: 1 ether }(
             user, PLUME_EID, bytes32(uint256(uint160(user))), amount, payable(user), options
@@ -242,7 +148,28 @@ contract pUSD_LZTest is Test {
 
         // Switch to Plume mainnet to verify receipt
         vm.selectFork(plumeMainnetFork);
+
+        // Verify pUSD arrived on Plume
         assertEq(plumeProxy.balanceOf(user), amount);
+
+        // User needs to approve adapter to spend their pUSD
+        vm.startPrank(user);
+        plumeProxy.approve(address(adapter), amount);
+
+        // Deposit into vault through adapter
+        uint256 minimumMint = adapter.previewDeposit(amount); // Get expected shares
+        uint256 shares = adapter.deposit(
+            amount, // assets
+            user, // receiver
+            user, // controller
+            minimumMint // minimumMint
+        );
+        vm.stopPrank();
+
+        // Verify vault shares
+        assertEq(vault.balanceOf(user), shares);
+        // Verify adapter's record of user's assets
+        assertEq(adapter.assetsOf(user), amount);
     }
 
 }
