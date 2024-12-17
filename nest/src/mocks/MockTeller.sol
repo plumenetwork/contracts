@@ -29,6 +29,11 @@ contract MockTeller is ITeller {
         return _supportedAssets[asset];
     }
 
+    function setSupportedAsset(IERC20 asset, bool supported) external {
+        _supportedAssets[asset] = supported;
+    }
+
+
     function deposit(
         IERC20 depositAsset,
         uint256 depositAmount,

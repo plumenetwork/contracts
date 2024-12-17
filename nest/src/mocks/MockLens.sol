@@ -18,6 +18,11 @@ contract MockLens is ILens {
     mapping(uint256 => uint256) private previewRedeemValues;
     mapping(address => uint256) private balances;
     mapping(address => mapping(address => uint256)) private vaultBalances;
+    mapping(IERC20 => bool) public supportedAssets;
+
+    function setSupportedAsset(IERC20 asset, bool supported) external {
+        supportedAssets[asset] = supported;
+    }
 
     function totalAssets(
         IBoringVault vault,

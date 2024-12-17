@@ -12,6 +12,7 @@ contract MockAtomicQueue is IAtomicQueue {
     mapping(address => mapping(IERC20 => mapping(IERC20 => AtomicRequest))) private _userAtomicRequest;
     uint256 private _mockRate;
     uint256 private constant _MAX_DISCOUNT = 0.01e6;
+    mapping(IERC20 => bool) public supportedAssets;
 
     constructor() {
         _mockRate = 1e18; // Default 1:1 rate
@@ -32,6 +33,14 @@ contract MockAtomicQueue is IAtomicQueue {
         } else {
             emit Unpaused();
         }
+    }
+
+    function setSupportedAsset(IERC20 asset, bool supported) external {
+        supportedAssets[asset] = supported;
+    }
+
+    function isSupportedAsset(IERC20 asset) external view returns (bool) {
+        return supportedAssets[asset];
     }
 
     function userAtomicRequest(address user, IERC20 offer, IERC20 want) external view returns (AtomicRequest memory) {
