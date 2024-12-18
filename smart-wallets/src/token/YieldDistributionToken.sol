@@ -146,7 +146,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Override Functions
 
     /// @notice Number of decimals of the YieldDistributionToken
-    function decimals() public view override returns (uint8) {
+    function decimals() public view virtual override returns (uint8) {
         return _getYieldDistributionTokenStorage().decimals;
     }
 
@@ -368,6 +368,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                     break;
                 }
 
+                // if user has a lot of deposits to accrueYield for, 
+                // we break out of the loop here instead of reverting 
+                // when gas gets too low.
                 if (gasleft() < 100_000) {
                     break;
                 }
@@ -381,7 +384,10 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             emit YieldAccrued(user, userState.yieldAccrued);
         }
 
-        _updateUserAmountSeconds(user);
+        // only update this if we didn't break out of the loop early b/c of gas limit.
+        if (lastDepositIndex == currentDepositIndex) {
+            _updateUserAmountSeconds(user);
+        }
     }
 
 }

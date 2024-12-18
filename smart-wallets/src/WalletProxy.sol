@@ -9,7 +9,7 @@ import { WalletFactory } from "./WalletFactory.sol";
  * @title WalletProxy
  * @author Eugene Y. Q. Shen
  * @notice Double proxy contract that is loaded into every smart wallet call.
- *   The WalletProxy is deployed to 0x38F983FcC64217715e00BeA511ddf2525b8DC692.
+ *   The WalletProxy is deployed to 0xa52aA045B7FbF41AFa46c083Bd4468a32a946a91.
  * @dev The bytecode of this contract is loaded whenever anyone uses `Call`
  *   or `StaticCall` on an EOA (see `plumenetwork/go-ethereum` for details).
  *   The bytecode must be static to minimize changes to geth, so everything

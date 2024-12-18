@@ -8,7 +8,7 @@ import { USDTProxy } from "../src/proxy/USDTProxy.sol";
 import { USDT } from "../src/token/USDT.sol";
 import { USDTAsset } from "../src/token/USDTAsset.sol";
 
-contract DeployNestContracts is Script {
+contract DeployUSDT is Script {
 
     address private constant NEST_ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
 

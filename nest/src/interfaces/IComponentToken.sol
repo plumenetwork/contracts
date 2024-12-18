@@ -3,7 +3,7 @@ pragma solidity ^0.8.25;
 
 interface IComponentToken {
 
-    // Events
+    // User Functions
 
     /**
      * @notice Emitted when the owner of some assets submits a request to buy shares
@@ -28,28 +28,6 @@ interface IComponentToken {
     event RedeemRequest(
         address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 shares
     );
-
-    /**
-     * @notice Emitted when a deposit request is complete
-     * @param sender Controller of the request
-     * @param owner Source of the assets to deposit
-     * @param assets Amount of `asset` that has been deposited
-     * @param shares Amount of shares that has been received in exchange
-     */
-    // event Deposit(address indexed sender, address indexed owner, uint256 assets, uint256 shares);
-
-    /**
-     * @notice Emitted when a redeem request is complete
-     * @param sender Controller of the request
-     * @param receiver Address to receive the assets
-     * @param owner Source of the shares to redeem
-     * @param assets Amount of `asset` that has been received in exchange
-     * @param shares Amount of shares that has been redeemed
-     */
-    // event Withdraw(address indexed sender, address indexed receiver, address indexed owner, uint256 assets, uint256
-    // shares);
-
-    // User Functions
 
     /**
      * @notice Transfer assets from the owner into the vault and submit a request to buy shares
@@ -90,8 +68,21 @@ interface IComponentToken {
     /// @notice Address of the `asset` token
     function asset() external view returns (address assetTokenAddress);
 
-    /// @notice Total amount of `asset` held in the vault
+    /**
+     * @notice Total value held in the vault
+     * @dev Example ERC20 implementation: return convertToAssets(totalSupply())
+     */
     function totalAssets() external view returns (uint256 totalManagedAssets);
+
+    /**
+     * @notice Total value held by the given owner
+     * @dev Example ERC20 implementation: return convertToAssets(balanceOf(owner))
+     * @param owner Address to query the balance of
+     * @return assets Total value held by the owner
+     */
+    function assetsOf(
+        address owner
+    ) external view returns (uint256 assets);
 
     /**
      * @notice Equivalent amount of shares for the given amount of assets

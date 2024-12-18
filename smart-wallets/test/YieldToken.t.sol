@@ -106,7 +106,7 @@ contract YieldTokenTest is Test {
     }
 
     function testMintingByOwner() public {
-        yieldToken.mint(user1, 50 ether);
+        yieldToken.adminMint(user1, 50 ether);
         assertEq(yieldToken.balanceOf(user1), 50 ether);
     }
 
