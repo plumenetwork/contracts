@@ -128,14 +128,14 @@ contract YieldTokenTest is Test {
     }*/
 
     function testMintingByOwner() public {
-        yieldToken.mint(user1, 50 ether);
+        yieldToken.adminMint(user1, 50 ether);
         assertEq(yieldToken.balanceOf(user1), 50 ether);
     }
     /*
     function testMintingByNonOwnerFails() public {
         vm.prank(user1);  // Use user1 for this call
         vm.expectRevert("Ownable: caller is not the owner");
-        yieldToken.mint(user2, 50 ether);
+        yieldToken.adminMint(user2, 50 ether);
     }
 
     function testReceiveYieldWithValidTokens() public {
