@@ -9,7 +9,6 @@ import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { Deposit, UserState } from "./Types.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
-import "forge-std/console.sol";
 
 /**
  * @title AssetToken
