@@ -71,4 +71,9 @@ contract pUSD is BoringVaultAdapter {
         return "pUSD";
     }
 
+function setPeer(uint32 _eid, bytes32 _peer) public virtual override {
+    require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Caller is not admin");
+    _setPeer(_eid, _peer);
+}
+
 }
