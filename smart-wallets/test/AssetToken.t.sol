@@ -471,8 +471,6 @@ contract AssetTokenTest is Test {
     }
 
     function test_YieldCalculations() public {
-        address user1 = address(0x1);
-        address user2 = address(0x2);
         uint256 initialMint = 100 ether;
         uint256 yieldAmount = 10 ether;
 
@@ -515,7 +513,6 @@ contract AssetTokenTest is Test {
     }
 
     function test_YieldCalculationsWithMultipleDeposits() public {
-        address user1 = address(0x1);
         uint256 initialMint = 100 ether;
         uint256 firstYield = 10 ether;
         uint256 secondYield = 5 ether;

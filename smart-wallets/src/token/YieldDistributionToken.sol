@@ -368,8 +368,8 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
                     break;
                 }
 
-                // if user has a lot of deposits to accrueYield for, 
-                // we break out of the loop here instead of reverting 
+                // if user has a lot of deposits to accrueYield for,
+                // we break out of the loop here instead of reverting
                 // when gas gets too low.
                 if (gasleft() < 100_000) {
                     break;

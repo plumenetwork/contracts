@@ -72,7 +72,6 @@ contract YieldTokenTest is Test {
         );
 
         // Deploy invalid tokens for testing
-        //invalidCurrencyToken = new ERC20Mock();
         invalidAssetToken = new MockInvalidAssetToken();
     }
 
@@ -84,7 +83,7 @@ contract YieldTokenTest is Test {
 
     function testInvalidCurrencyTokenOnDeploy() public {
         // Deploy mock tokens with different currency tokens
-        ERC20Mock invalidCurrencyToken = new ERC20Mock();
+        invalidCurrencyToken = new ERC20Mock();
         MockAssetToken testAssetToken = new MockAssetToken();
         testAssetToken.initialize(
             owner,
@@ -113,7 +112,7 @@ contract YieldTokenTest is Test {
     function testMintingByNonOwnerFails() public {
         vm.prank(user1); // Use user1 for this call
         vm.expectRevert();
-        yieldToken.mint(user2, 50 ether);
+        yieldToken.adminMint(user2, 50 ether);
     }
 
     function testReceiveYieldWithValidTokens() public {
