@@ -313,8 +313,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
         _updateGlobalAmountSeconds();
         _updateUserYield(user);
-
-        //emit YieldAccrued(user, $.rewards[user]);
     }
 
     function _updateUserYield(
