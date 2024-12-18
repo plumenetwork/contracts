@@ -27,8 +27,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     struct AssetTokenStorage {
         /// @dev Total value of all circulating AssetTokens
         uint256 totalValue;
-        /// @dev Whitelist of users that are allowed to hold AssetTokens
-        address[] whitelist;
         /// @dev Mapping of whitelisted users
         mapping(address user => bool whitelisted) isWhitelisted;
         /// @dev List of all users that have ever held AssetTokens
@@ -90,6 +88,13 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     error AddressNotWhitelisted(address user);
 
+    /**
+     * @notice Indicates holder status change event
+     * @param holder Address of Holder
+     * @param isHolder true when becomes holder, false when stops being holder
+     */
+    event HolderStatusChanged(address indexed holder, bool isHolder);
+
     // Constructor
 
     /**
@@ -145,11 +150,19 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             if (getBalanceAvailable(from) < value) {
                 revert InsufficientBalance(from);
             }
+
+            if (balanceOf(from) == value) {
+                // Will have zero balance after transfer
+                emit HolderStatusChanged(from, false);
+            }
         }
 
-        if (!$.hasHeld[to]) {
-            $.holders.push(to);
-            $.hasHeld[to] = true;
+        if (to != address(0)) {
+            // Check if to address will become a new holder
+            if (balanceOf(to) == 0) {
+                // Currently has zero balance
+                emit HolderStatusChanged(to, true);
+            }
         }
         super._update(from, to, value);
     }
@@ -183,7 +196,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             if ($.isWhitelisted[user]) {
                 revert AddressAlreadyWhitelisted(user);
             }
-            $.whitelist.push(user);
             $.isWhitelisted[user] = true;
             emit AddressAddedToWhitelist(user);
         }
@@ -205,15 +217,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         if (isWhitelistEnabled) {
             if (!$.isWhitelisted[user]) {
                 revert AddressNotWhitelisted(user);
-            }
-            address[] storage whitelist = $.whitelist;
-            uint256 length = whitelist.length;
-            for (uint256 i = 0; i < length; ++i) {
-                if (whitelist[i] == user) {
-                    whitelist[i] = whitelist[length - 1];
-                    whitelist.pop();
-                    break;
-                }
             }
             $.isWhitelisted[user] = false;
             emit AddressRemovedFromWhitelist(user);
