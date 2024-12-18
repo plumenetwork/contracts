@@ -8,8 +8,9 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
+//import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
-import { UserState } from "./Types.sol";
 
 /**
  * @title YieldDistributionToken
@@ -161,6 +162,12 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         }
 
         if (to != address(0)) {
+            YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+            // Initialize lastUpdate for new token holders
+            if (balanceOf(to) == 0 && $.lastUpdate[to] == 0) {
+                $.lastUpdate[to] = block.timestamp;
+                $.userYieldPerTokenPaid[to] = $.yieldPerTokenStored;
+            }
             accrueYield(to);
         }
 
@@ -209,9 +216,11 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
         _updateGlobalAmountSeconds();
 
-        // Update yieldPerToken based on new deposit
-        if ($.totalAmountSeconds > 0) {
-            $.yieldPerTokenStored += currencyTokenAmount.mulDiv(SCALE, $.totalAmountSeconds);
+        uint256 currentSupply = totalSupply();
+        if (currentSupply > 0) {
+            // Use current supply if totalAmountSeconds is 0
+            uint256 divisor = $.totalAmountSeconds > 0 ? $.totalAmountSeconds : currentSupply;
+            $.yieldPerTokenStored += currencyTokenAmount.mulDiv(SCALE, divisor);
         }
 
         $.lastDepositTimestamp = block.timestamp;
@@ -277,6 +286,17 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             currencyToken.safeTransfer(user, currencyTokenAmount);
             emit YieldClaimed(user, currencyTokenAmount);
         }
+    }
+
+    function pendingYield(
+        address user
+    ) external view returns (uint256) {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+
+        uint256 userAmountSeconds = balanceOf(user) * (block.timestamp - $.lastUpdate[user]);
+        uint256 pendingDelta = userAmountSeconds.mulDiv($.yieldPerTokenStored - $.userYieldPerTokenPaid[user], SCALE);
+
+        return $.rewards[user] + pendingDelta;
     }
 
     /**
