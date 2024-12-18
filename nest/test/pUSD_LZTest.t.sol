@@ -29,14 +29,13 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { SetConfigParam,IMessageLibManager } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
 
 import {IMessageLib} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLib.sol";
-import { CREATEX } from "create3-factory/CREATEX.sol";
-interface BoringVault {
 
-    function enter(address from, IERC20 asset, uint256 assetAmount, address to, uint256 shareAmount) external;
 
-}
 
 contract pUSD_LZTest is Test {
+
+
+
 
     // Constants for LayerZero on ETH mainnet
     address constant ETH_LZ_ENDPOINT = 0x1a44076050125825900e736c501f859c50fE728c;
@@ -84,7 +83,8 @@ contract pUSD_LZTest is Test {
     IBoringVaultAdapter plumeVault;
     OFTCore ethOFT;
     OFTCore plumeOFT;
-
+    ERC1967Proxy ethProxyContract;
+    ERC1967Proxy plumeProxyContract;
 
  function setUp() public {
     // Create forks
@@ -105,27 +105,17 @@ contract pUSD_LZTest is Test {
     vm.selectFork(ethMainnetFork);
     vm.startPrank(owner);
 
-    // Deploy ETH implementation using CREATE3
-    bytes32 ethImplSalt = keccak256("pUSD_ETH_IMPLEMENTATION_V1");
-    bytes memory ethCreationCode = type(pUSD).creationCode;
-    bytes memory ethConstructorArgs = abi.encode(
+    // Deploy ETH implementation
+    ethImplementation = new pUSD(
         ETH_LZ_ENDPOINT,
         ETH_LZ_DELEGATE,
         owner
-    );
-
-    ethImplementation = pUSD(
-        CREATEX.deployCreate3(
-            ethImplSalt,
-            abi.encodePacked(ethCreationCode, ethConstructorArgs)
-        )
     );
     vm.makePersistent(address(ethImplementation));
     vm.makePersistent(ETH_LZ_ENDPOINT);
     vm.makePersistent(ETH_USDC);
 
-    // Deploy ETH proxy using CREATE3
-    bytes32 ethProxySalt = keccak256("pUSD_ETH_PROXY_V1");
+    // Deploy ETH proxy
     bytes memory initData = abi.encodeCall(
         pUSD.initialize,
         (
@@ -141,15 +131,11 @@ contract pUSD_LZTest is Test {
         )
     );
 
-    ethProxy = pUSD(
-        CREATEX.deployCreate3(
-            ethProxySalt,
-            abi.encodePacked(
-                type(ERC1967Proxy).creationCode,
-                abi.encode(address(ethImplementation), initData)
-            )
-        )
+    ethProxyContract = new ERC1967Proxy(
+        address(ethImplementation),
+        initData
     );
+    ethProxy = pUSD(address(ethProxyContract));
     vm.makePersistent(address(ethProxy));
 
     // Check if library is registered
@@ -173,48 +159,42 @@ contract pUSD_LZTest is Test {
         )
     });
 
-    try IMessageLibManager(ETH_LZ_ENDPOINT).setConfig(
+    IMessageLibManager(ETH_LZ_ENDPOINT).setConfig(
         address(ethProxy),
         ETH_LZ_DELEGATE,
         params
-    ) {
-        console.log("Config set successfully");
-    } catch Error(string memory reason) {
-        console.log("Error setting config:", reason);
-        console.log("Caller:", address(ethProxy));
-        console.log("Library:", ETH_LZ_DELEGATE);
-        console.log("EID:", PLUME_EID);
-    } catch (bytes memory errData) {
-        console.log("Failed to set config. Error data:", vm.toString(errData));
-    }
+    );
+    console.log("Config set successfully");
+
+    IMessageLibManager(ETH_LZ_ENDPOINT).setConfig(
+        address(ethProxy),
+        ETH_LZ_DELEGATE,
+        params
+    );
+    console.log("Config set successfully");
 
     vm.stopPrank();
     vm.startPrank(owner);
 
     // Deploy on Plume chain
     vm.selectFork(plumeMainnetFork);
+    address plumeDeployer = makeAddr("plumeDeployer");
+    vm.stopPrank();
+    vm.startPrank(plumeDeployer);
 
-    // Deploy Plume implementation using CREATE3
-    bytes32 plumeImplSalt = keccak256("pUSD_PLUME_IMPLEMENTATION_V1");
-    bytes memory plumeCreationCode = type(pUSD).creationCode;
-    bytes memory plumeConstructorArgs = abi.encode(
+    console.log("Crash here");
+
+    // Deploy Plume implementation
+    plumeImplementation = new pUSD(
         PLUME_LZ_ENDPOINT,
         PLUME_LZ_DELEGATE,
         owner
-    );
-
-    plumeImplementation = pUSD(
-        CREATEX.deployCreate3(
-            plumeImplSalt,
-            abi.encodePacked(plumeCreationCode, plumeConstructorArgs)
-        )
     );
     vm.makePersistent(address(plumeImplementation));
     vm.makePersistent(PLUME_LZ_ENDPOINT);
     vm.makePersistent(PLUME_USDC);
 
-    // Deploy Plume proxy using CREATE3
-    bytes32 plumeProxySalt = keccak256("pUSD_PLUME_PROXY_V1");
+    // Deploy Plume proxy
     initData = abi.encodeCall(
         pUSD.initialize,
         (
@@ -230,47 +210,32 @@ contract pUSD_LZTest is Test {
         )
     );
 
-    plumeProxy = pUSD(
-        CREATEX.deployCreate3(
-            plumeProxySalt,
-            abi.encodePacked(
-                type(ERC1967Proxy).creationCode,
-                abi.encode(address(plumeImplementation), initData)
-            )
-        )
+    plumeProxyContract = new ERC1967Proxy(
+        address(plumeImplementation),
+        initData
     );
+    plumeProxy = pUSD(address(plumeProxyContract));
     vm.makePersistent(address(plumeProxy));
 
-    // Set up peer for Plume chain using proper left padding
+    vm.stopPrank();
+
+ // Cast proxies to interfaces
+    ethVault = IBoringVaultAdapter(address(ethProxy));
+    plumeVault = IBoringVaultAdapter(address(plumeProxy));
+    ethOFT = OFTCore(address(ethProxy));
+    plumeOFT = OFTCore(address(plumeProxy));
+
+    // Set up peer configuration
+    vm.selectFork(ethMainnetFork);
+    vm.startPrank(owner);
+    bytes32 plumePeer = addressToBytes32LeftPad(address(plumeProxy));
+    ethOFT.setPeer(PLUME_EID, plumePeer);
+
+    vm.selectFork(plumeMainnetFork);
     bytes32 ethPeer = addressToBytes32LeftPad(address(ethProxy));
-    plumeProxy.setPeer(ETH_EID, ethPeer);
-
-    // Set up config for Plume chain
+    plumeOFT.setPeer(ETH_EID, ethPeer);
     vm.stopPrank();
-    vm.startPrank(address(plumeProxy));
-    
-    params[0] = SetConfigParam({
-        eid: ETH_EID,
-        configType: 1,
-        config: abi.encode(uint16(10000))  // Using same value as ETH config
-    });
 
-    try IMessageLibManager(PLUME_LZ_ENDPOINT).setConfig(
-        address(plumeProxy),
-        PLUME_LZ_DELEGATE,
-        params
-    ) {
-        console.log("Plume config set successfully");
-    } catch Error(string memory reason) {
-        console.log("Error setting Plume config:", reason);
-        console.log("Caller:", address(plumeProxy));
-        console.log("Library:", PLUME_LZ_DELEGATE);
-        console.log("EID:", ETH_EID);
-    } catch (bytes memory errData) {
-        console.log("Failed to set Plume config. Error data:", vm.toString(errData));
-    }
-    
-    vm.stopPrank();
 }
 
 // Helper function for proper address to bytes32 conversion

@@ -43,3 +43,9 @@
 [submodule "nest/lib/devtools"]
 	path = nest/lib/devtools
 	url = https://github.com/LayerZero-Labs/devtools
+[submodule "nest/lib/create3-factory"]
+	path = nest/lib/create3-factory
+	url = https://github.com/zeframlou/create3-factory
+[submodule "nest/lib/createx"]
+	path = nest/lib/createx
+	url = https://github.com/pcaversaccio/createx
