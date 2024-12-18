@@ -30,6 +30,8 @@ contract Faucet is Initializable, UUPSUpgradeable {
         mapping(string tokenName => address tokenAddress) tokens;
         /// @dev True if the nonce has been used; false otherwise
         mapping(bytes32 nonce => bool used) usedNonces;
+        /// @dev Multipliers for each flight class
+        uint16[] multipliers;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.Faucet")) - 1)) & ~bytes32(uint256(0xff))
@@ -181,7 +183,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override(UUPSUpgradeable) onlyOwner { }
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override(UUPSUpgradeable) onlyOwner { }
 
     // User Functions
 
@@ -261,26 +265,25 @@ contract Faucet is Initializable, UUPSUpgradeable {
     /**
      * @notice Calculate the amount of tokens to mint based on the base amount and flight class
      * @dev Internal function to calculate the drip amount based on the flight class multiplier
+     *      Flight classes correspond to:
+     *        - Class 1: Economy
+     *        - Class 2: Plus
+     *        - Class 3: Premium
+     *        - Class 4: Business
+     *        - Class 5: First
+     *        - Class 6: Private
      * @param baseAmount Base amount of tokens to mint
      * @param flightClass User flight class
      */
-    function _calculateDripAmount(uint256 baseAmount, uint256 flightClass) internal pure returns (uint256) {
-        uint256 multiplier;
-        if (flightClass == 1) {
-            multiplier = 1; // 1x
-        } else if (flightClass == 2) {
-            multiplier = 11; // 1.1x (scaled by 10)
-        } else if (flightClass == 3) {
-            multiplier = 125; // 1.25x (scaled by 100)
-        } else if (flightClass == 4) {
-            multiplier = 200; // 2x (scaled by 100)
-        } else if (flightClass == 5) {
-            multiplier = 300; // 3x (scaled by 100)
-        } else if (flightClass == 6) {
-            multiplier = 500; // 5x (scaled by 100)
-        } else {
+    function _calculateDripAmount(uint256 baseAmount, uint256 flightClass) internal view returns (uint256) {
+        FaucetStorage storage $ = _getFaucetStorage();
+
+        if (flightClass < 1 || flightClass > 6) {
             revert InvalidFlightClass(flightClass);
         }
+
+        // Retrieve the multiplier from the storage array
+        uint256 multiplier = $.multipliers[flightClass - 1]; // Array index starts at 0
 
         return (baseAmount * multiplier) / 100; // Normalize for scaling
     }
@@ -290,7 +293,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @dev Only the owner can call this function
      * @param newOwner New owner of the faucet
      */
-    function setOwner(address newOwner) external onlyOwner {
+    function setOwner(
+        address newOwner
+    ) external onlyOwner {
         FaucetStorage storage $ = _getFaucetStorage();
         if (newOwner == address(0)) {
             revert InvalidAddress();
@@ -324,6 +329,31 @@ contract Faucet is Initializable, UUPSUpgradeable {
         $.dripAmounts[tokenAddress] = amount;
     }
 
+    /**
+     * @notice Update multipliers for flight classes
+     * @dev Only the owner can call this function
+     * @param newMultipliers Array of multipliers for flight classes
+     */
+    function setMultipliers(
+        uint8[6] calldata newMultipliers
+    ) external onlyOwner {
+        FaucetStorage storage $ = _getFaucetStorage();
+
+        // Update multipliers
+        $.multipliers = newMultipliers;
+    }
+
+    /**
+     * @notice Reset multipliers for flight classes to default values
+     * @dev Only the owner can call this function
+     */
+    function setMultipliers() external onlyOwner {
+        FaucetStorage storage $ = _getFaucetStorage();
+
+        // Set to default multipliers
+        $.multipliers = [1, 11, 125, 200, 300, 500];
+    }
+
     // Getter View Functions
 
     /// @notice Get the owner of the faucet
@@ -336,7 +366,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param token Name of the token to get the amount for
      * @return dripAmount Base amount of tokens to mint per faucet call
      */
-    function getDripAmount(string calldata token) public view returns (uint256 dripAmount) {
+    function getDripAmount(
+        string calldata token
+    ) public view returns (uint256 dripAmount) {
         FaucetStorage storage $ = _getFaucetStorage();
         return $.dripAmounts[$.tokens[token]];
     }
@@ -364,7 +396,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param token Name of the token to get the address for
      * @return tokenAddress Address of the token
      */
-    function getTokenAddress(string calldata token) public view returns (address tokenAddress) {
+    function getTokenAddress(
+        string calldata token
+    ) public view returns (address tokenAddress) {
         return _getFaucetStorage().tokens[token];
     }
 
@@ -373,7 +407,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
      * @param nonce Nonce to check
      * @return used True if the nonce has been used; false otherwise
      */
-    function isNonceUsed(bytes32 nonce) public view returns (bool used) {
+    function isNonceUsed(
+        bytes32 nonce
+    ) public view returns (bool used) {
         return _getFaucetStorage().usedNonces[nonce];
     }
 
