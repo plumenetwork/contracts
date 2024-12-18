@@ -28,8 +28,12 @@ interface IYieldDistributionToken is IERC20 {
 
     /// @notice Indicates a failure because a yield deposit is made in the same block as the last one
     error DepositSameBlock();
-
-    /// @notice Indicates a failure because the transfer of CurrencyToken failed
+    
+    /**
+    * @notice Indicates a failure because the transfer of CurrencyToken failed
+    * @param user Address of the user whose transfer failed
+    * @param currencyTokenAmount Amount of CurrencyToken to be transferred
+    */
     error TransferFailed(address user, uint256 currencyTokenAmount);
 
     /**
