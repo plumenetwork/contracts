@@ -127,7 +127,7 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         $.decimals = decimals_;
         $.tokenURI = tokenURI;
         $.lastDepositTimestamp = block.timestamp;
-        $.lastSupplyUpdate = block.timestamp; // This is what we really need
+        $.lastSupplyUpdate = block.timestamp;
         $.yieldPerTokenStored = 0;
     }
 
