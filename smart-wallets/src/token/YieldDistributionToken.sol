@@ -9,7 +9,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
-import { Deposit, UserState } from "./Types.sol";
+import { UserState } from "./Types.sol";
 
 /**
  * @title YieldDistributionToken
@@ -21,18 +21,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
     using Math for uint256;
     using SafeERC20 for IERC20;
-
-    /**
-     * @notice Linked list of deposits into the YieldDistributionToken
-     * @dev Invariant: the YieldDistributionToken has at most one deposit at each timestamp
-     *   i.e. depositHistory[timestamp].previousTimestamp < timestamp
-     * @param lastTimestamp Timestamp of the most recent deposit
-     * @param deposits Mapping of timestamps to deposits
-     */
-    struct DepositHistory {
-        uint256 lastTimestamp;
-        mapping(uint256 timestamp => Deposit deposit) deposits;
-    }
 
     // Storage
 
@@ -48,10 +36,17 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         uint256 totalAmountSeconds;
         /// @dev Timestamp of the last change in totalSupply()
         uint256 lastSupplyUpdate;
+        /// @dev lastDepositTimestamp
+        uint256 lastDepositTimestamp;
+        /// @dev yieldPerTokenStored
+        uint256 yieldPerTokenStored;
+        /// @dev userYieldPerTokenPaid
+        mapping(address => uint256) userYieldPerTokenPaid;
+        /// @dev rewards
+        mapping(address => uint256) rewards;
         /// @dev State for each user
-        mapping(address user => UserState userState) userStates;
-        /// @dev History of yield deposits into the YieldDistributionToken
-        Deposit[] deposits;
+        //mapping(address user => UserState userState) userStates;
+        mapping(address user => uint256) lastUpdate;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.YieldDistributionToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -130,10 +125,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         $.currencyToken = currencyToken;
         $.decimals = decimals_;
         $.tokenURI = tokenURI;
-        _updateGlobalAmountSeconds();
-        $.deposits.push(
-            Deposit({ scaledCurrencyTokenPerAmountSecond: 0, totalAmountSeconds: 0, timestamp: block.timestamp })
-        );
+        $.lastDepositTimestamp = block.timestamp;
+        $.lastSupplyUpdate = block.timestamp; // This is what we really need
+        $.yieldPerTokenStored = 0;
     }
 
     // Virtual Functions
@@ -156,6 +150,9 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
      * @param to Address to transfer tokens to
      * @param value Amount of tokens to transfer
      */
+    // Users only accrue yield based on their userYieldPerTokenPaid
+    // When a user first receives tokens, their userYieldPerTokenPaid is set to the current yieldPerTokenStored
+    // This naturally prevents them from claiming any yield from before they held tokens
     function _update(address from, address to, uint256 value) internal virtual override {
         _updateGlobalAmountSeconds();
 
@@ -164,15 +161,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         }
 
         if (to != address(0)) {
-            YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-
-            // conditions checks that this is the first time a user receives tokens
-            // if so, the lastDepositIndex is set to index of the last deposit in deposits array
-            // to avoid needlessly accruing yield for previous deposits which the user has no claim to
-            if ($.userStates[to].lastDepositIndex == 0 && balanceOf(to) == 0) {
-                $.userStates[to].lastDepositIndex = $.deposits.length - 1;
-            }
-
             accrueYield(to);
         }
 
@@ -215,25 +203,19 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
 
-        uint256 previousDepositIndex = $.deposits.length - 1;
-        if (block.timestamp == $.deposits[previousDepositIndex].timestamp) {
+        if (block.timestamp == $.lastDepositTimestamp) {
             revert DepositSameBlock();
         }
 
         _updateGlobalAmountSeconds();
 
-        $.deposits.push(
-            Deposit({
-                scaledCurrencyTokenPerAmountSecond: currencyTokenAmount.mulDiv(
-                    SCALE, $.totalAmountSeconds - $.deposits[previousDepositIndex].totalAmountSeconds
-                ),
-                totalAmountSeconds: $.totalAmountSeconds,
-                timestamp: block.timestamp
-            })
-        );
+        // Update yieldPerToken based on new deposit
+        if ($.totalAmountSeconds > 0) {
+            $.yieldPerTokenStored += currencyTokenAmount.mulDiv(SCALE, $.totalAmountSeconds);
+        }
 
+        $.lastDepositTimestamp = block.timestamp;
         $.currencyToken.safeTransferFrom(_msgSender(), address(this), currencyTokenAmount);
-
         emit Deposited(_msgSender(), currencyTokenAmount);
     }
 
@@ -265,20 +247,8 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     /// @notice State of a holder of the YieldDistributionToken
     function getUserState(
         address account
-    ) external view returns (UserState memory) {
-        return _getYieldDistributionTokenStorage().userStates[account];
-    }
-
-    /// @notice Deposit at a given index
-    function getDeposit(
-        uint256 index
-    ) external view returns (Deposit memory) {
-        return _getYieldDistributionTokenStorage().deposits[index];
-    }
-
-    /// @notice All deposits made into the YieldDistributionToken
-    function getDeposits() external view returns (Deposit[] memory) {
-        return _getYieldDistributionTokenStorage().deposits;
+    ) external view returns (uint256 lastUpdate) {
+        return _getYieldDistributionTokenStorage().lastUpdate[account];
     }
 
     // Permissionless Functions
@@ -299,12 +269,11 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
         accrueYield(user);
 
-        UserState storage userState = $.userStates[user];
-        uint256 amountAccrued = userState.yieldAccrued;
-        currencyTokenAmount = amountAccrued - userState.yieldWithdrawn;
+        currencyTokenAmount = $.rewards[user];
 
-        if (currencyTokenAmount != 0) {
-            userState.yieldWithdrawn = amountAccrued;
+        if (currencyTokenAmount > 0) {
+            // Reset rewards before transfer to prevent reentrancy
+            $.rewards[user] = 0;
             currencyToken.safeTransfer(user, currencyTokenAmount);
             emit YieldClaimed(user, currencyTokenAmount);
         }
@@ -321,73 +290,28 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         address user
     ) public {
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
-        UserState memory userState = $.userStates[user];
 
-        uint256 currentDepositIndex = $.deposits.length - 1;
-        uint256 lastDepositIndex = userState.lastDepositIndex;
-        uint256 amountSecondsAccrued;
+        _updateGlobalAmountSeconds();
+        _updateUserYield(user);
 
-        if (lastDepositIndex != currentDepositIndex) {
-            Deposit memory deposit;
+        //emit YieldAccrued(user, $.rewards[user]);
+    }
 
-            // all the deposits up to and including the lastDepositIndex of the user have had their yield accrued, if
-            // any
-            // the loop iterates through all the remaining deposits and accrues yield from them, if any should be
-            // accrued
-            // all variables in `userState` are updated until `lastDepositIndex`
-            while (lastDepositIndex != currentDepositIndex) {
-                ++lastDepositIndex;
+    function _updateUserYield(
+        address user
+    ) internal {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
 
-                deposit = $.deposits[lastDepositIndex];
-
-                amountSecondsAccrued = balanceOf(user) * (deposit.timestamp - userState.lastUpdate);
-
-                userState.amountSeconds += amountSecondsAccrued;
-
-                if (userState.amountSeconds > userState.amountSecondsDeduction) {
-                    userState.yieldAccrued += deposit.scaledCurrencyTokenPerAmountSecond.mulDiv(
-                        userState.amountSeconds - userState.amountSecondsDeduction, SCALE
-                    );
-
-                    // the `amountSecondsDeduction` is updated to the value of `amountSeconds`
-                    // of the last yield accrual - therefore for the current yield accrual, it is updated
-                    // to the current value of `amountSeconds`, along with `lastUpdate` and `lastDepositIndex`
-                    // to avoid double counting yield
-                    userState.amountSecondsDeduction = userState.amountSeconds;
-                    userState.lastUpdate = deposit.timestamp;
-                    userState.lastDepositIndex = lastDepositIndex;
-                }
-
-                // if amountSecondsAccrued is 0, then the either the balance of the user has been 0 for the entire
-                // deposit
-                // of the deposit timestamp is equal to the users last update, meaning yield has already been accrued
-                // the check ensures that the process terminates early if there are no more deposits from which to
-                // accrue yield
-                if (amountSecondsAccrued == 0) {
-                    userState.lastDepositIndex = currentDepositIndex;
-                    break;
-                }
-
-                // if user has a lot of deposits to accrueYield for, 
-                // we break out of the loop here instead of reverting 
-                // when gas gets too low.
-                if (gasleft() < 100_000) {
-                    break;
-                }
-            }
-
-            // at this stage, the `userState` along with any accrued rewards, has been updated until the current deposit
-            // index
-            $.userStates[user] = userState;
-
-            // TODO: do we emit the portion of yield accrued from this action, or the entirey of the yield accrued?
-            emit YieldAccrued(user, userState.yieldAccrued);
+        uint256 userAmountSeconds = balanceOf(user) * (block.timestamp - $.lastUpdate[user]);
+        if (userAmountSeconds > 0) {
+            uint256 yieldDelta = userAmountSeconds.mulDiv($.yieldPerTokenStored - $.userYieldPerTokenPaid[user], SCALE);
+            $.rewards[user] += yieldDelta;
+            // Emit event with the delta amount instead of total rewards
+            emit YieldAccrued(user, yieldDelta);
         }
 
-        // only update this if we didn't break out of the loop early b/c of gas limit.
-        if (lastDepositIndex == currentDepositIndex) {
-            _updateUserAmountSeconds(user);
-        }
+        $.userYieldPerTokenPaid[user] = $.yieldPerTokenStored;
+        $.lastUpdate[user] = block.timestamp;
     }
 
 }
