@@ -12,11 +12,15 @@ contract MockSmartWallet is ISmartWallet {
     function test() public { }
 
     // Implementing ISmartWallet functions
-    function getBalanceLocked(IAssetToken token) external view override returns (uint256) {
+    function getBalanceLocked(
+        IAssetToken token
+    ) external view override returns (uint256) {
         return lockedBalances[token];
     }
 
-    function claimAndRedistributeYield(IAssetToken token) external override {
+    function claimAndRedistributeYield(
+        IAssetToken token
+    ) external override {
         // For testing purposes, we'll simulate claiming yield
         token.claimYield(address(this));
     }
@@ -43,18 +47,24 @@ contract MockSmartWallet is ISmartWallet {
         console.log("Amount:", currencyTokenAmount);
     }
 
-    function upgrade(address userWallet) external override {
+    function upgrade(
+        address userWallet
+    ) external override {
         // Mock implementation
     }
 
     // Implementing ISignedOperations functions
 
-    function isNonceUsed(bytes32 nonce) external view override returns (bool used) {
+    function isNonceUsed(
+        bytes32 nonce
+    ) external view override returns (bool used) {
         // Mock implementation
         return false;
     }
 
-    function cancelSignedOperations(bytes32 nonce) external override {
+    function cancelSignedOperations(
+        bytes32 nonce
+    ) external override {
         // Mock implementation
     }
 

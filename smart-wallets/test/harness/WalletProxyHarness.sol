@@ -6,7 +6,9 @@ import { WalletProxy } from "../../src/WalletProxy.sol";
 
 contract WalletProxyHarness is WalletProxy {
 
-    constructor(WalletFactory walletFactory_) WalletProxy(walletFactory_) { }
+    constructor(
+        WalletFactory walletFactory_
+    ) WalletProxy(walletFactory_) { }
 
     function exposed_implementation() external view returns (address impl) {
         return _implementation();

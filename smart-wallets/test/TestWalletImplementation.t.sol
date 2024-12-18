@@ -24,7 +24,7 @@ contract TestWalletImplementationTest is Test {
     address constant EMPTY_ADDRESS = 0x14E90063Fb9d5F9a2b0AB941679F105C1A597C7C;
     address constant WALLET_FACTORY_ADDRESS = 0xB8d58677E8A51C84a42a3F98971bA577d4ed1b88;
     address constant WALLET_PROXY_ADDRESS = 0x97C345048Fa4D59eCB03c3C67c9De1916Cbb0857;
-    
+
     TestWalletImplementation testWalletImplementation;
 
     // small hack to be excluded from coverage report
