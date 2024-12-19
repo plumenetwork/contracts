@@ -27,8 +27,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     struct AssetTokenStorage {
         /// @dev Total value of all circulating AssetTokens
         uint256 totalValue;
-        /// @dev Whitelist of users that are allowed to hold AssetTokens
-        address[] whitelist;
         /// @dev Mapping of whitelisted users
         mapping(address user => bool whitelisted) isWhitelisted;
         /// @dev List of all users that have ever held AssetTokens
@@ -90,6 +88,13 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     error AddressNotWhitelisted(address user);
 
+    /**
+     * @notice Indicates holder status change event
+     * @param holder Address of Holder
+     * @param isHolder true when becomes holder, false when stops being holder
+     */
+    event HolderStatusChanged(address indexed holder, bool isHolder);
+
     // Constructor
 
     /**
@@ -125,7 +130,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             if (owner == address(0)) {
                 revert InvalidAddress();
             }
-            $.whitelist.push(owner);
             $.isWhitelisted[owner] = true;
             emit AddressAddedToWhitelist(owner);
         }
@@ -157,11 +161,19 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             if (getBalanceAvailable(from) < value) {
                 revert InsufficientBalance(from);
             }
+
+            if (balanceOf(from) == value) {
+                // Will have zero balance after transfer
+                emit HolderStatusChanged(from, false);
+            }
         }
 
-        if (!$.hasHeld[to]) {
-            $.holders.push(to);
-            $.hasHeld[to] = true;
+        if (to != address(0)) {
+            // Check if to address will become a new holder
+            if (balanceOf(to) == 0) {
+                // Currently has zero balance
+                emit HolderStatusChanged(to, true);
+            }
         }
 
         super._update(from, to, value);
@@ -196,7 +208,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             if ($.isWhitelisted[user]) {
                 revert AddressAlreadyWhitelisted(user);
             }
-            $.whitelist.push(user);
             $.isWhitelisted[user] = true;
             emit AddressAddedToWhitelist(user);
         }
@@ -218,15 +229,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         if (isWhitelistEnabled) {
             if (!$.isWhitelisted[user]) {
                 revert AddressNotWhitelisted(user);
-            }
-            address[] storage whitelist = $.whitelist;
-            uint256 length = whitelist.length;
-            for (uint256 i = 0; i < length; ++i) {
-                if (whitelist[i] == user) {
-                    whitelist[i] = whitelist[length - 1];
-                    whitelist.pop();
-                    break;
-                }
             }
             $.isWhitelisted[user] = false;
             emit AddressRemovedFromWhitelist(user);
@@ -278,11 +280,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     /// @notice Total value of all circulating AssetTokens
     function getTotalValue() external view returns (uint256) {
         return _getAssetTokenStorage().totalValue;
-    }
-
-    /// @notice Whitelist of users that are allowed to hold AssetTokens
-    function getWhitelist() external view returns (address[] memory) {
-        return _getAssetTokenStorage().whitelist;
     }
 
     /**
@@ -338,64 +335,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             uint256 lockedBalance = abi.decode(data, (uint256));
             balanceAvailable -= lockedBalance;
         }
-    }
-
-    /// @notice Total yield distributed to all AssetTokens for all users
-    function totalYield() public view returns (uint256 amount) {
-        AssetTokenStorage storage $ = _getAssetTokenStorage();
-        uint256 length = $.holders.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().userStates[$.holders[i]].yieldAccrued;
-        }
-    }
-
-    /// @notice Claimed yield across all AssetTokens for all users
-    function claimedYield() public view returns (uint256 amount) {
-        AssetTokenStorage storage $ = _getAssetTokenStorage();
-        address[] storage holders = $.holders;
-        uint256 length = holders.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().userStates[$.holders[i]].yieldWithdrawn;
-        }
-    }
-
-    /// @notice Unclaimed yield across all AssetTokens for all users
-    function unclaimedYield() external view returns (uint256 amount) {
-        return totalYield() - claimedYield();
-    }
-
-    /**
-     * @notice Total yield distributed to a specific user
-     * @param user Address of the user for which to get the total yield
-     * @return amount Total yield distributed to the user
-     */
-    function totalYield(
-        address user
-    ) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().userStates[user].yieldAccrued;
-    }
-
-    /**
-     * @notice Amount of yield that a specific user has claimed
-     * @param user Address of the user for which to get the claimed yield
-     * @return amount Amount of yield that the user has claimed
-     */
-    function claimedYield(
-        address user
-    ) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().userStates[user].yieldWithdrawn;
-    }
-
-    /**
-     * @notice Amount of yield that a specific user has not yet claimed
-     * @param user Address of the user for which to get the unclaimed yield
-     * @return amount Amount of yield that the user has not yet claimed
-     */
-    function unclaimedYield(
-        address user
-    ) external view returns (uint256 amount) {
-        UserState memory userState = _getYieldDistributionTokenStorage().userStates[user];
-        return userState.yieldAccrued - userState.yieldWithdrawn;
     }
 
 }
