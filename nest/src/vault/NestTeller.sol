@@ -4,6 +4,12 @@ pragma solidity ^0.8.25;
 import { MultiChainLayerZeroTellerWithMultiAssetSupport } from "@nucleus-boring-vault/base/Roles/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
+/**
+ * @title NestTeller
+ * @notice Teller implementation for the Nest vault
+ * @dev A Teller that only allows deposits of a single `asset` that is
+ * configured.
+ */
 contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
 
     // Libraries
@@ -13,7 +19,7 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
     // Public State
 
     address public asset;
-    uint256 public minimumMintPercentage = _minimumMintPercentage;
+    uint256 public minimumMintPercentage; // Must be 4 decimals i.e. 9999 = 99.99%
 
     // Errors
 
@@ -70,16 +76,16 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
         if (receiver != msg.sender) {
             revert InvalidReceiver();
         }
-        // Ensure controller is msg.sender
         if (controller != msg.sender) {
             revert InvalidController();
         }
 
         shares = deposit(
-            IERC20(this.asset),
+            IERC20(asset),
             assets,
-            depositAmount.mulDivDown(this.minimumMintPercentage, 100)
+            assets.mulDivDown(minimumMintPercentage, 10000)
         );
+
         emit Deposit(msg.sender, receiver, assets, shares);
         return shares;
     }
