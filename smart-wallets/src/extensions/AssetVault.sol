@@ -363,49 +363,62 @@ contract AssetVault is WalletUtils, IAssetVault {
     */
 
     function acceptYieldAllowance(IAssetToken assetToken, uint256 amount, uint256 expiration) external {
+        AssetVaultStorage storage $ = _getAssetVaultStorage();
+        address beneficiary = msg.sender;
+        Yield storage allowance = $.yieldAllowances[assetToken][beneficiary];
+
         if (amount == 0) {
             revert ZeroAmount();
         }
         if (expiration <= block.timestamp) {
             revert InvalidExpiration(expiration, block.timestamp);
         }
-
-        AssetVaultStorage storage s = _getAssetVaultStorage();
-        address beneficiary = msg.sender;
-
-        Yield storage allowance = s.yieldAllowances[assetToken][beneficiary];
-        if (allowance.amount < amount) {
-            //revert InsufficientAllowance(assetToken, beneficiary, allowance.amount, amount);
-            revert InsufficientYieldAllowance(assetToken, beneficiary, allowance.amount, amount);
-        }
         if (allowance.expiration != expiration) {
             revert MismatchedExpiration(expiration, allowance.expiration);
         }
-
-        // Check if owner has sufficient balance available
+        if (allowance.amount < amount) {
+            revert InsufficientYieldAllowance(assetToken, beneficiary, allowance.amount, amount);
+        }
         if (assetToken.getBalanceAvailable(wallet) < amount) {
             revert InsufficientBalance(assetToken, amount);
         }
 
-        // Update allowance
         allowance.amount -= amount;
 
-        // Create new distribution node
-        YieldDistributionListItem storage newDistribution = s.yieldDistributions[assetToken];
-        YieldDistributionListItem storage existingDistribution = newDistribution;
+        // Either update the existing distribution with the same expiration or append a new one
+        YieldDistributionListItem storage distribution = $.yieldDistributions[assetToken];
 
-        // If there's an existing distribution, create a new node
-        if (existingDistribution.yield.amount > 0) {
-            newDistribution.next.push();
-            newDistribution = newDistribution.next[newDistribution.next.length - 1];
+        // Handle first distribution case
+        if (distribution.yield.amount == 0) {
+            distribution.beneficiary = beneficiary;
+            distribution.yield.amount = amount;
+            distribution.yield.expiration = expiration;
+            emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
+            return;
         }
 
-        // Set the new distribution values
-        newDistribution.yield.amount = amount;
-        newDistribution.yield.expiration = expiration;
-        newDistribution.beneficiary = beneficiary;
+        // Look for existing distribution with same beneficiary and expiration
+        while (true) {
+            if (distribution.beneficiary == beneficiary && distribution.yield.expiration == expiration) {
+                distribution.yield.amount += amount;
+                emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
+                return;
+            }
 
-        emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
+            // If there's a next distribution, move to it
+            if (distribution.next.length > 0) {
+                distribution = distribution.next[0];
+            } else {
+                // No next distribution, create new one
+                distribution.next.push();
+                YieldDistributionListItem storage newDistribution = distribution.next[0];
+                newDistribution.beneficiary = beneficiary;
+                newDistribution.yield.amount = amount;
+                newDistribution.yield.expiration = expiration;
+                emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
+                return;
+            }
+        }
     }
 
     /**
@@ -498,34 +511,45 @@ contract AssetVault is WalletUtils, IAssetVault {
         IAssetToken assetToken
     ) external {
         uint256 amountCleared = 0;
+        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
 
         // Iterate through the list and delete all expired yield distributions
-        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
         while (distribution.yield.amount > 0) {
-            if (distribution.next.length == 0) {
-                // This is the last distribution
-                if (distribution.yield.expiration <= block.timestamp) {
-                    amountCleared += distribution.yield.amount;
-                    distribution.yield.amount = 0; // Clear the distribution
-                }
-                break;
-            }
-
-            YieldDistributionListItem storage nextDistribution = distribution.next[0];
-            if (distribution.yield.expiration <= block.timestamp) {
-                amountCleared += distribution.yield.amount;
-                distribution.beneficiary = nextDistribution.beneficiary;
-                distribution.yield = nextDistribution.yield;
-                distribution.next[0] = nextDistribution.next[0];
-            } else {
-                distribution = nextDistribution;
-            }
-
+            // Check if we're about to run out of gas
             if (gasleft() < MAX_GAS_PER_ITERATION) {
                 emit YieldDistributionsCleared(assetToken, amountCleared);
                 return;
             }
+
+            if (distribution.yield.expiration <= block.timestamp) {
+                amountCleared += distribution.yield.amount;
+
+                // If there's a next distribution, copy its data
+                if (distribution.next.length > 0) {
+                    YieldDistributionListItem storage nextDistribution = distribution.next[0];
+                    distribution.beneficiary = nextDistribution.beneficiary;
+                    distribution.yield = nextDistribution.yield;
+
+                    // Clear current next pointer
+                    delete distribution.next;
+
+                    // Copy next pointer only if it exists
+                    if (nextDistribution.next.length > 0) {
+                        distribution.next.push();
+                        distribution.next[0] = nextDistribution.next[0];
+                    }
+                } else {
+                    // No next distribution, just clear current one
+                    distribution.yield.amount = 0;
+                    delete distribution.next;
+                }
+            } else if (distribution.next.length > 0) {
+                distribution = distribution.next[0];
+            } else {
+                break;
+            }
         }
+
         emit YieldDistributionsCleared(assetToken, amountCleared);
     }
 
