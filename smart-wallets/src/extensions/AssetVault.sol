@@ -250,6 +250,11 @@ contract AssetVault is WalletUtils, IAssetVault {
 
         // Iterate through the list and transfer yield to the beneficiary for each yield distribution
         YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
+
+        if (distribution.yield.amount == 0) {
+            return; // No distributions to process
+        }
+
         uint256 amountLocked = distribution.yield.amount;
         while (amountLocked > 0) {
             if (distribution.yield.expiration > block.timestamp) {
@@ -267,6 +272,10 @@ contract AssetVault is WalletUtils, IAssetVault {
                     revert SmartWalletCallFailed(wallet);
                 }
                 emit YieldRedistributed(assetToken, distribution.beneficiary, currencyToken, yieldShare);
+            }
+
+            if (distribution.next.length == 0) {
+                break;
             }
 
             distribution = distribution.next[0];
@@ -304,6 +313,8 @@ contract AssetVault is WalletUtils, IAssetVault {
      * @param amount Amount of AssetTokens included in this yield allowance
      * @param expiration Timestamp at which the yield expires
      */
+
+    /*
     function acceptYieldAllowance(IAssetToken assetToken, uint256 amount, uint256 expiration) external {
         AssetVaultStorage storage $ = _getAssetVaultStorage();
         address beneficiary = msg.sender;
@@ -346,6 +357,53 @@ contract AssetVault is WalletUtils, IAssetVault {
         distribution.beneficiary = beneficiary;
         distribution.yield.amount = amount;
         distribution.yield.expiration = expiration;
+
+        emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
+    }
+    */
+
+    function acceptYieldAllowance(IAssetToken assetToken, uint256 amount, uint256 expiration) external {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+        if (expiration <= block.timestamp) {
+            revert InvalidExpiration(expiration, block.timestamp);
+        }
+
+        AssetVaultStorage storage s = _getAssetVaultStorage();
+        address beneficiary = msg.sender;
+
+        Yield storage allowance = s.yieldAllowances[assetToken][beneficiary];
+        if (allowance.amount < amount) {
+            //revert InsufficientAllowance(assetToken, beneficiary, allowance.amount, amount);
+            revert InsufficientYieldAllowance(assetToken, beneficiary, allowance.amount, amount);
+        }
+        if (allowance.expiration != expiration) {
+            revert MismatchedExpiration(expiration, allowance.expiration);
+        }
+
+        // Check if owner has sufficient balance available
+        if (assetToken.getBalanceAvailable(wallet) < amount) {
+            revert InsufficientBalance(assetToken, amount);
+        }
+
+        // Update allowance
+        allowance.amount -= amount;
+
+        // Create new distribution node
+        YieldDistributionListItem storage newDistribution = s.yieldDistributions[assetToken];
+        YieldDistributionListItem storage existingDistribution = newDistribution;
+
+        // If there's an existing distribution, create a new node
+        if (existingDistribution.yield.amount > 0) {
+            newDistribution.next.push();
+            newDistribution = newDistribution.next[newDistribution.next.length - 1];
+        }
+
+        // Set the new distribution values
+        newDistribution.yield.amount = amount;
+        newDistribution.yield.expiration = expiration;
+        newDistribution.beneficiary = beneficiary;
 
         emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
     }
@@ -402,6 +460,33 @@ contract AssetVault is WalletUtils, IAssetVault {
         return amount;
     }
 
+    function getYieldAllowance(
+        IAssetToken assetToken,
+        address beneficiary
+    ) external view returns (uint256 amount, uint256 expiration) {
+        Yield storage allowance = _getAssetVaultStorage().yieldAllowances[assetToken][beneficiary];
+        return (allowance.amount, allowance.expiration);
+    }
+
+    // Optional: Add this function to help debug the yield distribution
+    function getYieldDistribution(
+        IAssetToken assetToken,
+        address beneficiary,
+        uint256 expiration
+    ) external view returns (uint256 amount, bool found) {
+        YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
+        while (distribution.yield.amount > 0) {
+            if (distribution.beneficiary == beneficiary && distribution.yield.expiration == expiration) {
+                return (distribution.yield.amount, true);
+            }
+            if (distribution.next.length == 0) {
+                break;
+            }
+            distribution = distribution.next[0];
+        }
+        return (0, false);
+    }
+
     /**
      * @notice Clear expired yield distributions from the linked list
      * @dev Anyone can call this function to free up unused storage for gas refunds.
@@ -417,6 +502,15 @@ contract AssetVault is WalletUtils, IAssetVault {
         // Iterate through the list and delete all expired yield distributions
         YieldDistributionListItem storage distribution = _getAssetVaultStorage().yieldDistributions[assetToken];
         while (distribution.yield.amount > 0) {
+            if (distribution.next.length == 0) {
+                // This is the last distribution
+                if (distribution.yield.expiration <= block.timestamp) {
+                    amountCleared += distribution.yield.amount;
+                    distribution.yield.amount = 0; // Clear the distribution
+                }
+                break;
+            }
+
             YieldDistributionListItem storage nextDistribution = distribution.next[0];
             if (distribution.yield.expiration <= block.timestamp) {
                 amountCleared += distribution.yield.amount;
