@@ -314,53 +314,7 @@ contract AssetVault is WalletUtils, IAssetVault {
      * @param expiration Timestamp at which the yield expires
      */
 
-    /*
-    function acceptYieldAllowance(IAssetToken assetToken, uint256 amount, uint256 expiration) external {
-        AssetVaultStorage storage $ = _getAssetVaultStorage();
-        address beneficiary = msg.sender;
-        Yield storage allowance = $.yieldAllowances[assetToken][beneficiary];
-
-        if (amount == 0) {
-            revert ZeroAmount();
-        }
-        if (expiration <= block.timestamp) {
-            revert InvalidExpiration(expiration, block.timestamp);
-        }
-        if (allowance.expiration != expiration) {
-            revert MismatchedExpiration(expiration, allowance.expiration);
-        }
-        if (allowance.amount < amount) {
-            revert InsufficientYieldAllowance(assetToken, beneficiary, allowance.amount, amount);
-        }
-        if (assetToken.getBalanceAvailable(wallet) < amount) {
-            revert InsufficientBalance(assetToken, amount);
-        }
-
-        allowance.amount -= amount;
-
-        // Either update the existing distribution with the same expiration or append a new one
-        YieldDistributionListItem storage distribution = $.yieldDistributions[assetToken];
-        while (true) {
-            if (distribution.beneficiary == beneficiary && distribution.yield.expiration == expiration) {
-                distribution.yield.amount += amount;
-                emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
-                return;
-            }
-            if (distribution.next.length > 0) {
-                distribution = distribution.next[0];
-            } else {
-                distribution.next.push();
-                distribution = distribution.next[0];
-                break;
-            }
-        }
-        distribution.beneficiary = beneficiary;
-        distribution.yield.amount = amount;
-        distribution.yield.expiration = expiration;
-
-        emit YieldDistributionCreated(assetToken, beneficiary, amount, expiration);
-    }
-    */
+   
 
     function acceptYieldAllowance(IAssetToken assetToken, uint256 amount, uint256 expiration) external {
         AssetVaultStorage storage $ = _getAssetVaultStorage();
