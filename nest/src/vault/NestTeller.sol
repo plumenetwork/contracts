@@ -6,10 +6,20 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
 
+    // Libraries
+
     using FixedPointMathLib for uint256;
+
+    // Public State
 
     address public asset;
     uint256 public minimumMintPercentage = _minimumMintPercentage;
+
+    // Errors
+
+    error Unimplemented();
+
+    // Constructor
 
     constructor(
         address _owner,
@@ -28,7 +38,7 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
         minimumMintPercentage = _minimumMintPercentage;
     }
 
-    error Unimplemented();
+    // Admin Setters
 
     function setAsset(address _asset) requiresAuth external {
         asset = _asset;
