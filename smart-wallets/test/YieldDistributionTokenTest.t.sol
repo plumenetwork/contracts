@@ -17,6 +17,8 @@ import "../src/interfaces/IYieldReceiver.sol";
 import "../src/interfaces/IYieldToken.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+import { MockYieldCurrency } from "../src/mocks/MockYieldCurrency.sol";
+
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -28,19 +30,6 @@ error UnauthorizedCall(address invalidUser);
 contract NonSmartWalletContract {
 // This contract does not implement ISmartWallet
 }
-
-// Mock YieldCurrency for testing
-contract MockYieldCurrency is ERC20 {
-
-    constructor() ERC20("Yield Currency", "YC") { }
-
-    function mint(address to, uint256 amount) public {
-        _mint(to, amount);
-    }
-
-}
-
-// Mock DEX contract for testing
 
 contract YieldDistributionTokenTest is Test, WalletUtils {
 
@@ -110,78 +99,5 @@ contract YieldDistributionTokenTest is Test, WalletUtils {
         // Deploy AssetVault
         assetVault = new AssetVault();
     }
-    /*
-    function testTransferBetweenSmartWallets() public {
-    uint256 transferAmount = 50_000 * 1e18;
-
-    vm.startPrank(OWNER);
-    assetToken.mint(user1SmartWallet, 100_000 * 1e18);
-    vm.stopPrank();
-
-    console.log("Before transfer - User1 balance:", assetToken.balanceOf(user1SmartWallet));
-    console.log("Before transfer - User2 balance:", assetToken.balanceOf(user2SmartWallet));
-
-    vm.prank(user1SmartWallet);
-    bool success = assetToken.transfer(user2SmartWallet, transferAmount);
-
-    console.log("Transfer success:", success);
-    console.log("After transfer - User1 balance:", assetToken.balanceOf(user1SmartWallet));
-    console.log("After transfer - User2 balance:", assetToken.balanceOf(user2SmartWallet));
-
-    assertTrue(success, "Transfer should succeed");
-    assertEq(assetToken.balanceOf(user1SmartWallet), 50_000 * 1e18, "User1 balance should decrease");
-    assertEq(assetToken.balanceOf(user2SmartWallet), 250_000 * 1e18, "User2 balance should increase");
-    }
-
-    function testTransferFromSmartWalletToEOA() public {
-    uint256 transferAmount = 50_000 * 1e18;
-
-    vm.startPrank(OWNER);
-    assetToken.mint(user1SmartWallet, 100_000 * 1e18);
-    vm.stopPrank();
-
-    console.log("Before transfer - User1 balance:", assetToken.balanceOf(user1SmartWallet));
-    console.log("Before transfer - User3 balance:", assetToken.balanceOf(user3));
-
-    vm.prank(user1SmartWallet);
-    bool success = assetToken.transfer(user3, transferAmount);
-
-    console.log("Transfer success:", success);
-    console.log("After transfer - User1 balance:", assetToken.balanceOf(user1SmartWallet));
-    console.log("After transfer - User3 balance:", assetToken.balanceOf(user3));
-
-    assertTrue(success, "Transfer should succeed");
-    assertEq(assetToken.balanceOf(user1SmartWallet), 50_000 * 1e18, "User1 balance should decrease");
-    assertEq(assetToken.balanceOf(user3), 100_000 * 1e18, "User3 balance should increase");
-    }
-
-
-    function testSmartWalletYieldClaim() public {
-        uint256 yieldAmount = 1000 * 1e18;
-        uint256 tokenAmount = 10_000 * 1e18;
-
-        vm.startPrank(OWNER);
-        // Mint tokens to the smart wallet
-        assetToken.mint(user1SmartWallet, tokenAmount);
-
-        yieldCurrency.mint(OWNER, yieldAmount);
-        yieldCurrency.approve(address(assetToken), yieldAmount);
-
-        // Advance block timestamp
-        vm.warp(block.timestamp + 1);
-        assetToken.depositYield(yieldAmount);
-        assetToken.accrueYield(OWNER);
-
-        // Advance time to allow yield accrual
-        vm.warp(block.timestamp + 30 days);
-        vm.stopPrank();
-
-        vm.prank(user1SmartWallet);
-        (IERC20 claimedToken, uint256 claimedAmount) = assetToken.claimYield(user1SmartWallet);
-
-        assertGt(claimedAmount, 0, "Claimed yield should be greater than zero");
-        assertEq(address(claimedToken), address(yieldCurrency), "Claimed token should be yield currency");
-    }
-    */
 
 }

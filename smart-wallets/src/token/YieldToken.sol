@@ -200,6 +200,13 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         return super.totalAssets();
     }
 
+    /// @inheritdoc IComponentToken
+    function assetsOf(
+        address owner
+    ) public view override returns (uint256 assets) {
+        return convertToAssets(balanceOf(owner));
+    }
+
     /// @inheritdoc IERC4626
     function convertToShares(
         uint256 assets
