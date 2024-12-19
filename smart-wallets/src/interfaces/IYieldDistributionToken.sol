@@ -85,10 +85,4 @@ interface IYieldDistributionToken is IERC20 {
         address user
     ) external view returns (uint256);
 
-    /**
-     * @notice Get the current yield rate per token
-     * @return Current yield per token rate scaled by SCALE
-     */
-    function currentYieldPerToken() external view returns (uint256);
-
 }

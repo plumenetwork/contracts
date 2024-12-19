@@ -51,6 +51,16 @@ contract MockAssetToken is IAssetToken, ERC20Upgradeable, OwnableUpgradeable {
         return (_currencyToken, 0);
     }
 
+    function pendingYield(
+        address user
+    ) external override view returns (uint256) {
+        // Mock implementation for testing
+    }
+
+    function getTokenURI() external view override returns (string memory) {
+        // Mock implementation for testing
+    }
+
     function getBalanceAvailable(
         address user
     ) external view override returns (uint256) {

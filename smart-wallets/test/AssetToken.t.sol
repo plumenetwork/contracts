@@ -329,16 +329,6 @@ contract AssetTokenTest is Test {
         // You may need to implement a way to verify that the yield was requested
     }
 
-    function test_GetWhitelist() public {
-        vm.startPrank(address(testWalletImplementation));
-        assetTokenWhitelisted.addToWhitelist(user1);
-        assetTokenWhitelisted.addToWhitelist(user2);
-        vm.stopPrank();
-
-        address[] memory whitelist = assetTokenWhitelisted.getWhitelist();
-        assertEq(whitelist.length, 3, "Whitelist should have 3 addresses including the owner");
-    }
-
     function test_GetHoldersAndHasBeenHolder() public {
         vm.startPrank(address(testWalletImplementation));
         assetToken.addToWhitelist(user1);
@@ -502,14 +492,6 @@ contract AssetTokenTest is Test {
         // Test assumptions:
         // 1. Both users should get roughly equal yield (within 1%)
         assertApproxEqRel(amount1, amount2, 0.01e18);
-
-        // 2. The sum of claimed yields should be the unclaimed yield
-        assertEq(assetToken.unclaimedYield(user1), 0); // All claimed for user1
-        assertEq(assetToken.unclaimedYield(user2), 0); // All claimed for user2
-
-        // 3. Individual claims should match user's total yield
-        assertEq(amount1, assetToken.totalYield(user1));
-        assertEq(amount2, assetToken.totalYield(user2));
     }
 
     function test_YieldCalculationsWithMultipleDeposits() public {
@@ -539,26 +521,13 @@ contract AssetTokenTest is Test {
         // Claim yield
         vm.startPrank(user1);
         vm.warp(block.timestamp + 1 days);
-        //console.log(assetToken.totalYield());
-        //console.log(assetToken.claimedYield());
-        assertEq(assetToken.totalYield(), 0);
-        assertEq(assetToken.claimedYield(), 0);
 
         (IERC20 token, uint256 claimedAmount) = assetToken.claimYield(user1);
         vm.stopPrank();
 
         // Test assumptions:
-        // 1. All yield should be claimed
-        assertEq(assetToken.unclaimedYield(user1), 0);
-
-        // 2. Claimed amount should match total yield
-        assertEq(claimedAmount, assetToken.totalYield(user1));
-
-        // 3. Token should be the correct currency token
+        // 1. Token should be the correct currency token
         assertEq(address(token), address(currencyToken));
-
-        // 4. Claimed yield should be the user's total yield
-        assertEq(assetToken.claimedYield(user1), assetToken.totalYield(user1));
     }
 
 }

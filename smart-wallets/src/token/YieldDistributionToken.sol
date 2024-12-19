@@ -46,7 +46,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
         /// @dev rewards
         mapping(address => uint256) rewards;
         /// @dev State for each user
-        //mapping(address user => UserState userState) userStates;
         mapping(address user => uint256) lastUpdate;
     }
 
@@ -67,41 +66,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
 
     // Scale that is used to multiply yield deposits for increased precision
     uint256 private constant SCALE = 1e36;
-
-    // Events
-
-    /**
-     * @notice Emitted when yield is deposited into the YieldDistributionToken
-     * @param user Address of the user who deposited the yield
-     * @param currencyTokenAmount Amount of CurrencyToken deposited as yield
-     */
-    event Deposited(address indexed user, uint256 currencyTokenAmount);
-
-    /**
-     * @notice Emitted when yield is claimed by a user
-     * @param user Address of the user who claimed the yield
-     * @param currencyTokenAmount Amount of CurrencyToken claimed as yield
-     */
-    event YieldClaimed(address indexed user, uint256 currencyTokenAmount);
-
-    /**
-     * @notice Emitted when yield is accrued to a user
-     * @param user Address of the user who accrued the yield
-     * @param currencyTokenAmount Amount of CurrencyToken accrued as yield
-     */
-    event YieldAccrued(address indexed user, uint256 currencyTokenAmount);
-
-    // Errors
-
-    /**
-     * @notice Indicates a failure because the transfer of CurrencyToken failed
-     * @param user Address of the user who tried to transfer CurrencyToken
-     * @param currencyTokenAmount Amount of CurrencyToken that failed to transfer
-     */
-    error TransferFailed(address user, uint256 currencyTokenAmount);
-
-    /// @notice Indicates a failure because a yield deposit is made in the same block as the last one
-    error DepositSameBlock();
 
     // Constructor
 
@@ -184,16 +148,6 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
             $.totalAmountSeconds += totalSupply() * (timestamp - $.lastSupplyUpdate);
             $.lastSupplyUpdate = timestamp;
         }
-    }
-
-    /// @notice Update the amountSeconds for a user
-    /// @param account Address of the user to update the amountSeconds for
-    function _updateUserAmountSeconds(
-        address account
-    ) internal {
-        UserState storage userState = _getYieldDistributionTokenStorage().userStates[account];
-        userState.amountSeconds += balanceOf(account) * (block.timestamp - userState.lastUpdate);
-        userState.lastUpdate = block.timestamp;
     }
 
     /**

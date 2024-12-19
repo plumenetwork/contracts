@@ -130,7 +130,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             if (owner == address(0)) {
                 revert InvalidAddress();
             }
-            $.whitelist.push(owner);
             $.isWhitelisted[owner] = true;
             emit AddressAddedToWhitelist(owner);
         }
@@ -283,11 +282,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         return _getAssetTokenStorage().totalValue;
     }
 
-    /// @notice Whitelist of users that are allowed to hold AssetTokens
-    function getWhitelist() external view returns (address[] memory) {
-        return _getAssetTokenStorage().whitelist;
-    }
-
     /**
      * @notice Check if the user is whitelisted
      * @param user Address of the user to check
@@ -341,64 +335,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
             uint256 lockedBalance = abi.decode(data, (uint256));
             balanceAvailable -= lockedBalance;
         }
-    }
-
-    /// @notice Total yield distributed to all AssetTokens for all users
-    function totalYield() public view returns (uint256 amount) {
-        AssetTokenStorage storage $ = _getAssetTokenStorage();
-        uint256 length = $.holders.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().userStates[$.holders[i]].yieldAccrued;
-        }
-    }
-
-    /// @notice Claimed yield across all AssetTokens for all users
-    function claimedYield() public view returns (uint256 amount) {
-        AssetTokenStorage storage $ = _getAssetTokenStorage();
-        address[] storage holders = $.holders;
-        uint256 length = holders.length;
-        for (uint256 i = 0; i < length; ++i) {
-            amount += _getYieldDistributionTokenStorage().userStates[$.holders[i]].yieldWithdrawn;
-        }
-    }
-
-    /// @notice Unclaimed yield across all AssetTokens for all users
-    function unclaimedYield() external view returns (uint256 amount) {
-        return totalYield() - claimedYield();
-    }
-
-    /**
-     * @notice Total yield distributed to a specific user
-     * @param user Address of the user for which to get the total yield
-     * @return amount Total yield distributed to the user
-     */
-    function totalYield(
-        address user
-    ) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().userStates[user].yieldAccrued;
-    }
-
-    /**
-     * @notice Amount of yield that a specific user has claimed
-     * @param user Address of the user for which to get the claimed yield
-     * @return amount Amount of yield that the user has claimed
-     */
-    function claimedYield(
-        address user
-    ) external view returns (uint256 amount) {
-        return _getYieldDistributionTokenStorage().userStates[user].yieldWithdrawn;
-    }
-
-    /**
-     * @notice Amount of yield that a specific user has not yet claimed
-     * @param user Address of the user for which to get the unclaimed yield
-     * @return amount Amount of yield that the user has not yet claimed
-     */
-    function unclaimedYield(
-        address user
-    ) external view returns (uint256 amount) {
-        UserState memory userState = _getYieldDistributionTokenStorage().userStates[user];
-        return userState.yieldAccrued - userState.yieldWithdrawn;
     }
 
 }

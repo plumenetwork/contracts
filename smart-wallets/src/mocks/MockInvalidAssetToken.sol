@@ -52,6 +52,16 @@ contract MockInvalidAssetToken is IAssetToken {
         address
     ) external pure override { }
 
+    function pendingYield(
+        address user
+    ) external override view returns (uint256) {
+        // Mock implementation for testing
+    }
+
+    function getTokenURI() external view override returns (string memory) {
+        // Mock implementation for testing
+    }
+
     function totalSupply() external pure override returns (uint256) {
         return 0;
     }
