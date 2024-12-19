@@ -28,5 +28,16 @@ interface IAssetVault {
     function clearYieldDistributions(
         IAssetToken assetToken
     ) external;
+    // Debug functions - can be removed later
+    function getYieldAllowance(
+        IAssetToken assetToken,
+        address beneficiary
+    ) external view returns (uint256 amount, uint256 expiration);
+
+    function getYieldDistribution(
+        IAssetToken assetToken,
+        address beneficiary,
+        uint256 expiration
+    ) external view returns (uint256 amount, bool found);
 
 }

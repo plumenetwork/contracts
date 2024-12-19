@@ -123,6 +123,18 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
         $.totalValue = totalValue_;
         isWhitelistEnabled = isWhitelistEnabled_;
+
+        // need to whitelist owner, otherwise reverts in _update
+        if (isWhitelistEnabled_) {
+            // Whitelist the owner
+            if (owner == address(0)) {
+                revert InvalidAddress();
+            }
+            $.whitelist.push(owner);
+            $.isWhitelisted[owner] = true;
+            emit AddressAddedToWhitelist(owner);
+        }
+
         _mint(owner, initialSupply);
     }
 
@@ -138,10 +150,10 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     function _update(address from, address to, uint256 value) internal override(YieldDistributionToken) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
         if (isWhitelistEnabled) {
-            if (!$.isWhitelisted[from]) {
+            if (from != address(0) && !$.isWhitelisted[from]) {
                 revert Unauthorized(from);
             }
-            if (!$.isWhitelisted[to]) {
+            if (to != address(0) && !$.isWhitelisted[to]) {
                 revert Unauthorized(to);
             }
         }
@@ -164,6 +176,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
                 emit HolderStatusChanged(to, true);
             }
         }
+
         super._update(from, to, value);
     }
 
