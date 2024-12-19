@@ -2,11 +2,14 @@
 pragma solidity ^0.8.25;
 
 import { MultiChainLayerZeroTellerWithMultiAssetSupport } from "@nucleus-boring-vault/base/Roles/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
+import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
 
+    using FixedPointMathLib for uint256;
+
     address public asset;
-    uint256 public minimumMint = _minimumMint;
+    uint256 public minimumMintPercentage = _minimumMintPercentage;
 
     constructor(
         address _owner,
@@ -14,7 +17,7 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
         address _accountant,
         address _endpoint,
         address _asset,
-        uint256 _minimumMint
+        uint256 _minimumMintPercentage
     ) MultiChainLayerZeroTellerWithMultiAssetSupport(
         _owner,
         _vault,
@@ -22,7 +25,7 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
         _endpoint
     ) {
         asset = _asset;
-        minimumMint = _minimumMint;
+        minimumMintPercentage = _minimumMintPercentage;
     }
 
     error Unimplemented();
@@ -31,8 +34,8 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
         asset = _asset;
     }
 
-    function setMinimumMint(uint256 _minimumMint) requiresAuth external {
-        minimumMint = _minimumMint;
+    function setMinimumMintPercentage(uint256 _minimumMintPercentage) requiresAuth external {
+        minimumMintPercentage = _minimumMintPercentage;
     }
 
     /**
@@ -63,9 +66,9 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
         }
 
         shares = deposit(
-            IERC20(this.asset), // depositAsset
-            assets, // depositAmount
-            this.minimumMint // minimumMint
+            IERC20(this.asset),
+            assets,
+            depositAmount.mulDivDown(this.minimumMintPercentage, 100)
         );
         emit Deposit(msg.sender, receiver, assets, shares);
         return shares;
