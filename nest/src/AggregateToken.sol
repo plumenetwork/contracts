@@ -47,6 +47,8 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /// @notice Role for the price updater of the AggregateToken
     bytes32 public constant PRICE_UPDATER_ROLE = keccak256("PRICE_UPDATER_ROLE");
+    /// @notice Role for the manager of the AggregateToken
+    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
     // Events
 
@@ -256,14 +258,14 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /**
      * @notice Approve the given ComponentToken to spend the given amount of `asset`
-     * @dev Only the owner can call this function
+     * @dev Only the manager can call this function
      * @param componentToken ComponentToken to approve
      * @param amount Amount of `asset` to approve
      */
     function approveComponentToken(
         IComponentToken componentToken,
         uint256 amount
-    ) external nonReentrant onlyRole(ADMIN_ROLE) {
+    ) external nonReentrant onlyRole(MANAGER_ROLE) {
         // Verify the componentToken is in componentTokenMap
         if (!_getAggregateTokenStorage().componentTokenMap[componentToken]) {
             revert ComponentTokenNotListed(componentToken);
@@ -325,7 +327,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /**
      * @notice Buy ComponentToken using `asset`
-     * @dev Only the owner can call this function, will revert if
+     * @dev Only the manager can call this function, will revert if
      *   the AggregateToken does not have enough `asset` to buy the ComponentToken
      * @param componentToken ComponentToken to buy
      * @param assets Amount of `asset` to pay to receive the ComponentToken
@@ -333,7 +335,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     function buyComponentToken(
         IComponentToken componentToken,
         uint256 assets
-    ) public nonReentrant onlyRole(ADMIN_ROLE) {
+    ) public nonReentrant onlyRole(MANAGER_ROLE) {
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
 
         if (!$.componentTokenMap[componentToken]) {
@@ -348,7 +350,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /**
      * @notice Sell ComponentToken to receive `asset`
-     * @dev Only the owner can call this function, will revert if
+     * @dev Only the manager can call this function, will revert if
      *   the ComponentToken does not have enough `asset` to sell to the AggregateToken
      * @param componentToken ComponentToken to sell
      * @param componentTokenAmount Amount of ComponentToken to sell
@@ -356,37 +358,37 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     function sellComponentToken(
         IComponentToken componentToken,
         uint256 componentTokenAmount
-    ) public nonReentrant onlyRole(ADMIN_ROLE) {
+    ) public nonReentrant onlyRole(MANAGER_ROLE) {
         uint256 assets = componentToken.redeem(componentTokenAmount, address(this), address(this));
         emit ComponentTokenSold(msg.sender, componentToken, componentTokenAmount, assets);
     }
 
     /**
      * @notice Request to buy ComponentToken.
-     * @dev Only the owner can call this function. This function requests the purchase of ComponentToken, which will be
-     * processed later.
+     * @dev Only the manager can call this function. This function requests
+     * the purchase of ComponentToken, which will be processed later.
      * @param componentToken ComponentToken to buy
      * @param assets Amount of `asset` to pay to receive the ComponentToken
      */
     function requestBuyComponentToken(
         IComponentToken componentToken,
         uint256 assets
-    ) public nonReentrant onlyRole(ADMIN_ROLE) {
+    ) public nonReentrant onlyRole(MANAGER_ROLE) {
         uint256 requestId = componentToken.requestDeposit(assets, address(this), address(this));
         emit ComponentTokenBuyRequested(msg.sender, componentToken, assets, requestId);
     }
 
     /**
      * @notice Request to sell ComponentToken.
-     * @dev Only the owner can call this function. This function requests the sale of ComponentToken, which will be
-     * processed later.
+     * @dev Only the manager can call this function. This function requests 
+     * the sale of ComponentToken, which will be processed later.
      * @param componentToken ComponentToken to sell
      * @param componentTokenAmount Amount of ComponentToken to sell
      */
     function requestSellComponentToken(
         IComponentToken componentToken,
         uint256 componentTokenAmount
-    ) public nonReentrant onlyRole(ADMIN_ROLE) {
+    ) public nonReentrant onlyRole(MANAGER_ROLE) {
         uint256 requestId = componentToken.requestRedeem(componentTokenAmount, address(this), address(this));
         emit ComponentTokenSellRequested(msg.sender, componentToken, componentTokenAmount, requestId);
     }
