@@ -56,8 +56,7 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
 
     /// @notice All ComponentToken requests are fungible and all have ID = 0
     uint256 private constant REQUEST_ID = 0;
-    /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
-    uint256 private constant _BASE = 1e18;
+
 
     // Events
 
@@ -84,6 +83,11 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
 
     /// @notice Indicates a failure because the given amount is 0
     error ZeroAmount();
+
+    /// @notice Indicates a failure because the given address is 0
+    /// @param what Description of which address was zero
+    error ZeroAddress(string what);
+
 
     /**
      * @notice Indicates a failure because the sender is not authorized to perform the action
@@ -151,6 +155,16 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         IAssetToken assetToken,
         uint256 initialSupply
     ) YieldDistributionToken(owner, name, symbol, currencyToken, decimals_, tokenURI_) ERC4626(currencyToken) {
+        if (owner == address(0)) {
+            revert ZeroAddress("owner");
+        }
+        if (address(currencyToken) == address(0)) {
+            revert ZeroAddress("currency token");
+        }
+        if (address(assetToken) == address(0)) {
+            revert ZeroAddress("asset token");
+        }
+
         if (currencyToken != assetToken.getCurrencyToken()) {
             revert InvalidCurrencyToken(currencyToken, assetToken.getCurrencyToken());
         }
@@ -310,6 +324,9 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         if (assets == 0) {
             revert ZeroAmount();
         }
+        if (receiver == address(0)) {
+            revert ZeroAddress("receiver");
+        }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
         }
@@ -336,6 +353,9 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     function mint(uint256 shares, address receiver, address controller) public returns (uint256 assets) {
         if (shares == 0) {
             revert ZeroAmount();
+        }
+        if (receiver == address(0)) {
+            revert ZeroAddress("receiver");
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
@@ -405,6 +425,9 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         if (shares == 0) {
             revert ZeroAmount();
         }
+        if (receiver == address(0)) {
+            revert ZeroAddress("receiver");
+        }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
         }
@@ -432,6 +455,9 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     ) public override(ERC4626) returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
+        }
+        if (receiver == address(0)) {
+            revert ZeroAddress("receiver");
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
