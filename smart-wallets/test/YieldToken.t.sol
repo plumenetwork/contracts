@@ -9,16 +9,19 @@ import { ISmartWallet } from "../src/interfaces/ISmartWallet.sol";
 import { YieldToken } from "../src/token/YieldToken.sol";
 
 import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
+
 import { MockInvalidAssetToken } from "../src/mocks/MockInvalidAssetToken.sol";
+import { MockYieldToken } from "../src/mocks/MockYieldToken.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
 
 contract YieldTokenTest is Test {
 
-    YieldToken public yieldToken;
+    //YieldToken public yieldToken;
     ERC20Mock public mockCurrencyToken;
     ERC20Mock public currencyToken;
+    MockYieldToken public yieldToken; // Change type to MockYieldToken
 
     MockAssetToken public mockAssetToken;
     MockAssetToken assetToken;
@@ -59,8 +62,21 @@ contract YieldTokenTest is Test {
             "MockAssetToken not initialized correctly"
         );
 
+        /*
         // Deploy YieldToken
         yieldToken = new YieldToken(
+            owner,
+            "Yield Token",
+            "YLT",
+            mockCurrencyToken,
+            18,
+            "https://example.com/token-uri",
+            mockAssetToken,
+            100 * 10 ** 18 // Initial supply
+        );
+        */
+        // Deploy MockYieldToken instead of YieldToken
+        yieldToken = new MockYieldToken(
             owner,
             "Yield Token",
             "YLT",
@@ -245,6 +261,121 @@ contract YieldTokenTest is Test {
         );
 
         yieldToken.receiveYield(mockAssetToken, differentCurrencyToken, 10 ether);
+    }
+
+    // Add these tests after your existing tests
+
+    function testMintWithZeroAmount() public {
+        vm.expectRevert(YieldToken.ZeroAmount.selector);
+        yieldToken.mint(0, user1, owner);
+    }
+
+    function testMintWithZeroAddressReceiver() public {
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.ZeroAddress.selector, "receiver"));
+        yieldToken.mint(100 ether, address(0), owner);
+    }
+
+    function testMintUnauthorized() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.Unauthorized.selector, user1, owner));
+        yieldToken.mint(100 ether, user2, owner);
+    }
+
+    function testMintSuccess() public {
+        // First need to request deposit
+        uint256 depositAmount = 100 ether;
+        mockCurrencyToken.mint(user1, depositAmount);
+
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), depositAmount);
+        yieldToken.requestDeposit(depositAmount, owner, user1);
+        vm.stopPrank();
+
+        // Simulate notification of deposit
+        uint256 sharesToMint = 100 ether; // In this case 1:1 ratio
+        vm.prank(address(mockAssetToken));
+        yieldToken.notifyDeposit(depositAmount, sharesToMint, owner);
+
+        // Now test the mint
+        uint256 assets = yieldToken.mint(sharesToMint, user1, owner);
+        assertEq(assets, depositAmount);
+        assertEq(yieldToken.balanceOf(user1), sharesToMint);
+    }
+
+    function testRequestDepositWithZeroAmount() public {
+        vm.expectRevert(YieldToken.ZeroAmount.selector);
+        yieldToken.requestDeposit(0, owner, user1);
+    }
+
+    function testRequestDepositUnauthorized() public {
+        vm.prank(user2);
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.Unauthorized.selector, user2, user1));
+        yieldToken.requestDeposit(100 ether, owner, user1);
+    }
+
+    function testRequestDepositSuccess() public {
+        uint256 depositAmount = 100 ether;
+        mockCurrencyToken.mint(user1, depositAmount);
+
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), depositAmount);
+        uint256 requestId = yieldToken.requestDeposit(depositAmount, owner, user1);
+        vm.stopPrank();
+
+        assertEq(requestId, 0); // REQUEST_ID is always 0
+        assertEq(yieldToken.pendingDepositRequest(0, owner), depositAmount);
+    }
+
+    function testDepositWithZeroAmount() public {
+        vm.expectRevert(YieldToken.ZeroAmount.selector);
+        yieldToken.deposit(0, user1, owner);
+    }
+
+    function testDepositWithZeroAddressReceiver() public {
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.ZeroAddress.selector, "receiver"));
+        yieldToken.deposit(100 ether, address(0), owner);
+    }
+
+    function testDepositUnauthorized() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.Unauthorized.selector, user1, owner));
+        yieldToken.deposit(100 ether, user2, owner);
+    }
+
+    function testDepositSuccess() public {
+        uint256 depositAmount = 100 ether;
+        mockCurrencyToken.mint(user1, depositAmount);
+
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), depositAmount);
+        yieldToken.requestDeposit(depositAmount, owner, user1);
+        vm.stopPrank();
+
+        // Simulate notification of deposit
+        uint256 sharesToMint = 100 ether; // 1:1 ratio for simplicity
+        vm.prank(address(mockAssetToken));
+        yieldToken.notifyDeposit(depositAmount, sharesToMint, owner);
+
+        // Test deposit
+        uint256 shares = yieldToken.deposit(depositAmount, user1, owner);
+        assertEq(shares, sharesToMint);
+        assertEq(yieldToken.balanceOf(user1), sharesToMint);
+    }
+
+    function testRedeemWithZeroAmount() public {
+        vm.expectRevert(YieldToken.ZeroAmount.selector);
+        yieldToken.redeem(0, user1, owner);
+    }
+
+    function testRedeemWithZeroAddressReceiver() public {
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.ZeroAddress.selector, "receiver"));
+        yieldToken.redeem(100 ether, address(0), owner);
+    }
+
+    function testRedeemUnauthorized() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.Unauthorized.selector, user1, owner));
+        yieldToken.redeem(100 ether, user2, owner);
     }
 
 }

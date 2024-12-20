@@ -57,7 +57,6 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     /// @notice All ComponentToken requests are fungible and all have ID = 0
     uint256 private constant REQUEST_ID = 0;
 
-
     // Events
 
     /**
@@ -87,7 +86,6 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     /// @notice Indicates a failure because the given address is 0
     /// @param what Description of which address was zero
     error ZeroAddress(string what);
-
 
     /**
      * @notice Indicates a failure because the sender is not authorized to perform the action
