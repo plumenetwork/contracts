@@ -311,14 +311,43 @@ contract AssetTokenTest is Test {
 
     function test_RequestYield() public {
         mockSmartWallet = new SmartWallet();
+        uint256 initialBalance = 100 ether;
+        uint256 yieldAmount = 10 ether;
 
+        // Setup: Mint tokens and deposit yield
         vm.startPrank(address(testWalletImplementation));
+
+        // Setup mock wallet
         assetToken.addToWhitelist(address(mockSmartWallet));
-        assetToken.mint(address(mockSmartWallet), 1000 * 10 ** 18);
+        assetToken.mint(address(mockSmartWallet), initialBalance);
+
+        // Setup yield
+        ERC20Mock(address(currencyToken)).mint(address(testWalletImplementation), yieldAmount);
+        currencyToken.approve(address(assetToken), yieldAmount);
+
+        // Deposit yield
+        vm.warp(block.timestamp + 1); // Advance time to avoid same block deposit
+        assetToken.depositYield(yieldAmount);
+
+        // Advance time to accrue yield
+        vm.warp(block.timestamp + 60); // Advance by 1 minute
         vm.stopPrank();
 
+        // Record balances before yield request
+        uint256 walletBalanceBefore = currencyToken.balanceOf(address(mockSmartWallet));
+
+        // Request yield
+        vm.expectEmit(true, true, true, false); // Don't check data as exact yield amount may vary
+        emit IYieldDistributionToken.YieldAccrued(address(mockSmartWallet), 0); // Amount will be checked separately
         assetToken.requestYield(address(mockSmartWallet));
-        // You may need to implement a way to verify that the yield was requested
+
+        // Verify balances after yield request
+        uint256 walletBalanceAfter = currencyToken.balanceOf(address(mockSmartWallet));
+        uint256 claimedYield = walletBalanceAfter - walletBalanceBefore;
+
+        // Assert balance changes
+        assertGt(claimedYield, 0, "Should have claimed some yield");
+        assertLe(claimedYield, yieldAmount, "Claimed yield should not exceed deposited amount");
     }
 
     function test_GetPricePerToken() public {
@@ -390,16 +419,13 @@ contract AssetTokenTest is Test {
 
         // Test: Successfully remove from whitelist
         vm.expectEmit(true, false, false, false);
-        emit AddressRemovedFromWhitelist(user1);
+        emit AssetToken.AddressRemovedFromWhitelist(user1);
         assetTokenWhitelisted.removeFromWhitelist(user1);
 
         // Verify user is no longer whitelisted
         assertFalse(assetTokenWhitelisted.isAddressWhitelisted(user1));
         vm.stopPrank();
     }
-
-    // Helper function to check if event was emitted
-    event AddressRemovedFromWhitelist(address indexed user);
 
     function test_DepositYield() public {
         uint256 depositAmount = 100 ether;
