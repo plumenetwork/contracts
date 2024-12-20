@@ -177,18 +177,30 @@ contract AssetTokenTest is Test {
         vm.stopPrank();
     }
 
-    //TODO: convert to SmartWalletCall
     function test_GetBalanceAvailable() public {
+        // Create new MockSmartWallet instance
+        MockSmartWallet mockWallet = new MockSmartWallet();
+        uint256 totalBalance = 1000 * 10 ** 18;
+        uint256 lockedBalance = 300 * 10 ** 18;
+
         vm.startPrank(address(testWalletImplementation));
 
-        uint256 balance = 1000 * 10 ** 18;
-        assetToken.addToWhitelist(user1);
-        assetToken.mint(user1, balance);
+        // Setup the mock wallet with tokens
+        assetToken.addToWhitelist(address(mockWallet));
+        assetToken.mint(address(mockWallet), totalBalance);
 
-        assertEq(assetToken.getBalanceAvailable(user1), balance);
+        // Lock some tokens
+        mockWallet.lockTokens(IAssetToken(address(assetToken)), lockedBalance);
         vm.stopPrank();
-        // Note: To fully test getBalanceAvailable, you would need to mock a SmartWallet
-        // contract that implements the ISmartWallet interface and returns a locked balance.
+
+        // Test available balance
+        uint256 availableBalance = assetToken.getBalanceAvailable(address(mockWallet));
+
+        // Available balance should be total balance minus locked balance
+        assertEq(availableBalance, totalBalance - lockedBalance, "Available balance incorrect");
+        assertEq(
+            mockWallet.getBalanceLocked(IAssetToken(address(assetToken))), lockedBalance, "Locked balance incorrect"
+        );
     }
 
     function test_Transfer() public {
