@@ -54,7 +54,7 @@ contract MockInvalidAssetToken is IAssetToken {
 
     function pendingYield(
         address user
-    ) external override view returns (uint256) {
+    ) external view override returns (uint256) {
         // Mock implementation for testing
     }
 
