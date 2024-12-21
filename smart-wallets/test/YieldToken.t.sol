@@ -62,19 +62,6 @@ contract YieldTokenTest is Test {
             "MockAssetToken not initialized correctly"
         );
 
-        /*
-        // Deploy YieldToken
-        yieldToken = new YieldToken(
-            owner,
-            "Yield Token",
-            "YLT",
-            mockCurrencyToken,
-            18,
-            "https://example.com/token-uri",
-            mockAssetToken,
-            100 * 10 ** 18 // Initial supply
-        );
-        */
         // Deploy MockYieldToken instead of YieldToken
         yieldToken = new MockYieldToken(
             owner,
@@ -145,6 +132,7 @@ contract YieldTokenTest is Test {
         // Verify the yield was received
         assertEq(mockCurrencyToken.balanceOf(address(yieldToken)), 10 ether);
     }
+    // TODO: fix this
 
     function testReceiveYieldWithInvalidAssetToken() public {
         invalidAssetToken = new MockInvalidAssetToken();
@@ -155,6 +143,7 @@ contract YieldTokenTest is Test {
         vm.expectRevert();
         yieldToken.receiveYield(invalidAssetToken, currencyToken, 10 ether);
     }
+    // TODO: fix this
 
     function testReceiveYieldWithInvalidCurrencyToken() public {
         //ERC20Mock invalidCurrencyToken = new ERC20Mock();
@@ -165,13 +154,14 @@ contract YieldTokenTest is Test {
         yieldToken.receiveYield(assetToken, invalidCurrencyToken, 10 ether);
     }
 
+    // TODO: fix this
     function testRequestYieldSuccess() public {
         SmartWallet smartWallet = new SmartWallet();
 
         yieldToken.requestYield(address(smartWallet));
-        // Optionally check that the smartWallet function was called properly
     }
 
+    // TODO: fix this
     function testRequestYieldFailure() public {
         address invalidAddress = address(0);
 
