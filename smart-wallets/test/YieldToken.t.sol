@@ -12,8 +12,9 @@ import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
 
 import { MockInvalidAssetToken } from "../src/mocks/MockInvalidAssetToken.sol";
 import { MockYieldToken } from "../src/mocks/MockYieldToken.sol";
+
+import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
 
 contract YieldTokenTest is Test {
@@ -142,7 +143,7 @@ contract YieldTokenTest is Test {
         // Use mockAssetToken instead of assetToken since it's properly initialized
         yieldToken.receiveYield(mockAssetToken, mockCurrencyToken, 10 ether);
 
-        // Add assertions to verify the yield was received
+        // Verify the yield was received
         assertEq(mockCurrencyToken.balanceOf(address(yieldToken)), 10 ether);
     }
 
@@ -263,8 +264,6 @@ contract YieldTokenTest is Test {
         yieldToken.receiveYield(mockAssetToken, differentCurrencyToken, 10 ether);
     }
 
-    // Add these tests after your existing tests
-
     function testMintWithZeroAmount() public {
         vm.expectRevert(YieldToken.ZeroAmount.selector);
         yieldToken.mint(0, user1, owner);
@@ -376,6 +375,173 @@ contract YieldTokenTest is Test {
         vm.prank(user1);
         vm.expectRevert(abi.encodeWithSelector(YieldToken.Unauthorized.selector, user1, owner));
         yieldToken.redeem(100 ether, user2, owner);
+    }
+
+    // Withdraw tests
+    function testWithdrawWithZeroAmount() public {
+        vm.expectRevert(YieldToken.ZeroAmount.selector);
+        yieldToken.withdraw(0, user1, owner);
+    }
+
+    function testWithdrawWithZeroAddressReceiver() public {
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.ZeroAddress.selector, "receiver"));
+        yieldToken.withdraw(100 ether, address(0), owner);
+    }
+
+    function testWithdrawUnauthorized() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.Unauthorized.selector, user1, owner));
+        yieldToken.withdraw(100 ether, user2, owner);
+    }
+
+    function testWithdrawInsufficientRequestBalance() public {
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.InsufficientRequestBalance.selector, owner, 100 ether, 3));
+        yieldToken.withdraw(100 ether, user1, owner);
+    }
+
+    // Redeem tests
+    function testRedeemSuccess() public {
+        // Setup: First mint some tokens
+        uint256 amount = 100 ether;
+        mockCurrencyToken.mint(user1, amount);
+
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), amount);
+        yieldToken.requestDeposit(amount, owner, user1);
+        vm.stopPrank();
+
+        yieldToken.notifyDeposit(amount, amount, owner);
+        yieldToken.deposit(amount, user1, owner);
+
+        // Now test redeem
+        vm.startPrank(user1);
+        yieldToken.requestRedeem(amount, owner, user1);
+        vm.stopPrank();
+
+        yieldToken.notifyRedeem(amount, amount, owner);
+        uint256 redeemedAssets = yieldToken.redeem(amount, user1, owner);
+
+        assertEq(redeemedAssets, amount);
+        assertEq(mockCurrencyToken.balanceOf(user1), amount);
+    }
+
+    // NotifyRedeem tests
+    function testNotifyRedeemWithZeroAmount() public {
+        vm.expectRevert(YieldToken.ZeroAmount.selector);
+        yieldToken.notifyRedeem(100 ether, 0, owner);
+    }
+
+    function testNotifyRedeemInsufficientPendingRequest() public {
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.InsufficientRequestBalance.selector, owner, 100 ether, 2));
+        yieldToken.notifyRedeem(100 ether, 100 ether, owner);
+    }
+
+    // RequestRedeem tests
+    function testRequestRedeemWithZeroAmount() public {
+        vm.expectRevert(YieldToken.ZeroAmount.selector);
+        yieldToken.requestRedeem(0, owner, user1);
+    }
+
+    function testRequestRedeemUnauthorized() public {
+        vm.prank(user2);
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.Unauthorized.selector, user2, user1));
+        yieldToken.requestRedeem(100 ether, owner, user1);
+    }
+
+    // Mint tests for InsufficientRequestBalance
+    function testMintInsufficientRequestBalance() public {
+        uint256 amount = 100 ether;
+
+        // First need to request deposit
+        mockCurrencyToken.mint(user1, amount);
+
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), amount);
+        yieldToken.requestDeposit(amount, owner, user1);
+        vm.stopPrank();
+
+        // Try to mint without having notified the deposit
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                YieldToken.InsufficientRequestBalance.selector,
+                owner,
+                amount,
+                1 // Claimable deposit request type
+            )
+        );
+        yieldToken.mint(amount, user1, owner);
+    }
+    // Deposit tests for InsufficientRequestBalance
+
+    function testDepositInsufficientRequestBalance() public {
+        vm.expectRevert(abi.encodeWithSelector(YieldToken.InsufficientRequestBalance.selector, owner, 100 ether, 1));
+        yieldToken.deposit(100 ether, user1, owner);
+    }
+
+    // NotifyDeposit tests
+    function testNotifyDepositWithZeroAmount() public {
+        vm.expectRevert(YieldToken.ZeroAmount.selector);
+        yieldToken.notifyDeposit(0, 100 ether, owner);
+    }
+
+    // RequestDeposit tests for InsufficientBalance
+    function testRequestDepositInsufficientBalance() public {
+        uint256 amount = 100 ether;
+
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), amount);
+
+        // Expect the ERC20InsufficientBalance error instead
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientBalance.selector,
+                user1,
+                0, // current balance
+                amount
+            )
+        );
+        yieldToken.requestDeposit(amount, owner, user1);
+        vm.stopPrank();
+    }
+
+    // ConvertToAssets tests
+    function testConvertToAssetsWithZeroSupply() public {
+        // Deploy new token with 0 supply
+        MockYieldToken newToken =
+            new MockYieldToken(owner, "Test Token", "TEST", mockCurrencyToken, 18, "uri", mockAssetToken, 0);
+
+        uint256 result = newToken.convertToAssets(100 ether);
+        assertEq(result, 100 ether);
+    }
+
+    // ConvertToShares tests
+    function testConvertToSharesWithZeroSupply() public {
+        // Deploy new token with 0 supply
+        MockYieldToken newToken =
+            new MockYieldToken(owner, "Test Token", "TEST", mockCurrencyToken, 18, "uri", mockAssetToken, 0);
+
+        uint256 result = newToken.convertToShares(100 ether);
+        assertEq(result, 100 ether);
+    }
+
+    function testConvertToSharesWithNonZeroSupply() public {
+        // Initial supply is 100 ether from setUp
+        uint256 result = yieldToken.convertToShares(50 ether);
+        assertEq(result, 50 ether);
+    }
+
+    // AssetsOf tests
+    function testAssetsOf() public {
+        uint256 shares = 100 ether;
+        yieldToken.adminMint(user1, shares);
+
+        uint256 assets = yieldToken.assetsOf(user1);
+        assertEq(assets, yieldToken.convertToAssets(shares));
+    }
+
+    function testAssetsOfWithZeroBalance() public {
+        uint256 assets = yieldToken.assetsOf(user1);
+        assertEq(assets, 0);
     }
 
 }
