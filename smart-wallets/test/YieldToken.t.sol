@@ -19,10 +19,9 @@ import "forge-std/Test.sol";
 
 contract YieldTokenTest is Test {
 
-    //YieldToken public yieldToken;
     ERC20Mock public mockCurrencyToken;
     ERC20Mock public currencyToken;
-    MockYieldToken public yieldToken; // Change type to MockYieldToken
+    MockYieldToken public yieldToken;
 
     MockAssetToken public mockAssetToken;
     MockAssetToken assetToken;
