@@ -11,6 +11,7 @@ import { YieldToken } from "../src/token/YieldToken.sol";
 import { MockAssetToken } from "../src/mocks/MockAssetToken.sol";
 
 import { MockInvalidAssetToken } from "../src/mocks/MockInvalidAssetToken.sol";
+import { MockInvalidSmartWallet } from "../src/mocks/MockInvalidSmartWallet.sol";
 import { MockYieldToken } from "../src/mocks/MockYieldToken.sol";
 
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
@@ -132,50 +133,57 @@ contract YieldTokenTest is Test {
         // Verify the yield was received
         assertEq(mockCurrencyToken.balanceOf(address(yieldToken)), 10 ether);
     }
-    // TODO: fix this
 
     function testReceiveYieldWithInvalidAssetToken() public {
         invalidAssetToken = new MockInvalidAssetToken();
 
-        //vm.expectRevert(abi.encodeWithSelector(YieldToken.InvalidAssetToken.selector, address(invalidAssetToken),
-        // address(assetToken)));
-
-        vm.expectRevert();
-        yieldToken.receiveYield(invalidAssetToken, currencyToken, 10 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                YieldToken.InvalidAssetToken.selector, address(invalidAssetToken), address(mockAssetToken)
+            )
+        );
+        yieldToken.receiveYield(invalidAssetToken, mockCurrencyToken, 10 ether);
     }
-    // TODO: fix this
 
     function testReceiveYieldWithInvalidCurrencyToken() public {
-        //ERC20Mock invalidCurrencyToken = new ERC20Mock();
+        invalidCurrencyToken = new ERC20Mock();
 
-        // vm.expectRevert(abi.encodeWithSelector(YieldToken.InvalidCurrencyToken.selector,
-        // address(invalidCurrencyToken),address(currencyToken)));
-        vm.expectRevert();
-        yieldToken.receiveYield(assetToken, invalidCurrencyToken, 10 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                YieldToken.InvalidCurrencyToken.selector,
+                address(invalidCurrencyToken),
+                address(mockCurrencyToken) // Use mockCurrencyToken since it's the one initialized in setUp
+            )
+        );
+        yieldToken.receiveYield(mockAssetToken, invalidCurrencyToken, 10 ether);
     }
 
-    // TODO: fix this
     function testRequestYieldSuccess() public {
         SmartWallet smartWallet = new SmartWallet();
 
+        // Get initial state
+        address vaultBefore = address(smartWallet.getAssetVault());
+
+        // Call requestYield
         yieldToken.requestYield(address(smartWallet));
+
+        // Verify the smart wallet received the request:
+        // 1. AssetVault should be created if it didn't exist
+        address vaultAfter = address(smartWallet.getAssetVault());
+        assertTrue(vaultAfter != address(0));
+        if (vaultBefore == address(0)) {
+            assertTrue(vaultAfter != vaultBefore);
+        }
     }
 
-    // TODO: fix this
     function testRequestYieldFailure() public {
-        address invalidAddress = address(0);
+        // Deploy an invalid smart wallet that doesn't implement the interface
+        MockInvalidSmartWallet invalidWallet = new MockInvalidSmartWallet();
 
-        // Expect the correct error
-        vm.expectRevert(abi.encodeWithSelector(WalletUtils.SmartWalletCallFailed.selector, invalidAddress));
+        // Expect the correct error when calling a contract that doesn't implement the interface
+        vm.expectRevert(abi.encodeWithSelector(WalletUtils.SmartWalletCallFailed.selector, address(invalidWallet)));
 
-        // Mock the call to fail
-        vm.mockCallRevert(
-            invalidAddress,
-            abi.encodeWithSelector(ISmartWallet.claimAndRedistributeYield.selector, mockAssetToken),
-            "CallFailed"
-        );
-
-        yieldToken.requestYield(invalidAddress);
+        yieldToken.requestYield(address(invalidWallet));
     }
 
     function testConstructorInvalidCurrencyToken() public {
@@ -388,6 +396,37 @@ contract YieldTokenTest is Test {
         yieldToken.withdraw(100 ether, user1, owner);
     }
 
+    function testWithdrawSuccess() public {
+        uint256 amount = 100 ether;
+
+        // Setup: First mint some tokens and request deposit
+        mockCurrencyToken.mint(user1, amount);
+
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), amount);
+        yieldToken.requestDeposit(amount, owner, user1);
+        vm.stopPrank();
+
+        // Notify deposit
+        yieldToken.notifyDeposit(amount, amount, owner);
+        yieldToken.deposit(amount, user1, owner);
+
+        // Request redeem
+        vm.prank(user1);
+        yieldToken.requestRedeem(amount, owner, user1);
+
+        // Notify redeem
+        yieldToken.notifyRedeem(amount, amount, owner);
+
+        // Test withdraw
+        uint256 withdrawnAmount = yieldToken.withdraw(amount, user1, owner);
+
+        // Verify the withdrawal
+        assertEq(withdrawnAmount, amount);
+        assertEq(mockCurrencyToken.balanceOf(user1), amount);
+        assertEq(yieldToken.balanceOf(user1), 0);
+    }
+
     // Redeem tests
     function testRedeemSuccess() public {
         // Setup: First mint some tokens
@@ -531,6 +570,85 @@ contract YieldTokenTest is Test {
     function testAssetsOfWithZeroBalance() public {
         uint256 assets = yieldToken.assetsOf(user1);
         assertEq(assets, 0);
+    }
+
+    function testClaimableDepositRequest() public {
+        uint256 amount = 100 ether;
+
+        // Initially should be 0
+        assertEq(yieldToken.claimableDepositRequest(0, owner), 0);
+
+        // Setup a deposit request
+        mockCurrencyToken.mint(user1, amount);
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), amount);
+        yieldToken.requestDeposit(amount, owner, user1);
+        vm.stopPrank();
+
+        // Notify deposit to make it claimable
+        yieldToken.notifyDeposit(amount, amount, owner);
+
+        // Should now show the claimable amount
+        assertEq(yieldToken.claimableDepositRequest(0, owner), amount);
+
+        // After claiming (depositing), should be 0 again
+        yieldToken.deposit(amount, user1, owner);
+        assertEq(yieldToken.claimableDepositRequest(0, owner), 0);
+    }
+
+    function testPendingRedeemRequest() public {
+        uint256 amount = 100 ether;
+
+        // Initially should be 0
+        assertEq(yieldToken.pendingRedeemRequest(0, owner), 0);
+
+        // Setup: First mint some tokens to test with
+        mockCurrencyToken.mint(user1, amount);
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), amount);
+        yieldToken.requestDeposit(amount, owner, user1);
+        vm.stopPrank();
+
+        yieldToken.notifyDeposit(amount, amount, owner);
+        yieldToken.deposit(amount, user1, owner);
+
+        // Request redeem
+        vm.prank(user1);
+        yieldToken.requestRedeem(amount, owner, user1);
+
+        // Should show pending amount
+        assertEq(yieldToken.pendingRedeemRequest(0, owner), amount);
+    }
+
+    function testClaimableRedeemRequest() public {
+        uint256 amount = 100 ether;
+
+        // Initially should be 0
+        assertEq(yieldToken.claimableRedeemRequest(0, owner), 0);
+
+        // Setup: First mint some tokens to test with
+        mockCurrencyToken.mint(user1, amount);
+        vm.startPrank(user1);
+        mockCurrencyToken.approve(address(yieldToken), amount);
+        yieldToken.requestDeposit(amount, owner, user1);
+        vm.stopPrank();
+
+        yieldToken.notifyDeposit(amount, amount, owner);
+        yieldToken.deposit(amount, user1, owner);
+
+        // Request redeem
+        vm.prank(user1);
+        yieldToken.requestRedeem(amount, owner, user1);
+
+        // Notify redeem to make it claimable
+        yieldToken.notifyRedeem(amount, amount, owner);
+
+        // Should show claimable amount
+        assertEq(yieldToken.claimableRedeemRequest(0, owner), amount);
+
+        // After claiming (withdrawing), should be 0 again
+        yieldToken.withdraw(amount, user1, owner);
+        assertEq(yieldToken.claimableRedeemRequest(0, owner), 0);
     }
 
 }
