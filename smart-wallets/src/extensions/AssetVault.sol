@@ -313,9 +313,6 @@ contract AssetVault is WalletUtils, IAssetVault {
      * @param amount Amount of AssetTokens included in this yield allowance
      * @param expiration Timestamp at which the yield expires
      */
-
-   
-
     function acceptYieldAllowance(IAssetToken assetToken, uint256 amount, uint256 expiration) external {
         AssetVaultStorage storage $ = _getAssetVaultStorage();
         address beneficiary = msg.sender;

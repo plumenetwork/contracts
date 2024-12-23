@@ -115,7 +115,9 @@ contract UpgradePUSD is Script {
                 TELLER_ADDRESS,
                 ATOMIC_QUEUE,
                 LENS_ADDRESS,
-                ACCOUNTANT_ADDRESS
+                ACCOUNTANT_ADDRESS,
+                "Plume USD",
+                "pUSD"
             );
 
             // Verify the upgrade

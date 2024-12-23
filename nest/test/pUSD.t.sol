@@ -17,6 +17,7 @@ import { ITeller } from "../src/interfaces/ITeller.sol";
 
 import { MockAccountantWithRateProviders } from "../src/mocks/MockAccountantWithRateProviders.sol";
 import { MockAtomicQueue } from "../src/mocks/MockAtomicQueue.sol";
+import { MockInvalidToken } from "../src/mocks/MockInvalidToken.sol";
 import { MockLens } from "../src/mocks/MockLens.sol";
 import { MockTeller } from "../src/mocks/MockTeller.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
@@ -26,11 +27,6 @@ import { pUSDProxy } from "../src/proxy/pUSDProxy.sol";
 
 import { BoringVaultAdapter } from "../src/token/BoringVaultAdapter.sol";
 import { pUSD } from "../src/token/pUSD.sol";
-
-// Mock contract for testing invalid asset
-contract MockInvalidToken {
-// Deliberately missing functions to make it invalid
-}
 
 contract MockInvalidVault {
 

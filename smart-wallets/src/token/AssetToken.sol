@@ -29,10 +29,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         uint256 totalValue;
         /// @dev Mapping of whitelisted users
         mapping(address user => bool whitelisted) isWhitelisted;
-        /// @dev List of all users that have ever held AssetTokens
-        address[] holders;
-        /// @dev Mapping of all users that have ever held AssetTokens
-        mapping(address user => bool held) hasHeld;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AssetToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -120,6 +116,10 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         uint256 totalValue_,
         bool isWhitelistEnabled_
     ) YieldDistributionToken(owner, name, symbol, currencyToken, decimals_, tokenURI_) {
+        if (address(currencyToken) == address(0)) {
+            revert InvalidAddress();
+        }
+
         AssetTokenStorage storage $ = _getAssetTokenStorage();
         $.totalValue = totalValue_;
         isWhitelistEnabled = isWhitelistEnabled_;
@@ -291,22 +291,6 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
         address user
     ) external view returns (bool isWhitelisted) {
         return _getAssetTokenStorage().isWhitelisted[user];
-    }
-
-    /// @notice List of all users that have ever held AssetTokens
-    function getHolders() external view returns (address[] memory) {
-        return _getAssetTokenStorage().holders;
-    }
-
-    /**
-     * @notice Check if the user has ever held AssetTokens
-     * @param user Address of the user to check
-     * @return held Boolean indicating if the user has ever held AssetTokens
-     */
-    function hasBeenHolder(
-        address user
-    ) external view returns (bool held) {
-        return _getAssetTokenStorage().hasHeld[user];
     }
 
     /// @notice Price of an AssetToken based on its total value and total supply
