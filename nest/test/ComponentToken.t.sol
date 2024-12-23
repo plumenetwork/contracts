@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import {Test} from "forge-std/Test.sol";
-import {ComponentToken} from "../src/ComponentToken.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC7575} from "../src/interfaces/IERC7575.sol";
-import {IComponentToken} from "../src/interfaces/IComponentToken.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import { ComponentToken } from "../src/ComponentToken.sol";
 
-import {MockERC20} from "../src/mocks/MockERC20.sol";
-import {MockComponentToken} from "../src/mocks/MockComponentToken.sol";
+import { IComponentToken } from "../src/interfaces/IComponentToken.sol";
+import { IERC7575 } from "../src/interfaces/IERC7575.sol";
+import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Test } from "forge-std/Test.sol";
 
-
+import { MockComponentToken } from "../src/mocks/MockComponentToken.sol";
+import { MockERC20 } from "../src/mocks/MockERC20.sol";
 
 contract ComponentTokenTest is Test {
+
     MockComponentToken public mockToken;
     MockERC20 public asset;
     address public owner;
@@ -22,39 +22,30 @@ contract ComponentTokenTest is Test {
     address public attacker;
 
     event DepositRequest(
-        address indexed controller,
-        address indexed owner,
-        uint256 indexed requestId,
-        address receiver,
-        uint256 assets
+        address indexed controller, address indexed owner, uint256 indexed requestId, address receiver, uint256 assets
     );
 
     event RedeemRequest(
-        address indexed controller,
-        address indexed owner,
-        uint256 indexed requestId,
-        address receiver,
-        uint256 shares
+        address indexed controller, address indexed owner, uint256 indexed requestId, address receiver, uint256 shares
     );
 
     function setUp() public {
         user = makeAddr("user");
         attacker = makeAddr("attacker");
-        
+
         asset = new MockERC20("Mock Token", "MOCK");
         mockToken = new MockComponentToken();
         mockToken.initialize(address(this), "Component Token", "COMP", IERC20(address(asset)), true, true);
-        
-        asset.mint(address(this), 1000000e18);
+
+        asset.mint(address(this), 1_000_000e18);
         asset.transfer(user, 100e18);
         vm.label(user, "User");
     }
 
-
-  function test_requestDeposit() public {
+    function test_requestDeposit() public {
         vm.startPrank(user);
         asset.approve(address(mockToken), 1e19);
-        
+
         vm.expectEmit(true, true, true, true);
         emit DepositRequest(user, user, 0, user, 1e19);
         mockToken.requestDeposit(1e19, user, user);
@@ -319,4 +310,5 @@ contract ComponentTokenTest is Test {
         assertEq(mockToken.assetsOf(user), 1e19);
     }
     */
+
 }
