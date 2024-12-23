@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { AtomicQueue } from "@nucleus-boring-vault/base/AtomicQueue.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
+
+import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
+import { AtomicQueue } from "@nucleus-boring-vault/base/AtomicQueue.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
 /**
  * @title NestAtomicQueue
  * @notice AtomicQueue implementation for the Nest vault
  * @dev An AtomicQueue that only allows withdraws into a single `asset` that is
  * configured.
  */
+
 contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
 
     using SafeCast for uint256;
@@ -24,7 +26,7 @@ contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
 
     address public vault;
     address public accountant;
-    uint256 public decimals; // Always set to vault decimals 
+    uint256 public decimals; // Always set to vault decimals
     IERC20 public asset;
     uint256 public deadlinePeriod;
     uint256 public pricePercentage; // Must be 4 decimals i.e. 9999 = 99.99%
@@ -52,7 +54,8 @@ contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
         // Create and submit atomic request
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
             deadline: block.timestamp + deadlinePeriod,
-            atomicPrice: accountant.getRateInQuote(asset).mulDivDown(pricePercentage, 10000).toUint88(), // Price per share in terms of asset
+            atomicPrice: accountant.getRateInQuote(asset).mulDivDown(pricePercentage, 10_000).toUint88(), // Price per
+                // share in terms of asset
             offerAmount: uint96(shares),
             inSolve: false
         });
@@ -63,4 +66,5 @@ contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
 
         return REQUEST_ID;
     }
+
 }

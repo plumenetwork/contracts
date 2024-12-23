@@ -11,12 +11,13 @@ import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
  * @dev Implements common functionality for both Teller and AtomicQueue
  */
 abstract contract NestBoringVaultModule is IComponentToken {
+
     using SafeCast for uint256;
 
     // Public State
     address public vault;
     address public accountant;
-    uint256 public decimals; // Always set to vault decimals 
+    uint256 public decimals; // Always set to vault decimals
     IERC20 public asset;
 
     // Errors
@@ -25,11 +26,7 @@ abstract contract NestBoringVaultModule is IComponentToken {
     error Unimplemented();
 
     // Constructor
-    constructor(
-        address _vault,
-        address _accountant,
-        IERC20 _asset
-    ) {
+    constructor(address _vault, address _accountant, IERC20 _asset) {
         vault = _vault;
         accountant = _accountant;
         decimals = _vault.decimals();
@@ -37,16 +34,22 @@ abstract contract NestBoringVaultModule is IComponentToken {
     }
 
     // Admin Setters
-    function setVault(address _vault) requiresAuth external {
+    function setVault(
+        address _vault
+    ) external requiresAuth {
         vault = _vault;
         decimals = _vault.decimals();
     }
 
-    function setAccountant(address _accountant) requiresAuth external {
+    function setAccountant(
+        address _accountant
+    ) external requiresAuth {
         accountant = _accountant;
     }
 
-    function setAsset(IERC20 _asset) requiresAuth external {
+    function setAsset(
+        IERC20 _asset
+    ) external requiresAuth {
         asset = _asset;
     }
 
@@ -63,7 +66,9 @@ abstract contract NestBoringVaultModule is IComponentToken {
         return vault.totalSupply();
     }
 
-    function balanceOf(address owner) public view returns (uint256) {
+    function balanceOf(
+        address owner
+    ) public view returns (uint256) {
         return vault.balanceOf(owner);
     }
 
@@ -71,15 +76,21 @@ abstract contract NestBoringVaultModule is IComponentToken {
         return convertToAssets(vault.totalSupply());
     }
 
-    function assetsOf(address owner) public view returns (uint256) {
+    function assetsOf(
+        address owner
+    ) public view returns (uint256) {
         return convertToAssets(vault.balanceOf(owner));
     }
 
-    function convertToShares(uint256 assets) public view virtual returns (uint256) {
+    function convertToShares(
+        uint256 assets
+    ) public view virtual returns (uint256) {
         return assets.mulDivDown(10 ** decimals, accountant.getRateInQuote(asset));
     }
 
-    function convertToAssets(uint256 shares) public view virtual returns (uint256) {
+    function convertToAssets(
+        uint256 shares
+    ) public view virtual returns (uint256) {
         return shares.mulDivDown(accountant.getRateInQuote(asset), 10 ** decimals);
     }
 
@@ -107,4 +118,5 @@ abstract contract NestBoringVaultModule is IComponentToken {
     function claimableRedeemRequest(uint256 requestId, address controller) public view virtual returns (uint256) {
         revert Unimplemented();
     }
+
 }
