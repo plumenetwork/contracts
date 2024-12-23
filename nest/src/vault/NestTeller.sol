@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { MultiChainLayerZeroTellerWithMultiAssetSupport } from "@nucleus-boring-vault/base/Roles/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
-import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
+import { MultiChainLayerZeroTellerWithMultiAssetSupport } from
+    "@nucleus-boring-vault/base/Roles/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
+import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 /**
  * @title NestTeller
@@ -11,7 +12,7 @@ import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
  * @dev A Teller that only allows deposits of a single `asset` that is
  * configured.
  */
-contract NestTeller is NestBoringVaultModule,MultiChainLayerZeroTellerWithMultiAssetSupport {
+contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMultiAssetSupport {
 
     /**
      * @notice Fulfill a request to buy shares by minting shares to the receiver
@@ -28,13 +29,10 @@ contract NestTeller is NestBoringVaultModule,MultiChainLayerZeroTellerWithMultiA
             revert InvalidController();
         }
 
-        shares = deposit(
-            IERC20(asset),
-            assets,
-            assets.mulDivDown(minimumMintPercentage, 10000)
-        );
+        shares = deposit(IERC20(asset), assets, assets.mulDivDown(minimumMintPercentage, 10_000));
 
         emit Deposit(msg.sender, receiver, assets, shares);
         return shares;
     }
+
 }
