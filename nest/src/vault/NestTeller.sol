@@ -2,9 +2,7 @@
 pragma solidity ^0.8.25;
 
 import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
-import { MultiChainLayerZeroTellerWithMultiAssetSupport } from
-    "@nucleus-boring-vault/base/Roles/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
-import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
+import { MultiChainLayerZeroTellerWithMultiAssetSupport } from "boringvault/base/Roles/crosschain/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
 
 /**
  * @title NestTeller
@@ -13,6 +11,36 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
  * configured.
  */
 contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMultiAssetSupport {
+
+
+
+
+    // Public State
+
+    address public asset;
+    uint256 public minimumMintPercentage; // Must be 4 decimals i.e. 9999 = 99.99%
+
+    // Errors
+
+    error Unimplemented();
+
+
+    constructor(
+        address _owner,
+        address _vault,
+        address _accountant,
+        address _endpoint,
+        address _asset,
+        uint256 _minimumMintPercentage
+    ) MultiChainLayerZeroTellerWithMultiAssetSupport(
+        _owner,
+        _vault,
+        _accountant,
+        _endpoint
+    ) {
+        asset = _asset;
+        minimumMintPercentage = _minimumMintPercentage;
+    }
 
     /**
      * @notice Fulfill a request to buy shares by minting shares to the receiver

@@ -4,7 +4,8 @@ pragma solidity ^0.8.25;
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
 
 import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
-import { AtomicQueue } from "@nucleus-boring-vault/base/AtomicQueue.sol";
+import { AtomicQueue } from "boringvault/atomic-queue/AtomicQueue.sol";
+
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 /**
