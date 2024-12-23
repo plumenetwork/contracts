@@ -37,6 +37,3 @@
 [submodule "nest/lib/solmate"]
 	path = nest/lib/solmate
 	url = https://github.com/transmissions11/solmate
-[submodule "nest/lib/devtools"]
-	path = nest/lib/devtools
-	url = https://github.com/LayerZero-Labs/devtools
