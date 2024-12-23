@@ -380,7 +380,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /**
      * @notice Request to sell ComponentToken.
-     * @dev Only the manager can call this function. This function requests 
+     * @dev Only the manager can call this function. This function requests
      * the sale of ComponentToken, which will be processed later.
      * @param componentToken ComponentToken to sell
      * @param componentTokenAmount Amount of ComponentToken to sell
