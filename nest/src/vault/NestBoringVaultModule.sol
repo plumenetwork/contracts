@@ -4,11 +4,13 @@ pragma solidity ^0.8.25;
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
+import { ERC20 } from "@solmate/tokens/ERC20.sol";
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { Auth, Authority } from "@solmate/auth/Auth.sol";
+import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 /**
  * @title NestBoringVaultModule
@@ -18,6 +20,7 @@ import { Auth, Authority } from "@solmate/auth/Auth.sol";
 abstract contract NestBoringVaultModule is IComponentToken, Auth {
 
     using SafeCast for uint256;
+    using FixedPointMathLib for uint256;
 
     // Public State
     IBoringVault public immutable vaultContract;
@@ -29,25 +32,14 @@ abstract contract NestBoringVaultModule is IComponentToken, Auth {
     error InvalidOwner();
     error InvalidController();
     error Unimplemented();
+    error InvalidReceiver();
 
     // Constructor
-    constructor(
-        address _owner,
-        address _vault,
-        address _accountant,
-        IERC20 _asset
-    ) Auth(_owner, Authority(address(0))) {
+    constructor(address _owner, address _vault, address _accountant, IERC20 _asset) {
         vaultContract = IBoringVault(_vault);
         accountantContract = IAccountantWithRateProviders(_accountant);
         decimals = vaultContract.decimals();
         assetToken = _asset;
-    }
-
-    // Admin Setters
-    function setVault(
-        address _vault
-    ) external requiresAuth {
-        decimals = vaultContract.decimals();
     }
 
     function setAsset(
@@ -70,35 +62,35 @@ abstract contract NestBoringVaultModule is IComponentToken, Auth {
     }
 
     function totalSupply() public view returns (uint256) {
-        return super.vault.totalSupply();
+        return vaultContract.totalSupply();
     }
 
     function balanceOf(
         address owner
     ) public view returns (uint256) {
-        return super.vault.balanceOf(owner);
+        return vaultContract.balanceOf(owner);
     }
 
     function totalAssets() public view returns (uint256) {
-        return convertToAssets(super.vault.totalSupply());
+        return convertToAssets(vaultContract.totalSupply());
     }
 
     function assetsOf(
         address owner
     ) public view returns (uint256) {
-        return convertToAssets(super.vault.balanceOf(owner));
+        return convertToAssets(vaultContract.balanceOf(owner));
     }
 
     function convertToShares(
         uint256 assets
     ) public view virtual returns (uint256) {
-        return assets.mulDivDown(10 ** decimals, super.accountant.getRateInQuote(asset));
+        return assets.mulDivDown(10 ** decimals, accountantContract.getRateInQuote(ERC20(address(assetToken))));
     }
 
     function convertToAssets(
         uint256 shares
     ) public view virtual returns (uint256) {
-        return shares.mulDivDown(super.accountant.getRateInQuote(asset), 10 ** decimals);
+        return shares.mulDivDown(accountantContract.getRateInQuote(ERC20(address(assetToken))), 10 ** decimals);
     }
 
     // Default implementations that can be overridden
