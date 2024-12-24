@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
+import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
+
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import { Auth, Authority } from "@solmate/auth/Auth.sol";
 
 /**
  * @title NestBoringVaultModule
  * @notice Base implementation for Nest vault modules
  * @dev Implements common functionality for both Teller and AtomicQueue
  */
-abstract contract NestBoringVaultModule is IComponentToken {
+abstract contract NestBoringVaultModule is IComponentToken, Auth {
 
     using SafeCast for uint256;
 
     // Public State
-    address public vault;
-    address public accountant;
-    uint256 public decimals; // Always set to vault decimals
-    IERC20 public asset;
+    IBoringVault public immutable vaultContract;
+    IAccountantWithRateProviders public immutable accountantContract;
+    uint256 public immutable decimals;
+    IERC20 public assetToken;
 
     // Errors
     error InvalidOwner();
@@ -26,72 +31,74 @@ abstract contract NestBoringVaultModule is IComponentToken {
     error Unimplemented();
 
     // Constructor
-    constructor(address _vault, address _accountant, IERC20 _asset) {
-        vault = _vault;
-        accountant = _accountant;
-        decimals = _vault.decimals();
-        asset = _asset;
+    constructor(
+        address _owner,
+        address _vault,
+        address _accountant,
+        IERC20 _asset
+    ) Auth(_owner, Authority(address(0))) {
+        vaultContract = IBoringVault(_vault);
+        accountantContract = IAccountantWithRateProviders(_accountant);
+        decimals = vaultContract.decimals();
+        assetToken = _asset;
     }
 
     // Admin Setters
     function setVault(
         address _vault
     ) external requiresAuth {
-        vault = _vault;
-        decimals = _vault.decimals();
-    }
-
-    function setAccountant(
-        address _accountant
-    ) external requiresAuth {
-        accountant = _accountant;
+        decimals = vaultContract.decimals();
     }
 
     function setAsset(
         IERC20 _asset
     ) external requiresAuth {
-        asset = _asset;
+        assetToken = _asset;
     }
 
     // Virtual functions that must be implemented by children
-    function requestRedeem(uint256 shares, address controller, address owner) public virtual returns (uint256);
-    function deposit(uint256 assets, address receiver, address controller) public virtual returns (uint256);
+    function deposit(uint256 assets, address receiver, address controller) public virtual override returns (uint256);
+    function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public virtual override returns (uint256);
 
     // Common implementations
-    function asset() public view returns (address) {
-        return address(asset);
+    function asset() public view virtual override returns (address) {
+        return address(assetToken);
     }
 
     function totalSupply() public view returns (uint256) {
-        return vault.totalSupply();
+        return super.vault.totalSupply();
     }
 
     function balanceOf(
         address owner
     ) public view returns (uint256) {
-        return vault.balanceOf(owner);
+        return super.vault.balanceOf(owner);
     }
 
     function totalAssets() public view returns (uint256) {
-        return convertToAssets(vault.totalSupply());
+        return convertToAssets(super.vault.totalSupply());
     }
 
     function assetsOf(
         address owner
     ) public view returns (uint256) {
-        return convertToAssets(vault.balanceOf(owner));
+        return convertToAssets(super.vault.balanceOf(owner));
     }
 
     function convertToShares(
         uint256 assets
     ) public view virtual returns (uint256) {
-        return assets.mulDivDown(10 ** decimals, accountant.getRateInQuote(asset));
+        return assets.mulDivDown(10 ** decimals, super.accountant.getRateInQuote(asset));
     }
 
     function convertToAssets(
         uint256 shares
     ) public view virtual returns (uint256) {
-        return shares.mulDivDown(accountant.getRateInQuote(asset), 10 ** decimals);
+        return shares.mulDivDown(super.accountant.getRateInQuote(asset), 10 ** decimals);
     }
 
     // Default implementations that can be overridden
