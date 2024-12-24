@@ -9,16 +9,21 @@ import { AtomicQueue } from "@boringvault/src/atomic-queue/AtomicQueue.sol";
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
+import { Auth, Authority } from "@solmate/auth/Auth.sol";
+import { ERC20 } from "@solmate/tokens/ERC20.sol";
+import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
+
 /**
  * @title NestAtomicQueue
  * @notice AtomicQueue implementation for the Nest vault
  * @dev An AtomicQueue that only allows withdraws into a single `asset` that is
  * configured.
  */
-
 contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
 
     using SafeCast for uint256;
+    using FixedPointMathLib for uint256;
 
     // Public State
 
@@ -28,8 +33,9 @@ contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
     // Public State
     uint256 public deadlinePeriod;
     uint256 public pricePercentage; // Must be 4 decimals i.e. 9999 = 99.99%
-
+    IAtomicQueue public immutable atomicQueue;
     // Events
+
     event RequestRedeem(uint256 shares, address controller, address owner);
 
     constructor(
@@ -39,11 +45,14 @@ contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
         IERC20 _asset,
         uint256 _deadlinePeriod,
         uint256 _pricePercentage
-    ) NestBoringVaultModule(_owner, _vault, _accountant, _asset) {
+    )
+        Auth(_owner, Authority(address(0))) // Initialize Auth
+        NestBoringVaultModule(_owner, _vault, _accountant, _asset)
+        AtomicQueue() // AtomicQueue inherits from Auth, so we don't pass parameters here
+    {
         deadlinePeriod = _deadlinePeriod;
         pricePercentage = _pricePercentage;
     }
-
     /**
      * @notice Transfer shares from the owner into the vault and submit a request to redeem assets
      * @param shares Amount of shares to redeem
@@ -51,6 +60,7 @@ contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
      * @param owner Source of the shares to redeem
      * @return requestId Discriminator between non-fungible requests
      */
+
     function requestRedeem(
         uint256 shares,
         address controller,
@@ -68,13 +78,14 @@ contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
             deadline: uint64(block.timestamp + deadlinePeriod),
             atomicPrice: uint88(
-                accountantContract.getRateInQuote(IERC20(address(assetToken))).mulDivDown(pricePercentage, 10_000)
+                accountantContract.getRateInQuote(ERC20(address(assetToken))).mulDivDown(pricePercentage, 10_000)
             ),
             offerAmount: uint96(shares),
             inSolve: false
         });
 
-        super.updateAtomicRequest(IERC20(address(vaultContract)), assetToken, request);
+        //updateAtomicRequest(IERC20(address(vaultContract)), assetToken, request);
+        atomicQueue.updateAtomicRequest(IERC20(address(vaultContract)), assetToken, request);
 
         emit RequestRedeem(shares, controller, owner);
 
