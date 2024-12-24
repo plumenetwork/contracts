@@ -2,7 +2,9 @@
 pragma solidity ^0.8.25;
 
 import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
-import { MultiChainLayerZeroTellerWithMultiAssetSupport } from "boringvault/base/Roles/crosschain/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
+import { MultiChainLayerZeroTellerWithMultiAssetSupport } from
+    "@boringvault/src/base/Roles/crosschain/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title NestTeller
@@ -12,18 +14,10 @@ import { MultiChainLayerZeroTellerWithMultiAssetSupport } from "boringvault/base
  */
 contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMultiAssetSupport {
 
-
-
-
     // Public State
 
     address public asset;
     uint256 public minimumMintPercentage; // Must be 4 decimals i.e. 9999 = 99.99%
-
-    // Errors
-
-    error Unimplemented();
-
 
     constructor(
         address _owner,
@@ -32,12 +26,7 @@ contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMulti
         address _endpoint,
         address _asset,
         uint256 _minimumMintPercentage
-    ) MultiChainLayerZeroTellerWithMultiAssetSupport(
-        _owner,
-        _vault,
-        _accountant,
-        _endpoint
-    ) {
+    ) MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint) {
         asset = _asset;
         minimumMintPercentage = _minimumMintPercentage;
     }
@@ -51,7 +40,7 @@ contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMulti
     function deposit(uint256 assets, address receiver, address controller) public returns (uint256 shares) {
         // Ensure receiver is msg.sender
         if (receiver != msg.sender) {
-            revert InvalidReceiver();
+            revert super.InvalidReceiver();
         }
         if (controller != msg.sender) {
             revert InvalidController();
