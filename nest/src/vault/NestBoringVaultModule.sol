@@ -4,14 +4,13 @@ pragma solidity ^0.8.25;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { Auth, Authority } from "@solmate/auth/Auth.sol";
+import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
-
 
 /**
  * @title NestBoringVaultModule

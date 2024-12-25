@@ -10,10 +10,9 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 import { AtomicQueue } from "@boringvault/src/atomic-queue/AtomicQueue.sol";
 
-import { IComponentToken } from "../interfaces/IComponentToken.sol";
 import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
+import { IComponentToken } from "../interfaces/IComponentToken.sol";
 import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
-
 
 /**
  * @title NestAtomicQueue
