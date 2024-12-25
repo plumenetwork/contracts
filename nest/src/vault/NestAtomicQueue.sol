@@ -92,6 +92,48 @@ contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
         return REQUEST_ID;
     }
 
+  function redeem(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public override returns (uint256 assets) {
+        if (shares == 0) {
+            revert ZeroAmount();
+        }
+        if (msg.sender != controller) {
+            revert Unauthorized(msg.sender, controller);
+        }
+
+        // Get the atomic request for this asset pair
+        IAtomicQueue.AtomicRequest memory request = atomicQueue.getAtomicRequest(IERC20(address(vaultContract)), assetToken);
+        
+        if (request.inSolve) {
+            revert AtomicQueue.RequestInSolve();
+        }
+
+        if (block.timestamp > request.deadline) {
+            revert AtomicQueue.RequestExpired();
+        }
+
+        // Verify the shares match the request
+        if (shares != request.offerAmount) {
+            revert AtomicQueue.InvalidRedeemAmount(shares, request.offerAmount);
+        }
+
+        // Calculate assets to receive based on atomic price
+        assets = uint256(request.offerAmount).mulDivDown(request.atomicPrice, 10 ** decimals);
+        
+        // Clear the request
+        AtomicQueue.deleteAtomicRequest(IERC20(address(vaultContract)), assetToken);
+        
+        // Transfer assets to receiver
+        SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
+
+        emit Withdraw(controller, receiver, controller, assets, shares);
+        return assets;
+    }
+
+
     function deposit(uint256 assets, address receiver, address controller) public override returns (uint256) {
         revert Unimplemented();
     }

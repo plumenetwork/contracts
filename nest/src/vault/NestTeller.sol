@@ -42,6 +42,29 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport, NestBorin
         minimumMintPercentage = _minimumMintPercentage;
     }
 
+    function requestDeposit(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public returns (uint256 requestId) {
+        if (receiver != msg.sender) {
+            revert InvalidReceiver();
+        }
+        if (controller != msg.sender) {
+            revert InvalidController();
+        }
+
+        // Transfer assets to this contract
+        ERC20(address(assetToken)).transferFrom(msg.sender, address(this), assets);
+
+        // Emit event and return request ID
+        emit RequestDeposit(depositNonce++, msg.sender, address(assetToken), assets, block.timestamp);
+        
+        return depositNonce;
+    }
+
+
+
     // This is the IComponentToken deposit implementation
     function deposit(uint256 assets, address receiver, address controller) public override returns (uint256 shares) {
         if (receiver != msg.sender) {
