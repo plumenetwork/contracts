@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
+import { ERC20 } from "@solmate/tokens/ERC20.sol";
+import { Auth, Authority } from "@solmate/auth/Auth.sol";
+import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
+
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
-import { ERC20 } from "@solmate/tokens/ERC20.sol";
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
-import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import { Auth, Authority } from "@solmate/auth/Auth.sol";
-import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 /**
  * @title NestBoringVaultModule
@@ -48,15 +49,13 @@ abstract contract NestBoringVaultModule is IComponentToken, Auth {
         assetToken = _asset;
     }
 
-    // Virtual functions that must be implemented by children
-    function deposit(uint256 assets, address receiver, address controller) public virtual override returns (uint256);
     function requestRedeem(
         uint256 shares,
         address controller,
         address owner
     ) public virtual override returns (uint256);
 
-    // Common implementations
+    /// @notice Address of the `asset` token
     function asset() public view virtual override returns (address) {
         return address(assetToken);
     }
@@ -71,10 +70,22 @@ abstract contract NestBoringVaultModule is IComponentToken, Auth {
         return vaultContract.balanceOf(owner);
     }
 
+    /**
+     * @notice Total value held in the vault
+     * @dev Example ERC20 implementation: return convertToAssets(totalSupply())
+     */
     function totalAssets() public view returns (uint256) {
+        // WARNING: Would only reflect the totalAssets on this single vault, not
+        // including the crosschain vaults.
         return convertToAssets(vaultContract.totalSupply());
     }
 
+    /**
+     * @notice Total value held by the given owner
+     * @dev Example ERC20 implementation: return convertToAssets(balanceOf(owner))
+     * @param owner Address to query the balance of
+     * @return assets Total value held by the owner
+     */
     function assetsOf(
         address owner
     ) public view returns (uint256) {
@@ -98,7 +109,15 @@ abstract contract NestBoringVaultModule is IComponentToken, Auth {
         revert Unimplemented();
     }
 
-    function redeem(uint256 shares, address receiver, address controller) public virtual returns (uint256) {
+    /**
+     * @notice Fulfill a request to redeem assets by transferring assets to the receiver
+     * @param shares Amount of shares that was redeemed by `requestRedeem`
+     * @param receiver Address to receive the assets
+     * @param controller Controller of the request
+     */
+    function redeem(uint256 shares, address receiver, address controller) public returns (uint256 assets) {
+        // Redeem doesn't do anything anymore because as soon as the AtomicQueue
+        // request is processed, the msg.sender will receive their this.asset
         revert Unimplemented();
     }
 

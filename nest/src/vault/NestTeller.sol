@@ -1,24 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
-import { MultiChainLayerZeroTellerWithMultiAssetSupport } from
-    "@boringvault/src/base/Roles/crosschain/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
-import { ERC20 } from "@solmate/tokens/ERC20.sol";
-
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
+import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { Auth, Authority } from "@solmate/auth/Auth.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
+
+import { MultiChainLayerZeroTellerWithMultiAssetSupport } from
+    "@boringvault/src/base/Roles/CrossChain/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
+
+import { ITeller } from "../interfaces/ITeller.sol";
+import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
+
+
+
 /**
  * @title NestTeller
  * @notice Teller implementation for the Nest vault
  * @dev A Teller that only allows deposits of a single `asset` that is
  * configured.
  */
-
-contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport, NestBoringVaultModule {
+contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMultiAssetSupport {
 
     using SafeCast for uint256;
     using FixedPointMathLib for uint256;
@@ -33,39 +37,36 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport, NestBorin
         address _vault,
         address _accountant,
         address _endpoint,
-        IERC20 _asset,
+        address _asset,
         uint256 _minimumMintPercentage
     )
         MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint)
-        NestBoringVaultModule(_owner, _vault, _accountant, _asset)
+        NestBoringVaultModule(_owner, _vault, _accountant, IERC20(_asset))
     {
         minimumMintPercentage = _minimumMintPercentage;
     }
 
+    /**
+     * @notice Transfer assets from the owner into the vault and submit a request to buy shares
+     * @param assets Amount of `asset` to deposit
+     * @param controller Controller of the request
+     * @param owner Source of the assets to deposit
+     * @return requestId Discriminator between non-fungible requests
+     */
     function requestDeposit(
         uint256 assets,
-        address receiver,
-        address controller
-    ) public returns (uint256 requestId) {
-        if (receiver != msg.sender) {
-            revert InvalidReceiver();
-        }
-        if (controller != msg.sender) {
-            revert InvalidController();
-        }
-
-        // Transfer assets to this contract
-        ERC20(address(assetToken)).transferFrom(msg.sender, address(this), assets);
-
-        // Emit event and return request ID
-        emit RequestDeposit(depositNonce++, msg.sender, address(assetToken), assets, block.timestamp);
-        
-        return depositNonce;
+        address controller,
+        address owner
+    ) public override returns (uint256 requestId) {
+        revert Unimplemented();
     }
 
-
-
-    // This is the IComponentToken deposit implementation
+    /**
+     * @notice Fulfill a request to buy shares by minting shares to the receiver
+     * @param assets Amount of `asset` that was deposited by `requestDeposit`
+     * @param receiver Address to receive the shares
+     * @param controller Controller of the request
+     */
     function deposit(uint256 assets, address receiver, address controller) public override returns (uint256 shares) {
         if (receiver != msg.sender) {
             revert InvalidReceiver();
@@ -74,12 +75,8 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport, NestBorin
             revert InvalidController();
         }
 
-        // Call the parent's _erc20Deposit function directly
-        shares = _erc20Deposit(
-            ERC20(address(assetToken)), assets, assets.mulDivDown(minimumMintPercentage, 10_000), msg.sender
-        );
-
-        _afterPublicDeposit(msg.sender, ERC20(address(assetToken)), assets, shares, shareLockPeriod);
+        shares =
+            ITeller(address(this)).deposit(IERC20(asset()), assets, assets.mulDivDown(minimumMintPercentage, 10_000));
 
         return shares;
     }
