@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -304,6 +306,92 @@ contract AggregateTokenTest is Test {
             " is missing role ",
             Strings.toHexString(uint256(role), 32)
         );
+    }
+
+    function testUpgrade() public {
+        // Deploy new implementation
+        AggregateToken newImpl = new AggregateToken();
+
+        // Only owner should be able to upgrade
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, address(this), token.UPGRADER_ROLE()
+            )
+        );
+        UUPSUpgradeable(payable(address(token))).upgradeToAndCall(address(newImpl), "");
+
+        // Grant upgrader role to owner
+        vm.startPrank(owner);
+        token.grantRole(token.UPGRADER_ROLE(), owner);
+
+        // Upgrade to new implementation
+        UUPSUpgradeable(payable(address(token))).upgradeToAndCall(address(newImpl), "");
+        vm.stopPrank();
+
+        // Verify state is preserved
+        assertTrue(token.hasRole(token.DEFAULT_ADMIN_ROLE(), owner));
+        assertEq(token.name(), "Aggregate Token");
+        assertEq(token.symbol(), "AGG");
+        assertEq(address(token.asset()), address(usdc));
+        assertEq(token.getAskPrice(), 1e18);
+        assertEq(token.getBidPrice(), 1e18);
+    }
+
+    function testUpgradeAndCall() public {
+        // Deploy new implementation
+        AggregateToken newImpl = new AggregateToken();
+
+        // Prepare reinitialize call data
+        bytes memory data = abi.encodeCall(
+            AggregateToken.reinitialize,
+            (
+                owner,
+                "New Aggregate Token",
+                "NAGG",
+                IComponentToken(address(usdc)),
+                2e18, // new askPrice
+                1.5e18 // new bidPrice
+            )
+        );
+
+        // Grant upgrader role to owner
+        vm.startPrank(owner);
+        token.grantRole(token.UPGRADER_ROLE(), owner);
+
+        // Upgrade and reinitialize
+        UUPSUpgradeable(payable(address(token))).upgradeToAndCall(address(newImpl), data);
+        vm.stopPrank();
+
+        // Verify new state
+        assertTrue(token.hasRole(token.DEFAULT_ADMIN_ROLE(), owner));
+        assertEq(token.name(), "New Aggregate Token");
+        assertEq(token.symbol(), "NAGG");
+        assertEq(address(token.asset()), address(usdc));
+        assertEq(token.getAskPrice(), 2e18);
+        assertEq(token.getBidPrice(), 1.5e18);
+    }
+
+    function testFailUpgradeToInvalidImplementation() public {
+        // Deploy invalid implementation
+        MockInvalidToken invalidImpl = new MockInvalidToken();
+
+        vm.startPrank(owner);
+        token.grantRole(token.UPGRADER_ROLE(), owner);
+
+        // Should fail when upgrading to invalid implementation
+        vm.expectRevert("ERC1967Upgrade: new implementation is not UUPS");
+        UUPSUpgradeable(payable(address(token))).upgradeToAndCall(address(invalidImpl), "");
+        vm.stopPrank();
+    }
+
+    function testFailUpgradeToZeroAddress() public {
+        vm.startPrank(owner);
+        token.grantRole(token.UPGRADER_ROLE(), owner);
+
+        // Should fail when upgrading to zero address
+        vm.expectRevert("ERC1967: new implementation is not a contract");
+        UUPSUpgradeable(payable(address(token))).upgradeToAndCall(address(0), "");
+        vm.stopPrank();
     }
 
 }
