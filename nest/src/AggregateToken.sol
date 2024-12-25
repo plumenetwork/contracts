@@ -143,6 +143,34 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         $.paused = false;
     }
 
+    /**
+     * @notice Reinitialize the AggregateToken
+     * @param owner Address of the owner of the AggregateToken
+     * @param name Name of the AggregateToken
+     * @param symbol Symbol of the AggregateToken
+     * @param asset_ Asset used to mint and burn the AggregateToken
+     * @param askPrice Price at which users can buy the AggregateToken using `asset`, times the base
+     * @param bidPrice Price at which users can sell the AggregateToken to receive `asset`, times the base
+     */
+    function reinitialize(
+        address owner,
+        string memory name,
+        string memory symbol,
+        IComponentToken asset_,
+        uint256 askPrice,
+        uint256 bidPrice
+    ) public onlyRole(UPGRADER_ROLE) reinitializer(2) {
+        super.reinitialize(owner, name, symbol, IERC20(address(asset_)), false, true);
+
+        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
+        if (!$.componentTokenMap[asset_]) {
+            $.componentTokenList.push(asset_);
+            $.componentTokenMap[asset_] = true;
+        }
+        $.askPrice = askPrice;
+        $.bidPrice = bidPrice;
+    }
+
     // Override Functions
 
     /**
@@ -380,7 +408,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /**
      * @notice Request to sell ComponentToken.
-     * @dev Only the manager can call this function. This function requests 
+     * @dev Only the manager can call this function. This function requests
      * the sale of ComponentToken, which will be processed later.
      * @param componentToken ComponentToken to sell
      * @param componentTokenAmount Amount of ComponentToken to sell
