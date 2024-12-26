@@ -23,24 +23,17 @@ abstract contract NestBoringVaultModuleTest is Test {
 
         // Deploy mocks in specific order
         asset = new MockUSDC();
-        
-vault = new MockVault(owner, "Mock Vault", "mVault", 6); // Use 6 for USDC decimals
-/*
-        vault = new MockVault(
-            owner,          // _owner
-            "Mock Vault",   // _name
-            "MVLT",        // _symbol
-            address(asset)  // _usdc
-        );
-*/
+
+        vault = new MockVault(owner, "Mock Vault", "mVault", 6); // Use 6 for USDC decimals
+
         accountant = new MockAccountantWithRateProviders(
             address(vault), // _vault
             address(asset), // _base
-            1e18 // startingExchangeRate (1:1 ratio)
+            1e6 // startingExchangeRate (1:1 ratio)
         );
 
         // Deal some tokens to the vault for initial liquidity
-        deal(address(asset), address(vault), 1000000e6);
+        deal(address(asset), address(vault), 1_000_000e6);
     }
 
     // Common tests that apply to all NestBoringVaultModule implementations

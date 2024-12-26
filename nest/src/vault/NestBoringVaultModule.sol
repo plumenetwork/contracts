@@ -11,6 +11,7 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
+import { console } from "forge-std/console.sol";
 
 /**
  * @title NestBoringVaultModule

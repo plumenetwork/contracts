@@ -25,6 +25,7 @@ interface IBoringVault is IERC20 {
      */
     function exit(address to, address asset, uint256 assetAmount, address from, uint256 shareAmount) external;
 
-        // ERC20 interface functions
+    // ERC20 interface functions
     function decimals() external view returns (uint8);
+
 }

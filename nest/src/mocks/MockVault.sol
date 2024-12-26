@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ERC20 } from "@solmate/tokens/ERC20.sol";
-import { SafeTransferLib } from "@solmate/utils/SafeTransferLib.sol";
-import { Auth, Authority } from "@solmate/auth/Auth.sol";
-import { ERC721Holder } from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
-import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { BeforeTransferHook } from "@boringvault/src/interfaces/BeforeTransferHook.sol";
+import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import { ERC721Holder } from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import { Auth, Authority } from "@solmate/auth/Auth.sol";
+import { ERC20 } from "@solmate/tokens/ERC20.sol";
+import { SafeTransferLib } from "@solmate/utils/SafeTransferLib.sol";
 
 contract MockVault is IBoringVault, Auth, ERC721Holder, ERC1155Holder {
+
     using SafeTransferLib for ERC20;
 
     // State variables
@@ -26,8 +27,7 @@ contract MockVault is IBoringVault, Auth, ERC721Holder, ERC1155Holder {
     event Enter(address indexed from, address indexed asset, uint256 amount, address indexed to, uint256 shares);
     event Exit(address indexed to, address indexed asset, uint256 amount, address indexed from, uint256 shares);
 
-
-     constructor(
+    constructor(
         address _owner,
         string memory _name,
         string memory _symbol,
@@ -94,7 +94,7 @@ contract MockVault is IBoringVault, Auth, ERC721Holder, ERC1155Holder {
         uint256 shareAmount
     ) external override requiresAuth {
         emit DebugCall("enter", abi.encode(from, asset, assetAmount, to, shareAmount));
-        
+
         if (assetAmount > 0) {
             ERC20(asset).safeTransferFrom(from, address(this), assetAmount);
         }
@@ -112,7 +112,7 @@ contract MockVault is IBoringVault, Auth, ERC721Holder, ERC1155Holder {
         uint256 shareAmount
     ) external override requiresAuth {
         emit DebugCall("exit", abi.encode(to, asset, assetAmount, from, shareAmount));
-        
+
         _burn(from, shareAmount);
 
         if (assetAmount > 0) {
@@ -122,13 +122,20 @@ contract MockVault is IBoringVault, Auth, ERC721Holder, ERC1155Holder {
         emit Exit(to, address(asset), assetAmount, from, shareAmount);
     }
 
-    function setBeforeTransferHook(address _hook) external requiresAuth {
+    function setBeforeTransferHook(
+        address _hook
+    ) external requiresAuth {
         hook = BeforeTransferHook(_hook);
     }
 
-    function _callBeforeTransfer(address from) internal view {
-        if (address(hook) != address(0)) hook.beforeTransfer(from);
+    function _callBeforeTransfer(
+        address from
+    ) internal view {
+        if (address(hook) != address(0)) {
+            hook.beforeTransfer(from);
+        }
     }
 
-    receive() external payable {}
+    receive() external payable { }
+
 }

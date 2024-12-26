@@ -11,6 +11,8 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 import { MultiChainLayerZeroTellerWithMultiAssetSupport } from
     "@boringvault/src/base/Roles/CrossChain/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
 
+import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
+import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
 import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
 import { console } from "forge-std/console.sol";
@@ -39,31 +41,21 @@ contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMulti
         address _asset,
         uint256 _minimumMintPercentage
     )
-        MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint)
         NestBoringVaultModule(_owner, _vault, _accountant, IERC20(_asset))
+        MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint)
     {
-               console.log("Debug: Starting NestTeller constructor");
+        //TODO: Add errors
+        require(_owner != address(0), "NestTeller: owner cannot be zero address");
+        require(_vault != address(0), "NestTeller: vault cannot be zero address");
+        require(_accountant != address(0), "NestTeller: accountant cannot be zero address");
+        require(_endpoint != address(0), "NestTeller: endpoint cannot be zero address");
+        require(_asset != address(0), "NestTeller: asset cannot be zero address");
+        require(
+            _minimumMintPercentage > 0 && _minimumMintPercentage <= 10_000,
+            "NestTeller: invalid minimum mint percentage"
+        );
 
-
-  // Input validation
-    require(_owner != address(0), "NestTeller: owner cannot be zero address");
-    require(_vault != address(0), "NestTeller: vault cannot be zero address");
-    require(_accountant != address(0), "NestTeller: accountant cannot be zero address");
-    require(_endpoint != address(0), "NestTeller: endpoint cannot be zero address");
-    require(_asset != address(0), "NestTeller: asset cannot be zero address");
-    require(_minimumMintPercentage > 0 && _minimumMintPercentage <= 10000, "NestTeller: invalid minimum mint percentage");
-
-        console.log("Debug: Owner", _owner);
-        console.log("Debug: Vault", _vault);
-        console.log("Debug: Accountant", _accountant);
-        console.log("Debug: Endpoint", _endpoint);
-        console.log("Debug: Asset", _asset);
-        console.log("Debug: MinimumMintPercentage", _minimumMintPercentage);
-        
         minimumMintPercentage = _minimumMintPercentage;
-    console.log("Debug: Set minimumMintPercentage to:", _minimumMintPercentage);
-    
-    console.log("Debug: NestTeller constructor completed");
     }
 
     /**
