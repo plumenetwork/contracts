@@ -1,117 +1,134 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ERC721Holder } from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import { ERC20 } from "@solmate/tokens/ERC20.sol";
+import { SafeTransferLib } from "@solmate/utils/SafeTransferLib.sol";
 import { Auth, Authority } from "@solmate/auth/Auth.sol";
-
+import { ERC721Holder } from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import { IBoringVault } from "../interfaces/IBoringVault.sol";
+import { BeforeTransferHook } from "@boringvault/src/interfaces/BeforeTransferHook.sol";
 
-contract MockVault is ERC20, Auth, ERC721Holder, ERC1155Holder, IBoringVault {
+contract MockVault is IBoringVault, Auth, ERC721Holder, ERC1155Holder {
+    using SafeTransferLib for ERC20;
 
-    using SafeERC20 for IERC20;
+    // State variables
+    string public name;
+    string public symbol;
+    uint8 public decimals;
+    uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    BeforeTransferHook public hook;
 
-    // token => account => balance
-    mapping(address => mapping(address => uint256)) private _balances;
+    // Events
+    event DebugCall(string functionName, bytes data);
+    event Enter(address indexed from, address indexed asset, uint256 amount, address indexed to, uint256 shares);
+    event Exit(address indexed to, address indexed asset, uint256 amount, address indexed from, uint256 shares);
 
-    mapping(address => mapping(address => mapping(address => uint256))) private _allowances;
 
-    IERC20 public asset;
-    IERC20 public immutable usdc;
-    IERC20 public immutable usdt;
-    address public beforeTransferHook;
-
-    constructor(
+     constructor(
         address _owner,
         string memory _name,
         string memory _symbol,
-        address _usdc
-    ) ERC20(_name, _symbol) Auth(_owner, Authority(address(0))) {
-        usdc = IERC20(_usdc);
+        uint8 _decimals
+    ) Auth(_owner, Authority(address(0))) {
+        name = _name;
+        symbol = _symbol;
+        decimals = _decimals;
     }
 
-    function enter(address from, address asset_, uint256 assetAmount, address to, uint256 shareAmount) external {
-        if (assetAmount > 0) {
-            IERC20(asset_).safeTransferFrom(from, address(this), assetAmount);
-        }
-        _balances[asset_][to] += shareAmount;
-        _allowances[asset_][to][msg.sender] = type(uint256).max;
+    function approve(address spender, uint256 amount) public returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
+        return true;
     }
 
-    function exit(address to, address asset_, uint256 assetAmount, address from, uint256 shareAmount) external {
-        // Change from checking 'from' balance to checking the actual owner's balance
-        address owner = from == msg.sender ? to : from;
-        require(_balances[asset_][owner] >= shareAmount, "MockVault: insufficient balance");
-
-        uint256 allowed = _allowances[asset_][owner][msg.sender];
-        if (allowed != type(uint256).max) {
-            require(allowed >= shareAmount, "MockVault: insufficient allowance");
-            _allowances[asset_][owner][msg.sender] = allowed - shareAmount;
-        }
-
-        _balances[asset_][owner] -= shareAmount;
-
-        // Changed: Transfer to 'to' instead of msg.sender, and always transfer if we have shares
-        if (shareAmount > 0) {
-            IERC20(asset_).safeTransfer(to, shareAmount);
-        }
+    function transfer(address to, uint256 amount) public returns (bool) {
+        _callBeforeTransfer(msg.sender);
+        return _transfer(msg.sender, to, amount);
     }
 
-    function transferFrom(address asset_, address from, address to, uint256 amount) external returns (bool) {
-        require(_balances[asset_][from] >= amount, "MockVault: insufficient balance");
-
-        uint256 allowed = _allowances[asset_][from][msg.sender];
+    function transferFrom(address from, address to, uint256 amount) public returns (bool) {
+        _callBeforeTransfer(from);
+        uint256 allowed = allowance[from][msg.sender];
         if (allowed != type(uint256).max) {
             require(allowed >= amount, "MockVault: insufficient allowance");
-            _allowances[asset_][from][msg.sender] = allowed - amount;
+            allowance[from][msg.sender] = allowed - amount;
+        }
+        return _transfer(from, to, amount);
+    }
+
+    function _transfer(address from, address to, uint256 amount) internal returns (bool) {
+        require(from != address(0), "MockVault: transfer from zero address");
+        require(to != address(0), "MockVault: transfer to zero address");
+        require(balanceOf[from] >= amount, "MockVault: insufficient balance");
+
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+
+        emit Transfer(from, to, amount);
+        return true;
+    }
+
+    function _mint(address to, uint256 amount) internal {
+        require(to != address(0), "MockVault: mint to zero address");
+        totalSupply += amount;
+        balanceOf[to] += amount;
+        emit Transfer(address(0), to, amount);
+    }
+
+    function _burn(address from, uint256 amount) internal {
+        require(from != address(0), "MockVault: burn from zero address");
+        require(balanceOf[from] >= amount, "MockVault: insufficient balance");
+        totalSupply -= amount;
+        balanceOf[from] -= amount;
+        emit Transfer(from, address(0), amount);
+    }
+
+    function enter(
+        address from,
+        address asset,
+        uint256 assetAmount,
+        address to,
+        uint256 shareAmount
+    ) external override requiresAuth {
+        emit DebugCall("enter", abi.encode(from, asset, assetAmount, to, shareAmount));
+        
+        if (assetAmount > 0) {
+            ERC20(asset).safeTransferFrom(from, address(this), assetAmount);
         }
 
-        _balances[asset_][from] -= amount;
-        _balances[asset_][to] += amount;
-        return true;
+        _mint(to, shareAmount);
+
+        emit Enter(from, asset, assetAmount, to, shareAmount);
     }
 
-    function approve(address asset_, address spender, uint256 amount) external returns (bool) {
-        _allowances[asset_][msg.sender][spender] = amount;
-        return true;
+    function exit(
+        address to,
+        address asset,
+        uint256 assetAmount,
+        address from,
+        uint256 shareAmount
+    ) external override requiresAuth {
+        emit DebugCall("exit", abi.encode(to, asset, assetAmount, from, shareAmount));
+        
+        _burn(from, shareAmount);
+
+        if (assetAmount > 0) {
+            ERC20(asset).safeTransfer(to, assetAmount);
+        }
+
+        emit Exit(to, address(asset), assetAmount, from, shareAmount);
     }
 
-    function balanceOf(
-        address account
-    ) public view virtual override(ERC20, IERC20) returns (uint256) {
-        // Return total balance across all assets
-        return _balances[address(usdc)][account] + _balances[address(usdt)][account];
+    function setBeforeTransferHook(address _hook) external requiresAuth {
+        hook = BeforeTransferHook(_hook);
     }
 
-    function totalSupply() public view virtual override(ERC20, IERC20) returns (uint256) {
-        // Return total supply across all assets
-        return _balances[address(usdc)][address(this)] + _balances[address(usdt)][address(this)];
+    function _callBeforeTransfer(address from) internal view {
+        if (address(hook) != address(0)) hook.beforeTransfer(from);
     }
 
-    function decimals() public pure virtual override(ERC20, IERC20Metadata) returns (uint8) {
-        return 6;
-    }
-
-    function tokenBalance(address token, address account) external view returns (uint256) {
-        return _balances[token][account];
-    }
-
-    function setBalance(address token, uint256 amount) external {
-        _balances[token][address(this)] = amount;
-    }
-
-    function allowance(address asset_, address owner, address spender) external view returns (uint256) {
-        return _allowances[asset_][owner][spender];
-    }
-
-    function setBeforeTransferHook(
-        address hook
-    ) external {
-        beforeTransferHook = hook;
-    }
-
+    receive() external payable {}
 }
