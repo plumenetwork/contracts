@@ -7,6 +7,8 @@ import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
 import { MockLayerZeroEndpoint } from "../src/mocks/MockLayerZeroEndpoint.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 import { MockVault } from "../src/mocks/MockVault.sol";
+
+import { NestBoringVaultModule } from "../src/vault/NestBoringVaultModule.sol";
 import { NestTeller } from "../src/vault/NestTeller.sol";
 import { NestBoringVaultModuleTest } from "./NestBoringVaultModuleTest.t.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -193,6 +195,116 @@ contract NestTellerTest is NestBoringVaultModuleTest {
 
         uint256 vaultBalanceAfter = IERC20(address(asset)).balanceOf(address(vault));
         assertEq(vaultBalanceAfter - vaultBalanceBefore, amount, "Vault should have received correct amount of tokens");
+        vm.stopPrank();
+    }
+
+    // Test deposit with invalid receiver
+    function testDepositWithInvalidReceiver(
+        uint256 amount
+    ) public {
+        amount = bound(amount, 1e6, 1_000_000e6);
+        deal(address(asset), user, amount);
+
+        vm.startPrank(user);
+        IERC20(address(asset)).approve(address(teller), amount);
+
+        vm.expectRevert(NestBoringVaultModule.InvalidReceiver.selector);
+        teller.deposit(amount, address(this), user);
+        vm.stopPrank();
+    }
+
+    // Test deposit with invalid controller
+    function testDepositWithInvalidController(
+        uint256 amount
+    ) public {
+        amount = bound(amount, 1e6, 1_000_000e6);
+        deal(address(asset), user, amount);
+
+        vm.startPrank(user);
+        IERC20(address(asset)).approve(address(teller), amount);
+
+        vm.expectRevert(NestBoringVaultModule.InvalidController.selector);
+        teller.deposit(amount, user, address(this));
+        vm.stopPrank();
+    }
+
+    // Test requestDeposit reverts as unimplemented
+    function testRequestDepositReverts() public {
+        vm.expectRevert(NestBoringVaultModule.Unimplemented.selector);
+        teller.requestDeposit(1e6, user, user);
+    }
+
+    // Test requestRedeem reverts as unimplemented
+    function testRequestRedeemReverts() public {
+        vm.expectRevert(NestBoringVaultModule.Unimplemented.selector);
+        teller.requestRedeem(1e6, user, user);
+    }
+
+    // Test constructor reverts with invalid parameters
+    function testConstructorInvalidOwner() public {
+        vm.expectRevert(NestBoringVaultModule.InvalidDelegate.selector);
+        new NestTeller(
+            address(0), address(vault), address(accountant), endpoint, address(asset), MINIMUM_MINT_PERCENTAGE
+        );
+    }
+
+    function testConstructorInvalidVault() public {
+        vm.expectRevert(NestBoringVaultModule.ZeroVault.selector);
+        new NestTeller(owner, address(0), address(accountant), endpoint, address(asset), MINIMUM_MINT_PERCENTAGE);
+    }
+
+    function testConstructorInvalidAccountant() public {
+        vm.expectRevert(NestBoringVaultModule.ZeroAccountant.selector);
+        new NestTeller(owner, address(vault), address(0), endpoint, address(asset), MINIMUM_MINT_PERCENTAGE);
+    }
+
+    function testConstructorInvalidEndpoint() public {
+        vm.expectRevert(NestBoringVaultModule.ZeroEndpoint.selector);
+        new NestTeller(owner, address(vault), address(accountant), address(0), address(asset), MINIMUM_MINT_PERCENTAGE);
+    }
+
+    function testConstructorInvalidAsset() public {
+        vm.expectRevert(NestBoringVaultModule.ZeroAsset.selector);
+        new NestTeller(owner, address(vault), address(accountant), endpoint, address(0), MINIMUM_MINT_PERCENTAGE);
+    }
+
+    function testConstructorInvalidMinimumMintPercentage() public {
+        // Test with 0
+        vm.expectRevert(NestBoringVaultModule.InvalidMinimumMintPercentage.selector);
+        new NestTeller(owner, address(vault), address(accountant), endpoint, address(asset), 0);
+
+        // Test with > 10_000
+        vm.expectRevert(NestBoringVaultModule.InvalidMinimumMintPercentage.selector);
+        new NestTeller(owner, address(vault), address(accountant), endpoint, address(asset), 10_001);
+    }
+
+    // Test deposit with insufficient allowance
+    function testDepositInsufficientAllowance(
+        uint256 amount
+    ) public {
+        amount = bound(amount, 1e6, 1_000_000e6);
+        deal(address(asset), user, amount);
+
+        vm.startPrank(user);
+        IERC20(address(asset)).approve(address(teller), amount - 1); // Approve less than amount
+
+        vm.expectRevert(); // Should revert with insufficient allowance
+        teller.deposit(amount, user, user);
+        vm.stopPrank();
+    }
+
+    // Test deposit with insufficient balance
+    function testDepositInsufficientBalance(
+        uint256 amount
+    ) public {
+        amount = bound(amount, 1e6, 1_000_000e6);
+        deal(address(asset), user, amount - 1); // Give less than amount
+
+        vm.startPrank(user);
+        IERC20(address(asset)).approve(address(teller), amount);
+
+        vm.expectRevert(); // Should revert with insufficient balance
+        teller.deposit(amount, user, user);
         vm.stopPrank();
     }
 

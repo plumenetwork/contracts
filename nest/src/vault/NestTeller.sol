@@ -44,16 +44,24 @@ contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMulti
         NestBoringVaultModule(_owner, _vault, _accountant, IERC20(_asset))
         MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint)
     {
-        //TODO: Add errors
-        require(_owner != address(0), "NestTeller: owner cannot be zero address");
-        require(_vault != address(0), "NestTeller: vault cannot be zero address");
-        require(_accountant != address(0), "NestTeller: accountant cannot be zero address");
-        require(_endpoint != address(0), "NestTeller: endpoint cannot be zero address");
-        require(_asset != address(0), "NestTeller: asset cannot be zero address");
-        require(
-            _minimumMintPercentage > 0 && _minimumMintPercentage <= 10_000,
-            "NestTeller: invalid minimum mint percentage"
-        );
+        if (_owner == address(0)) {
+            revert ZeroOwner();
+        }
+        if (_vault == address(0)) {
+            revert ZeroVault();
+        }
+        if (_accountant == address(0)) {
+            revert ZeroAccountant();
+        }
+        if (_endpoint == address(0)) {
+            revert ZeroEndpoint();
+        }
+        if (_asset == address(0)) {
+            revert ZeroAsset();
+        }
+        if (_minimumMintPercentage == 0 || _minimumMintPercentage > 10_000) {
+            revert InvalidMinimumMintPercentage();
+        }
 
         minimumMintPercentage = _minimumMintPercentage;
     }

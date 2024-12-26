@@ -29,11 +29,18 @@ abstract contract NestBoringVaultModule is IComponentToken, Auth {
     uint256 public immutable decimals;
     IERC20 public assetToken;
 
-    // Errors
-    error InvalidOwner();
+    // Custom Errors
+    error InvalidReceiver();
     error InvalidController();
     error Unimplemented();
-    error InvalidReceiver();
+    error InvalidAmount();
+    error ZeroOwner();
+    error InvalidOwner();
+    error ZeroVault();
+    error ZeroAccountant();
+    error ZeroEndpoint();
+    error ZeroAsset();
+    error InvalidMinimumMintPercentage();
 
     // Constructor
     constructor(address _owner, address _vault, address _accountant, IERC20 _asset) {
