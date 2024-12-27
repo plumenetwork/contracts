@@ -44,18 +44,9 @@ contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMulti
         NestBoringVaultModule(_owner, _vault, _accountant, IERC20(_asset))
         MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint)
     {
-        if (_owner == address(0)) {
-            revert ZeroOwner();
-        }
-        if (_vault == address(0)) {
-            revert ZeroVault();
-        }
-        if (_accountant == address(0)) {
-            revert ZeroAccountant();
-        }
-        if (_endpoint == address(0)) {
-            revert ZeroEndpoint();
-        }
+        // vault, accountant checks from MultiChainLayerZeroTellerWithMultiAssetSupport->TellerWithMultiAssetSupport
+        // owner, endpoint checks from MultiChainLayerZeroTellerWithMultiAssetSupport->OAppAuth
+
         if (_asset == address(0)) {
             revert ZeroAsset();
         }
