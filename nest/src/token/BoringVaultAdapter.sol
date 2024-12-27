@@ -129,7 +129,7 @@ abstract contract BoringVaultAdapter is
         }
 
         // Set async redeem to true
-        super.initialize(owner, name, symbol, asset_, false, true);
+        super.initialize(owner, name, symbol, asset_, false, false);
 
         BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
         $.boringVault.teller = ITeller(teller_);
