@@ -106,6 +106,9 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     /// @notice Indicates a failure because the contract is not paused for deposits
     error NotPaused();
 
+    /// @notice Indicates a failure because shares and receivers arrays are not the same length
+    error ArrayLengthMismatch();
+
     // Initializer
 
     /**
@@ -423,6 +426,93 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     }
 
     // Admin Functions
+
+    // Add these admin-only batch functions to AggregateToken contract
+
+    /**
+     * @notice Batch convert assets to shares (admin only)
+     * @param assets Array of asset amounts to convert
+     * @return shares Array of share amounts
+     */
+    function batchConvertToShares(
+        uint256[] calldata assets
+    ) external view onlyRole(ADMIN_ROLE) returns (uint256[] memory shares) {
+        uint256 length = assets.length;
+        shares = new uint256[](length);
+
+        for (uint256 i = 0; i < length; ++i) {
+            shares[i] = convertToShares(assets[i]);
+        }
+        return shares;
+    }
+
+    /**
+     * @notice Batch mint shares to multiple receivers (admin only)
+     * @param shares Array of share amounts to mint
+     * @param receivers Array of addresses to receive shares
+     */
+    function batchMint(
+        uint256[] calldata shares,
+        address[] calldata receivers
+    ) external nonReentrant onlyRole(ADMIN_ROLE) {
+        if (shares.length != receivers.length) {
+            revert ArrayLengthMismatch();
+        }
+        if (_getAggregateTokenStorage().paused) {
+            revert DepositPaused();
+        }
+
+        uint256 length = shares.length;
+        for (uint256 i = 0; i < length; ++i) {
+            // Skip zero share mints
+            if (shares[i] == 0) {
+                continue;
+            }
+
+            // Mint shares to receiver
+            _mint(receivers[i], shares[i]);
+
+            emit Deposit(msg.sender, receivers[i], shares[i], convertToAssets(shares[i]));
+        }
+    }
+
+    /**
+     * @notice Combined function to convert and mint in one transaction (admin only)
+     * @param assets Array of asset amounts
+     * @param receivers Array of receivers
+     * @return shares Array of minted share amounts
+     */
+    function batchConvertAndMint(
+        uint256[] calldata assets,
+        address[] calldata receivers
+    ) external nonReentrant onlyRole(ADMIN_ROLE) returns (uint256[] memory shares) {
+        if (assets.length != receivers.length) {
+            revert ArrayLengthMismatch();
+        }
+        if (_getAggregateTokenStorage().paused) {
+            revert DepositPaused();
+        }
+
+        uint256 length = assets.length;
+        shares = new uint256[](length);
+
+        for (uint256 i = 0; i < length; ++i) {
+            // Skip zero asset amounts
+            if (assets[i] == 0) {
+                continue;
+            }
+
+            // Convert assets to shares
+            shares[i] = convertToShares(assets[i]);
+
+            // Mint shares to receiver
+            _mint(receivers[i], shares[i]);
+
+            emit Deposit(msg.sender, receivers[i], shares[i], assets[i]);
+        }
+
+        return shares;
+    }
 
     /**
      * @notice Set the price at which users can buy the AggregateToken using `asset`
