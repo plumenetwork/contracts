@@ -162,7 +162,7 @@ abstract contract BoringVaultAdapter is
         address accountant_,
         string memory name,
         string memory symbol
-    ) public onlyRole(UPGRADER_ROLE) reinitializer(3) {
+    ) public onlyRole(UPGRADER_ROLE) reinitializer(4) {
         if (
             owner == address(0) || address(asset_) == address(0) || vault_ == address(0) || teller_ == address(0)
                 || atomicQueue_ == address(0) || lens_ == address(0) || accountant_ == address(0)
@@ -176,7 +176,7 @@ abstract contract BoringVaultAdapter is
         }
 
         // Set async redeem to true
-        super.reinitialize(owner, name, symbol, asset_, false, true);
+        super.reinitialize(owner, name, symbol, asset_, false, false);
 
         BoringVaultAdapterStorage storage $ = _getBoringVaultAdapterStorage();
         $.boringVault.teller = ITeller(teller_);
