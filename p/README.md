@@ -1,6 +1,6 @@
-## P Smart Contracts
+## Plume Smart Contracts
 
-$P is the governance token of Plume.
+$PLUME is the governance token of Plume.
 
 ### Setup
 
