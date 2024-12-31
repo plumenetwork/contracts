@@ -134,8 +134,8 @@ contract SimulateBridge is Test {
         console2.log("Bridge gas cost:", bridgeGasCost, "wei");
         console2.log("Bridge fees:", totalBridgeFee, "wei");
         console2.log("Total cost (gas + fees):", totalGasCost + totalBridgeFee, "wei");
-        console2.log("Total cost in ETH:", (totalGasCost + totalBridgeFee) / 1e18, "ETH");
-
+        //console2.log("Total cost in ETH:", (totalGasCost + totalBridgeFee) / 1e18, "ETH");
+        console2.log("Total cost in ETH:", (totalGasCost + totalBridgeFee) * 1000 / 1e18 / 1000.0, "ETH");
         // Convert to USD using 3500 as ETH price
         uint256 ethPrice = 3500; 
         uint256 totalCostUSD = ((totalGasCost + totalBridgeFee) * ethPrice) / 1e18;
