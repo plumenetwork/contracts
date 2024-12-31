@@ -9,10 +9,10 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 
 import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
-import { IComponentToken } from "./interfaces/IComponentToken.sol";
-import { IAtomicQueue } from "./interfaces/IAtomicQueue.sol";
-import { ITeller } from "./interfaces/ITeller.sol";
 
+import { IAtomicQueue } from "./interfaces/IAtomicQueue.sol";
+import { IComponentToken } from "./interfaces/IComponentToken.sol";
+import { ITeller } from "./interfaces/ITeller.sol";
 
 /**
  * @title AggregateToken
@@ -66,20 +66,10 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     event AssetTokenUpdated(IERC20 indexed oldAsset, IERC20 indexed newAsset);
 
     /// @notice Emitted when vault tokens are bought
-    event VaultTokenBought(
-        address indexed buyer,
-        address indexed token,
-        uint256 assets,
-        uint256 shares
-    );
+    event VaultTokenBought(address indexed buyer, address indexed token, uint256 assets, uint256 shares);
 
     /// @notice Emitted when a vault token sell request is created
-    event VaultTokenSellRequested(
-        address indexed sender,
-        address indexed token,
-        uint256 shares,
-        uint256 price
-    );
+    event VaultTokenSellRequested(address indexed sender, address indexed token, uint256 shares, uint256 price);
     // Errors
 
     /**
@@ -136,8 +126,6 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /// @notice Indicates the deadline has expired
     error DeadlineExpired();
-
-
 
     // Initializer
 
@@ -387,7 +375,6 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         emit ComponentTokenUnlisted(componentToken);
     }
 
-
     /**
      * @notice Buy vault tokens by depositing assets through a teller
      * @dev Will revert if teller is paused or asset is not supported
@@ -397,7 +384,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      * @param _teller Address of the teller contract to use for deposit
      * @return shares Amount of vault shares minted to the caller
      */
-  function buyVaultToken(
+    function buyVaultToken(
         address token,
         uint256 assets,
         uint256 minimumMint,
@@ -430,16 +417,11 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
             minimumMint // minimumMint
         );
 
-        // Transfer shares to receiver (msg.sender)
-        _mint(msg.sender, shares);
-
         emit VaultTokenBought(msg.sender, token, assets, shares);
         return shares;
     }
 
-
-
-/**
+    /**
      * @notice Create an atomic sell request for vault tokens
      * @dev Only the manager can call this function
      * @param token Address of the vault token to sell
