@@ -424,7 +424,8 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     /**
      * @notice Create an atomic sell request for vault tokens
      * @dev Only the manager can call this function
-     * @param token Address of the vault token to sell
+     * @param offerToken Address of the vault token to sell
+     * @param wantToken Address of the vault token to buy
      * @param shares Amount of shares to sell
      * @param price Price per share in terms of asset
      * @param deadline Timestamp after which the request expires
@@ -432,7 +433,8 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      * @return REQUEST_ID Identifier for the atomic request
      */
     function sellVaultToken(
-        address token,
+        address offerToken,
+        address wantToken,
         uint256 shares,
         uint256 price,
         uint64 deadline,
@@ -451,9 +453,9 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         });
 
         IAtomicQueue queue = IAtomicQueue(_atomicQueue);
-        queue.updateAtomicRequest(IERC20(token), IERC20(asset()), request);
+        queue.updateAtomicRequest(IERC20(offerToken), IERC20(wantToken), request);
 
-        emit VaultTokenSellRequested(msg.sender, token, shares, price);
+        emit VaultTokenSellRequested(msg.sender, offerToken, shares, price);
 
         return REQUEST_ID;
     }
