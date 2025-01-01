@@ -4,8 +4,16 @@ pragma solidity ^0.8.25;
 import { AtomicQueue } from "@nucleus-boring-vault/base/AtomicQueue.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
+/**
+ * @title NestAtomicQueue
+ * @notice AtomicQueue implementation for the Nest vault
+ * @dev An AtomicQueue that only allows withdraws into a single `asset` that is
+ * configured.
+ */
 contract NestAtomicQueue is AtomicQueue, IComponentToken {
+    using SafeCast for uint256;
 
     // Constants
 
@@ -15,10 +23,10 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
 
     address public vault;
     address public accountant;
-    uint256 public decimals;
+    uint256 public decimals; // Always set to vault decimals 
     IERC20 public asset;
     uint256 public deadlinePeriod;
-    uint256 public pricePercentage;
+    uint256 public pricePercentage; // Must be 4 decimals i.e. 9999 = 99.99%
 
     // Errors
 
@@ -29,14 +37,13 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
     constructor(
         address _vault,
         address _accountant,
-        uint256 _decimals,
         IERC20 _asset,
         uint256 _deadlinePeriod,
         uint256 _pricePercentage
     ) {
         vault = _vault;
         accountant = _accountant;
-        decimals = _decimals;
+        decimals = _vault.decimals(); // Enforce that decimals is always the BoringVault shares decimals 
         asset = _asset;
         deadlinePeriod = _deadlinePeriod;
         pricePercentage = _pricePercentage;
@@ -46,14 +53,11 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
 
     function setVault(address _vault) requiresAuth external {
         vault = _vault;
+        decimals = _vault.decimals();
     }
 
     function setAccountant(address _accountant) requiresAuth external {
         accountant = _accountant;
-    }
-
-    function setDecimals(uint256 _decimals) requiresAuth external {
-        decimals = _decimals;
     }
 
     function setAsset(IERC20 _asset) requiresAuth external {
@@ -91,22 +95,23 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
      * @return requestId Discriminator between non-fungible requests
      */
     function requestRedeem(uint256 shares, address controller, address owner) public returns (uint256 requestId) {
-        if (owner == address(0)) {
+        if (owner != msg.sender) {
             revert InvalidOwner();
         }
-        if (controller == address(0)) {
+
+        if (controller != msg.sender) {
             revert InvalidController();
         }
 
         // Create and submit atomic request
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
-            deadline: block.timestamp + this.deadlinePeriod,
-            atomicPrice: uint88(convertToAssets(10 ** this.decimals).mulDivDown(pricePercentage, 100)), // Price per share in terms of asset
+            deadline: block.timestamp + deadlinePeriod,
+            atomicPrice: accountant.getRateInQuote(asset).mulDivDown(pricePercentage, 10000).toUint88(), // Price per share in terms of asset
             offerAmount: uint96(shares),
             inSolve: false
         });
 
-        updateAtomicRequest(IERC20(this.vault), this.asset, request);
+        updateAtomicRequest(IERC20(vault), asset, request);
 
         emit RequestRedeem(shares, controller, owner);
 
@@ -120,7 +125,8 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
      * @param controller Controller of the request
      */
     function redeem(uint256 shares, address receiver, address controller) public returns (uint256 assets) {
-        // Redeem doesn't do anything anymore because as soon as the AtomicQueue request is processed, the msg.sender will receive their this.asset
+        // Redeem doesn't do anything anymore because as soon as the AtomicQueue
+        // request is processed, the msg.sender will receive their this.asset
         revert Unimplemented();
     }
 
@@ -128,7 +134,7 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
 
     /// @notice Address of the `asset` token
     function asset() public view returns (address assetTokenAddress) {
-        return address(this.asset);
+        return address(asset);
     }
 
     function totalSupply() public view returns (uint256 totalSupply) {
@@ -144,7 +150,9 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
      * @dev Example ERC20 implementation: return convertToAssets(totalSupply())
      */
     function totalAssets() public view returns (uint256 totalManagedAssets) {
-        return vault.convertToAssets(vault.totalSupply());
+        // WARNING: Would only reflect the totalAssets on this single vault, not
+        // including the crosschain vaults.
+        return convertToAssets(vault.totalSupply());
     }
 
     /**
@@ -156,21 +164,23 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
     function assetsOf(
         address owner
     ) public view returns (uint256 assets) {
-        return vault.convertToAssets(vault.balanceOf(owner));
+        return convertToAssets(vault.balanceOf(owner));
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function convertToShares(
         uint256 assets
     ) public view virtual override(ComponentToken) returns (uint256 shares) {
-        return assets.mulDivDown(10 ** this.decimals, this.accountant.getRateInQuote(this.asset));
+        return assets.mulDivDown(10 ** decimals, this.accountant.getRateInQuote(this.asset));
     }
 
     /// @inheritdoc ERC4626Upgradeable
+
+    // returns quote / share in quote decimals 
     function convertToAssets(
         uint256 shares
     ) public view virtual override(ComponentToken) returns (uint256 assets) {
-        return shares.mulDivDown(this.accountant.getRateInQuote(this.asset), 10 ** this.decimals);
+        return shares.mulDivDown(accountant.getRateInQuote(asset), 10 ** decimals);
     }
 
     /**
@@ -180,7 +190,7 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
      * @return assets Amount of pending deposit assets for the given requestId and controller
      */
     function pendingDepositRequest(uint256 requestId, address controller) public pure returns (uint256 assets) {
-        return 0;
+        revert Unimplemented();
     }
 
     /**
@@ -190,7 +200,7 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
      * @return assets Amount of claimable deposit assets for the given requestId and controller
      */
     function claimableDepositRequest(uint256 requestId, address controller) public pure returns (uint256 assets) {
-        return 0;
+        revert Unimplemented();
     }
 
     /**
@@ -200,7 +210,7 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
      * @return shares Amount of pending redeem shares for the given requestId and controller
      */
     function pendingRedeemRequest(uint256 requestId, address controller) public pure returns (uint256 shares) {
-        return 0;
+        revert Unimplemented();
     }
 
     /**
@@ -210,7 +220,6 @@ contract NestAtomicQueue is AtomicQueue, IComponentToken {
      * @return shares Amount of claimable redeem shares for the given requestId and controller
      */
     function claimableRedeemRequest(uint256 requestId, address controller) public pure returns (uint256 shares) {
-        return 0;
+        revert Unimplemented();
     }
-
 }
