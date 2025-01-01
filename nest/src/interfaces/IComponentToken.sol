@@ -3,7 +3,7 @@ pragma solidity ^0.8.25;
 
 interface IComponentToken {
 
-    // User Functions
+    // Events
 
     /**
      * @notice Emitted when the owner of some assets submits a request to buy shares
@@ -28,6 +28,8 @@ interface IComponentToken {
     event RedeemRequest(
         address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 shares
     );
+
+    // User Functions
 
     /**
      * @notice Transfer assets from the owner into the vault and submit a request to buy shares
