@@ -3,14 +3,14 @@ pragma solidity ^0.8.25;
 
 import "forge-std/Script.sol";
 
-import { P } from "../src/P.sol";
+import { Plume } from "../src/Plume.sol";
 import { IDeployer } from "../src/interfaces/IDeployer.sol";
-import { PProxy } from "../src/proxy/PProxy.sol";
+import { PlumeProxy } from "../src/proxy/PlumeProxy.sol";
 
 /**
  * @title DeployToken
  * @author Eugene Y. Q. Shen
- * @notice Deploys P to a deterministic address 0x4C1746A800D224393fE2470C70A35717eD4eA5F1
+ * @notice Deploys Plume to a deterministic address 0x4C1746A800D224393fE2470C70A35717eD4eA5F1
  */
 contract DeployToken is Script {
 
@@ -22,16 +22,17 @@ contract DeployToken is Script {
     ) external {
         vm.startBroadcast();
 
-        P pImpl = new P();
-        console.log("pImpl deployed to:", address(pImpl));
+        Plume plumeImpl = new Plume();
+        console.log("plumeImpl deployed to:", address(plumeImpl));
 
-        address pProxy = IDeployer(DEPLOYER_ADDRESS).deploy(
+        address plumeProxy = IDeployer(DEPLOYER_ADDRESS).deploy(
             abi.encodePacked(
-                type(PProxy).creationCode, abi.encode(pImpl, abi.encodeWithSelector(P.initialize.selector, admin))
+                type(PlumeProxy).creationCode,
+                abi.encode(plumeImpl, abi.encodeWithSelector(Plume.initialize.selector, admin))
             ),
             DEPLOY_SALT
         );
-        console.log("pProxy deployed to:", pProxy);
+        console.log("plumeProxy deployed to:", plumeProxy);
 
         vm.stopBroadcast();
     }

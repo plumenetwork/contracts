@@ -13,11 +13,11 @@ import { ERC20PermitUpgradeable } from
     "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 
 /**
- * @title P
+ * @title Plume
  * @author Eugene Y. Q. Shen
  * @notice ERC20 token that is the governance token for Plume Network
  */
-contract P is
+contract Plume is
     Initializable,
     ERC20Upgradeable,
     ERC20BurnableUpgradeable,
@@ -29,13 +29,13 @@ contract P is
 
     // Constants
 
-    /// @notice Role for the upgrader of P
+    /// @notice Role for the upgrader of Plume
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
-    /// @notice Role for the minter of P
+    /// @notice Role for the minter of Plume
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
-    /// @notice Role for the burner of P
+    /// @notice Role for the burner of Plume
     bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
-    /// @notice Role for the pauser of P
+    /// @notice Role for the pauser of Plume
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     // Initializer
@@ -49,14 +49,14 @@ contract P is
     }
 
     /**
-     * @notice Initialize P
+     * @notice Initialize Plume
      * @dev Give all roles to the admin address passed into the constructor
-     * @param owner Address of the owner of P
+     * @param owner Address of the owner of Plume
      */
     function initialize(
         address owner
     ) public initializer {
-        __ERC20_init("Plume", "P");
+        __ERC20_init("Plume", "PLUME");
         __ERC20Burnable_init();
         __ERC20Pausable_init();
         __AccessControl_init();
@@ -97,7 +97,7 @@ contract P is
     // User Functions
 
     /**
-     * @notice Mint new P tokens
+     * @notice Mint new Plume tokens
      * @dev Only the minter can mint new tokens
      * @param to Address to mint tokens to
      * @param amount Amount of tokens to mint
@@ -107,7 +107,7 @@ contract P is
     }
 
     /**
-     * @notice Burn P tokens
+     * @notice Burn Plume tokens
      * @dev Only the burner can burn tokens
      * @param from Address to burn tokens from
      * @param amount Amount of tokens to burn

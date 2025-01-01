@@ -5,10 +5,14 @@ import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ER
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
+
+import { IAtomicQueue } from "./interfaces/IAtomicQueue.sol";
 import { IComponentToken } from "./interfaces/IComponentToken.sol";
+import { ITeller } from "./interfaces/ITeller.sol";
 
 /**
  * @title AggregateToken
@@ -61,6 +65,11 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     /// @notice Emitted when the asset token is updated
     event AssetTokenUpdated(IERC20 indexed oldAsset, IERC20 indexed newAsset);
 
+    /// @notice Emitted when vault tokens are bought
+    event VaultTokenBought(address indexed buyer, address indexed token, uint256 assets, uint256 shares);
+
+    /// @notice Emitted when a vault token sell request is created
+    event VaultTokenSellRequested(address indexed sender, address indexed token, uint256 shares, uint256 price);
     // Errors
 
     /**
@@ -108,6 +117,18 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
 
     /// @notice Indicates a failure because shares and receivers arrays are not the same length
     error ArrayLengthMismatch();
+
+    /// @notice Indicates the teller is paused
+    error TellerPaused();
+
+    /// @notice Indicates the asset is not supported by the teller
+    error AssetNotSupported();
+
+    /// @notice Indicates an invalid receiver address
+    error InvalidReceiver();
+
+    /// @notice Indicates the deadline has expired
+    error DeadlineExpired();
 
     // Initializer
 
@@ -355,6 +376,91 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         }
 
         emit ComponentTokenUnlisted(componentToken);
+    }
+
+    /**
+     * @notice Buy vault tokens by depositing assets through a teller
+     * @dev Will revert if teller is paused or asset is not supported
+     * @param token Address of the token to deposit
+     * @param assets Amount of tokens to deposit
+     * @param minimumMint Minimum amount of shares to receive (slippage protection)
+     * @param _teller Address of the teller contract to use for deposit
+     * @return shares Amount of vault shares minted to the caller
+     */
+    function buyVaultToken(
+        address token,
+        uint256 assets,
+        uint256 minimumMint,
+        address _teller
+    ) public nonReentrant returns (uint256 shares) {
+        if (msg.sender == address(0)) {
+            revert InvalidReceiver();
+        }
+
+        ITeller teller = ITeller(_teller);
+
+        // Verify deposit is allowed through teller
+        if (teller.isPaused()) {
+            revert TellerPaused();
+        }
+        if (!teller.isSupported(IERC20(token))) {
+            revert AssetNotSupported();
+        }
+
+        // Transfer assets from sender to this contract
+        SafeERC20.safeTransferFrom(IERC20(token), msg.sender, address(this), assets);
+
+        // Approve teller to spend assets
+        SafeERC20.forceApprove(IERC20(token), address(teller), assets);
+
+        // Deposit through teller
+        shares = teller.deposit(
+            IERC20(token), // depositAsset
+            assets, // depositAmount
+            minimumMint // minimumMint
+        );
+
+        emit VaultTokenBought(msg.sender, token, assets, shares);
+        return shares;
+    }
+
+    /**
+     * @notice Create an atomic sell request for vault tokens
+     * @dev Only the manager can call this function
+     * @param offerToken Address of the vault token to sell
+     * @param wantToken Address of the vault token to buy
+     * @param shares Amount of shares to sell
+     * @param price Price per share in terms of asset
+     * @param deadline Timestamp after which the request expires
+     * @param _atomicQueue Address of the atomic queue contract
+     * @return REQUEST_ID Identifier for the atomic request
+     */
+    function sellVaultToken(
+        address offerToken,
+        address wantToken,
+        uint256 shares,
+        uint256 price,
+        uint64 deadline,
+        address _atomicQueue
+    ) public nonReentrant onlyRole(MANAGER_ROLE) returns (uint256) {
+        if (deadline < block.timestamp) {
+            revert DeadlineExpired();
+        }
+
+        // Create and submit atomic request
+        IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
+            deadline: deadline,
+            atomicPrice: uint88(price), // Price per share in terms of asset
+            offerAmount: uint96(shares),
+            inSolve: false
+        });
+
+        IAtomicQueue queue = IAtomicQueue(_atomicQueue);
+        queue.updateAtomicRequest(IERC20(offerToken), IERC20(wantToken), request);
+
+        emit VaultTokenSellRequested(msg.sender, offerToken, shares, price);
+
+        return REQUEST_ID;
     }
 
     /**
