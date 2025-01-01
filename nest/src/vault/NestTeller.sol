@@ -1,8 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { MultiChainLayerZeroTellerWithMultiAssetSupport } from "@nucleus-boring-vault/base/Roles/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
+import { Auth, Authority } from "@solmate/auth/Auth.sol";
+import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
+
+import { MultiChainLayerZeroTellerWithMultiAssetSupport } from
+    "@boringvault/src/base/Roles/CrossChain/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
+
+import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
+import { IBoringVault } from "../interfaces/IBoringVault.sol";
+import { ITeller } from "../interfaces/ITeller.sol";
+import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
+import { console } from "forge-std/console.sol";
 
 /**
  * @title NestTeller
@@ -10,22 +23,15 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
  * @dev A Teller that only allows deposits of a single `asset` that is
  * configured.
  */
-contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
+contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMultiAssetSupport {
 
-    // Libraries
-
+    using SafeCast for uint256;
     using FixedPointMathLib for uint256;
 
+    uint256 private nonce;
+
     // Public State
-
-    address public asset;
     uint256 public minimumMintPercentage; // Must be 4 decimals i.e. 9999 = 99.99%
-
-    // Errors
-
-    error Unimplemented();
-
-    // Constructor
 
     constructor(
         address _owner,
@@ -34,23 +40,20 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
         address _endpoint,
         address _asset,
         uint256 _minimumMintPercentage
-    ) MultiChainLayerZeroTellerWithMultiAssetSupport(
-        _owner,
-        _vault,
-        _accountant,
-        _endpoint
-    ) {
-        asset = _asset;
-        minimumMintPercentage = _minimumMintPercentage;
-    }
+    )
+        NestBoringVaultModule(_owner, _vault, _accountant, IERC20(_asset))
+        MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint)
+    {
+        // vault, accountant checks from MultiChainLayerZeroTellerWithMultiAssetSupport->TellerWithMultiAssetSupport
+        // owner, endpoint checks from MultiChainLayerZeroTellerWithMultiAssetSupport->OAppAuth
 
-    // Admin Setters
+        if (_asset == address(0)) {
+            revert ZeroAsset();
+        }
+        if (_minimumMintPercentage == 0 || _minimumMintPercentage > 10_000) {
+            revert InvalidMinimumMintPercentage();
+        }
 
-    function setAsset(address _asset) requiresAuth external {
-        asset = _asset;
-    }
-
-    function setMinimumMintPercentage(uint256 _minimumMintPercentage) requiresAuth external {
         minimumMintPercentage = _minimumMintPercentage;
     }
 
@@ -61,7 +64,11 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
      * @param owner Source of the assets to deposit
      * @return requestId Discriminator between non-fungible requests
      */
-    function requestDeposit(uint256 assets, address controller, address owner) public returns (uint256 requestId) {
+    function requestDeposit(
+        uint256 assets,
+        address controller,
+        address owner
+    ) public override returns (uint256 requestId) {
         revert Unimplemented();
     }
 
@@ -71,8 +78,7 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
      * @param receiver Address to receive the shares
      * @param controller Controller of the request
      */
-    function deposit(uint256 assets, address receiver, address controller) public returns (uint256 shares) {
-        // Ensure receiver is msg.sender
+    function deposit(uint256 assets, address receiver, address controller) public override returns (uint256 shares) {
         if (receiver != msg.sender) {
             revert InvalidReceiver();
         }
@@ -80,13 +86,15 @@ contract NestTeller is MultiChainLayerZeroTellerWithMultiAssetSupport {
             revert InvalidController();
         }
 
-        shares = deposit(
-            IERC20(asset),
-            assets,
-            assets.mulDivDown(minimumMintPercentage, 10000)
-        );
+        shares =
+            ITeller(address(this)).deposit(IERC20(asset()), assets, assets.mulDivDown(minimumMintPercentage, 10_000));
 
-        emit Deposit(msg.sender, receiver, assets, shares);
         return shares;
     }
+
+    function requestRedeem(uint256 shares, address controller, address owner) public override returns (uint256) {
+        // Implementation here - this should integrate with LayerZero cross-chain functionality
+        revert Unimplemented();
+    }
+
 }

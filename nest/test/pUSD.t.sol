@@ -63,7 +63,8 @@ contract pUSDTest is Test {
         //asset = new MockUSDC();
         usdc = new MockUSDC();
 
-        vault = new MockVault(owner, "Mock Vault", "mVault", address(usdc));
+        //vault = new MockVault(owner, "Mock Vault", "mVault", address(usdc));
+        vault = new MockVault(owner, "Mock Vault", "mVault", 6);
         mockTeller = new MockTeller();
         mockAtomicQueue = new MockAtomicQueue();
         mockLens = new MockLens();
