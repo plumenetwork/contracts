@@ -710,4 +710,10 @@ abstract contract ComponentToken is
         revert Unimplemented();
     }
 
+    function setAsyncFlags(bool asyncDeposit, bool asyncRedeem) external onlyRole(UPGRADER_ROLE) {
+        ComponentTokenStorage storage $ = _getComponentTokenStorage();
+        $.asyncDeposit = asyncDeposit;
+        $.asyncRedeem = asyncRedeem;
+    }
+
 }
