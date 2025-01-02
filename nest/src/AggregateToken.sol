@@ -62,9 +62,6 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     /// @notice Emitted when the AggregateToken contract is unpaused for deposits
     event Unpaused();
 
-    /// @notice Emitted when the asset token is updated
-    event AssetTokenUpdated(IERC20 indexed oldAsset, IERC20 indexed newAsset);
-
     /// @notice Emitted when vault tokens are bought
     event VaultTokenBought(address indexed buyer, address indexed token, uint256 assets, uint256 shares);
 
@@ -78,20 +75,11 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
      */
     error ComponentTokenAlreadyListed(IComponentToken componentToken);
 
-    /// @notice Emitted when a ComponentToken is removed from the component token list
-    event ComponentTokenRemoved(IComponentToken indexed componentToken);
-
     /**
      * @notice Indicates a failure because the ComponentToken is not in the component token list
      * @param componentToken ComponentToken that is not in the component token list
      */
     error ComponentTokenNotListed(IComponentToken componentToken);
-
-    /**
-     * @notice Indicates a failure because the ComponentToken has a non-zero balance
-     * @param componentToken ComponentToken that has a non-zero balance
-     */
-    error ComponentTokenBalanceNonZero(IComponentToken componentToken);
 
     /**
      * @notice Indicates a failure because the ComponentToken is the current `asset
@@ -157,7 +145,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 askPrice,
         uint256 bidPrice
     ) public initializer {
-        super.initialize(owner, name, symbol, IERC20(address(asset_)), false, true);
+        super.initialize(owner, name, symbol, IERC20(address(asset_)), false, false);
 
         AggregateTokenStorage storage $ = _getAggregateTokenStorage();
         $.componentTokenList.push(asset_);
@@ -165,35 +153,6 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         $.askPrice = askPrice;
         $.bidPrice = bidPrice;
         $.paused = false;
-    }
-
-    /**
-     * @notice Reinitialize the AggregateToken
-     * @param owner Address of the owner of the AggregateToken
-     * @param name Name of the AggregateToken
-     * @param symbol Symbol of the AggregateToken
-     * @param asset_ Asset used to mint and burn the AggregateToken
-     * @param askPrice Price at which users can buy the AggregateToken using `asset`, times the base
-     * @param bidPrice Price at which users can sell the AggregateToken to receive `asset`, times the base
-     */
-    function reinitialize(
-        address owner,
-        string memory name,
-        string memory symbol,
-        IComponentToken asset_,
-        uint256 askPrice,
-        uint256 bidPrice
-    ) public onlyRole(UPGRADER_ROLE) reinitializer(2) {
-        super.reinitialize(owner, name, symbol, IERC20(address(asset_)), false, true);
-
-        AggregateTokenStorage storage $ = _getAggregateTokenStorage();
-        if (!$.componentTokenMap[asset_]) {
-            $.componentTokenList.push(asset_);
-            $.componentTokenMap[asset_] = true;
-            emit ComponentTokenListed(asset_);
-        }
-        $.askPrice = askPrice;
-        $.bidPrice = bidPrice;
     }
 
     // Override Functions
