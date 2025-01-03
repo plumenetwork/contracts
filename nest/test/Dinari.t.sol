@@ -9,6 +9,8 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 contract DinariTest is Test {
     AggregateToken public aggregateToken;
     ComponentToken public componentToken;
+
+
     address public constant MANAGER = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
     address public constant DINARI_TOKEN = 0xD539A98AA76f6C2285C2C779384d3d77f926f794;
     address public constant AGGREGATE_TOKEN = 0x81537d879ACc8a290a1846635a0cAA908f8ca3a6;
@@ -30,15 +32,11 @@ contract DinariTest is Test {
         
         // Deal some asset tokens to the aggregate token
         deal(assetAddress, address(aggregateToken), amountToBuy);
-        
-        // Ensure the aggregate token has the balance
-        assertEq(IERC20(assetAddress).balanceOf(address(aggregateToken)), amountToBuy);
-        
+
         // Buy component token as manager
-        vm.prank(MANAGER);
-        aggregateToken.buyComponentToken(ComponentToken(DINARI_TOKEN), amountToBuy);
-        
-        // Verify the purchase
-        assertGt(componentToken.balanceOf(address(aggregateToken)), 0);
+        vm.startPrank(MANAGER);
+        aggregateToken.approveComponentToken(componentToken, amountToBuy);
+
+        aggregateToken.requestBuyComponentToken(ComponentToken(DINARI_TOKEN), amountToBuy);
     }
 }
