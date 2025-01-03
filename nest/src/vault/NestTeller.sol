@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
@@ -23,7 +24,7 @@ import { console } from "forge-std/console.sol";
  * @dev A Teller that only allows deposits of a single `asset` that is
  * configured.
  */
-contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMultiAssetSupport {
+contract NestTeller is Initializable, NestBoringVaultModule, MultiChainLayerZeroTellerWithMultiAssetSupport {
 
     using SafeCast for uint256;
     using FixedPointMathLib for uint256;
@@ -37,23 +38,18 @@ contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMulti
         address _owner,
         address _vault,
         address _accountant,
-        address _endpoint,
-        address _asset,
+        address _endpoint
+    ) MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint) {
+        _disableInitializers();
+    }
+
+    function initialize(
+        address _vault,
+        address _accountant,
+        IERC20 _asset,
         uint256 _minimumMintPercentage
-    )
-        NestBoringVaultModule(_owner, _vault, _accountant, IERC20(_asset))
-        MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint)
-    {
-        // vault, accountant checks from MultiChainLayerZeroTellerWithMultiAssetSupport->TellerWithMultiAssetSupport
-        // owner, endpoint checks from MultiChainLayerZeroTellerWithMultiAssetSupport->OAppAuth
-
-        if (_asset == address(0)) {
-            revert ZeroAsset();
-        }
-        if (_minimumMintPercentage == 0 || _minimumMintPercentage > 10_000) {
-            revert InvalidMinimumMintPercentage();
-        }
-
+    ) public initializer {
+        __NestBoringVaultModule_init(_vault, _accountant, _asset);
         minimumMintPercentage = _minimumMintPercentage;
     }
 
@@ -68,7 +64,7 @@ contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMulti
         uint256 assets,
         address controller,
         address owner
-    ) public override returns (uint256 requestId) {
+    ) public virtual override returns (uint256 requestId) {
         revert Unimplemented();
     }
 
@@ -78,7 +74,11 @@ contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMulti
      * @param receiver Address to receive the shares
      * @param controller Controller of the request
      */
-    function deposit(uint256 assets, address receiver, address controller) public override returns (uint256 shares) {
+    function deposit(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public virtual override returns (uint256 shares) {
         if (receiver != msg.sender) {
             revert InvalidReceiver();
         }
@@ -92,7 +92,11 @@ contract NestTeller is NestBoringVaultModule, MultiChainLayerZeroTellerWithMulti
         return shares;
     }
 
-    function requestRedeem(uint256 shares, address controller, address owner) public override returns (uint256) {
+    function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public virtual override returns (uint256) {
         // Implementation here - this should integrate with LayerZero cross-chain functionality
         revert Unimplemented();
     }
