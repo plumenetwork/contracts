@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ERC1967Utils } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
+
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 
@@ -21,33 +24,36 @@ contract DeploynYSV is Script {
     address private constant ACCOUNTANT_ADDRESS = 0xD9c3cBfA7dDa0A78a6ea45b09182A33a7C1B3251;
     address private constant ENDPOINT_ADDRESS = 0x6F475642a6e85809B1c36Fa62763669b1b48DD5B;
 
+    UUPSUpgradeable private constant NYSV_PROXY = UUPSUpgradeable(payable(0xC27F63B2b4A5819433D1A89765C439Ee0446CFf8));
+
     function run() external {
         vm.startBroadcast(NEST_ADMIN_ADDRESS);
 
         // Deploy nYSVToken implementation
-        // Deploy with correct constructor parameters
         nYSV nYSVToken = new nYSV();
         console2.log("nYSV implementation deployed to:", address(nYSVToken));
 
-        // Deploy pUSD proxy
-        ERC1967Proxy nYSVProxyContract = new nYSVProxy(
+        // First upgrade the implementation
+        NYSV_PROXY.upgradeToAndCall(
             address(nYSVToken),
-            abi.encodeCall(
-                nYSV.initialize,
-                (
-                    VAULT_TOKEN, // _vault
-                    ACCOUNTANT_ADDRESS, // _accountant
-                    TELLER_ADDRESS, // _teller
-                    ATOMIC_QUEUE, // _atomicQueue
-                    IERC20(USDC_ADDRESS), // _asset
-                    9900, // _minimumMintPercentage
-                    15 minutes, // _deadlinePeriod
-                    9900 // _pricePercentage
-                )
-            )
+            "" // No initialization data for the upgrade
         );
 
-        console2.log("nYSV proxy deployed to:", address(nYSVProxyContract));
+        // Then call reinitialize separately
+        nYSV(address(nYSVProxy)).reinitialize(
+            VAULT_TOKEN, // _vault
+            ACCOUNTANT_ADDRESS, // _accountant
+            TELLER_ADDRESS, // _teller
+            ATOMIC_QUEUE, // _atomicQueue
+            IERC20(USDC_ADDRESS), // _asset
+            9900, // _minimumMintPercentage
+            15 minutes, // _deadlinePeriod
+            9900 // _pricePercentage
+        );
+
+        nYSV upgradedToken = nYSV(nYSVProxy);
+
+        console2.log("nYSV proxy deployed to:", address(upgradedToken));
 
         vm.stopBroadcast();
     }

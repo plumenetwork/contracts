@@ -23,12 +23,7 @@ contract nYSV is Initializable, ERC20Upgradeable, NestAtomicQueue, NestTeller {
      * @notice Prevent the implementation contract from being initialized or reinitialized
      * @custom:oz-upgrades-unsafe-allow constructor
      */
-    constructor(
-        address _owner,
-        address _vault,
-        address _accountant,
-        address _endpoint
-    ) NestTeller(_owner, _vault, _accountant, _endpoint) NestAtomicQueue(_owner) {
+    constructor() {
         _disableInitializers();
     }
 
@@ -44,13 +39,15 @@ contract nYSV is Initializable, ERC20Upgradeable, NestAtomicQueue, NestTeller {
     function initialize(
         address _vault,
         address _accountant,
+        address _teller,
+        address _atomicQueue,
         IERC20 _asset,
         uint256 _minimumMintPercentage,
         uint256 _deadlinePeriod,
         uint256 _pricePercentage
     ) public initializer {
         __ERC20_init("Nest Yield Stable Vault", "nYSV");
-        __NestBoringVaultModule_init(_vault, _accountant, _asset);
+        __NestBoringVaultModule_init(_vault, _accountant, _teller, _atomicQueue, _asset);
 
         // Set minimumMintPercentage
         if (_minimumMintPercentage == 0 || _minimumMintPercentage > 10_000) {

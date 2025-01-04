@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
 import { MockAccountantWithRateProviders } from "../src/mocks/MockAccountantWithRateProviders.sol";
 import { MockERC20 } from "../src/mocks/MockERC20.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
@@ -10,8 +11,13 @@ import { Test } from "forge-std/Test.sol";
 
 abstract contract NestBoringVaultModuleTest is Test {
 
-    MockUSDC public asset;
-    MockVault public vault;
+    address public constant NYSV_PROXY = 0xC27F63B2b4A5819433D1A89765C439Ee0446CFf8;
+    address public constant AGGREGATE_TOKEN = 0x81537d879ACc8a290a1846635a0cAA908f8ca3a6;
+    address public constant USDC = 0x3938A812c54304fEffD266C7E2E70B48F9475aD6;
+    address private constant VAULT_TOKEN = 0x4dA57055E62D8c5a7fD3832868DcF3817b99C959;
+
+    IERC20 public asset;
+    IBoringVault public vault;
     MockAccountantWithRateProviders public accountant;
 
     address public owner;
@@ -22,9 +28,9 @@ abstract contract NestBoringVaultModuleTest is Test {
         user = makeAddr("user");
 
         // Deploy mocks in specific order
-        asset = new MockUSDC();
+        asset = IERC20(USDC);
 
-        vault = new MockVault(owner, "Mock Vault", "mVault", 6); // Use 6 for USDC decimals
+        vault = IBoringVault(VAULT_TOKEN); // Use 6 for USDC decimals
 
         accountant = new MockAccountantWithRateProviders(
             address(vault), // _vault

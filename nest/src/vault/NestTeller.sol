@@ -12,6 +12,8 @@ import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 import { MultiChainLayerZeroTellerWithMultiAssetSupport } from
     "@boringvault/src/base/Roles/CrossChain/MultiChainLayerZeroTellerWithMultiAssetSupport.sol";
 
+import { ITeller } from "../interfaces/ITeller.sol";
+
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
 import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { ITeller } from "../interfaces/ITeller.sol";
@@ -24,32 +26,19 @@ import { console } from "forge-std/console.sol";
  * @dev A Teller that only allows deposits of a single `asset` that is
  * configured.
  */
-contract NestTeller is Initializable, NestBoringVaultModule, MultiChainLayerZeroTellerWithMultiAssetSupport {
+contract NestTeller is Initializable, NestBoringVaultModule {
 
     using SafeCast for uint256;
     using FixedPointMathLib for uint256;
 
-    uint256 private nonce;
-
     // Public State
     uint256 public minimumMintPercentage; // Must be 4 decimals i.e. 9999 = 99.99%
 
-    constructor(
-        address _owner,
-        address _vault,
-        address _accountant,
-        address _endpoint
-    ) MultiChainLayerZeroTellerWithMultiAssetSupport(_owner, _vault, _accountant, _endpoint) {
+    constructor() {
         _disableInitializers();
     }
 
-    function initialize(
-        address _vault,
-        address _accountant,
-        IERC20 _asset,
-        uint256 _minimumMintPercentage
-    ) public initializer {
-        __NestBoringVaultModule_init(_vault, _accountant, _asset);
+    function initialize(IERC20 _asset, uint256 _minimumMintPercentage) public initializer {
         minimumMintPercentage = _minimumMintPercentage;
     }
 
@@ -86,8 +75,7 @@ contract NestTeller is Initializable, NestBoringVaultModule, MultiChainLayerZero
             revert InvalidController();
         }
 
-        shares =
-            ITeller(address(this)).deposit(IERC20(asset()), assets, assets.mulDivDown(minimumMintPercentage, 10_000));
+        shares = teller.deposit(IERC20(asset()), assets, assets.mulDivDown(minimumMintPercentage, 10_000));
 
         return shares;
     }

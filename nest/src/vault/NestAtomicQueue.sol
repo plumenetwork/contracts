@@ -20,7 +20,7 @@ import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
  * @dev An AtomicQueue that only allows withdraws into a single `asset` that is
  * configured.
  */
-contract NestAtomicQueue is Initializable, NestBoringVaultModule, AtomicQueue {
+contract NestAtomicQueue is Initializable, NestBoringVaultModule {
 
     using SafeCast for uint256;
     using FixedPointMathLib for uint256;
@@ -33,15 +33,12 @@ contract NestAtomicQueue is Initializable, NestBoringVaultModule, AtomicQueue {
     // Public State
     uint256 public deadlinePeriod;
     uint256 public pricePercentage; // Must be 4 decimals i.e. 9999 = 99.99%
-    IAtomicQueue public atomicQueue;
 
     // Events
 
     event RequestRedeem(uint256 shares, address controller, address owner);
 
-    constructor(
-        address _owner
-    ) {
+    constructor() {
         _disableInitializers();
     }
 
@@ -52,7 +49,7 @@ contract NestAtomicQueue is Initializable, NestBoringVaultModule, AtomicQueue {
         uint256 _deadlinePeriod,
         uint256 _pricePercentage
     ) public initializer {
-        __NestBoringVaultModule_init(_vault, _accountant, _asset);
+        //__NestBoringVaultModule_init(_vault, _accountant, _asset);
         deadlinePeriod = _deadlinePeriod;
         pricePercentage = _pricePercentage;
     }
@@ -80,14 +77,12 @@ contract NestAtomicQueue is Initializable, NestBoringVaultModule, AtomicQueue {
         // Create and submit atomic request
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
             deadline: uint64(block.timestamp + deadlinePeriod),
-            atomicPrice: uint88(
-                accountantContract.getRateInQuote(ERC20(address(assetToken))).mulDivDown(pricePercentage, 10_000)
-            ),
+            atomicPrice: uint88(accountant.getRateInQuote(ERC20(address(assetToken))).mulDivDown(pricePercentage, 10_000)),
             offerAmount: uint96(shares),
             inSolve: false
         });
 
-        atomicQueue.updateAtomicRequest(IERC20(address(vaultContract)), assetToken, request);
+        atomicQueue.updateAtomicRequest(IERC20(address(vault)), assetToken, request);
 
         emit RequestRedeem(shares, controller, owner);
 
