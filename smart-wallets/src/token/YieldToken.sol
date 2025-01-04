@@ -2,11 +2,9 @@
 pragma solidity ^0.8.25;
 
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import { ERC4626 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 
 import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
@@ -22,7 +20,7 @@ import { YieldDistributionToken } from "./YieldDistributionToken.sol";
  * @author Eugene Y. Q. Shen
  * @notice ERC20 token that receives yield redistributions from an AssetToken
  */
-contract YieldToken is YieldDistributionToken, ERC4626Upgradeable, WalletUtils, IYieldToken, IComponentToken {
+contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken, IComponentToken {
 
     // Storage
 
@@ -135,15 +133,7 @@ contract YieldToken is YieldDistributionToken, ERC4626Upgradeable, WalletUtils, 
     // Constructor
 
     /**
-     * @notice Prevent the implementation contract from being initialized or reinitialized
-     * @custom:oz-upgrades-unsafe-allow constructor
-     */
-    constructor() {
-        _disableInitializers();
-    }
-
-    /**
-     * @notice Initialize the YieldToken
+     * @notice Construct the YieldToken
      * @param owner Address of the owner of the YieldToken
      * @param name Name of the YieldToken
      * @param symbol Symbol of the YieldToken
@@ -153,7 +143,7 @@ contract YieldToken is YieldDistributionToken, ERC4626Upgradeable, WalletUtils, 
      * @param assetToken AssetToken that redistributes yield to the YieldToken
      * @param initialSupply Initial supply of the YieldToken
      */
-    function initialize(
+    constructor(
         address owner,
         string memory name,
         string memory symbol,
@@ -162,7 +152,7 @@ contract YieldToken is YieldDistributionToken, ERC4626Upgradeable, WalletUtils, 
         string memory tokenURI_,
         IAssetToken assetToken,
         uint256 initialSupply
-    ) public initializer {
+    ) YieldDistributionToken(owner, name, symbol, currencyToken, decimals_, tokenURI_) ERC4626(currencyToken) {
         if (owner == address(0)) {
             revert ZeroAddress("owner");
         }
@@ -176,57 +166,8 @@ contract YieldToken is YieldDistributionToken, ERC4626Upgradeable, WalletUtils, 
         if (currencyToken != assetToken.getCurrencyToken()) {
             revert InvalidCurrencyToken(currencyToken, assetToken.getCurrencyToken());
         }
-
-        __YieldDistributionToken_init(owner, name, symbol, currencyToken, decimals_, tokenURI_);
-        __ERC4626_init(currencyToken);
-
         _getYieldTokenStorage().assetToken = assetToken;
         _mint(owner, initialSupply);
-    }
-
-    /**
-     * @notice Reinitialize the YieldToken with updated parameters
-     * @dev This function can be called multiple times, but only by the owner and with increasing version numbers
-     * @param version Version number for the reinitialization
-     * @param newName Optional new name for the token (empty string to keep current)
-     * @param newSymbol Optional new symbol for the token (empty string to keep current)
-     * @param newTokenURI Optional new token URI (empty string to keep current)
-     * @param newAssetToken Optional new asset token (address(0) to keep current)
-     */
-    function reinitialize(
-        uint8 version,
-        string memory newName,
-        string memory newSymbol,
-        string memory newTokenURI,
-        IAssetToken newAssetToken
-    ) public onlyRole(UPGRADER_ROLE) reinitializer(2) onlyOwner {
-        YieldTokenStorage storage $ = _getYieldTokenStorage();
-
-        // Update name if provided
-        if (bytes(newName).length > 0) {
-            _setName(newName);
-        }
-
-        // Update symbol if provided
-        if (bytes(newSymbol).length > 0) {
-            _setSymbol(newSymbol);
-        }
-
-        // Update tokenURI if provided
-        if (bytes(newTokenURI).length > 0) {
-            _getYieldDistributionTokenStorage().tokenURI = newTokenURI;
-        }
-
-        // Update assetToken if provided
-        if (address(newAssetToken) != address(0)) {
-            // Verify the new asset token uses the same currency token
-            if (_getYieldDistributionTokenStorage().currencyToken != newAssetToken.getCurrencyToken()) {
-                revert InvalidCurrencyToken(
-                    IERC20(newAssetToken.getCurrencyToken()), _getYieldDistributionTokenStorage().currencyToken
-                );
-            }
-            $.assetToken = newAssetToken;
-        }
     }
 
     // Admin Functions
