@@ -406,6 +406,9 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
             revert DeadlineExpired();
         }
 
+        // Approve the atomic queue to spend the offer tokens
+        SafeERC20.forceApprove(IERC20(offerToken), _atomicQueue, shares);
+
         // Create and submit atomic request
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
             deadline: deadline,
