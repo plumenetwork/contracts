@@ -366,7 +366,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 assets,
         uint256 minimumMint,
         address _teller
-    ) public nonReentrant returns (uint256 shares) {
+    ) public nonReentrant onlyRole(MANAGER_ROLE) returns (uint256 shares) {
         if (msg.sender == address(0)) {
             revert InvalidReceiver();
         }
