@@ -381,12 +381,6 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
             revert AssetNotSupported();
         }
 
-        // Transfer assets from sender to this contract
-        SafeERC20.safeTransferFrom(IERC20(token), msg.sender, address(this), assets);
-
-        // Approve teller to spend assets
-        SafeERC20.forceApprove(IERC20(token), address(teller), assets);
-
         // Deposit through teller
         shares = teller.deposit(
             IERC20(token), // depositAsset
