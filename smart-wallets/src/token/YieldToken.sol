@@ -28,6 +28,10 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     struct YieldTokenStorage {
         /// @dev AssetToken that redistributes yield to the YieldToken
         IAssetToken assetToken;
+        /// @dev Tracks undistributed yield
+        uint256 yieldBuffer;
+        /// @dev Tracks actual deposits/withdrawals
+        uint256 totalManagedAssets;
         /// @dev Amount of assets deposited by each controller and not ready to claim
         mapping(address controller => uint256 assets) pendingDepositRequest;
         /// @dev Amount of assets deposited by each controller and ready to claim
@@ -209,7 +213,8 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
 
     /// @inheritdoc IERC4626
     function totalAssets() public view override(ERC4626, IComponentToken) returns (uint256 totalManagedAssets) {
-        return super.totalAssets();
+        YieldTokenStorage storage $ = _getYieldTokenStorage();
+        return $.totalManagedAssets;
     }
 
     /// @inheritdoc IComponentToken
@@ -272,6 +277,8 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         if (currencyToken != _getYieldDistributionTokenStorage().currencyToken) {
             revert InvalidCurrencyToken(currencyToken, _getYieldDistributionTokenStorage().currencyToken);
         }
+
+        $.yieldBuffer += amount;
         _depositYield(currencyTokenAmount);
     }
 
@@ -336,6 +343,9 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         shares = $.sharesDepositRequest[controller];
         $.claimableDepositRequest[controller] -= assets;
         $.sharesDepositRequest[controller] -= shares;
+
+        // Track managed assets
+        $.totalManagedAssets += assets;
 
         _mint(receiver, shares);
 
@@ -438,12 +448,23 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         $.claimableRedeemRequest[controller] -= shares;
         $.assetsRedeemRequest[controller] -= assets;
 
+        // Track managed assets
+        $.totalManagedAssets -= assets;
+
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
         }
 
         emit Withdraw(controller, receiver, controller, assets, shares);
     }
+
+
+    function _beforeWithdraw(uint256 assets) internal view {
+        YieldTokenStorage storage $ = _getYieldTokenStorage();
+        uint256 availableAssets = IERC20(asset()).balanceOf(address(this)) - $.yieldBuffer;
+        require(availableAssets >= assets, "Cannot withdraw from yield buffer");
+    }
+
 
     /// @inheritdoc IERC4626
     function withdraw(
@@ -462,13 +483,20 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         }
 
         YieldTokenStorage storage $ = _getYieldTokenStorage();
-        shares = convertToShares(assets);
-
-        if ($.claimableRedeemRequest[controller] < shares) {
-            revert InsufficientRequestBalance(controller, shares, 3);
+        
+        
+        // Verify against stored values
+        if (assets > $.assetsRedeemRequest[controller]) {
+            revert InsufficientRequestBalance(controller, assets, 3);
         }
+        shares = $.claimableRedeemRequest[controller];
         $.claimableRedeemRequest[controller] -= shares;
         $.assetsRedeemRequest[controller] -= assets;
+
+        // Track managed assets
+        $.totalManagedAssets -= assets;
+
+        _beforeWithdraw(assets);
 
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
