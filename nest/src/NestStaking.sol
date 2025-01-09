@@ -257,7 +257,6 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         $.featuredList.push(aggregateToken);
         $.featuredIndex[aggregateToken] = $.featuredList.length;
 
-        //$.isFeatured[aggregateToken] = true;
         emit TokenFeatured(aggregateToken);
         emit TokenCreated(msg.sender, aggregateToken);
     }
