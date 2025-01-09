@@ -17,7 +17,7 @@ import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
 /**
  * @title YieldToken
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice ERC20 token that receives yield redistributions from an AssetToken
  */
 contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken, IComponentToken {
@@ -334,9 +334,8 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
             revert InsufficientRequestBalance(controller, assets, 1);
         }
 
-
-        // Use the pre-calculated shares amount from the notification
-        shares = $.sharesDepositRequest[controller];
+        // Calculate proportional shares based on requested assets
+        shares = $.sharesDepositRequest[controller].mulDivDown(assets, $.claimableDepositRequest[controller]);
 
         $.claimableDepositRequest[controller] -= assets;
         $.sharesDepositRequest[controller] -= shares;
@@ -439,8 +438,8 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
             revert InsufficientRequestBalance(controller, shares, 3);
         }
 
-    // Use the pre-calculated assets amount from the notification
-    assets = $.assetsRedeemRequest[controller];
+        // Calculate proportional assets based on requested shares
+        assets = $.assetsRedeemRequest[controller].mulDivDown(shares, $.claimableRedeemRequest[controller]);
 
         $.claimableRedeemRequest[controller] -= shares;
         $.assetsRedeemRequest[controller] -= assets;
@@ -474,12 +473,9 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         if (assets > $.assetsRedeemRequest[controller]) {
             revert InsufficientRequestBalance(controller, assets, 3);
         }
-        
+
         // Calculate proportional shares based on requested assets
-        shares = $.claimableRedeemRequest[controller].mulDivDown(
-            assets, 
-            $.assetsRedeemRequest[controller]
-        );
+        shares = $.claimableRedeemRequest[controller].mulDivDown(assets, $.assetsRedeemRequest[controller]);
 
         $.claimableRedeemRequest[controller] -= shares;
         $.assetsRedeemRequest[controller] -= assets;
