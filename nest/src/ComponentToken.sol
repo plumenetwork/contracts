@@ -21,9 +21,20 @@ import { IERC7575 } from "./interfaces/IERC7575.sol";
 
 /**
  * @title ComponentToken
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Abstract contract that implements the IComponentToken interface and can be extended
  *   with a concrete implementation that interfaces with an external real-world asset.
+ * @dev Rounding rules for ERC4626 functions:
+ *
+ * Preview functions (simulate what would happen):
+ * - previewMint(shares)     - Round UP ⬆️   // Show max assets needed
+ * - previewWithdraw(assets) - Round UP ⬆️   // Show max shares needed
+ * - previewRedeem(shares)   - Round DOWN ⬇️ // Show min assets to receive
+ * - previewDeposit(assets)  - Round DOWN ⬇️ // Show min shares to receive
+ *
+ * Convert functions (used in actual operations):
+ * - convertToAssets(shares) - Round DOWN ⬇️ // Conservative for withdrawals
+ * - convertToShares(assets) - Round DOWN ⬇️ // Conservative for deposits
  */
 abstract contract ComponentToken is
     Initializable,
@@ -290,6 +301,9 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IERC4626
+    /// @dev Concrete implementations should:
+    /// - Always round DOWN for convertToShares
+    /// - Handle zero supply/assets cases appropriately
     function convertToShares(
         uint256 assets
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
@@ -297,6 +311,9 @@ abstract contract ComponentToken is
     }
 
     /// @inheritdoc IERC4626
+    /// @dev Concrete implementations should:
+    /// - Always round DOWN for convertToAssets
+    /// - Handle zero supply/assets cases appropriately
     function convertToAssets(
         uint256 shares
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
@@ -695,6 +712,7 @@ abstract contract ComponentToken is
     /**
      * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous redeem vaults
+     * @dev Round up for previews (show worst case)
      */
     function previewWithdraw(
         uint256 assets
