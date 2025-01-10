@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
@@ -20,7 +19,7 @@ import { NestBoringVaultModule } from "./NestBoringVaultModule.sol";
  * @dev An AtomicQueue that only allows withdraws into a single `asset` that is
  * configured.
  */
-contract NestAtomicQueue is Initializable, NestBoringVaultModule {
+contract NestAtomicQueue is NestBoringVaultModule, AtomicQueue {
 
     using SafeCast for uint256;
     using FixedPointMathLib for uint256;
@@ -33,27 +32,22 @@ contract NestAtomicQueue is Initializable, NestBoringVaultModule {
     // Public State
     uint256 public deadlinePeriod;
     uint256 public pricePercentage; // Must be 4 decimals i.e. 9999 = 99.99%
-
+    IAtomicQueue public immutable atomicQueue;
     // Events
 
     event RequestRedeem(uint256 shares, address controller, address owner);
 
-    constructor() {
-        _disableInitializers();
-    }
-
-    function initialize(
+    constructor(
+        address _owner,
         address _vault,
         address _accountant,
         IERC20 _asset,
         uint256 _deadlinePeriod,
         uint256 _pricePercentage
-    ) public initializer {
-        //__NestBoringVaultModule_init(_vault, _accountant, _asset);
+    ) Auth(_owner, Authority(address(0))) NestBoringVaultModule(_owner, _vault, _accountant, _asset) AtomicQueue() {
         deadlinePeriod = _deadlinePeriod;
         pricePercentage = _pricePercentage;
     }
-
     /**
      * @notice Transfer shares from the owner into the vault and submit a request to redeem assets
      * @param shares Amount of shares to redeem
@@ -61,11 +55,12 @@ contract NestAtomicQueue is Initializable, NestBoringVaultModule {
      * @param owner Source of the shares to redeem
      * @return requestId Discriminator between non-fungible requests
      */
+
     function requestRedeem(
         uint256 shares,
         address controller,
         address owner
-    ) public virtual override returns (uint256 requestId) {
+    ) public override returns (uint256 requestId) {
         if (owner != msg.sender) {
             revert InvalidOwner();
         }
@@ -77,12 +72,14 @@ contract NestAtomicQueue is Initializable, NestBoringVaultModule {
         // Create and submit atomic request
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({
             deadline: uint64(block.timestamp + deadlinePeriod),
-            atomicPrice: uint88(accountant.getRateInQuote(ERC20(address(assetToken))).mulDivDown(pricePercentage, 10_000)),
+            atomicPrice: uint88(
+                accountantContract.getRateInQuote(ERC20(address(assetToken))).mulDivDown(pricePercentage, 10_000)
+            ),
             offerAmount: uint96(shares),
             inSolve: false
         });
 
-        atomicQueue.updateAtomicRequest(IERC20(address(vault)), assetToken, request);
+        atomicQueue.updateAtomicRequest(IERC20(address(vaultContract)), assetToken, request);
 
         emit RequestRedeem(shares, controller, owner);
 
@@ -95,11 +92,7 @@ contract NestAtomicQueue is Initializable, NestBoringVaultModule {
      * @param receiver Address to receive the shares
      * @param controller Controller of the request
      */
-    function deposit(
-        uint256 assets,
-        address receiver,
-        address controller
-    ) public virtual override returns (uint256 shares) {
+    function deposit(uint256 assets, address receiver, address controller) public override returns (uint256 shares) {
         revert Unimplemented();
     }
 

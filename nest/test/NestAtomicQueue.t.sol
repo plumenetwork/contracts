@@ -34,24 +34,22 @@ contract NestAtomicQueueTest is NestBoringVaultModuleTest {
 
     function setUp() public override {
         super.setUp();
-        /*
+
         // Deploy NestAtomicQueue
         queue = new NestAtomicQueue(
             address(this), address(vault), address(accountant), asset, DEADLINE_PERIOD, PRICE_PERCENTAGE
         );
-
-        */
     }
 
     function testInitialization() public override {
-        //assertEq(queue.owner(), address(this));
-        assertEq(address(queue.vault()), address(vault));
-        assertEq(address(queue.accountant()), address(accountant));
+        assertEq(queue.owner(), address(this));
+        assertEq(address(queue.vaultContract()), address(vault));
+        assertEq(address(queue.accountantContract()), address(accountant));
         assertEq(address(queue.assetToken()), address(asset));
         assertEq(queue.deadlinePeriod(), DEADLINE_PERIOD);
         assertEq(queue.pricePercentage(), PRICE_PERCENTAGE);
     }
-    /*
+
     function testRequestRedeem(
         uint256 shares
     ) public {
@@ -134,6 +132,5 @@ contract NestAtomicQueueTest is NestBoringVaultModuleTest {
         vm.expectRevert(NestBoringVaultModule.Unimplemented.selector);
         queue.deposit(1e6, address(this), address(this));
     }
-    */
 
 }

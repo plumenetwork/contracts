@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
@@ -10,28 +9,24 @@ import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 import { IAccountantWithRateProviders } from "../interfaces/IAccountantWithRateProviders.sol";
-
-import { IAtomicQueue } from "../interfaces/IAtomicQueue.sol";
 import { IBoringVault } from "../interfaces/IBoringVault.sol";
 import { IComponentToken } from "../interfaces/IComponentToken.sol";
-import { ITeller } from "../interfaces/ITeller.sol";
+import { console } from "forge-std/console.sol";
 
 /**
  * @title NestBoringVaultModule
  * @notice Base implementation for Nest vault modules
  * @dev Implements common functionality for both Teller and AtomicQueue
  */
-abstract contract NestBoringVaultModule is Initializable, IComponentToken {
+abstract contract NestBoringVaultModule is IComponentToken, Auth {
 
     using SafeCast for uint256;
     using FixedPointMathLib for uint256;
 
     // Public State
-    IBoringVault public vault;
-    IAccountantWithRateProviders public accountant;
-    ITeller public teller;
-    IAtomicQueue public atomicQueue;
-    uint256 public _decimals;
+    IBoringVault public immutable vaultContract;
+    IAccountantWithRateProviders public immutable accountantContract;
+    uint256 public immutable decimals;
     IERC20 public assetToken;
 
     // Custom Errors
@@ -39,42 +34,25 @@ abstract contract NestBoringVaultModule is Initializable, IComponentToken {
     error InvalidController();
     error Unimplemented();
     error InvalidAmount();
+    error ZeroOwner();
     error InvalidOwner();
-    error ZeroAddress(string _address);
-
+    error ZeroVault();
+    error ZeroAccountant();
+    error ZeroEndpoint();
+    error ZeroAsset();
     error InvalidMinimumMintPercentage();
 
-    function _checkZeroAddress(address addr, string memory name) private pure {
-        if (addr == address(0)) {
-            revert ZeroAddress(name);
-        }
-    }
-
-    function __NestBoringVaultModule_init(
-        address _vault,
-        address _accountant,
-        address _teller,
-        address _atomicQueue,
-        IERC20 _asset
-    ) internal onlyInitializing {
-        _checkZeroAddress(_vault, "vault");
-        _checkZeroAddress(_accountant, "accountant");
-        _checkZeroAddress(_teller, "teller");
-        _checkZeroAddress(_atomicQueue, "atomicQueue");
-        _checkZeroAddress(address(_asset), "asset");
-
-        vault = IBoringVault(_vault);
-        accountant = IAccountantWithRateProviders(_accountant);
-        teller = ITeller(_teller);
-        atomicQueue = IAtomicQueue(_atomicQueue);
-        _decimals = IBoringVault(_vault).decimals();
-
+    // Constructor
+    constructor(address _owner, address _vault, address _accountant, IERC20 _asset) {
+        vaultContract = IBoringVault(_vault);
+        accountantContract = IAccountantWithRateProviders(_accountant);
+        decimals = vaultContract.decimals();
         assetToken = _asset;
     }
 
     function setAsset(
         IERC20 _asset
-    ) external {
+    ) external requiresAuth {
         assetToken = _asset;
     }
 
@@ -89,24 +67,24 @@ abstract contract NestBoringVaultModule is Initializable, IComponentToken {
         return address(assetToken);
     }
 
-    function totalSupply() public view virtual returns (uint256) {
-        return vault.totalSupply();
+    function totalSupply() public view returns (uint256) {
+        return vaultContract.totalSupply();
     }
 
     function balanceOf(
         address owner
-    ) public view virtual returns (uint256) {
-        return vault.balanceOf(owner);
+    ) public view returns (uint256) {
+        return vaultContract.balanceOf(owner);
     }
 
     /**
      * @notice Total value held in the vault
      * @dev Example ERC20 implementation: return convertToAssets(totalSupply())
      */
-    function totalAssets() public view virtual returns (uint256) {
+    function totalAssets() public view returns (uint256) {
         // WARNING: Would only reflect the totalAssets on this single vault, not
         // including the crosschain vaults.
-        return convertToAssets(vault.totalSupply());
+        return convertToAssets(vaultContract.totalSupply());
     }
 
     /**
@@ -118,19 +96,19 @@ abstract contract NestBoringVaultModule is Initializable, IComponentToken {
     function assetsOf(
         address owner
     ) public view returns (uint256) {
-        return convertToAssets(vault.balanceOf(owner));
+        return convertToAssets(vaultContract.balanceOf(owner));
     }
 
     function convertToShares(
         uint256 assets
     ) public view virtual returns (uint256) {
-        return assets.mulDivDown(10 ** _decimals, accountant.getRateInQuote(ERC20(address(assetToken))));
+        return assets.mulDivDown(10 ** decimals, accountantContract.getRateInQuote(ERC20(address(assetToken))));
     }
 
     function convertToAssets(
         uint256 shares
     ) public view virtual returns (uint256) {
-        return shares.mulDivDown(accountant.getRateInQuote(ERC20(address(assetToken))), 10 ** _decimals);
+        return shares.mulDivDown(accountantContract.getRateInQuote(ERC20(address(assetToken))), 10 ** decimals);
     }
 
     // Default implementations that can be overridden

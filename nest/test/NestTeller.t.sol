@@ -9,8 +9,6 @@ import { ERC20 } from "@solmate/tokens/ERC20.sol";
 import { console } from "forge-std/console.sol";
 
 import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
-import { ITeller } from "../src/interfaces/ITeller.sol";
-import { InYSV } from "../src/interfaces/InYSV.sol";
 import { NestBoringVaultModule } from "../src/vault/NestBoringVaultModule.sol";
 import { NestTeller } from "../src/vault/NestTeller.sol";
 import { NestBoringVaultModuleTest } from "./NestBoringVaultModuleTest.t.sol";
@@ -37,8 +35,6 @@ contract NestTellerTest is NestBoringVaultModuleTest {
 
     function setUp() public override {
         super.setUp();
-
-        /*
         mockEndpoint = new MockLayerZeroEndpoint(1, address(this));
         endpoint = address(mockEndpoint);
 
@@ -86,7 +82,6 @@ contract NestTellerTest is NestBoringVaultModuleTest {
         vm.startPrank(address(teller));
         IERC20(address(asset)).approve(address(vault), type(uint256).max); // User approves teller only
         vm.stopPrank();
-        */
     }
 
     // Add this function to implement the Authority interface
@@ -96,9 +91,9 @@ contract NestTellerTest is NestBoringVaultModuleTest {
     }
 
     function testInitialization() public override {
-        //assertEq(teller.owner(), owner);
-        assertEq(address(teller.vault()), address(vault));
-        assertEq(address(teller.accountant()), address(accountant));
+        assertEq(teller.owner(), owner);
+        assertEq(address(teller.vaultContract()), address(vault));
+        assertEq(address(teller.accountantContract()), address(accountant));
         assertEq(teller.asset(), address(asset));
         assertEq(teller.minimumMintPercentage(), MINIMUM_MINT_PERCENTAGE);
     }
@@ -110,25 +105,17 @@ contract NestTellerTest is NestBoringVaultModuleTest {
         amount = bound(amount, 1e6, 1_000_000e6);
 
         // Give user some tokens
-        deal(address(asset), NYSV_PROXY, amount);
+        deal(address(asset), user, amount);
 
         // Record initial vault balance
         uint256 vaultBalanceBefore = IERC20(address(asset)).balanceOf(address(vault));
-        // Approval chain:
-        // 1. AGGREGATE_TOKEN needs to approve NYSV_PROXY
-        vm.startPrank(AGGREGATE_TOKEN);
-        IERC20(address(asset)).approve(NYSV_PROXY, amount);
-        vm.stopPrank();
 
-        // 2. NYSV_PROXY needs to approve the vault
-        vm.startPrank(NYSV_PROXY);
-        IERC20(address(asset)).approve(address(vault), amount);
-        vm.stopPrank();
-
-        vm.startPrank(AGGREGATE_TOKEN);
+        // Approve teller
+        vm.startPrank(user);
+        IERC20(address(asset)).approve(address(teller), amount);
 
         // Deposit
-        uint256 shares = InYSV(NYSV_PROXY).deposit(amount, AGGREGATE_TOKEN, AGGREGATE_TOKEN);
+        uint256 shares = teller.deposit(amount, user, user);
 
         // Verify
         assertGt(shares, 0, "Should have received shares");
@@ -137,7 +124,7 @@ contract NestTellerTest is NestBoringVaultModuleTest {
         assertEq(vaultBalanceAfter - vaultBalanceBefore, amount, "Vault should have received correct amount of tokens");
         vm.stopPrank();
     }
-    /*
+
     // Test deposit with invalid receiver
     function testDepositWithInvalidReceiver(
         uint256 amount
@@ -201,7 +188,7 @@ contract NestTellerTest is NestBoringVaultModuleTest {
 
     function testConstructorInvalidEndpoint() public {
         vm.expectRevert();
-    new NestTeller(owner, address(vault), address(accountant), address(0), address(asset), MINIMUM_MINT_PERCENTAGE);
+        new NestTeller(owner, address(vault), address(accountant), address(0), address(asset), MINIMUM_MINT_PERCENTAGE);
     }
 
     function testConstructorInvalidAsset() public {
@@ -272,6 +259,5 @@ contract NestTellerTest is NestBoringVaultModuleTest {
         teller.deposit(amount, user, user);
         vm.stopPrank();
     }
-    */
 
 }
