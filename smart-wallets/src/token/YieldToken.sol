@@ -71,7 +71,7 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
      * @notice Emitted when the vault has been notified of the completion of a redeem request
      * @param controller Controller of the request
      * @param assets Amount of `asset` to receive in exchange
-     * @param shares Amount of shares that has been redeemed
+     * @param shares Amount of shares that have been redeemed
      */
     event RedeemNotified(address indexed controller, uint256 assets, uint256 shares);
 
