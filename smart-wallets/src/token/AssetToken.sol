@@ -281,7 +281,7 @@ contract AssetToken is
      */
     function depositYield(
         uint256 currencyTokenAmount
-    ) external onlyRole(ADMIN_ROLE) {
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
         _depositYield(currencyTokenAmount);
     }
 
@@ -295,7 +295,7 @@ contract AssetToken is
      */
     function requestYield(
         address from
-    ) external override(YieldDistributionToken, IYieldDistributionToken) {
+    ) external override(YieldDistributionToken, IYieldDistributionToken) nonReentrant {
         // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
         (bool success,) = from.call(abi.encodeWithSelector(ISmartWallet.claimAndRedistributeYield.selector, this));
         if (!success) {

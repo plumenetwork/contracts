@@ -262,7 +262,7 @@ contract YieldToken is
      */
     function requestYield(
         address from
-    ) external override(YieldDistributionToken, IYieldDistributionToken) {
+    ) external override(YieldDistributionToken, IYieldDistributionToken) nonReentrant {
         // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
         (bool success,) = from.call(
             abi.encodeWithSelector(ISmartWallet.claimAndRedistributeYield.selector, _getYieldTokenStorage().assetToken)
@@ -340,7 +340,11 @@ contract YieldToken is
      * @param currencyToken CurrencyToken in which the yield is received and denominated
      * @param currencyTokenAmount Amount of CurrencyToken to receive as yield
      */
-    function receiveYield(IAssetToken assetToken, IERC20 currencyToken, uint256 currencyTokenAmount) external {
+    function receiveYield(
+        IAssetToken assetToken,
+        IERC20 currencyToken,
+        uint256 currencyTokenAmount
+    ) external nonReentrant {
         if (assetToken != _getYieldTokenStorage().assetToken) {
             revert InvalidAssetToken(assetToken, _getYieldTokenStorage().assetToken);
         }
@@ -351,7 +355,11 @@ contract YieldToken is
     }
 
     /// @inheritdoc IComponentToken
-    function requestDeposit(uint256 assets, address controller, address owner) public returns (uint256 requestId) {
+    function requestDeposit(
+        uint256 assets,
+        address controller,
+        address owner
+    ) public nonReentrant returns (uint256 requestId) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -393,7 +401,11 @@ contract YieldToken is
     }
 
     /// @inheritdoc IComponentToken
-    function deposit(uint256 assets, address receiver, address controller) public returns (uint256 shares) {
+    function deposit(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public nonReentrant returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -423,7 +435,7 @@ contract YieldToken is
      * @param receiver Address to receive the shares
      * @param controller Controller of the request
      */
-    function mint(uint256 shares, address receiver, address controller) public returns (uint256 assets) {
+    function mint(uint256 shares, address receiver, address controller) public nonReentrant returns (uint256 assets) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -449,7 +461,11 @@ contract YieldToken is
     }
 
     /// @inheritdoc IComponentToken
-    function requestRedeem(uint256 shares, address controller, address owner) public returns (uint256 requestId) {
+    function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public nonReentrant returns (uint256 requestId) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -494,7 +510,7 @@ contract YieldToken is
         uint256 shares,
         address receiver,
         address controller
-    ) public override(ERC4626Upgradeable, IComponentToken) returns (uint256 assets) {
+    ) public override(ERC4626Upgradeable, IComponentToken) nonReentrant returns (uint256 assets) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -525,7 +541,7 @@ contract YieldToken is
         uint256 assets,
         address receiver,
         address controller
-    ) public override(ERC4626Upgradeable) returns (uint256 shares) {
+    ) public override(ERC4626Upgradeable) nonReentrant returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
         }
