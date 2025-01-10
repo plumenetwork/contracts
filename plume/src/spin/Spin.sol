@@ -7,6 +7,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "../interfaces/IDateTime.sol";
+import "../interfaces/ISupraRouterContract.sol";
 
 /// @custom:oz-upgrades-from Spin
 contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
@@ -27,8 +28,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         mapping(address => uint256) lastSpinDate;
         /// @dev Mapping of probabilities to rewards
         mapping(uint256 => uint256) probabilitiesToRewards;
-        /// @dev Reference to the DVRF interface
-        IDVRF dVRF;
+        /// @dev Reference to the Supra VRF interface
+        ISupraRouterContract supraRouter;
         /// @dev Reference to the DateTime contract
         IDateTime dateTime;
     }
@@ -46,7 +47,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     // Events
-    event Spun(address indexed walletAddress, uint256 feathersGained);
+    event SpinRequested(uint256 indexed nonce, address indexed user);
+    event SpinCompleted(address indexed walletAddress, uint256 feathersGained);
 
     // Modifiers
     modifier onlyAdmin() {
@@ -74,46 +76,54 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     }
 
     // Initializer
-    function initialize(address dVRFAddress, address dateTimeAddress, uint256 _cooldownPeriod) public initializer {
+    function initialize(address supraRouterAddress, address dateTimeAddress, uint256 _cooldownPeriod) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
 
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _setupRole(ADMIN_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
 
         SpinStorage storage s = _getSpinStorage();
-        s.dVRF = IDVRF(dVRFAddress);
+        s.supraRouter = ISupraRouterContract(supraRouterAddress);
         s.dateTime = IDateTime(dateTimeAddress);
         s.cooldownPeriod = _cooldownPeriod;
         s.admin = msg.sender;
     }
 
-    // Spin Logic
     function startSpin() external whenNotPaused canSpin {
         SpinStorage storage s = _getSpinStorage();
-        bytes32 requestId = s.dVRF.requestRandomness();
+        string memory callbackSignature = "handleRandomness(uint256,uint256[])";
+        uint8 rngCount = 1; 
+        uint256 numConfirmations = 1; 
+        uint256 clientSeed = uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp)));
+
+        uint256 nonce = s.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, address(this));
         s.lastSpinDate[msg.sender] = block.timestamp;
+
+        emit SpinRequested(nonce, msg.sender);
     }
 
-    function completeSpin(bytes32 requestId) external {
+    function handleRandomness(uint256 nonce, uint256[] memory rngList) external {
         SpinStorage storage s = _getSpinStorage();
-        uint256 vrfValue = s.dVRF.getRandomness(requestId);
+        require(msg.sender == address(s.supraRouter), "Unauthorized callback");
+
+        uint256 vrfValue = rngList[0]; 
         uint256 reward = determineReward(vrfValue);
 
         if (reward > 0) {
             s.feathersGained[msg.sender] += reward;
             s.dailyStreak[msg.sender] += 1;
         } else {
-            s.dailyStreak[msg.sender] = 0; // Reset streak if no reward
+            s.dailyStreak[msg.sender] = 0; 
         }
 
-        emit Spun(msg.sender, reward);
+        emit SpinCompleted(msg.sender, reward);
     }
 
     function determineReward(uint256 randomness) internal view returns (uint256) {
         SpinStorage storage s = _getSpinStorage();
-        uint256 probability = randomness % 100; // Assume probabilities are 0-99
+        uint256 probability = randomness % 100; // Probabilities are 0-99
         return s.probabilitiesToRewards[probability];
     }
 
@@ -137,5 +147,4 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     // UUPS Authorization
     function _authorizeUpgrade(address newImplementation) internal override onlyAdmin {}
-
 }
