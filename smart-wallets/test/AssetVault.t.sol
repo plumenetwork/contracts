@@ -45,16 +45,17 @@ contract AssetVaultTest is Test {
         yieldCurrency = new MockERC20("YieldCurrency", "YC");
 
         // Setup mock AssetToken
-        assetToken = new AssetToken(
-            OWNER, // Address of the owner
-            "AssetToken", // Name of the token
-            "AT", // Symbol of the token
-            ERC20(address(0)), // ERC20 currency token
-            18, // Decimals for the asset token
-            "uri://asset", // Token URI
-            initialSupply, // Initial supply of AssetToken
-            1_000_000, // Total value of all AssetTokens
-            false // Disable whitelist
+        assetToken = new AssetToken();
+        assetToken.initialize(
+            OWNER, // owner
+            "AssetToken", // name
+            "AT", // symbol
+            ERC20(address(0)), // currency token
+            18, // decimals
+            "uri://asset", // tokenURI
+            initialSupply, // initialSupply
+            1_000_000, // totalValue
+            false // isWhitelistEnabled
         );
 
         vm.stopPrank();

@@ -58,8 +58,17 @@ contract YieldDistributionTokenTest is Test, WalletUtils {
 
         yieldCurrency = new MockYieldCurrency();
 
-        assetToken = new AssetToken(
-            OWNER, "Asset Token", "AT", yieldCurrency, 18, "uri://asset", INITIAL_SUPPLY, 1_000_000 * 1e18, false
+        assetToken = new AssetToken();
+        assetToken.initialize(
+            OWNER, // owner
+            "Asset Token", // name
+            "AT", // symbol
+            yieldCurrency, // currency token
+            18, // decimals
+            "uri://asset", // tokenURI
+            INITIAL_SUPPLY, // initialSupply
+            1_000_000 * 1e18, // totalValue
+            false // isWhitelistEnabled
         );
 
         yieldCurrency.approve(address(assetToken), type(uint256).max);

@@ -15,7 +15,7 @@ import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.s
 
 /**
  * @title YieldDistributionToken
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice ERC20 token that receives yield deposits and distributes yield
  *   to token holders proportionally based on how long they have held the token
  */
@@ -91,7 +91,7 @@ abstract contract YieldDistributionToken is
     /**
      * @notice Initialize the YieldDistributionToken with basic parameters and storage
      * @dev This function should only be called once during initialization
-     * @param owner Address that will receive initial ownership rights
+     * @param owner Address thaxt will receive initial ownership rights
      * @param name Token name for ERC20 metadata
      * @param symbol Token symbol for ERC20 metadata
      * @param currencyToken The ERC20 token used for yield distributions
@@ -117,6 +117,24 @@ abstract contract YieldDistributionToken is
         $.lastDepositTimestamp = block.timestamp;
         $.lastSupplyUpdate = block.timestamp;
         $.yieldPerTokenStored = 0;
+    }
+
+    function __YieldDistributionToken_reinit(
+        string memory newName,
+        string memory newSymbol,
+        string memory newTokenURI
+    ) internal {
+        // Update name and symbol if provided
+        if (bytes(newName).length > 0 || bytes(newSymbol).length > 0) {
+            string memory updatedName = bytes(newName).length > 0 ? newName : name();
+            string memory updatedSymbol = bytes(newSymbol).length > 0 ? newSymbol : symbol();
+            __ERC20_init(updatedName, updatedSymbol);
+        }
+
+        // Update tokenURI if provided
+        if (bytes(newTokenURI).length > 0) {
+            _getYieldDistributionTokenStorage().tokenURI = newTokenURI;
+        }
     }
 
     /**

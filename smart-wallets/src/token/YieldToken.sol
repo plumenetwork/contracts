@@ -21,7 +21,7 @@ import { YieldDistributionToken } from "./YieldDistributionToken.sol";
 
 /**
  * @title YieldToken
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice ERC20 token that receives yield redistributions from an AssetToken
  */
 contract YieldToken is
@@ -216,23 +216,9 @@ contract YieldToken is
         string memory newSymbol,
         string memory newTokenURI,
         IAssetToken newAssetToken
-    ) public onlyRole(UPGRADER_ROLE) reinitializer(2) {
-        YieldTokenStorage storage $ = _getYieldTokenStorage();
-
-        // Update name if provided
-        if (bytes(newName).length > 0) {
-            _setName(newName);
-        }
-
-        // Update symbol if provided
-        if (bytes(newSymbol).length > 0) {
-            _setSymbol(newSymbol);
-        }
-
-        // Update tokenURI if provided
-        if (bytes(newTokenURI).length > 0) {
-            _getYieldDistributionTokenStorage().tokenURI = newTokenURI;
-        }
+    ) public onlyRole(UPGRADER_ROLE) reinitializer(version) {
+        // Handle name, symbol, and tokenURI updates in YieldDistributionToken
+        __YieldDistributionToken_reinit(newName, newSymbol, newTokenURI);
 
         // Update assetToken if provided
         if (address(newAssetToken) != address(0)) {
@@ -242,7 +228,7 @@ contract YieldToken is
                     IERC20(newAssetToken.getCurrencyToken()), _getYieldDistributionTokenStorage().currencyToken
                 );
             }
-            $.assetToken = newAssetToken;
+            _getYieldTokenStorage().assetToken = newAssetToken;
         }
     }
 

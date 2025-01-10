@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-
 import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
 import { ISmartWallet } from "../interfaces/ISmartWallet.sol";
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { Deposit, UserState } from "./Types.sol";
 import { YieldDistributionToken } from "./YieldDistributionToken.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title AssetToken
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice ERC20 token that represents a tokenized real world asset
  *   and distributes yield proportionally to token holders
  */
@@ -32,13 +32,12 @@ contract AssetToken is
 
     // Storage
 
-    /// @notice Boolean to enable whitelist for the AssetToken
-    bool public immutable isWhitelistEnabled;
-
     /// @custom:storage-location erc7201:plume.storage.AssetToken
     struct AssetTokenStorage {
         /// @dev Total value of all circulating AssetTokens
         uint256 totalValue;
+        /// @dev Boolean to enable whitelist for the AssetToken
+        bool isWhitelistEnabled;
         /// @dev Mapping of whitelisted users
         mapping(address user => bool whitelisted) isWhitelisted;
     }
@@ -105,6 +104,9 @@ contract AssetToken is
 
     // Constructor
 
+    constructor() {
+        _disableInitializers();
+    }
     /**
      * @notice Construct the AssetToken
      * @param owner Address of the owner of the AssetToken
@@ -117,27 +119,29 @@ contract AssetToken is
      * @param totalValue_ Total value of all circulating AssetTokens
      * @param isWhitelistEnabled_ Boolean to enable whitelist for the AssetToken
      */
-    constructor(
+
+    function initialize(
         address owner,
         string memory name,
         string memory symbol,
-        ERC20 currencyToken,
+        IERC20 currencyToken,
         uint8 decimals_,
         string memory tokenURI_,
         uint256 initialSupply,
         uint256 totalValue_,
         bool isWhitelistEnabled_
-    ) YieldDistributionToken(owner, name, symbol, currencyToken, decimals_, tokenURI_) {
+    ) public initializer {
         if (address(currencyToken) == address(0)) {
             revert InvalidAddress();
         }
+        __YieldDistributionToken_init(owner, name, symbol, currencyToken, decimals_, tokenURI_);
 
         AssetTokenStorage storage $ = _getAssetTokenStorage();
         $.totalValue = totalValue_;
-        isWhitelistEnabled = isWhitelistEnabled_;
+        $.isWhitelistEnabled = isWhitelistEnabled_;
 
         // need to whitelist owner, otherwise reverts in _update
-        if (isWhitelistEnabled_) {
+        if ($.isWhitelistEnabled) {
             // Whitelist the owner
             if (owner == address(0)) {
                 revert InvalidAddress();
@@ -145,6 +149,10 @@ contract AssetToken is
             $.isWhitelisted[owner] = true;
             emit AddressAddedToWhitelist(owner);
         }
+
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(ADMIN_ROLE, owner);
+        _grantRole(UPGRADER_ROLE, owner);
 
         _mint(owner, initialSupply);
     }
@@ -160,7 +168,7 @@ contract AssetToken is
      */
     function _update(address from, address to, uint256 value) internal override(YieldDistributionToken) {
         AssetTokenStorage storage $ = _getAssetTokenStorage();
-        if (isWhitelistEnabled) {
+        if ($.isWhitelistEnabled) {
             if (from != address(0) && !$.isWhitelisted[from]) {
                 revert Unauthorized(from);
             }
@@ -224,7 +232,7 @@ contract AssetToken is
         }
 
         AssetTokenStorage storage $ = _getAssetTokenStorage();
-        if (isWhitelistEnabled) {
+        if ($.isWhitelistEnabled) {
             if ($.isWhitelisted[user]) {
                 revert AddressAlreadyWhitelisted(user);
             }
@@ -246,7 +254,7 @@ contract AssetToken is
         }
 
         AssetTokenStorage storage $ = _getAssetTokenStorage();
-        if (isWhitelistEnabled) {
+        if ($.isWhitelistEnabled) {
             if (!$.isWhitelisted[user]) {
                 revert AddressNotWhitelisted(user);
             }
@@ -300,6 +308,11 @@ contract AssetToken is
     /// @notice Total value of all circulating AssetTokens
     function getTotalValue() external view returns (uint256) {
         return _getAssetTokenStorage().totalValue;
+    }
+
+    /// @notice Returns whether the whitelist is enabled for this token
+    function isWhitelistEnabled() public view returns (bool) {
+        return _getAssetTokenStorage().isWhitelistEnabled;
     }
 
     /**

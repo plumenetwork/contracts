@@ -21,7 +21,11 @@ contract DeployAssetToken is Script, Test {
     function run() external {
         vm.startBroadcast(ADMIN_ADDRESS);
 
-        AssetToken assetToken = new AssetToken(
+        // Deploy implementation
+        AssetToken assetToken = new AssetToken();
+
+        // Initialize the token
+        assetToken.initialize(
             ADMIN_ADDRESS, // owner
             "Real World Asset Token", // name
             "RWA", // symbol

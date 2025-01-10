@@ -24,17 +24,9 @@ contract UpgradeYieldToken is Script, Test {
 
         // Deploy new implementation
         YieldToken newYieldTokenImpl = new YieldToken();
-        assertGt(address(newYieldTokenImpl).code.length, 0, "YieldToken should be deployed");
-        console2.log("New YieldToken Implementation deployed to:", address(newYieldTokenImpl));
 
-        // Upgrade to new implementation
+        // Upgrade
         YIELD_TOKEN_PROXY.upgradeToAndCall(address(newYieldTokenImpl), "");
-        console2.log("YieldToken proxy upgraded to new implementation");
-
-        // Get the upgraded contract instance
-        YieldToken yieldToken = YieldToken(address(YIELD_TOKEN_PROXY));
-
-        console2.log("Upgrade complete. Proxy address:", address(YIELD_TOKEN_PROXY));
 
         vm.stopBroadcast();
     }

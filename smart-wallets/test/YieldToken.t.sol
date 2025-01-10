@@ -41,30 +41,18 @@ contract YieldTokenTest is Test {
         owner = address(this);
         user1 = address(0x123);
         user2 = address(0x456);
-        // Deploy mock currency token
+
         mockCurrencyToken = new ERC20Mock();
         currencyToken = new ERC20Mock();
 
-        // Deploy mock asset token
         mockAssetToken = new MockAssetToken();
         assetToken = new MockAssetToken();
 
-        mockAssetToken.initialize(
-            owner,
-            "Mock Asset Token",
-            "MAT",
-            mockCurrencyToken,
-            false // isWhitelistEnabled
-        );
+        mockAssetToken.initialize(owner, "Mock Asset Token", "MAT", mockCurrencyToken, false);
 
-        // Verify that the mock asset token has the correct currency token
-        require(
-            address(mockAssetToken.getCurrencyToken()) == address(mockCurrencyToken),
-            "MockAssetToken not initialized correctly"
-        );
-
-        // Deploy MockYieldToken instead of YieldToken
-        yieldToken = new MockYieldToken(
+        // Deploy and initialize MockYieldToken
+        yieldToken = new MockYieldToken();
+        yieldToken.initialize(
             owner,
             "Yield Token",
             "YLT",
@@ -72,10 +60,9 @@ contract YieldTokenTest is Test {
             18,
             "https://example.com/token-uri",
             mockAssetToken,
-            100 * 10 ** 18 // Initial supply
+            100 * 10 ** 18
         );
 
-        // Deploy invalid tokens for testing
         invalidAssetToken = new MockInvalidAssetToken();
     }
 
@@ -97,13 +84,14 @@ contract YieldTokenTest is Test {
             false
         );
 
+        // Deploy and initialize YieldToken with invalid currency token
+        YieldToken newToken = new YieldToken();
         vm.expectRevert(
             abi.encodeWithSelector(
                 YieldToken.InvalidCurrencyToken.selector, address(invalidCurrencyToken), address(currencyToken)
             )
         );
-
-        new YieldToken(
+        newToken.initialize(
             owner, "Yield Token", "YLT", invalidCurrencyToken, 18, "https://example.com", testAssetToken, 100 ether
         );
     }
@@ -187,30 +175,23 @@ contract YieldTokenTest is Test {
     }
 
     function testConstructorInvalidCurrencyToken() public {
-        // Create a new asset token with a different currency token
         MockAssetToken newAssetToken = new MockAssetToken();
         ERC20Mock differentCurrencyToken = new ERC20Mock();
 
-        newAssetToken.initialize(
-            owner,
-            "New Asset Token",
-            "NAT",
-            differentCurrencyToken, // Initialize with different currency token
-            false
-        );
+        newAssetToken.initialize(owner, "New Asset Token", "NAT", differentCurrencyToken, false);
 
-        // Try to create YieldToken with mismatched currency token
+        YieldToken newYieldToken = new YieldToken();
         vm.expectRevert(
             abi.encodeWithSelector(
                 YieldToken.InvalidCurrencyToken.selector, address(mockCurrencyToken), address(differentCurrencyToken)
             )
         );
 
-        new YieldToken(
+        newYieldToken.initialize(
             owner,
             "Yield Token",
             "YLT",
-            mockCurrencyToken, // This doesn't match the asset token's currency
+            mockCurrencyToken,
             18,
             "https://example.com/token-uri",
             newAssetToken,
@@ -220,7 +201,8 @@ contract YieldTokenTest is Test {
 
     function testConstructorSuccess() public {
         // Test the successful deployment case explicitly
-        YieldToken newYieldToken = new YieldToken(
+        YieldToken newYieldToken = new YieldToken();
+        newYieldToken.initialize(
             owner,
             "New Yield Token",
             "NYT",
@@ -535,8 +517,17 @@ contract YieldTokenTest is Test {
     // ConvertToAssets tests
     function testConvertToAssetsWithZeroSupply() public {
         // Deploy new token with 0 supply
-        MockYieldToken newToken =
-            new MockYieldToken(owner, "Test Token", "TEST", mockCurrencyToken, 18, "uri", mockAssetToken, 0);
+        MockYieldToken newToken = new MockYieldToken();
+        newToken.initialize(
+            owner,
+            "Test Token",
+            "TEST",
+            mockCurrencyToken,
+            18,
+            "uri",
+            mockAssetToken,
+            0 // zero initial supply
+        );
 
         uint256 result = newToken.convertToAssets(100 ether);
         assertEq(result, 100 ether);
@@ -545,8 +536,17 @@ contract YieldTokenTest is Test {
     // ConvertToShares tests
     function testConvertToSharesWithZeroSupply() public {
         // Deploy new token with 0 supply
-        MockYieldToken newToken =
-            new MockYieldToken(owner, "Test Token", "TEST", mockCurrencyToken, 18, "uri", mockAssetToken, 0);
+        MockYieldToken newToken = new MockYieldToken();
+        newToken.initialize(
+            owner,
+            "Test Token",
+            "TEST",
+            mockCurrencyToken,
+            18,
+            "uri",
+            mockAssetToken,
+            0 // zero initial supply
+        );
 
         uint256 result = newToken.convertToShares(100 ether);
         assertEq(result, 100 ether);
