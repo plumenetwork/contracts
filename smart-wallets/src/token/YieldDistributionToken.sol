@@ -89,13 +89,15 @@ abstract contract YieldDistributionToken is
     }
 
     /**
-     * @notice Initialize the YieldDistributionToken
-     * @param owner Address of the owner of the YieldDistributionToken
-     * @param name Name of the YieldDistributionToken
-     * @param symbol Symbol of the YieldDistributionToken
-     * @param currencyToken Token in which the yield is deposited and denominated
-     * @param decimals_ Number of decimals of the YieldDistributionToken
-     * @param tokenURI URI of the YieldDistributionToken metadata
+     * @notice Initialize the YieldDistributionToken with basic parameters and storage
+     * @dev This function should only be called once during initialization
+     * @param owner Address that will receive initial ownership rights
+     * @param name Token name for ERC20 metadata
+     * @param symbol Token symbol for ERC20 metadata
+     * @param currencyToken The ERC20 token used for yield distributions
+     * @param decimals_ Number of decimals for token amounts (e.g., 18 for full precision)
+     * @param tokenURI_ URI pointing to token metadata (can be updated later by owner)
+     * @custom:security onlyInitializing - Function can only be called during initialization
      */
     function __YieldDistributionToken_init(
         address owner,

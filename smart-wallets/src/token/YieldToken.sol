@@ -56,11 +56,6 @@ contract YieldToken is
         mapping(address controller => uint256 assets) assetsRedeemRequest;
     }
 
-    /// @notice Role for the admin of the ComponentToken
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    /// @notice Role for the upgrader of the ComponentToken
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
-
     // keccak256(abi.encode(uint256(keccak256("plume.storage.YieldToken")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant YIELD_TOKEN_STORAGE_LOCATION =
         0xe0df32b9dab2596a95926c5b17cc961f10a49277c3685726d2657c9ac0b50e00;
@@ -292,12 +287,17 @@ contract YieldToken is
     }
 
     /// @inheritdoc IERC4626
-    function asset() public view override(ERC4626, IComponentToken) returns (address assetTokenAddress) {
+    function asset() public view override(ERC4626Upgradeable, IComponentToken) returns (address assetTokenAddress) {
         return super.asset();
     }
 
     /// @inheritdoc IERC4626
-    function totalAssets() public view override(ERC4626, IComponentToken) returns (uint256 totalManagedAssets) {
+    function totalAssets()
+        public
+        view
+        override(ERC4626Upgradeable, IComponentToken)
+        returns (uint256 totalManagedAssets)
+    {
         return super.totalAssets();
     }
 
@@ -311,7 +311,7 @@ contract YieldToken is
     /// @inheritdoc IERC4626
     function convertToShares(
         uint256 assets
-    ) public view override(ERC4626, IComponentToken) returns (uint256 shares) {
+    ) public view override(ERC4626Upgradeable, IComponentToken) returns (uint256 shares) {
         uint256 supply = totalSupply();
         uint256 totalAssets_ = totalAssets();
         if (supply == 0 || totalAssets_ == 0) {
@@ -323,7 +323,7 @@ contract YieldToken is
     /// @inheritdoc IERC4626
     function convertToAssets(
         uint256 shares
-    ) public view override(ERC4626, IComponentToken) returns (uint256 assets) {
+    ) public view override(ERC4626Upgradeable, IComponentToken) returns (uint256 assets) {
         uint256 supply = totalSupply();
         if (supply == 0) {
             return shares;
@@ -331,17 +331,17 @@ contract YieldToken is
         return (shares * totalAssets()) / supply;
     }
 
-    /// @inheritdoc ERC20
-    function decimals() public view override(YieldDistributionToken, ERC4626) returns (uint8) {
+    /// @inheritdoc ERC20Upgradeable
+    function decimals() public view override(YieldDistributionToken, ERC4626Upgradeable) returns (uint8) {
         return super.decimals();
     }
 
-    /// @inheritdoc ERC20
+    /// @inheritdoc ERC20Upgradeable
     function _update(
         address from,
         address to,
         uint256 value
-    ) internal virtual override(YieldDistributionToken, ERC20) {
+    ) internal virtual override(YieldDistributionToken, ERC20Upgradeable) {
         super._update(from, to, value);
     }
 
@@ -508,7 +508,7 @@ contract YieldToken is
         uint256 shares,
         address receiver,
         address controller
-    ) public override(ERC4626, IComponentToken) returns (uint256 assets) {
+    ) public override(ERC4626Upgradeable, IComponentToken) returns (uint256 assets) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -539,7 +539,7 @@ contract YieldToken is
         uint256 assets,
         address receiver,
         address controller
-    ) public override(ERC4626) returns (uint256 shares) {
+    ) public override(ERC4626Upgradeable) returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
         }

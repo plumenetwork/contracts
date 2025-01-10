@@ -47,11 +47,6 @@ contract AssetToken is
     bytes32 private constant ASSET_TOKEN_STORAGE_LOCATION =
         0x726dfad64e66a3008dc13dfa01e6342ee01974bb72e1b2f461563ca13356d800;
 
-    /// @notice Role for the admin of the ComponentToken
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    /// @notice Role for the upgrader of the ComponentToken
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
-
     function _getAssetTokenStorage() private pure returns (AssetTokenStorage storage $) {
         assembly {
             $.slot := ASSET_TOKEN_STORAGE_LOCATION
