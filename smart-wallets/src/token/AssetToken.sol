@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import { WalletUtils } from "../WalletUtils.sol";
@@ -16,7 +20,15 @@ import { YieldDistributionToken } from "./YieldDistributionToken.sol";
  * @notice ERC20 token that represents a tokenized real world asset
  *   and distributes yield proportionally to token holders
  */
-contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
+contract AssetToken is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuardUpgradeable,
+    WalletUtils,
+    YieldDistributionToken,
+    IAssetToken
+{
 
     // Storage
 
@@ -34,6 +46,11 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     // keccak256(abi.encode(uint256(keccak256("plume.storage.AssetToken")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ASSET_TOKEN_STORAGE_LOCATION =
         0x726dfad64e66a3008dc13dfa01e6342ee01974bb72e1b2f461563ca13356d800;
+
+    /// @notice Role for the admin of the ComponentToken
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    /// @notice Role for the upgrader of the ComponentToken
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     function _getAssetTokenStorage() private pure returns (AssetTokenStorage storage $) {
         assembly {
@@ -182,12 +199,20 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
     // Admin Functions
 
     /**
+     * @notice Revert when `msg.sender` is not authorized to upgrade the contract
+     * @param newImplementation Address of the new implementation
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal virtual override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
+
+    /**
      * @notice Update the total value of all circulating AssetTokens
      * @dev Only the owner can call this function
      */
     function setTotalValue(
         uint256 totalValue
-    ) external onlyOwner {
+    ) external onlyRole(ADMIN_ROLE) {
         _getAssetTokenStorage().totalValue = totalValue;
     }
 
@@ -198,7 +223,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function addToWhitelist(
         address user
-    ) external onlyOwner {
+    ) external onlyRole(ADMIN_ROLE) {
         if (user == address(0)) {
             revert InvalidAddress();
         }
@@ -220,7 +245,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function removeFromWhitelist(
         address user
-    ) external onlyOwner {
+    ) external onlyRole(ADMIN_ROLE) {
         if (user == address(0)) {
             revert InvalidAddress();
         }
@@ -241,7 +266,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      * @param user Address of the user to mint AssetTokens to
      * @param assetTokenAmount Amount of AssetTokens to mint
      */
-    function mint(address user, uint256 assetTokenAmount) external onlyOwner {
+    function mint(address user, uint256 assetTokenAmount) external onlyRole(ADMIN_ROLE) {
         _mint(user, assetTokenAmount);
     }
 
@@ -253,7 +278,7 @@ contract AssetToken is WalletUtils, YieldDistributionToken, IAssetToken {
      */
     function depositYield(
         uint256 currencyTokenAmount
-    ) external onlyOwner {
+    ) external onlyRole(ADMIN_ROLE) {
         _depositYield(currencyTokenAmount);
     }
 

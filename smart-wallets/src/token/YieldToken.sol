@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
-import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
@@ -24,7 +24,17 @@ import { YieldDistributionToken } from "./YieldDistributionToken.sol";
  * @author Eugene Y. Q. Shen
  * @notice ERC20 token that receives yield redistributions from an AssetToken
  */
-contract YieldToken is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable,YieldDistributionToken, ERC4626Upgradeable, WalletUtils, IYieldToken, IComponentToken {
+contract YieldToken is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuardUpgradeable,
+    YieldDistributionToken,
+    ERC4626Upgradeable,
+    WalletUtils,
+    IYieldToken,
+    IComponentToken
+{
 
     // Storage
 
@@ -50,7 +60,6 @@ contract YieldToken is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of the ComponentToken
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
-
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.YieldToken")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant YIELD_TOKEN_STORAGE_LOCATION =
@@ -190,7 +199,6 @@ contract YieldToken is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
 
         _getYieldTokenStorage().assetToken = assetToken;
 
-
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
         _grantRole(UPGRADER_ROLE, owner);
@@ -254,7 +262,6 @@ contract YieldToken is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
     function adminMint(address user, uint256 yieldTokenAmount) external onlyRole(ADMIN_ROLE) {
         _mint(user, yieldTokenAmount);
     }
-
 
     /**
      * @notice Revert when `msg.sender` is not authorized to upgrade the contract
