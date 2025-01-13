@@ -21,9 +21,20 @@ import { IERC7575 } from "./interfaces/IERC7575.sol";
 
 /**
  * @title ComponentToken
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Abstract contract that implements the IComponentToken interface and can be extended
  *   with a concrete implementation that interfaces with an external real-world asset.
+ * @dev Rounding rules for ERC4626 functions:
+ *
+ * Preview functions (simulate what would happen):
+ * - previewMint(shares)     - Round UP ⬆️   // Show max assets needed
+ * - previewWithdraw(assets) - Round UP ⬆️   // Show max shares needed
+ * - previewRedeem(shares)   - Round DOWN ⬇️ // Show min assets to receive
+ * - previewDeposit(assets)  - Round DOWN ⬇️ // Show min shares to receive
+ *
+ * Convert functions (used in actual operations):
+ * - convertToAssets(shares) - Round DOWN ⬇️ // Conservative for withdrawals
+ * - convertToShares(assets) - Round DOWN ⬇️ // Conservative for deposits
  */
 abstract contract ComponentToken is
     Initializable,
@@ -78,6 +89,15 @@ abstract contract ComponentToken is
     /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 internal constant _BASE = 1e18;
 
+    // Enums
+
+    /// @dev Enum for the parameters that can be zero in the zeroAmount error
+    enum ZeroAmountParam {
+        ASSETS, // Amount of assets in deposit/withdraw operations
+        SHARES // Amount of shares in mint/redeem operations
+
+    }
+
     // Events
 
     /**
@@ -102,7 +122,7 @@ abstract contract ComponentToken is
     error Unimplemented();
 
     /// @notice Indicates a failure because the given amount is 0
-    error ZeroAmount();
+    error ZeroAmount(ZeroAmountParam param);
 
     /**
      * @notice Indicates a failure because the sender is not authorized to perform the action
@@ -279,24 +299,36 @@ abstract contract ComponentToken is
         return super.totalAssets();
     }
 
-    /// @notice Total value held by the given owner
-    /// @dev Reverts with Unimplemented() until convertToAssets is implemented by the concrete contract
-    /// @param owner Address to query the balance of
-    /// @return assets Total value held by the owner
+    /**
+     * @notice Total value held by the given owner
+     * @dev Reverts with Unimplemented() until convertToAssets is implemented by the concrete contract
+     * @param owner Address to query the balance of
+     * @return assets Total value held by the owner
+     */
     function assetsOf(
         address owner
     ) public view virtual returns (uint256 assets) {
         return convertToAssets(balanceOf(owner));
     }
 
-    /// @inheritdoc IERC4626
+    /**
+     * @inheritdoc IERC4626
+     *  @dev Concrete implementations should:
+     *  - Always round DOWN for convertToShares
+     *  - Handle zero supply/assets cases appropriately
+     */
     function convertToShares(
         uint256 assets
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
         revert Unimplemented();
     }
 
-    /// @inheritdoc IERC4626
+    /**
+     * @inheritdoc IERC4626
+     * @dev Concrete implementations should:
+     * - Always round DOWN for convertToAssets
+     * - Handle zero supply/assets cases appropriately
+     */
     function convertToAssets(
         uint256 shares
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
@@ -312,7 +344,7 @@ abstract contract ComponentToken is
         address owner
     ) public virtual nonReentrant returns (uint256 requestId) {
         if (assets == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.ASSETS);
         }
         if (msg.sender != owner) {
             revert Unauthorized(msg.sender, owner);
@@ -338,7 +370,7 @@ abstract contract ComponentToken is
      */
     function _notifyDeposit(uint256 assets, uint256 shares, address controller) internal virtual nonReentrant {
         if (assets == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.ASSETS);
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
@@ -363,7 +395,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual nonReentrant returns (uint256 shares) {
         if (assets == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.ASSETS);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
@@ -403,7 +435,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual nonReentrant returns (uint256 assets) {
         if (shares == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.SHARES);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
@@ -443,7 +475,7 @@ abstract contract ComponentToken is
         address owner
     ) public virtual nonReentrant returns (uint256 requestId) {
         if (shares == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.SHARES);
         }
         if (msg.sender != owner) {
             revert Unauthorized(msg.sender, owner);
@@ -469,7 +501,7 @@ abstract contract ComponentToken is
      */
     function _notifyRedeem(uint256 assets, uint256 shares, address controller) internal virtual nonReentrant {
         if (shares == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.SHARES);
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
@@ -501,7 +533,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 assets) {
         if (shares == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.SHARES);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
@@ -585,7 +617,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 shares) {
         if (assets == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.ASSETS);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
@@ -695,6 +727,7 @@ abstract contract ComponentToken is
     /**
      * @inheritdoc IERC4626
      * @dev Must revert for all callers and inputs for asynchronous redeem vaults
+     * @dev Round up for previews (show worst case)
      */
     function previewWithdraw(
         uint256 assets
