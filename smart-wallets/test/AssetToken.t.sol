@@ -74,27 +74,30 @@ contract AssetTokenTest is Test {
         walletFactory.upgrade(ISmartWallet(address(testWalletImplementation)));
         console.log("walletFactory deployed at:", address(testWalletImplementation));
 
-        assetToken = new AssetToken(
+        assetToken = new AssetToken();
+        assetToken.initialize(
             address(testWalletImplementation), // The SmartWallet is the owner
             "Asset Token",
             "AT",
             currencyToken,
             18,
             "http://example.com/token",
-            10_000 * 10 ** 18, // Set initialSupply to zero
-            10_000 * 10 ** 18,
+            10_000 * 10 ** 18, // initialSupply
+            10_000 * 10 ** 18, // totalValue
             false // Whitelist enabled
         );
 
-        assetTokenWhitelisted = new AssetToken(
+        // Deploy and initialize whitelisted AssetToken
+        assetTokenWhitelisted = new AssetToken();
+        assetTokenWhitelisted.initialize(
             address(testWalletImplementation), // The SmartWallet is the owner
             "Whitelisted Asset Token",
             "WAT",
             currencyToken,
             18,
             "http://example.com/token",
-            0, // Set initialSupply to zero
-            10_000 * 10 ** 18,
+            0, // initialSupply
+            10_000 * 10 ** 18, // totalValue
             true // Whitelist enabled
         );
         console.log("AssetToken deployed at:", address(assetTokenWhitelisted));
@@ -233,7 +236,8 @@ contract AssetTokenTest is Test {
     }
 
     function test_ConstructorWithWhitelist() public {
-        AssetToken whitelistedToken = new AssetToken(
+        AssetToken whitelistedToken = new AssetToken();
+        whitelistedToken.initialize(
             owner,
             "Whitelisted Asset Token",
             "WAT",
@@ -248,7 +252,8 @@ contract AssetTokenTest is Test {
     }
 
     function test_UpdateWithWhitelistEnabled() public {
-        AssetToken whitelistedToken = new AssetToken(
+        AssetToken whitelistedToken = new AssetToken();
+        whitelistedToken.initialize(
             owner,
             "Whitelisted Asset Token",
             "WAT",
@@ -561,8 +566,11 @@ contract AssetTokenTest is Test {
 
     function test_RevertConstructorInvalidAddress() public {
         // First test: Invalid owner (should revert with OwnableInvalidOwner)
+        AssetToken token = new AssetToken();
+
+        // First test: Invalid owner
         vm.expectRevert(abi.encodeWithSignature("OwnableInvalidOwner(address)", address(0)));
-        new AssetToken(
+        token.initialize(
             address(0), // Invalid owner address
             "Asset Token",
             "AT",
@@ -575,8 +583,9 @@ contract AssetTokenTest is Test {
         );
 
         // Second test: Invalid currency token (should revert with InvalidAddress)
+        AssetToken token2 = new AssetToken();
         vm.expectRevert(AssetToken.InvalidAddress.selector);
-        new AssetToken(
+        token2.initialize(
             address(this), // valid owner
             "Asset Token",
             "AT",
