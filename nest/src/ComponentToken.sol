@@ -94,10 +94,7 @@ abstract contract ComponentToken is
     /// @dev Enum for the parameters that can be zero in the zeroAmount error
     enum ZeroAmountParam {
         ASSETS, // Amount of assets in deposit/withdraw operations
-        SHARES, // Amount of shares in mint/redeem operations
-        DEPOSIT_AMOUNT, // Amount in deposit requests
-        REDEEM_AMOUNT, // Amount in redeem requests
-        CLAIM_AMOUNT // Amount in claim operations
+        SHARES // Amount of shares in mint/redeem operations
 
     }
 
@@ -347,7 +344,7 @@ abstract contract ComponentToken is
         address owner
     ) public virtual nonReentrant returns (uint256 requestId) {
         if (assets == 0) {
-            revert ZeroAmount(ZeroAmountParam.DEPOSIT_AMOUNT);
+            revert ZeroAmount(ZeroAmountParam.ASSETS);
         }
         if (msg.sender != owner) {
             revert Unauthorized(msg.sender, owner);
@@ -373,7 +370,7 @@ abstract contract ComponentToken is
      */
     function _notifyDeposit(uint256 assets, uint256 shares, address controller) internal virtual nonReentrant {
         if (assets == 0) {
-            revert ZeroAmount(ZeroAmountParam.DEPOSIT_AMOUNT);
+            revert ZeroAmount(ZeroAmountParam.ASSETS);
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
@@ -398,7 +395,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual nonReentrant returns (uint256 shares) {
         if (assets == 0) {
-            revert ZeroAmount(ZeroAmountParam.DEPOSIT_AMOUNT);
+            revert ZeroAmount(ZeroAmountParam.ASSETS);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
@@ -478,7 +475,7 @@ abstract contract ComponentToken is
         address owner
     ) public virtual nonReentrant returns (uint256 requestId) {
         if (shares == 0) {
-            revert ZeroAmount(ZeroAmountParam.REDEEM_AMOUNT);
+            revert ZeroAmount(ZeroAmountParam.SHARES);
         }
         if (msg.sender != owner) {
             revert Unauthorized(msg.sender, owner);
@@ -504,7 +501,7 @@ abstract contract ComponentToken is
      */
     function _notifyRedeem(uint256 assets, uint256 shares, address controller) internal virtual nonReentrant {
         if (shares == 0) {
-            revert ZeroAmount(ZeroAmountParam.REDEEM_AMOUNT);
+            revert ZeroAmount(ZeroAmountParam.SHARES);
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
@@ -536,7 +533,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 assets) {
         if (shares == 0) {
-            revert ZeroAmount(ZeroAmountParam.REDEEM_AMOUNT);
+            revert ZeroAmount(ZeroAmountParam.SHARES);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
