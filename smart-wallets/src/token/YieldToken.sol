@@ -546,13 +546,13 @@ contract YieldToken is
         emit Withdraw(controller, receiver, controller, assets, shares);
     }
 
-
-    function _beforeWithdraw(uint256 assets) internal view {
+    function _beforeWithdraw(
+        uint256 assets
+    ) internal view {
         YieldTokenStorage storage $ = _getYieldTokenStorage();
         uint256 availableAssets = IERC20(asset()).balanceOf(address(this)) - $.yieldBuffer;
         require(availableAssets >= assets, "Cannot withdraw from yield buffer");
     }
-
 
     /// @inheritdoc IERC4626
     function withdraw(

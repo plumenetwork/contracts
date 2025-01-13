@@ -15,7 +15,7 @@ contract DeployYieldToken is Script, Test {
 
     // Change these addresses
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
-    address private constant CURRENCY_TOKEN_ADDRESS = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
+    address private constant CURRENCY_TOKEN_ADDRESS = 0xdddD73F5Df1F0DC31373357beAC77545dC5A6f3F;
     address private constant ASSET_TOKEN_ADDRESS = 0x659619AEdf381c3739B0375082C2d61eC1fD8835;
 
     function test() public { }
@@ -41,7 +41,7 @@ contract DeployYieldToken is Script, Test {
             )
         );
 
-        console2.log("YieldToken deployed to:", address(yieldToken));
+        console2.log("YieldToken deployed to:", address(yieldTokenProxy));
 
         vm.stopBroadcast();
     }
