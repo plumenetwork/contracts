@@ -67,6 +67,19 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      */
     event TokenUnfeatured(IAggregateToken aggregateToken);
 
+    // Enums
+    enum ZeroAmountParam {
+        ASK_PRICE, // Price at which users can buy tokens
+        BID_PRICE, // Price at which users can sell tokens
+        INITIAL_SUPPLY, // Initial supply of tokens when creating
+        TOTAL_VALUE, // Total value of all tokens
+        MINT_AMOUNT, // Amount of tokens to mint
+        BURN_AMOUNT, // Amount of tokens to burn
+        DEPOSIT_AMOUNT, // Amount of tokens to deposit
+        REDEEM_AMOUNT // Amount of tokens to redeem
+
+    }
+
     // Errors
 
     /**
@@ -96,7 +109,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @notice Indicates a failure because the given amount is zero
      * @param what Description of which amount parameter was zero
      */
-    error ZeroAmount(string what);
+    error ZeroAmount(ZeroAmountParam param);
 
     /**
      * @notice Indicates a failure because bid price is greater than ask price
@@ -238,10 +251,10 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
             revert ZeroAddress("currencyToken");
         }
         if (askPrice == 0) {
-            revert ZeroAmount("askPrice");
+            revert ZeroAmount(ZeroAmountParam.ASK_PRICE);
         }
         if (bidPrice == 0) {
-            revert ZeroAmount("bidPrice");
+            revert ZeroAmount(ZeroAmountParam.BID_PRICE);
         }
         if (bidPrice > askPrice) {
             revert InvalidPrices(bidPrice, askPrice); // Need to add this error

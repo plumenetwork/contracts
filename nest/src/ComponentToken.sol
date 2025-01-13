@@ -89,6 +89,18 @@ abstract contract ComponentToken is
     /// @notice Base that is used to divide all price inputs in order to represent e.g. 1.000001 as 1000001e12
     uint256 internal constant _BASE = 1e18;
 
+    // Enums
+
+    /// @dev Enum for the parameters that can be zero in the zeroAmount error
+    enum ZeroAmountParam {
+        ASSETS, // Amount of assets in deposit/withdraw operations
+        SHARES, // Amount of shares in mint/redeem operations
+        DEPOSIT_AMOUNT, // Amount in deposit requests
+        REDEEM_AMOUNT, // Amount in redeem requests
+        CLAIM_AMOUNT // Amount in claim operations
+
+    }
+
     // Events
 
     /**
@@ -113,7 +125,7 @@ abstract contract ComponentToken is
     error Unimplemented();
 
     /// @notice Indicates a failure because the given amount is 0
-    error ZeroAmount();
+    error ZeroAmount(ZeroAmountParam param);
 
     /**
      * @notice Indicates a failure because the sender is not authorized to perform the action
@@ -335,7 +347,7 @@ abstract contract ComponentToken is
         address owner
     ) public virtual nonReentrant returns (uint256 requestId) {
         if (assets == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.DEPOSIT_AMOUNT);
         }
         if (msg.sender != owner) {
             revert Unauthorized(msg.sender, owner);
@@ -361,7 +373,7 @@ abstract contract ComponentToken is
      */
     function _notifyDeposit(uint256 assets, uint256 shares, address controller) internal virtual nonReentrant {
         if (assets == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.DEPOSIT_AMOUNT);
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
@@ -386,7 +398,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual nonReentrant returns (uint256 shares) {
         if (assets == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.DEPOSIT_AMOUNT);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
@@ -426,7 +438,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual nonReentrant returns (uint256 assets) {
         if (shares == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.SHARES);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
@@ -466,7 +478,7 @@ abstract contract ComponentToken is
         address owner
     ) public virtual nonReentrant returns (uint256 requestId) {
         if (shares == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.REDEEM_AMOUNT);
         }
         if (msg.sender != owner) {
             revert Unauthorized(msg.sender, owner);
@@ -492,7 +504,7 @@ abstract contract ComponentToken is
      */
     function _notifyRedeem(uint256 assets, uint256 shares, address controller) internal virtual nonReentrant {
         if (shares == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.REDEEM_AMOUNT);
         }
 
         ComponentTokenStorage storage $ = _getComponentTokenStorage();
@@ -524,7 +536,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 assets) {
         if (shares == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.REDEEM_AMOUNT);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
@@ -608,7 +620,7 @@ abstract contract ComponentToken is
         address controller
     ) public virtual override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 shares) {
         if (assets == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.ASSETS);
         }
         if (msg.sender != controller) {
             revert Unauthorized(msg.sender, controller);
