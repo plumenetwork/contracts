@@ -107,7 +107,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
 
     /**
      * @notice Indicates a failure because the given amount is zero
-     * @param what Description of which amount parameter was zero
+     * @param param Description of which amount parameter was zero
      */
     error ZeroAmount(ZeroAmountParam param);
 
