@@ -290,30 +290,36 @@ abstract contract ComponentToken is
         return super.totalAssets();
     }
 
-    /// @notice Total value held by the given owner
-    /// @dev Reverts with Unimplemented() until convertToAssets is implemented by the concrete contract
-    /// @param owner Address to query the balance of
-    /// @return assets Total value held by the owner
+    /**
+     * @notice Total value held by the given owner
+     * @dev Reverts with Unimplemented() until convertToAssets is implemented by the concrete contract
+     * @param owner Address to query the balance of
+     * @return assets Total value held by the owner
+     */
     function assetsOf(
         address owner
     ) public view virtual returns (uint256 assets) {
         return convertToAssets(balanceOf(owner));
     }
 
-    /// @inheritdoc IERC4626
-    /// @dev Concrete implementations should:
-    /// - Always round DOWN for convertToShares
-    /// - Handle zero supply/assets cases appropriately
+    /**
+     * @inheritdoc IERC4626
+     *  @dev Concrete implementations should:
+     *  - Always round DOWN for convertToShares
+     *  - Handle zero supply/assets cases appropriately
+     */
     function convertToShares(
         uint256 assets
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 shares) {
         revert Unimplemented();
     }
 
-    /// @inheritdoc IERC4626
-    /// @dev Concrete implementations should:
-    /// - Always round DOWN for convertToAssets
-    /// - Handle zero supply/assets cases appropriately
+    /**
+     * @inheritdoc IERC4626
+     * @dev Concrete implementations should:
+     * - Always round DOWN for convertToAssets
+     * - Handle zero supply/assets cases appropriately
+     */
     function convertToAssets(
         uint256 shares
     ) public view virtual override(ERC4626Upgradeable, IERC7540) returns (uint256 assets) {
