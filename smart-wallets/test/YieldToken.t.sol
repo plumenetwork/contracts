@@ -191,7 +191,7 @@ contract YieldTokenTest is Test {
             owner,
             "Yield Token",
             "YLT",
-            mockCurrencyToken,
+            mockCurrencyToken, // This doesn't match the asset token's currency
             18,
             "https://example.com/token-uri",
             newAssetToken,

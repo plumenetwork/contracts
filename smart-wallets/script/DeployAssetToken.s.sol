@@ -14,7 +14,7 @@ contract DeployAssetToken is Script, Test {
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
 
     // Address of the currency token
-    address private constant CURRENCY_TOKEN_ADDRESS = 0x2DEc3B6AdFCCC094C31a2DCc83a43b5042220Ea2;
+    address private constant CURRENCY_TOKEN_ADDRESS = 0xe644F07B1316f28a7F134998e021eA9f7135F351;
 
     function test() public { }
 
