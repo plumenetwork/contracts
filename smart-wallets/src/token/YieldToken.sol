@@ -194,10 +194,6 @@ contract YieldToken is
 
         _getYieldTokenStorage().assetToken = assetToken;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, owner);
-        _grantRole(ADMIN_ROLE, owner);
-        _grantRole(UPGRADER_ROLE, owner);
-
         _mint(owner, initialSupply);
     }
 

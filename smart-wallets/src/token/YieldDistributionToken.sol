@@ -108,6 +108,10 @@ abstract contract YieldDistributionToken is
         __ERC20_init(name, symbol);
         __Ownable_init(owner);
 
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(ADMIN_ROLE, owner);
+        _grantRole(UPGRADER_ROLE, owner);
+
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         $.currencyToken = currencyToken;
         $.decimals = decimals_;
