@@ -286,6 +286,21 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     }
 
     /**
+     * @notice Approve the given spender to spend the given amount of any asset token
+     * @dev Only the manager can call this function
+     * @param assetToken The ERC20 token to approve
+     * @param spender The address that will spend the token
+     * @param amount Amount of tokens to approve
+     */
+    function approveAssetToken(
+        IERC20 assetToken,
+        address spender,
+        uint256 amount
+    ) external nonReentrant onlyRole(MANAGER_ROLE) {
+        SafeERC20.forceApprove(assetToken, spender, amount);
+    }
+
+    /**
      * @notice Add a ComponentToken to the component token list
      * @dev Only the owner can call this function, and there is no way to remove a ComponentToken later
      * @param componentToken ComponentToken to add
@@ -351,7 +366,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         uint256 assets,
         uint256 minimumMint,
         address _teller
-    ) public nonReentrant returns (uint256 shares) {
+    ) public nonReentrant onlyRole(MANAGER_ROLE) returns (uint256 shares) {
         if (msg.sender == address(0)) {
             revert InvalidReceiver();
         }
@@ -365,12 +380,6 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         if (!teller.isSupported(IERC20(token))) {
             revert AssetNotSupported();
         }
-
-        // Transfer assets from sender to this contract
-        SafeERC20.safeTransferFrom(IERC20(token), msg.sender, address(this), assets);
-
-        // Approve teller to spend assets
-        SafeERC20.forceApprove(IERC20(token), address(teller), assets);
 
         // Deposit through teller
         shares = teller.deposit(
@@ -405,6 +414,9 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         if (deadline < block.timestamp) {
             revert DeadlineExpired();
         }
+
+        // Approve the atomic queue to spend the offer tokens
+        SafeERC20.forceApprove(IERC20(offerToken), _atomicQueue, shares);
 
         // Create and submit atomic request
         IAtomicQueue.AtomicRequest memory request = IAtomicQueue.AtomicRequest({

@@ -70,6 +70,11 @@ contract Plume is
         _grantRole(UPGRADER_ROLE, owner);
     }
 
+    /// @notice Reinitialize Plume with symbol $PLUME
+    function reinitialize() public reinitializer(1) onlyRole(UPGRADER_ROLE) {
+        __ERC20_init("Plume", "PLUME");
+    }
+
     // Override Functions
 
     /**

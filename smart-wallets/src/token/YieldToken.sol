@@ -42,6 +42,10 @@ contract YieldToken is
     struct YieldTokenStorage {
         /// @dev AssetToken that redistributes yield to the YieldToken
         IAssetToken assetToken;
+        /// @dev Tracks undistributed yield
+        uint256 yieldBuffer;
+        /// @dev Tracks actual deposits/withdrawals
+        uint256 totalManagedAssets;
         /// @dev Amount of assets deposited by each controller and not ready to claim
         mapping(address controller => uint256 assets) pendingDepositRequest;
         /// @dev Amount of assets deposited by each controller and ready to claim
@@ -274,13 +278,9 @@ contract YieldToken is
     }
 
     /// @inheritdoc IERC4626
-    function totalAssets()
-        public
-        view
-        override(ERC4626Upgradeable, IComponentToken)
-        returns (uint256 totalManagedAssets)
-    {
-        return super.totalAssets();
+    function totalAssets() public view override(ERC4626, IComponentToken) returns (uint256 totalManagedAssets) {
+        YieldTokenStorage storage $ = _getYieldTokenStorage();
+        return $.totalManagedAssets;
     }
 
     /// @inheritdoc IComponentToken
@@ -347,6 +347,8 @@ contract YieldToken is
         if (currencyToken != _getYieldDistributionTokenStorage().currencyToken) {
             revert InvalidCurrencyToken(currencyToken, _getYieldDistributionTokenStorage().currencyToken);
         }
+
+        $.yieldBuffer += amount;
         _depositYield(currencyTokenAmount);
     }
 
@@ -416,9 +418,15 @@ contract YieldToken is
         if ($.claimableDepositRequest[controller] < assets) {
             revert InsufficientRequestBalance(controller, assets, 1);
         }
-        shares = $.sharesDepositRequest[controller];
+
+        // Calculate proportional shares based on requested assets
+        shares = $.sharesDepositRequest[controller].mulDivDown(assets, $.claimableDepositRequest[controller]);
+
         $.claimableDepositRequest[controller] -= assets;
         $.sharesDepositRequest[controller] -= shares;
+
+        // Track managed assets
+        $.totalManagedAssets += assets;
 
         _mint(receiver, shares);
 
@@ -521,9 +529,15 @@ contract YieldToken is
         if ($.claimableRedeemRequest[controller] < shares) {
             revert InsufficientRequestBalance(controller, shares, 3);
         }
-        assets = $.assetsRedeemRequest[controller];
+
+        // Calculate proportional assets based on requested shares
+        assets = $.assetsRedeemRequest[controller].mulDivDown(shares, $.claimableRedeemRequest[controller]);
+
         $.claimableRedeemRequest[controller] -= shares;
         $.assetsRedeemRequest[controller] -= assets;
+
+        // Track managed assets
+        $.totalManagedAssets -= assets;
 
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
@@ -531,6 +545,14 @@ contract YieldToken is
 
         emit Withdraw(controller, receiver, controller, assets, shares);
     }
+
+
+    function _beforeWithdraw(uint256 assets) internal view {
+        YieldTokenStorage storage $ = _getYieldTokenStorage();
+        uint256 availableAssets = IERC20(asset()).balanceOf(address(this)) - $.yieldBuffer;
+        require(availableAssets >= assets, "Cannot withdraw from yield buffer");
+    }
+
 
     /// @inheritdoc IERC4626
     function withdraw(
@@ -549,13 +571,22 @@ contract YieldToken is
         }
 
         YieldTokenStorage storage $ = _getYieldTokenStorage();
-        shares = convertToShares(assets);
 
-        if ($.claimableRedeemRequest[controller] < shares) {
-            revert InsufficientRequestBalance(controller, shares, 3);
+        // Verify the requested assets match what was notified
+        if (assets > $.assetsRedeemRequest[controller]) {
+            revert InsufficientRequestBalance(controller, assets, 3);
         }
+
+        // Calculate proportional shares based on requested assets
+        shares = $.claimableRedeemRequest[controller].mulDivDown(assets, $.assetsRedeemRequest[controller]);
+
         $.claimableRedeemRequest[controller] -= shares;
         $.assetsRedeemRequest[controller] -= assets;
+
+        // Track managed assets
+        $.totalManagedAssets -= assets;
+
+        _beforeWithdraw(assets);
 
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
@@ -584,6 +615,77 @@ contract YieldToken is
     /// @inheritdoc IComponentToken
     function claimableRedeemRequest(uint256, address controller) public view returns (uint256 shares) {
         return _getYieldTokenStorage().claimableRedeemRequest[controller];
+    }
+
+    // Override all ERC4626 preview and max functions to use our custom conversion logic
+    function maxDeposit(
+        address
+    ) public view virtual override returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function maxMint(
+        address
+    ) public view virtual override returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function maxWithdraw(
+        address owner
+    ) public view virtual override returns (uint256) {
+        return convertToAssets(balanceOf(owner));
+    }
+
+    function maxRedeem(
+        address owner
+    ) public view virtual override returns (uint256) {
+        return balanceOf(owner);
+    }
+
+    function previewDeposit(
+        uint256 assets
+    ) public view virtual override returns (uint256) {
+        return convertToShares(assets);
+    }
+
+    function previewMint(
+        uint256 shares
+    ) public view virtual override returns (uint256) {
+        return convertToAssets(shares);
+    }
+
+    function previewWithdraw(
+        uint256 assets
+    ) public view virtual override returns (uint256) {
+        return convertToShares(assets);
+    }
+
+    function previewRedeem(
+        uint256 shares
+    ) public view virtual override returns (uint256) {
+        return convertToAssets(shares);
+    }
+
+    // Explicitly override decimals to use YieldDistributionToken's implementation
+    function decimals() public view override(YieldDistributionToken, ERC4626) returns (uint8) {
+        return YieldDistributionToken.decimals();
+    }
+
+    // Disable direct ERC4626 deposit/mint/withdraw/redeem functions
+    function deposit(uint256, address, address) public override(ERC4626) returns (uint256) {
+        revert Unimplemented();
+    }
+
+    function mint(uint256, address) public override(ERC4626) returns (uint256) {
+        revert Unimplemented();
+    }
+
+    function withdraw(uint256, address, address) public override(ERC4626) returns (uint256) {
+        revert Unimplemented();
+    }
+
+    function redeem(uint256, address, address) public override(ERC4626) returns (uint256) {
+        revert Unimplemented();
     }
 
 }
