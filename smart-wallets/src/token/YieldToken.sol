@@ -479,7 +479,7 @@ contract YieldToken is
 
         YieldTokenStorage storage $ = _getYieldTokenStorage();
 
-        _burn(msg.sender, shares);
+        //_burn(msg.sender, shares);
         $.pendingRedeemRequest[controller] += shares;
 
         emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
@@ -539,7 +539,11 @@ contract YieldToken is
         // Track managed assets
         $.totalManagedAssets -= assets;
 
-        _beforeWithdraw(assets); // Add this line to check yield buffer
+        // Check yield buffer
+        _beforeWithdraw(assets); 
+
+        // Burn the shares, when we actually process the redemption
+        _burn(controller, shares);
 
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
