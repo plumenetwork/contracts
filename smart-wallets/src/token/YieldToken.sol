@@ -539,6 +539,8 @@ contract YieldToken is
         // Track managed assets
         $.totalManagedAssets -= assets;
 
+        _beforeWithdraw(assets); // Add this line to check yield buffer
+
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
         }
