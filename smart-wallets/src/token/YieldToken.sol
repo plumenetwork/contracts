@@ -290,7 +290,10 @@ contract YieldToken is
         return convertToAssets(balanceOf(owner));
     }
 
-    /// @inheritdoc IERC4626
+    /**
+     * @inheritdoc IERC4626
+     * @dev Always rounds down for user safety when converting assets to shares
+     */
     function convertToShares(
         uint256 assets
     ) public view override(ERC4626Upgradeable, IComponentToken) returns (uint256 shares) {
@@ -302,7 +305,10 @@ contract YieldToken is
         return (assets * supply) / totalAssets_;
     }
 
-    /// @inheritdoc IERC4626
+    /**
+     * @inheritdoc IERC4626
+     * @dev Always rounds down for user safety when converting shares to assets
+     */
     function convertToAssets(
         uint256 shares
     ) public view override(ERC4626Upgradeable, IComponentToken) returns (uint256 assets) {
