@@ -491,7 +491,6 @@ contract YieldToken is
 
         YieldTokenStorage storage $ = _getYieldTokenStorage();
 
-        //_burn(msg.sender, shares);
         $.pendingRedeemRequest[controller] += shares;
 
         emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
