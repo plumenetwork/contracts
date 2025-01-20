@@ -160,20 +160,24 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
     /**
      * @inheritdoc IERC4626
      * @dev 1:1 conversion rate between USDT and base asset
+     * @dev Always round DOWN for convertToShares for user safety
      */
     function convertToShares(
         uint256 assets
     ) public view override(ComponentToken, IComponentToken) returns (uint256 shares) {
+        // Division rounds down by default
         return assets * _BASE / _getAggregateTokenStorage().askPrice;
     }
 
     /**
      * @inheritdoc IERC4626
      * @dev 1:1 conversion rate between USDT and base asset
+     * @dev Always round DOWN for convertToAssets for user safety
      */
     function convertToAssets(
         uint256 shares
     ) public view override(ComponentToken, IComponentToken) returns (uint256 assets) {
+        // Division rounds down by default
         return shares * _getAggregateTokenStorage().bidPrice / _BASE;
     }
 
