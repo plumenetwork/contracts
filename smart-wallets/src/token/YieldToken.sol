@@ -348,8 +348,8 @@ contract YieldToken is
             revert InvalidCurrencyToken(currencyToken, _getYieldDistributionTokenStorage().currencyToken);
         }
 
-        $.yieldBuffer += amount;
         _depositYield(currencyTokenAmount);
+        $.yieldBuffer += amount;
     }
 
     /// @inheritdoc IComponentToken
@@ -451,13 +451,19 @@ contract YieldToken is
         }
 
         YieldTokenStorage storage $ = _getYieldTokenStorage();
-        assets = convertToAssets(shares);
 
-        if ($.claimableDepositRequest[controller] < assets) {
-            revert InsufficientRequestBalance(controller, assets, 1);
+        if ($.sharesDepositRequest[controller] < shares) {
+            revert InsufficientRequestBalance(controller, shares, 1);
         }
+
+        // Calculate proportional assets based on requested shares
+        assets = $.claimableDepositRequest[controller].mulDivDown(shares, $.sharesDepositRequest[controller]);
+
         $.claimableDepositRequest[controller] -= assets;
         $.sharesDepositRequest[controller] -= shares;
+
+        // Track managed assets
+        $.totalManagedAssets += assets;
 
         _mint(receiver, shares);
 
@@ -540,7 +546,7 @@ contract YieldToken is
         $.totalManagedAssets -= assets;
 
         // Check yield buffer
-        _beforeWithdraw(assets); 
+        _beforeWithdraw(assets);
 
         // Burn the shares, when we actually process the redemption
         _burn(controller, shares);
@@ -593,6 +599,9 @@ contract YieldToken is
         $.totalManagedAssets -= assets;
 
         _beforeWithdraw(assets);
+
+        // Burn the shares when we actually process the withdrawal
+        _burn(controller, shares);
 
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
