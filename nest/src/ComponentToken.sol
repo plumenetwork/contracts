@@ -419,8 +419,8 @@ abstract contract ComponentToken is
             $.claimableDepositRequest[controller] = 0;
             $.sharesDepositRequest[controller] = 0;
         } else {
-            SafeERC20.safeTransferFrom(IERC20(asset()), controller, address(this), assets);
             shares = convertToShares(assets);
+            SafeERC20.safeTransferFrom(IERC20(asset()), controller, address(this), assets);
         }
 
         _mint(receiver, shares);
@@ -558,8 +558,8 @@ abstract contract ComponentToken is
             $.assetsRedeemRequest[controller] = 0;
         } else {
             // For sync redemptions, process normally
-            _burn(controller, shares);
             assets = convertToAssets(shares);
+            _burn(controller, shares);
         }
 
         SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
