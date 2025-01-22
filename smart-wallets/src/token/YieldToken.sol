@@ -36,6 +36,7 @@ contract YieldToken is
     IYieldToken,
     IComponentToken
 {
+
     using FixedPointMathLib for uint256;
     // Storage
 

@@ -34,7 +34,7 @@ contract DeployYieldToken is Script, Test {
                     "yMNRL",
                     IERC20(CURRENCY_TOKEN_ADDRESS),
                     18,
-                    "https://mineralvault.io/metadata/yMNRL.json", 
+                    "https://mineralvault.io/metadata/yMNRL.json",
                     IAssetToken(ASSET_TOKEN_ADDRESS),
                     1_000_000e18
                 )
