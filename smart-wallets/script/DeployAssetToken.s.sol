@@ -16,8 +16,8 @@ contract DeployAssetToken is Script, Test {
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
 
     // Address of the currency token
-    // pUSD in Plume Mainnet
-    address private constant CURRENCY_TOKEN_ADDRESS = 0xdddD73F5Df1F0DC31373357beAC77545dC5A6f3F;
+    // USDC in Plume Mainnet
+    address private constant CURRENCY_TOKEN_ADDRESS = 0x3938A812c54304fEffD266C7E2E70B48F9475aD6;
 
     function test() public { }
 
@@ -28,17 +28,17 @@ contract DeployAssetToken is Script, Test {
         AssetTokenProxy assetTokenProxy = new AssetTokenProxy(
             address(assetToken),
             abi.encodeCall(
-                assetTokenProxy.initialize,
+                assetToken.initialize,
                 (
                     ADMIN_ADDRESS, // owner
-                    "Real World Asset Token", // name
-                    "RWA", // symbol
+                    "Mineral Vault I Security Token", // name
+                    "aMNRL", // symbol
                     ERC20(CURRENCY_TOKEN_ADDRESS), // currencyToken
                     18, // decimals
-                    "https://metadata.uri", // tokenURI
-                    1000e18, // initialSupply
-                    1_000_000e18, // totalValue
-                    false // isWhitelistEnabled
+                    "https://mineralvault.io/metadata/aMNRL.json", // tokenURI
+                    1_000_000e18, // initialSupply
+                    10_000_000e18, // totalValue
+                    true // isWhitelistEnabled
                 )
             )
         );

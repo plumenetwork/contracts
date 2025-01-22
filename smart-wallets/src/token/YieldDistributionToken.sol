@@ -3,13 +3,13 @@ pragma solidity ^0.8.25;
 
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-
-import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 
 /**
  * @title YieldDistributionToken
@@ -21,6 +21,7 @@ abstract contract YieldDistributionToken is
     Initializable,
     ERC20Upgradeable,
     OwnableUpgradeable,
+    AccessControlUpgradeable,
     IYieldDistributionToken
 {
 

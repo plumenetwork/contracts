@@ -15,8 +15,8 @@ contract DeployYieldToken is Script, Test {
 
     // Change these addresses
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
-    address private constant CURRENCY_TOKEN_ADDRESS = 0xdddD73F5Df1F0DC31373357beAC77545dC5A6f3F;
-    address private constant ASSET_TOKEN_ADDRESS = 0x659619AEdf381c3739B0375082C2d61eC1fD8835;
+    address private constant CURRENCY_TOKEN_ADDRESS = 0x3938A812c54304fEffD266C7E2E70B48F9475aD6;
+    address private constant ASSET_TOKEN_ADDRESS = 0x2Ac2227eaD821F0499798AC844924F49CB9cFD90;
 
     function test() public { }
 
@@ -30,13 +30,13 @@ contract DeployYieldToken is Script, Test {
                 yieldToken.initialize,
                 (
                     ADMIN_ADDRESS,
-                    "Yield Token",
-                    "YLD",
+                    "Mineral Vault I Yield Token",
+                    "yMNRL",
                     IERC20(CURRENCY_TOKEN_ADDRESS),
                     18,
-                    "https://metadata.uri",
+                    "https://mineralvault.io/metadata/yMNRL.json", 
                     IAssetToken(ASSET_TOKEN_ADDRESS),
-                    1000e18
+                    1_000_000e18
                 )
             )
         );

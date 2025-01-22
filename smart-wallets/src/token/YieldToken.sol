@@ -9,6 +9,7 @@ import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ER
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { FixedPointMathLib } from "@solmate/utils/FixedPointMathLib.sol";
 
 import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
@@ -35,7 +36,7 @@ contract YieldToken is
     IYieldToken,
     IComponentToken
 {
-
+    using FixedPointMathLib for uint256;
     // Storage
 
     /// @custom:storage-location erc7201:plume.storage.YieldToken
@@ -278,7 +279,12 @@ contract YieldToken is
     }
 
     /// @inheritdoc IERC4626
-    function totalAssets() public view override(ERC4626, IComponentToken) returns (uint256 totalManagedAssets) {
+    function totalAssets()
+        public
+        view
+        override(ERC4626Upgradeable, IComponentToken)
+        returns (uint256 totalManagedAssets)
+    {
         YieldTokenStorage storage $ = _getYieldTokenStorage();
         return $.totalManagedAssets;
     }
@@ -320,11 +326,6 @@ contract YieldToken is
     }
 
     /// @inheritdoc ERC20Upgradeable
-    function decimals() public view override(YieldDistributionToken, ERC4626Upgradeable) returns (uint8) {
-        return super.decimals();
-    }
-
-    /// @inheritdoc ERC20Upgradeable
     function _update(
         address from,
         address to,
@@ -347,6 +348,8 @@ contract YieldToken is
         IERC20 currencyToken,
         uint256 currencyTokenAmount
     ) external nonReentrant {
+        YieldTokenStorage storage $ = _getYieldTokenStorage();
+
         if (assetToken != _getYieldTokenStorage().assetToken) {
             revert InvalidAssetToken(assetToken, _getYieldTokenStorage().assetToken);
         }
@@ -355,7 +358,7 @@ contract YieldToken is
         }
 
         _depositYield(currencyTokenAmount);
-        $.yieldBuffer += amount;
+        $.yieldBuffer += currencyTokenAmount;
     }
 
     /// @inheritdoc IComponentToken
@@ -687,24 +690,11 @@ contract YieldToken is
     }
 
     // Explicitly override decimals to use YieldDistributionToken's implementation
-    function decimals() public view override(YieldDistributionToken, ERC4626) returns (uint8) {
+    function decimals() public view override(YieldDistributionToken, ERC4626Upgradeable) returns (uint8) {
         return YieldDistributionToken.decimals();
     }
 
-    // Disable direct ERC4626 deposit/mint/withdraw/redeem functions
-    function deposit(uint256, address, address) public override(ERC4626) returns (uint256) {
-        revert Unimplemented();
-    }
-
-    function mint(uint256, address) public override(ERC4626) returns (uint256) {
-        revert Unimplemented();
-    }
-
-    function withdraw(uint256, address, address) public override(ERC4626) returns (uint256) {
-        revert Unimplemented();
-    }
-
-    function redeem(uint256, address, address) public override(ERC4626) returns (uint256) {
+    function mint(uint256, address) public override(ERC4626Upgradeable) returns (uint256) {
         revert Unimplemented();
     }
 
