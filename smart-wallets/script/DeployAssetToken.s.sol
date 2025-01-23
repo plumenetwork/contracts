@@ -38,7 +38,7 @@ contract DeployAssetToken is Script, Test {
                     "https://mineralvault.io/metadata/aMNRL.json", // tokenURI
                     1_000_000e18, // initialSupply
                     10_000_000e18, // totalValue
-                    true // isWhitelistEnabled
+                    false // isWhitelistEnabled
                 )
             )
         );
