@@ -485,15 +485,7 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
         IComponentToken componentToken,
         uint256 componentTokenAmount
     ) public nonReentrant onlyRole(MANAGER_ROLE) {
-        uint256 assets;
-        if (IERC165(address(componentToken)).supportsInterface(IERC7540_INTERFACE_ID)) {
-            // ERC7540 redeem
-            assets = IERC7540(address(componentToken)).redeem(componentTokenAmount, address(this), address(this));
-        } else {
-            // ERC4626 redeem
-            assets = IERC4626(address(componentToken)).redeem(componentTokenAmount, address(this), address(this));
-        }
-
+        uint256 assets = componentToken.redeem(componentTokenAmount, address(this), address(this));
         emit ComponentTokenSold(msg.sender, componentToken, componentTokenAmount, assets);
     }
 
