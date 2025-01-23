@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { IERC7540 } from "./interfaces/IERC7540Base.sol";
 import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+
 import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import { ComponentToken } from "./ComponentToken.sol";
 import { IAggregateToken } from "./interfaces/IAggregateToken.sol";
@@ -16,10 +19,12 @@ import { ITeller } from "./interfaces/ITeller.sol";
 
 /**
  * @title AggregateToken
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Implementation of the abstract ComponentToken that represents a basket of ComponentTokens
  */
 contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
+
+    bytes4 private constant IERC7540_INTERFACE_ID = type(IERC7540).interfaceId;
 
     // Storage
 
@@ -457,7 +462,15 @@ contract AggregateToken is ComponentToken, IAggregateToken, ERC1155Holder {
             emit ComponentTokenListed(componentToken);
         }
 
-        uint256 componentTokenAmount = componentToken.deposit(assets, address(this), address(this));
+        uint256 componentTokenAmount;
+        if (IERC165(address(componentToken)).supportsInterface(IERC7540_INTERFACE_ID)) {
+            // ERC7540 deposit
+            componentTokenAmount = IERC7540(address(componentToken)).deposit(assets, address(this), address(this));
+        } else {
+            // ERC4626 deposit
+            componentTokenAmount = IERC4626(address(componentToken)).deposit(assets, address(this));
+        }
+
         emit ComponentTokenBought(msg.sender, componentToken, componentTokenAmount, assets);
     }
 
