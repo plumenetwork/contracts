@@ -40,3 +40,6 @@
 [submodule "nest/lib/nucleus-boring-vault"]
 	path = nest/lib/nucleus-boring-vault
 	url = https://github.com/plumenetwork/nucleus-boring-vault
+[submodule "smart-wallets/lib/solmate"]
+	path = smart-wallets/lib/solmate
+	url = https://github.com/transmissions11/solmate
