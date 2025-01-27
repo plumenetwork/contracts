@@ -12,6 +12,8 @@ import { AssetToken } from "../src/token/AssetToken.sol";
 
 contract UpgradeAssetToken is Script, Test {
 
+    uint8 constant VERSION = 2; // Increment this from previous version
+
     // Address of the admin
     address private constant ADMIN_ADDRESS = 0xb015762405De8fD24d29A6e0799c12e0Ea81c1Ff;
     address private constant CURRENCY_TOKEN_ADDRESS = 0x3938A812c54304fEffD266C7E2E70B48F9475aD6;
@@ -33,18 +35,18 @@ contract UpgradeAssetToken is Script, Test {
         // Upgrade to new implementation
         ASSET_TOKEN_PROXY.upgradeToAndCall(address(newAssetTokenImpl), "");
 
-        AssetToken(address(ASSET_TOKEN_PROXY)).initialize(
-            ADMIN_ADDRESS, // owner
+        /*
+        AssetToken(address(ASSET_TOKEN_PROXY)).reinitialize(
+            VERSION,
             "Mineral Vault I Security Token", // name
             "aMNRL", // symbol
-            ERC20(CURRENCY_TOKEN_ADDRESS), // currencyToken
+            "https://arc.plumenetwork.xyz/metadata/mineral-vault.json", // tokenURI
+            CURRENCY_TOKEN_ADDRESS, // newCurrencyToken
             18, // decimals
-            "https://mineralvault.io/metadata/aMNRL.json", // tokenURI
-            1_000_000e18, // initialSupply
             10_000_000e18, // totalValue
             false // isWhitelistEnabled
         );
-
+        */
         console2.log("AssetToken proxy upgraded to new implementation");
 
         console2.log("Upgrade complete. Proxy address:", address(ASSET_TOKEN_PROXY));

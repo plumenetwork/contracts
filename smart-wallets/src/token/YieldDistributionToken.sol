@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -20,7 +18,6 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 abstract contract YieldDistributionToken is
     Initializable,
     ERC20Upgradeable,
-    OwnableUpgradeable,
     AccessControlUpgradeable,
     IYieldDistributionToken
 {
@@ -107,7 +104,6 @@ abstract contract YieldDistributionToken is
         string memory tokenURI_
     ) internal onlyInitializing {
         __ERC20_init(name, symbol);
-        __Ownable_init(owner);
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
@@ -276,7 +272,7 @@ abstract contract YieldDistributionToken is
      */
     function setTokenURI(
         string memory tokenURI
-    ) external onlyOwner {
+    ) external onlyRole(ADMIN_ROLE) {
         _getYieldDistributionTokenStorage().tokenURI = tokenURI;
     }
 
