@@ -53,8 +53,10 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     event UserPositionBridged(address indexed user, IERC20 indexed stablecoin, uint256 shares);
 
     event UserConvertedToVault(
-        address indexed user, IERC20 indexed stablecoin, IBoringVault vault, uint256 amount, uint256 shares
+        address indexed user, IERC20 indexed stablecoin, ITeller vault, uint256 amount, uint256 shares
     );
+
+    event VaultSharesTransferred(address indexed user, IERC20 indexed stablecoin, uint256 shares);
 
     // Storage
 
@@ -344,7 +346,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
             IERC20 stablecoin = stablecoins[i];
             uint256 amount = stablecoin.balanceOf(address(this));
             if (amount > 0) {
-                stablecoin.forceApprove(ERC20(address($.vault_.teller)), amount);
+                stablecoin.forceApprove(address($.vault.teller), amount);
                 uint256 fee = teller.previewFee(amount, bridgeData);
                 teller.depositAndBridge{ value: fee }(ERC20(address(stablecoin)), amount, amount, bridgeData);
                 emit AdminWithdrawn(
@@ -558,6 +560,43 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         emit UserConvertedToVault(msg.sender, stablecoin, teller, amount, receivedShares);
     }
 
+    /**
+     * @notice Batch transfer vault shares to users
+     * @param stablecoin The stablecoin whose vault shares to transfer
+     * @param users Array of users to transfer shares to
+     * @dev Called periodically (e.g., every 12 hours) to save gas
+     */
+    function batchTransferVaultShares(
+        IERC20 stablecoin,
+        address[] calldata users
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+
+        // Get the teller
+        ITeller teller = ITeller(address($.stablecoinToVault[stablecoin]));
+        require(address(teller) != address(0), "Teller not set");
+
+        // nYIELD token
+        ERC20 nYIELD = ERC20(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8);
+
+        for (uint256 i = 0; i < users.length; i++) {
+            address user = users[i];
+            uint256 shares = $.userVaultShares[user][stablecoin];
+
+            if (shares > 0) {
+                // Reset user's share balance before transfer
+                $.userVaultShares[user][stablecoin] = 0;
+                $.vaultTotalShares[stablecoin] -= shares;
+
+                // Transfer nYIELD tokens to user
+                nYIELD.transfer(user, shares);
+
+                emit VaultSharesTransferred(user, stablecoin, shares);
+            }
+        }
+    }
+
+    /*
     function adminConvertToBoringVault(IERC20 stablecoin, IBoringVault vault, uint256 amount) external onlyTimelock {
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
 
@@ -627,7 +666,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
         emit StablecoinConvertedToVault(stablecoin, vault, amount, sharesToMint);
     }
-
+    */
     function userOptInToBridge(IERC20 stablecoin, bool optIn) external {
         // Allow users to opt in/out of bridging
         console.log("userOptInToBridge");
