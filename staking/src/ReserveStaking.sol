@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { BridgeData, ITeller } from "./interfaces/ITeller.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -246,8 +248,9 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
      * @param bridgeData Data required for bridging
      */
     function adminBridge(
-        CrossChainTellerBase teller,
-        BridgeData calldata bridgeData
+        ITeller teller,
+        BridgeData calldata bridgeData,
+        address vault_
     ) external nonReentrant onlyTimelock {
         ReserveStakingStorage storage $ = _getReserveStakingStorage();
         if ($.endTime != 0) {
@@ -257,17 +260,17 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
         // Bridge SBTC
         uint256 sbtcAmount = $.sbtc.balanceOf(address(this));
         if (sbtcAmount > 0) {
-            $.sbtc.safeApprove(address(teller.vault()), sbtcAmount);
+            $.sbtc.forceApprove(vault_, sbtcAmount);
             uint256 fee = teller.previewFee(sbtcAmount, bridgeData);
-            teller.depositAndBridge{ value: fee }(IERC20(address($.sbtc)), sbtcAmount, sbtcAmount, bridgeData);
+            teller.depositAndBridge{ value: fee }(ERC20(address($.sbtc)), sbtcAmount, sbtcAmount, bridgeData);
         }
 
         // Bridge STONE
         uint256 stoneAmount = $.stone.balanceOf(address(this));
         if (stoneAmount > 0) {
-            $.stone.safeApprove(address(teller.vault()), stoneAmount);
+            $.stone.forceApprove(vault_, stoneAmount);
             uint256 fee = teller.previewFee(stoneAmount, bridgeData);
-            teller.depositAndBridge{ value: fee }(IERC20(address($.stone)), stoneAmount, stoneAmount, bridgeData);
+            teller.depositAndBridge{ value: fee }(ERC20(address($.stone)), stoneAmount, stoneAmount, bridgeData);
         }
 
         $.endTime = block.timestamp;

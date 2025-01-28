@@ -344,7 +344,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
             IERC20 stablecoin = stablecoins[i];
             uint256 amount = stablecoin.balanceOf(address(this));
             if (amount > 0) {
-                stablecoin.forceApprove($.vault, amount);
+                stablecoin.forceApprove(ERC20(address($.vault_.teller)), amount);
                 uint256 fee = teller.previewFee(amount, bridgeData);
                 teller.depositAndBridge{ value: fee }(ERC20(address(stablecoin)), amount, amount, bridgeData);
                 emit AdminWithdrawn(
@@ -524,7 +524,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return _getnYieldStakingStorage().timelock;
     }
 
-    function convertToBoringVault(IERC20 stablecoin, IBoringVault vault, uint256 amount) external {
+    function convertToBoringVault(IERC20 stablecoin, ITeller teller, uint256 amount) external {
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
         UserState storage userState = $.userStates[msg.sender];
 
@@ -539,40 +539,23 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
             revert InsufficientBalance(userBalance, amount);
         }
 
-        // Set vault for stablecoin if not already set
-        if (address($.stablecoinToVault[stablecoin]) == address(0)) {
-            $.stablecoinToVault[stablecoin] = vault;
-        }
-
-        // Calculate shares to mint
-        uint256 totalAssets = vault.totalAssets();
-        uint256 totalShares = vault.totalSupply();
-        uint256 sharesToMint;
-
-        if (totalShares == 0) {
-            sharesToMint = amount; // 1:1 for first deposit
-        } else {
-            sharesToMint = (amount * totalShares) / totalAssets;
-        }
-
         // Approve stablecoin transfer
-        stablecoin.approve(address(vault), amount);
+        stablecoin.approve(address(teller), amount);
 
-        // Enter vault position
-        vault.enter(
-            address(this), // from
-            ERC20(address(stablecoin)), // asset
-            amount, // assetAmount
-            address(this), // to (contract holds shares)
-            sharesToMint // shareAmount
+        // Deposit into teller and receive shares
+        uint256 minimumMint = 0; // Can be parameterized if needed
+        uint256 receivedShares = teller.deposit(
+            ERC20(address(stablecoin)), // depositAsset
+            amount, // depositAmount
+            minimumMint // minimumMint
         );
 
         // Update user's stablecoin and share balances
         userState.stablecoinAmounts[stablecoin] -= amount;
-        $.userVaultShares[msg.sender][stablecoin] += sharesToMint;
-        $.vaultTotalShares[stablecoin] += sharesToMint;
+        $.userVaultShares[msg.sender][stablecoin] += receivedShares;
+        $.vaultTotalShares[stablecoin] += receivedShares;
 
-        emit UserConvertedToVault(msg.sender, stablecoin, vault, amount, sharesToMint);
+        emit UserConvertedToVault(msg.sender, stablecoin, teller, amount, receivedShares);
     }
 
     function adminConvertToBoringVault(IERC20 stablecoin, IBoringVault vault, uint256 amount) external onlyTimelock {
