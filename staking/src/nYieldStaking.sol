@@ -11,25 +11,24 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { IBoringVault } from "./interfaces/IBoringVault.sol";
-import { BridgeData, ITeller } from "./interfaces/ITeller.sol";
-import { IAtomicQueue } from "./interfaces/IAtomicQueue.sol";
-import { ILens } from "./interfaces/ILens.sol";
 import { IAccountantWithRateProviders } from "./interfaces/IAccountantWithRateProviders.sol";
+import { IAtomicQueue } from "./interfaces/IAtomicQueue.sol";
+import { IBoringVault } from "./interfaces/IBoringVault.sol";
+import { ILens } from "./interfaces/ILens.sol";
+import { BridgeData, ITeller } from "./interfaces/ITeller.sol";
 
 import { console } from "forge-std/console.sol";
 
 /**
- * @title RWAStaking
- * @author Eugene Y. Q. Shen
- * @notice Pre-staking contract for RWA Staking on Plume
+ * @title nYieldStaking
+ * @author Eugene Y. Q. Shen, Alp Guneysel
+ * @notice Pre-staking contract for nYIELD Staking on Plume
  */
 contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
     // Types
 
     using SafeERC20 for IERC20;
-    //using SafeTransferLib for ERC20;
 
     /**
      * @notice State of a user that deposits into the RWAStaking contract
@@ -58,8 +57,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     );
 
     // Storage
-
-
 
     struct BoringVault {
         ITeller teller;
@@ -91,17 +88,12 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         BoringVault vault;
         /// @dev Timelock contract address
         TimelockController timelock;
-
-
-
         // New storage for vault conversion
         mapping(IERC20 => IBoringVault) stablecoinToVault;
         mapping(IERC20 => uint256) vaultTotalShares;
         mapping(address => mapping(IERC20 => uint256)) userVaultShares;
         mapping(address => mapping(IERC20 => bool)) userBridgeOptIn;
         mapping(address => mapping(IERC20 => bool)) userPositionBridged;
-
-
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldStaking")) - 1)) & ~bytes32(uint256(0xff))

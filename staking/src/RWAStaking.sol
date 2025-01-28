@@ -11,7 +11,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 
 /**
  * @title RWAStaking
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Pre-staking contract for RWA Staking on Plume
  */
 contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
@@ -267,47 +267,37 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
         $.endTime = block.timestamp;
     }
 
-
-/**
- * @notice Bridge stablecoins to Plume mainnet through the Teller contract
- * @param teller Teller contract address
- * @param bridgeData Data required for bridging
- */
-function adminBridge(
-    CrossChainTellerBase teller,
-    BridgeData calldata bridgeData
-) external nonReentrant onlyTimelock {
-    RWAStakingStorage storage $ = _getRWAStakingStorage();
-    if ($.endTime != 0) {
-        revert StakingEnded();
-    }
-
-    IERC20[] storage stablecoins = $.stablecoins;
-    uint256 length = stablecoins.length;
-    for (uint256 i = 0; i < length; ++i) {
-        IERC20 stablecoin = stablecoins[i];
-        uint256 amount = stablecoin.balanceOf(address(this));
-        if (amount > 0) {
-            stablecoin.safeApprove(address(teller.vault()), amount);
-            uint256 fee = teller.previewFee(amount, bridgeData);
-            teller.depositAndBridge{ value: fee }(
-                stablecoin,
-                amount,
-                amount,
-                bridgeData
-            );
-            emit AdminWithdrawn(
-                $.multisig,
-                stablecoin,
-                amount * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals())
-            );
+    /**
+     * @notice Bridge stablecoins to Plume mainnet through the Teller contract
+     * @param teller Teller contract address
+     * @param bridgeData Data required for bridging
+     */
+    function adminBridge(
+        CrossChainTellerBase teller,
+        BridgeData calldata bridgeData
+    ) external nonReentrant onlyTimelock {
+        RWAStakingStorage storage $ = _getRWAStakingStorage();
+        if ($.endTime != 0) {
+            revert StakingEnded();
         }
+
+        IERC20[] storage stablecoins = $.stablecoins;
+        uint256 length = stablecoins.length;
+        for (uint256 i = 0; i < length; ++i) {
+            IERC20 stablecoin = stablecoins[i];
+            uint256 amount = stablecoin.balanceOf(address(this));
+            if (amount > 0) {
+                stablecoin.safeApprove(address(teller.vault()), amount);
+                uint256 fee = teller.previewFee(amount, bridgeData);
+                teller.depositAndBridge{ value: fee }(stablecoin, amount, amount, bridgeData);
+                emit AdminWithdrawn(
+                    $.multisig, stablecoin, amount * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals())
+                );
+            }
+        }
+
+        $.endTime = block.timestamp;
     }
-    
-    $.endTime = block.timestamp;
-}
-
-
 
     /**
      * @notice Pause the RWAStaking contract for deposits

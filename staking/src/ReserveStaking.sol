@@ -240,52 +240,39 @@ contract ReserveStaking is AccessControlUpgradeable, UUPSUpgradeable, Reentrancy
         emit AdminWithdrawn($.multisig, sbtcAmount, stoneAmount);
     }
 
+    /**
+     * @notice Bridge SBTC and STONE to Plume mainnet through the Teller contract
+     * @param teller Teller contract address
+     * @param bridgeData Data required for bridging
+     */
+    function adminBridge(
+        CrossChainTellerBase teller,
+        BridgeData calldata bridgeData
+    ) external nonReentrant onlyTimelock {
+        ReserveStakingStorage storage $ = _getReserveStakingStorage();
+        if ($.endTime != 0) {
+            revert StakingEnded();
+        }
 
-/**
- * @notice Bridge SBTC and STONE to Plume mainnet through the Teller contract
- * @param teller Teller contract address
- * @param bridgeData Data required for bridging
- */
-function adminBridge(
-    CrossChainTellerBase teller,
-    BridgeData calldata bridgeData
-) external nonReentrant onlyTimelock {
-    ReserveStakingStorage storage $ = _getReserveStakingStorage();
-    if ($.endTime != 0) {
-        revert StakingEnded();
+        // Bridge SBTC
+        uint256 sbtcAmount = $.sbtc.balanceOf(address(this));
+        if (sbtcAmount > 0) {
+            $.sbtc.safeApprove(address(teller.vault()), sbtcAmount);
+            uint256 fee = teller.previewFee(sbtcAmount, bridgeData);
+            teller.depositAndBridge{ value: fee }(IERC20(address($.sbtc)), sbtcAmount, sbtcAmount, bridgeData);
+        }
+
+        // Bridge STONE
+        uint256 stoneAmount = $.stone.balanceOf(address(this));
+        if (stoneAmount > 0) {
+            $.stone.safeApprove(address(teller.vault()), stoneAmount);
+            uint256 fee = teller.previewFee(stoneAmount, bridgeData);
+            teller.depositAndBridge{ value: fee }(IERC20(address($.stone)), stoneAmount, stoneAmount, bridgeData);
+        }
+
+        $.endTime = block.timestamp;
+        emit AdminWithdrawn($.multisig, sbtcAmount, stoneAmount);
     }
-
-    // Bridge SBTC
-    uint256 sbtcAmount = $.sbtc.balanceOf(address(this));
-    if (sbtcAmount > 0) {
-        $.sbtc.safeApprove(address(teller.vault()), sbtcAmount);
-        uint256 fee = teller.previewFee(sbtcAmount, bridgeData);
-        teller.depositAndBridge{ value: fee }(
-            IERC20(address($.sbtc)),
-            sbtcAmount,
-            sbtcAmount,
-            bridgeData
-        );
-    }
-
-    // Bridge STONE
-    uint256 stoneAmount = $.stone.balanceOf(address(this));
-    if (stoneAmount > 0) {
-        $.stone.safeApprove(address(teller.vault()), stoneAmount);
-        uint256 fee = teller.previewFee(stoneAmount, bridgeData);
-        teller.depositAndBridge{ value: fee }(
-            IERC20(address($.stone)),
-            stoneAmount,
-            stoneAmount,
-            bridgeData
-        );
-    }
-
-    $.endTime = block.timestamp;
-    emit AdminWithdrawn($.multisig, sbtcAmount, stoneAmount);
-}
-
-
 
     /**
      * @notice Pause the ReserveStaking contract for deposits
