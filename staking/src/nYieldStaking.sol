@@ -48,6 +48,10 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
     error InsufficientBalance(uint256 available, uint256 required);
 
+    error ConversionNotStarted(uint256 currentTime, uint256 startTime);
+
+    event VaultConversionStartTimeSet(uint256 startTime);
+
     event StablecoinConvertedToVault(IERC20 stablecoin, IBoringVault vault, uint256 amount, uint256 shares);
     event UserBridgeOptInUpdated(address indexed user, IERC20 indexed stablecoin, bool optIn);
     event UserPositionBridged(address indexed user, IERC20 indexed stablecoin, uint256 shares);
@@ -90,6 +94,8 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         BoringVault vault;
         /// @dev Timelock contract address
         TimelockController timelock;
+        /// @dev Timestamp when users can start converting
+        uint256 vaultConversionStartTime;
         // New storage for vault conversion
         mapping(IERC20 => IBoringVault) stablecoinToVault;
         mapping(IERC20 => uint256) vaultTotalShares;
@@ -271,6 +277,15 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         _getnYieldStakingStorage().multisig = multisig;
     }
 
+    function setVaultConversionStartTime(
+        uint256 startTime
+    ) external onlyRole(ADMIN_ROLE) {
+        require(startTime > block.timestamp, "Start time must be in future");
+        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        $.vaultConversionStartTime = startTime;
+        emit VaultConversionStartTimeSet(startTime);
+    }
+
     /**
      * @notice Allow a stablecoin to be staked into the RWAStaking contract
      * @dev This function can only be called by an admin
@@ -330,11 +345,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @param teller Teller contract address
      * @param bridgeData Data required for bridging
      */
-    function adminBridge(
-        ITeller teller,
-        BridgeData calldata bridgeData,
-        address vault_
-    ) external nonReentrant onlyTimelock {
+    function adminBridge(ITeller teller, BridgeData calldata bridgeData) external nonReentrant onlyTimelock {
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -528,6 +539,12 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
     function convertToBoringVault(IERC20 stablecoin, ITeller teller, uint256 amount) external {
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+
+        // Check if conversion period has started
+        if (block.timestamp < $.vaultConversionStartTime) {
+            revert ConversionNotStarted(block.timestamp, $.vaultConversionStartTime);
+        }
+
         UserState storage userState = $.userStates[msg.sender];
 
         // Verify stablecoin is allowed
@@ -594,6 +611,10 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
                 emit VaultSharesTransferred(user, stablecoin, shares);
             }
         }
+    }
+
+    function getVaultConversionStartTime() external view returns (uint256) {
+        return _getnYieldStakingStorage().vaultConversionStartTime;
     }
 
     /*
