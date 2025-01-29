@@ -225,7 +225,11 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @param timelock Timelock contract address
      * @param owner Address of the owner of the RWAStaking contract
      */
-    function initialize(TimelockController timelock, address owner) public initializer {
+    function initialize(
+        TimelockController timelock,
+        address owner,
+        BoringVault memory boringVaultConfig
+    ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
@@ -233,6 +237,9 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
         $.multisig = owner;
         $.timelock = timelock;
+
+        // Initialize BoringVault struct from parameters
+        $.vault = boringVaultConfig;
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
