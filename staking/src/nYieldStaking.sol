@@ -666,7 +666,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
         emit StablecoinConvertedToVault(stablecoin, vault, amount, sharesToMint);
     }
-    */
+    
     function userOptInToBridge(IERC20 stablecoin, bool optIn) external {
         // Allow users to opt in/out of bridging
         console.log("userOptInToBridge");
@@ -688,5 +688,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     ) external view returns (uint256 depositedAmount, uint256 boringVaultShares, bool isBridged) {
         console.log("getUserPositionStatus");
     }
+    */
 
 }
