@@ -243,12 +243,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
-
-        // Initialize with default stablecoins
-        _allowStablecoin(IERC20(0x4c9EDD5852cd905f086C759E8383e09bff1E68B3)); // USDe
-        _allowStablecoin(IERC20(0x9D39A5DE30e57443BfF2A8307A4256c8797A3497)); // sUSDe
-        _allowStablecoin(IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48)); // USDC
-        _allowStablecoin(IERC20(0xdAC17F958D2ee523a2206206994597C13D831ec7)); // USDT
     }
 
     /**
@@ -624,98 +618,16 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return _getnYieldStakingStorage().vaultConversionStartTime;
     }
 
-    /*
-    function adminConvertToBoringVault(IERC20 stablecoin, IBoringVault vault, uint256 amount) external onlyTimelock {
+    function getUserVaultShares(address user, IERC20 stablecoin) external view returns (uint256) {
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
-
-        // Verify stablecoin is allowed
-        if (!$.allowedStablecoins[stablecoin]) {
-            revert NotAllowedStablecoin(stablecoin);
-        }
-
-        // Ensure we have enough stablecoins
-        uint256 balance = stablecoin.balanceOf(address(this));
-        if (balance < amount) {
-            revert InsufficientBalance(balance, amount);
-        }
-
-        // Set vault for stablecoin if not already set
-        if (address($.stablecoinToVault[stablecoin]) == address(0)) {
-            $.stablecoinToVault[stablecoin] = vault;
-        }
-
-        // Calculate shares to mint
-        uint256 totalAssets = vault.totalAssets();
-        uint256 totalShares = vault.totalSupply();
-        uint256 sharesToMint;
-
-        if (totalShares == 0) {
-            sharesToMint = amount; // 1:1 for first deposit
-        } else {
-            sharesToMint = (amount * totalShares) / totalAssets;
-        }
-
-        // Approve stablecoin transfer
-        stablecoin.approve(address(vault), amount);
-
-        // Enter vault position
-        vault.enter(
-            address(this), // from
-            ERC20(address(stablecoin)), // asset
-            amount, // assetAmount
-            address(this), // to
-            sharesToMint // shareAmount
-        );
-
-        // Update total shares
-        $.vaultTotalShares[stablecoin] += sharesToMint;
-
-        // Distribute shares proportionally to users based on their stablecoin amounts
-        address[] memory stakingUsers = $.users;
-        uint256 totalStaked = 0;
-
-        // First get total staked amount for this stablecoin
-        for (uint256 i = 0; i < stakingUsers.length; i++) {
-            totalStaked += $.userStates[stakingUsers[i]].stablecoinAmounts[stablecoin];
-        }
-
-        // Then distribute shares proportionally
-        if (totalStaked > 0) {
-            for (uint256 i = 0; i < stakingUsers.length; i++) {
-                address user = stakingUsers[i];
-                uint256 userStablecoinAmount = $.userStates[user].stablecoinAmounts[stablecoin];
-
-                if (userStablecoinAmount > 0) {
-                    uint256 userShares = (sharesToMint * userStablecoinAmount) / totalStaked;
-                    $.userVaultShares[user][stablecoin] += userShares;
-                }
-            }
-        }
-
-        emit StablecoinConvertedToVault(stablecoin, vault, amount, sharesToMint);
-    }
-    
-    function userOptInToBridge(IERC20 stablecoin, bool optIn) external {
-        // Allow users to opt in/out of bridging
-        console.log("userOptInToBridge");
+        return $.userVaultShares[user][stablecoin];
     }
 
-    function adminBridgeSelected(
-        ITeller teller,
-        BridgeData calldata bridgeData,
-        address[] calldata users,
+    function getVaultTotalShares(
         IERC20 stablecoin
-    ) external onlyTimelock {
-        // Bridge only selected users' positions
-        console.log("adminBridgeSelected");
+    ) external view returns (uint256) {
+        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        return $.vaultTotalShares[stablecoin];
     }
-
-    function getUserPositionStatus(
-        address user,
-        IERC20 stablecoin
-    ) external view returns (uint256 depositedAmount, uint256 boringVaultShares, bool isBridged) {
-        console.log("getUserPositionStatus");
-    }
-    */
 
 }

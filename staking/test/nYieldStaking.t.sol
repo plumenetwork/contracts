@@ -3,12 +3,20 @@ pragma solidity 0.8.25;
 
 import "../src/nYIELDStaking.sol";
 
+import "../src/proxy/PlumenYieldStaking.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
 
+import { IAccountantWithRateProviders } from "../src/interfaces/IAccountantWithRateProviders.sol";
+import { IAtomicQueue } from "../src/interfaces/IAtomicQueue.sol";
+import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
+import { ILens } from "../src/interfaces/ILens.sol";
+import { ITeller } from "../src/interfaces/ITeller.sol";
+
 contract nYieldStakingTest is Test {
 
+    nYieldStaking public implementation;
     nYieldStaking public staking;
     address public admin;
     address public user1;
@@ -20,7 +28,7 @@ contract nYieldStakingTest is Test {
     IERC20 constant USDT = IERC20(0xdAC17F958D2ee523a2206206994597C13D831ec7);
     IERC20 constant USDe = IERC20(0x4c9EDD5852cd905f086C759E8383e09bff1E68B3);
     IERC20 constant sUSDe = IERC20(0x9D39A5DE30e57443BfF2A8307A4256c8797A3497);
-    ERC20 constant nYIELD = ERC20(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8);
+    IERC20 constant nYIELD = IERC20(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8);
 
     function setUp() public {
         // Fork mainnet
@@ -39,7 +47,7 @@ contract nYieldStakingTest is Test {
         timelock = new TimelockController(0, proposers, executors, admin);
 
         // Create BoringVault config
-        BoringVault memory boringVaultConfig = BoringVault({
+        nYieldStaking.BoringVault memory boringVaultConfig = nYieldStaking.BoringVault({
             teller: ITeller(0x92A735f600175FE9bA350a915572a86F68EBBE66),
             vault: IBoringVault(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8),
             atomicQueue: IAtomicQueue(0xc7287780bfa0C5D2dD74e3e51E238B1cd9B221ee),
@@ -47,9 +55,18 @@ contract nYieldStakingTest is Test {
             accountant: IAccountantWithRateProviders(0x5da1A1d004Fe6b63b37228F08dB6CaEb418A6467)
         });
 
-        // Deploy staking contract
-        staking = new nYieldStaking();
-        staking.initialize(timelock, admin, boringVaultConfig);
+        // Deploy implementation
+        implementation = new nYieldStaking();
+
+        // Encode initialize function call
+        bytes memory initData =
+            abi.encodeWithSelector(nYieldStaking.initialize.selector, timelock, admin, boringVaultConfig);
+
+        // Deploy proxy
+        PlumenYieldStaking proxy = new PlumenYieldStaking(address(implementation), initData);
+
+        // Cast proxy to nYieldStaking for easier interaction
+        staking = nYieldStaking(address(proxy));
 
         // Setup initial state
         vm.startPrank(admin);
