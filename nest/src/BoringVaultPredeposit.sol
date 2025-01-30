@@ -75,7 +75,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         bool paused;
         /// @dev Multisig address that withdraws the tokens and proposes/executes Timelock transactions
         address multisig;
-        /// @dev nYIELD vault address
+        /// @dev BoringVault vault address
         BoringVault vault;
         /// @dev Timelock contract address
         TimelockController timelock;
@@ -630,6 +630,8 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
 
+        ERC20 boringVaultToken = ERC20($.vault.vault);
+
         for (uint256 i = 0; i < stablecoins.length; i++) {
             IERC20 stablecoin = stablecoins[i];
             address recipient = recipients[i];
@@ -638,14 +640,16 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
             require($.allowedStablecoins[stablecoin], "Stablecoin not allowed");
             require(recipient != address(0), "Invalid recipient");
 
-            uint256 baseAmount = _toBaseUnits(amount, stablecoin);
-            require($.userStates[msg.sender].stablecoinAmounts[stablecoin] >= baseAmount, "Insufficient balance");
-
             UserState storage senderState = $.userStates[msg.sender];
             UserState storage recipientState = $.userStates[recipients[i]];
 
-            // Transfer vault shares
+            // Check if sender has enough shares
             require(senderState.vaultShares[stablecoin] >= amount, "Insufficient vault shares");
+
+            // Transfer the actual boringVaultToken tokens
+            require(boringVaultToken.transfer(recipient, amount), "Transfer failed");
+
+            // Update share accounting
             senderState.vaultShares[stablecoin] -= amount;
             recipientState.vaultShares[stablecoin] += amount;
 
@@ -667,15 +671,15 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         ITeller teller = $.vault.teller;
         require(address(teller) != address(0), "Teller not set");
 
-        ERC20 nYIELD = ERC20(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8);
+        ERC20 boringVaultToken = ERC20($.vault.vault);
 
         for (uint256 i = 0; i < users.length; i++) {
             address user = users[i];
             uint256 shares = $.userStates[user].vaultShares[stablecoin];
 
             if (shares > 0) {
-                // Transfer nYIELD tokens to user
-                nYIELD.transfer(user, shares);
+                // Transfer boringVaultTokens to user
+                boringVaultToken.transfer(user, shares);
                 // Clear the shares after transfer
                 $.userStates[user].vaultShares[stablecoin] = 0;
 
