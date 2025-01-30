@@ -20,7 +20,7 @@ import { BridgeData, ITeller } from "./interfaces/ITeller.sol";
 import { console } from "forge-std/console.sol";
 
 /**
- * @title nYieldStaking
+ * @title BoringVaultPredeposit
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Pre-staking contract for nYIELD Staking on Plume
  */
@@ -79,7 +79,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /// @custom:storage-location erc7201:plume.storage.RWAStaking
-    struct nYieldStakingStorage {
+    struct BoringVaultPredepositStorage {
         /// @dev Total amount of stablecoins staked in the RWAStaking contract
         uint256 totalAmountStaked;
         /// @dev List of users who have staked into the RWAStaking contract
@@ -111,12 +111,12 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldStaking")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant NYIELD_STAKING_STORAGE_LOCATION =
+    bytes32 private constant BORINGVAULT_PREDEPOSIT_STORAGE_LOCATION =
         0x91fba57b99f8ab5feaeb3c341c9ead66b71426630d0f57b5ca97617e91ea5000;
 
-    function _getnYieldStakingStorage() private pure returns (nYieldStakingStorage storage $) {
+    function _getBoringVaultPredepositStorage() private pure returns (BoringVaultPredepositStorage storage $) {
         assembly {
-            $.slot := NYIELD_STAKING_STORAGE_LOCATION
+            $.slot := BORINGVAULT_PREDEPOSIT_STORAGE_LOCATION
         }
     }
 
@@ -210,8 +210,8 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
     /// @notice Only the timelock contract can call this function
     modifier onlyTimelock() {
-        if (msg.sender != address(_getnYieldStakingStorage().timelock)) {
-            revert Unauthorized(msg.sender, address(_getnYieldStakingStorage().timelock));
+        if (msg.sender != address(_getBoringVaultPredepositStorage().timelock)) {
+            revert Unauthorized(msg.sender, address(_getBoringVaultPredepositStorage().timelock));
         }
         _;
     }
@@ -240,7 +240,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         $.multisig = owner;
         $.timelock = timelock;
 
@@ -257,7 +257,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @param timelock Timelock contract address
      */
     function reinitialize(address multisig, TimelockController timelock) public reinitializer(2) onlyRole(ADMIN_ROLE) {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         $.multisig = multisig;
         $.timelock = timelock;
     }
@@ -281,14 +281,14 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     function setMultisig(
         address multisig
     ) external nonReentrant onlyTimelock {
-        _getnYieldStakingStorage().multisig = multisig;
+        _getBoringVaultPredepositStorage().multisig = multisig;
     }
 
     function setVaultConversionStartTime(
         uint256 startTime
     ) external onlyRole(ADMIN_ROLE) {
         require(startTime > block.timestamp, "Start time must be in future");
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         $.vaultConversionStartTime = startTime;
         emit VaultConversionStartTimeSet(startTime);
     }
@@ -308,7 +308,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     function _allowStablecoin(
         IERC20 stablecoin
     ) internal {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         if ($.allowedStablecoins[stablecoin]) {
             revert AlreadyAllowedStablecoin(stablecoin);
         }
@@ -329,7 +329,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @dev Only the admin can withdraw stablecoins from the RWAStaking contract
      */
     function adminWithdraw() external nonReentrant onlyTimelock {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
         }
@@ -353,7 +353,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @param bridgeData Data required for bridging
      */
     function adminBridge(ITeller teller, BridgeData calldata bridgeData) external payable nonReentrant onlyTimelock {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
         }
@@ -381,7 +381,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @dev Only the admin can pause the RWAStaking contract for deposits
      */
     function pause() external onlyRole(ADMIN_ROLE) {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         if ($.paused) {
             revert AlreadyPaused();
         }
@@ -396,7 +396,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @dev Only the admin can unpause the RWAStaking contract for deposits
      */
     function unpause() external onlyRole(ADMIN_ROLE) {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         if (!$.paused) {
             revert NotPaused();
         }
@@ -412,7 +412,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @param stablecoin Stablecoin token contract address
      */
     function stake(uint256 amount, IERC20 stablecoin) external nonReentrant {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         require($.allowedStablecoins[stablecoin], "Stablecoin not allowed");
         require(amount > 0, "Amount must be greater than 0");
 
@@ -448,7 +448,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @param stablecoin Stablecoin token contract address
      */
     function withdraw(uint256 amount, IERC20 stablecoin) external nonReentrant {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
         }
@@ -481,19 +481,19 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
     /// @notice Total amount of stablecoins staked in the RWAStaking contract
     function getTotalAmountStaked() external view returns (uint256) {
-        return _getnYieldStakingStorage().totalAmountStaked;
+        return _getBoringVaultPredepositStorage().totalAmountStaked;
     }
 
     /// @notice List of users who have staked into the RWAStaking contract
     function getUsers() external view returns (address[] memory) {
-        return _getnYieldStakingStorage().users;
+        return _getBoringVaultPredepositStorage().users;
     }
 
     /// @notice State of a user who has staked into the RWAStaking contract
     function getUserState(
         address user
     ) external view returns (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         UserState storage userState = $.userStates[user];
         return (
             userState.amountSeconds
@@ -505,44 +505,44 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     /*
     /// @notice Amount of stablecoins staked by a user for each stablecoin
     function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
-        return _getnYieldStakingStorage().userStates[user].stablecoinAmounts[stablecoin];
+        return _getBoringVaultPredepositStorage().userStates[user].stablecoinAmounts[stablecoin];
     }
     */
     /// @notice List of stablecoins allowed to be staked in the RWAStaking contract
 
     function getAllowedStablecoins() external view returns (IERC20[] memory) {
-        return _getnYieldStakingStorage().stablecoins;
+        return _getBoringVaultPredepositStorage().stablecoins;
     }
 
     /// @notice Whether a stablecoin is allowed to be staked in the RWAStaking contract
     function isAllowedStablecoin(
         IERC20 stablecoin
     ) external view returns (bool) {
-        return _getnYieldStakingStorage().allowedStablecoins[stablecoin];
+        return _getBoringVaultPredepositStorage().allowedStablecoins[stablecoin];
     }
 
     /// @notice Timestamp of when pre-staking ends, when the admin withdraws all stablecoins
     function getEndTime() external view returns (uint256) {
-        return _getnYieldStakingStorage().endTime;
+        return _getBoringVaultPredepositStorage().endTime;
     }
 
     /// @notice Returns true if the RWAStaking contract is pauseWhether the RWAStaking contract is paused for deposits
     function isPaused() external view returns (bool) {
-        return _getnYieldStakingStorage().paused;
+        return _getBoringVaultPredepositStorage().paused;
     }
 
     /// @notice Multisig address that withdraws the tokens and proposes/executes Timelock transactions
     function getMultisig() external view returns (address) {
-        return _getnYieldStakingStorage().multisig;
+        return _getBoringVaultPredepositStorage().multisig;
     }
 
     /// @notice Timelock contract that controls upgrades and withdrawals
     function getTimelock() external view returns (TimelockController) {
-        return _getnYieldStakingStorage().timelock;
+        return _getBoringVaultPredepositStorage().timelock;
     }
 
     function convertToBoringVault(IERC20 stablecoin, ITeller teller, uint256 amount) external nonReentrant {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         require(block.timestamp >= $.vaultConversionStartTime, "Conversion not started");
         require($.allowedStablecoins[stablecoin], "Stablecoin not allowed");
 
@@ -583,7 +583,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
             stablecoins.length == recipients.length && recipients.length == amounts.length, "Array lengths must match"
         );
 
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
 
         for (uint256 i = 0; i < stablecoins.length; i++) {
             IERC20 stablecoin = stablecoins[i];
@@ -622,7 +622,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         IERC20 stablecoin,
         address[] calldata users
     ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
 
         // Get the teller
         //ITeller teller = ITeller(address($.stablecoinToVault[stablecoin]));
@@ -650,11 +650,11 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     function getVaultConversionStartTime() external view returns (uint256) {
-        return _getnYieldStakingStorage().vaultConversionStartTime;
+        return _getBoringVaultPredepositStorage().vaultConversionStartTime;
     }
     /*
     function getUserVaultShares(address user, IERC20 stablecoin) external view returns (uint256) {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         return $.userVaultShares[user][stablecoin];
     }
     */
@@ -662,20 +662,20 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     function getVaultTotalShares(
         IERC20 stablecoin
     ) external view returns (uint256) {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         return $.vaultTotalShares[stablecoin];
     }
 
     // Utility Functions
 
     function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         uint256 baseAmount = $.userStates[user].stablecoinAmounts[stablecoin];
         return _fromBaseUnits(baseAmount, stablecoin);
     }
 
     function getUserVaultShares(address user, IERC20 stablecoin) external view returns (uint256) {
-        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         return $.userVaultShares[user][stablecoin];
     }
 

@@ -350,4 +350,238 @@ contract nYieldStakingTest is Test {
         staking.unpause(); // Should fail as contract is not paused
     }
 
+    function testWithdraw() public {
+        // Setup
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 100 * 1e6);
+        staking.stake(100 * 1e6, USDC);
+        vm.stopPrank();
+
+        uint256 initialBalance = USDC.balanceOf(user1);
+
+        // Withdraw
+        vm.prank(user1);
+        staking.withdraw(50 * 1e6, USDC);
+
+        // Assertions
+        assertEq(USDC.balanceOf(user1), initialBalance + 50 * 1e6);
+        assertEq(staking.getUserStablecoinAmounts(user1, USDC), 50 * 1e6); // Amount in USDC decimals (6)
+        assertEq(staking.getTotalAmountStaked(), 50 * 1e6 * 1e12); // This one stays in base units (18 decimals)
+    }
+    /*
+    function testBatchTransferShares() public {
+    // Setup
+    vm.startPrank(user1);
+    USDC.approve(address(staking), 100 * 1e6);
+    staking.stake(100 * 1e6, USDC);
+    
+    USDT.approve(address(staking), 50 * 1e6);
+    staking.stake(50 * 1e6, USDT);
+    vm.stopPrank();
+
+    // Convert to vault shares
+    vm.startPrank(user1);
+    staking.convertToBoringVault(USDC, ITeller(nYieldTeller), 60 * 1e6);
+    staking.convertToBoringVault(USDT, ITeller(nYieldTeller), 30 * 1e6);
+    vm.stopPrank();
+
+    IERC20[] memory stablecoins = new IERC20[](2);
+    stablecoins[0] = USDC;
+    stablecoins[1] = USDT;
+
+    address[] memory recipients = new address[](2);
+    recipients[0] = user2;
+    recipients[1] = user2;
+
+    uint256[] memory amounts = new uint256[](2);
+    amounts[0] = 30 * 1e6;
+    amounts[1] = 15 * 1e6;
+
+    // Transfer shares
+    vm.prank(user1);
+    staking.batchTransferShares(stablecoins, recipients, amounts);
+
+    // Assertions
+    assertEq(staking.getUserVaultShares(user1, USDC), 30 * 1e6);
+    assertEq(staking.getUserVaultShares(user2, USDC), 30 * 1e6);
+    assertEq(staking.getUserVaultShares(user1, USDT), 15 * 1e6);
+    assertEq(staking.getUserVaultShares(user2, USDT), 15 * 1e6);
+    }
+    */
+
+    function testBaseUnitConversions() public {
+        // Use DAI which has 18 decimals (same as _BASE)
+        IERC20 token18 = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F); // DAI address
+
+        vm.startPrank(admin);
+        staking.allowStablecoin(token18);
+        vm.stopPrank();
+
+        // Deal some DAI to user1
+        deal(address(token18), user1, 1 ether);
+
+        // Test _toBaseUnits with 18 decimals
+        vm.startPrank(user1);
+        token18.approve(address(staking), 1 ether);
+        staking.stake(1 ether, token18);
+        vm.stopPrank();
+
+        // Should be equal since decimals == _BASE
+        assertEq(staking.getUserStablecoinAmounts(user1, token18), 1 ether); // Fixed function name
+
+        // Test withdraw to verify _fromBaseUnits
+        vm.prank(user1);
+        staking.withdraw(0.5 ether, token18);
+
+        assertEq(token18.balanceOf(user1), 0.5 ether);
+        assertEq(staking.getUserStablecoinAmounts(user1, token18), 0.5 ether); // Fixed function name
+    }
+
+    function testFailWithdrawAfterEnd() public {
+        // Setup
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 100 * 1e6);
+        staking.stake(100 * 1e6, USDC);
+        vm.stopPrank();
+
+        // End staking
+        vm.prank(address(staking.getTimelock()));
+        staking.adminWithdraw();
+
+        // Try to withdraw after end
+        vm.prank(user1);
+        staking.withdraw(50 * 1e6, USDC); // Should revert
+    }
+
+    function testFailBatchTransferSharesWithMismatchedArrays() public {
+        IERC20[] memory stablecoins = new IERC20[](2);
+        address[] memory recipients = new address[](1);
+        uint256[] memory amounts = new uint256[](2);
+
+        vm.prank(user1);
+        staking.batchTransferShares(stablecoins, recipients, amounts); // Should revert
+    }
+
+    function testFailBatchTransferSharesWithInvalidRecipient() public {
+        IERC20[] memory stablecoins = new IERC20[](1);
+        stablecoins[0] = USDC;
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = address(0);
+
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 1e6;
+
+        vm.prank(user1);
+        staking.batchTransferShares(stablecoins, recipients, amounts); // Should revert
+    }
+
+    function testFailWithdrawInsufficientBalance() public {
+        // Setup
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 100 * 1e6);
+        staking.stake(100 * 1e6, USDC);
+        vm.stopPrank();
+
+        // Try to withdraw more than staked
+        vm.prank(user1);
+        staking.withdraw(150 * 1e6, USDC); // Should revert with InsufficientStaked
+    }
+
+    function testFailAllowAlreadyAllowedStablecoin() public {
+        // USDC is already allowed in setUp()
+        vm.prank(admin);
+        staking.allowStablecoin(USDC); // Should revert with AlreadyAllowedStablecoin
+    }
+    /*
+    function testFailAllowTooManyDecimals() public {
+    // Create or use a token with more than 18 decimals
+    MockERC20 token24 = new MockERC20("TOKEN24", "T24", 24);
+    
+    vm.prank(admin);
+    staking.allowStablecoin(IERC20(address(token24))); // Should revert with TooManyDecimals
+    }
+    */
+    /*
+    function testBatchTransferShares() public {
+    // Setup initial state with staking and converting to shares
+    vm.startPrank(user1);
+    USDC.approve(address(staking), 100 * 1e6);
+    staking.stake(100 * 1e6, USDC);
+    
+    USDT.approve(address(staking), 50 * 1e6);
+    staking.stake(50 * 1e6, USDT);
+    vm.stopPrank();
+
+    // Convert to vault shares
+    vm.warp(block.timestamp + 2 days); // Move past vault conversion start time
+    
+    vm.startPrank(user1);
+    staking.convertToBoringVault(USDC, ITeller(nYieldTeller), 60 * 1e6);
+    staking.convertToBoringVault(USDT, ITeller(nYieldTeller), 30 * 1e6);
+    vm.stopPrank();
+
+    // Setup transfer parameters
+    IERC20[] memory stablecoins = new IERC20[](2);
+    stablecoins[0] = USDC;
+    stablecoins[1] = USDT;
+
+    address[] memory recipients = new address[](2);
+    recipients[0] = user2;
+    recipients[1] = user2;
+
+    uint256[] memory amounts = new uint256[](2);
+    amounts[0] = 30 * 1e6;
+    amounts[1] = 15 * 1e6;
+
+    // Get initial states for verification
+    uint256 user1InitialUSDCShares = staking.getUserVaultShares(user1, USDC);
+    uint256 user1InitialUSDTShares = staking.getUserVaultShares(user1, USDT);
+    uint256 user1InitialUSDCStaked = staking.getUserStablecoinAmounts(user1, USDC);
+    uint256 user1InitialUSDTStaked = staking.getUserStablecoinAmounts(user1, USDT);
+
+    // Transfer shares
+    vm.prank(user1);
+    staking.batchTransferShares(stablecoins, recipients, amounts);
+
+    // Verify all state changes
+    // USDC checks
+    assertEq(staking.getUserVaultShares(user1, USDC), user1InitialUSDCShares - 30 * 1e6);
+    assertEq(staking.getUserVaultShares(user2, USDC), 30 * 1e6);
+    assertEq(staking.getUserStablecoinAmounts(user1, USDC), user1InitialUSDCStaked - 30 * 1e6);
+    assertEq(staking.getUserStablecoinAmounts(user2, USDC), 30 * 1e6);
+
+    // USDT checks
+    assertEq(staking.getUserVaultShares(user1, USDT), user1InitialUSDTShares - 15 * 1e6);
+    assertEq(staking.getUserVaultShares(user2, USDT), 15 * 1e6);
+    assertEq(staking.getUserStablecoinAmounts(user1, USDT), user1InitialUSDTStaked - 15 * 1e6);
+    assertEq(staking.getUserStablecoinAmounts(user2, USDT), 15 * 1e6);
+    }
+    */
+
+    function testFailBatchTransferSharesInsufficientBalance() public {
+        // Setup
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 100 * 1e6);
+        staking.stake(100 * 1e6, USDC);
+
+        // Convert to vault shares
+        vm.warp(block.timestamp + 2 days);
+        staking.convertToBoringVault(USDC, ITeller(nYieldTeller), 60 * 1e6);
+        vm.stopPrank();
+
+        IERC20[] memory stablecoins = new IERC20[](1);
+        stablecoins[0] = USDC;
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = user2;
+
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100 * 1e6; // Try to transfer more than converted
+
+        // Should revert with insufficient balance
+        vm.prank(user1);
+        staking.batchTransferShares(stablecoins, recipients, amounts);
+    }
+
 }
