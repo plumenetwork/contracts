@@ -652,12 +652,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     function getVaultConversionStartTime() external view returns (uint256) {
         return _getBoringVaultPredepositStorage().vaultConversionStartTime;
     }
-    /*
-    function getUserVaultShares(address user, IERC20 stablecoin) external view returns (uint256) {
-        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        return $.userVaultShares[user][stablecoin];
-    }
-    */
 
     function getVaultTotalShares(
         IERC20 stablecoin

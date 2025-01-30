@@ -2,6 +2,21 @@
 pragma solidity ^0.8.25;
 
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
+/**
+ * @dev Bridge data structure containing parameters needed for cross-chain transfer
+ * @param destinationChainId The chain ID of the destination network
+ * @param recipient The address receiving the shares on the destination chain
+ * @param data Additional data required by the bridge implementation
+ */
+struct BridgeData {
+    uint32 chainSelector;
+    address destinationChainReceiver;
+    IERC20 bridgeFeeToken;
+    uint64 messageGas;
+    bytes data;
+}
 
 /**
  * @title ITeller
@@ -40,6 +55,31 @@ interface ITeller {
      * @return bool indicating if deposits are paused
      */
     function isPaused() external view returns (bool);
+
+    /**
+     * @notice Calculates the fee for bridging shares
+     * @dev Returns the fee amount in share tokens that will be charged for bridging
+     * @param shareAmount The amount of shares being bridged
+     * @param data The bridge data containing destination chain and other parameters
+     * @return fee The calculated fee amount in share tokens
+     */
+    function previewFee(uint256 shareAmount, BridgeData calldata data) external view returns (uint256 fee);
+
+    /**
+     * @notice Deposits an asset and bridges the resulting shares to another chain
+     * @dev Requires authorization and implements reentrancy protection
+     * @param depositAsset The ERC20 token being deposited
+     * @param depositAmount The amount of tokens to deposit
+     * @param minimumMint The minimum amount of shares that must be minted, reverts if not met
+     * @param data Bridge data containing destination chain information
+     * @custom:throws TellerWithMultiAssetSupport__AssetNotSupported if depositAsset is not supported
+     */
+    function depositAndBridge(
+        ERC20 depositAsset,
+        uint256 depositAmount,
+        uint256 minimumMint,
+        BridgeData calldata data
+    ) external payable;
 
     /**
      * @notice Check if an asset is supported for deposits/withdrawals

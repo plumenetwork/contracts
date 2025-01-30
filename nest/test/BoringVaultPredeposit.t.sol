@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
-import "../src/nYIELDStaking.sol";
+import "../src/BoringVaultPredeposit.sol";
 
-import "../src/proxy/PlumenYieldStaking.sol";
+import "../src/proxy/BoringVaultPredepositProxy.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
@@ -14,7 +14,7 @@ import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
 import { ILens } from "../src/interfaces/ILens.sol";
 import { BridgeData, ITeller } from "../src/interfaces/ITeller.sol";
 
-contract nYieldStakingTest is Test {
+contract BoringVaultPredepositTest is Test {
 
     nYieldStaking public implementation;
     nYieldStaking public staking;
@@ -67,7 +67,7 @@ contract nYieldStakingTest is Test {
             abi.encodeWithSelector(nYieldStaking.initialize.selector, timelock, admin, boringVaultConfig);
 
         // Deploy proxy
-        PlumenYieldStaking proxy = new PlumenYieldStaking(address(implementation), initData);
+        BoringVaultPredepositProxy proxy = new BoringVaultPredepositProxy(address(implementation), initData);
 
         // Cast proxy to nYieldStaking for easier interaction
         staking = nYieldStaking(payable(address(proxy)));
