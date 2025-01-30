@@ -44,6 +44,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         uint256 amountStaked;
         uint256 lastUpdate;
         mapping(IERC20 stablecoin => uint256 amount) stablecoinAmounts;
+        mapping(IERC20 stablecoin => uint256 shares) vaultShares;
     }
 
     // Storage
@@ -80,12 +81,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         TimelockController timelock;
         /// @dev Timestamp when users can start converting
         uint256 vaultConversionStartTime;
-        // New storage for vault conversion
-        mapping(IERC20 => IBoringVault) stablecoinToVault;
-        mapping(IERC20 => uint256) vaultTotalShares;
-        mapping(address => mapping(IERC20 => uint256)) userVaultShares;
-        mapping(address => mapping(IERC20 => bool)) userBridgeOptIn;
-        mapping(address => mapping(IERC20 => bool)) userPositionBridged;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldBoringVaultPredeposit")) - 1)) &
@@ -484,10 +479,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         userState.stablecoinAmounts[stablecoin] += baseAmount;
         $.totalAmountStaked += baseAmount;
 
-        // Also track shares 1:1 with staked amount
-        $.userVaultShares[msg.sender][stablecoin] += amount;
-        $.vaultTotalShares[stablecoin] += amount;
-
         emit Staked(msg.sender, stablecoin, amount);
     }
 
@@ -599,27 +590,25 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         uint256 baseAmount = _toBaseUnits(amount, stablecoin);
         require($.userStates[msg.sender].stablecoinAmounts[stablecoin] >= baseAmount, "Insufficient balance");
 
-        // Update state before transfer
-        $.userStates[msg.sender].amountStaked -= baseAmount;
-        $.userStates[msg.sender].stablecoinAmounts[stablecoin] -= baseAmount;
+        // Update stablecoin balances
+        UserState storage userState = $.userStates[msg.sender];
+        userState.amountStaked -= baseAmount;
+        userState.stablecoinAmounts[stablecoin] -= baseAmount;
         $.totalAmountStaked -= baseAmount;
 
-        // Update shares
-        $.userVaultShares[msg.sender][stablecoin] -= amount;
-        $.vaultTotalShares[stablecoin] -= amount;
-
-        // Approve vault to spend tokens
+        // Approve and deposit into vault
         IERC20(stablecoin).approve(address($.vault.vault), amount);
-
-        // Approve teller to spend tokens
         IERC20(stablecoin).approve(address(teller), amount);
 
-        // Deposit into Boring vault
+        // Deposit and receive shares
         uint256 receivedShares = teller.deposit(
             ERC20(address(stablecoin)),
             amount,
             0 // minimum shares to receive
         );
+
+        // Track received vault shares
+        userState.vaultShares[stablecoin] += receivedShares;
 
         emit ConvertedToBoringVault(msg.sender, stablecoin, amount, receivedShares);
     }
@@ -652,19 +641,15 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
             uint256 baseAmount = _toBaseUnits(amount, stablecoin);
             require($.userStates[msg.sender].stablecoinAmounts[stablecoin] >= baseAmount, "Insufficient balance");
 
-            // Update sender state
-            $.userStates[msg.sender].amountStaked -= baseAmount;
-            $.userStates[msg.sender].stablecoinAmounts[stablecoin] -= baseAmount;
+            UserState storage senderState = $.userStates[msg.sender];
+            UserState storage recipientState = $.userStates[recipients[i]];
 
-            // Update recipient state
-            $.userStates[recipient].amountStaked += baseAmount;
-            $.userStates[recipient].stablecoinAmounts[stablecoin] += baseAmount;
+            // Transfer vault shares
+            require(senderState.vaultShares[stablecoin] >= amount, "Insufficient vault shares");
+            senderState.vaultShares[stablecoin] -= amount;
+            recipientState.vaultShares[stablecoin] += amount;
 
-            // Update shares
-            $.userVaultShares[msg.sender][stablecoin] -= amount;
-            $.userVaultShares[recipient][stablecoin] += amount;
-
-            emit SharesTransferred(msg.sender, recipient, stablecoin, amount);
+            emit SharesTransferred(msg.sender, recipients[i], stablecoin, amount);
         }
     }
 
@@ -679,26 +664,20 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         address[] calldata users
     ) external onlyRole(ADMIN_ROLE) nonReentrant {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-
-        // Get the teller
-        //ITeller teller = ITeller(address($.stablecoinToVault[stablecoin]));
         ITeller teller = $.vault.teller;
         require(address(teller) != address(0), "Teller not set");
 
-        // nYIELD token
         ERC20 nYIELD = ERC20(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8);
 
         for (uint256 i = 0; i < users.length; i++) {
             address user = users[i];
-            uint256 shares = $.userVaultShares[user][stablecoin];
+            uint256 shares = $.userStates[user].vaultShares[stablecoin];
 
             if (shares > 0) {
-                // Reset user's share balance before transfer
-                $.userVaultShares[user][stablecoin] = 0;
-                $.vaultTotalShares[stablecoin] -= shares;
-
                 // Transfer nYIELD tokens to user
                 nYIELD.transfer(user, shares);
+                // Clear the shares after transfer
+                $.userStates[user].vaultShares[stablecoin] = 0;
 
                 emit VaultSharesTransferred(user, stablecoin, shares);
             }
@@ -709,16 +688,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     /// @return uint256 The conversion start timestamp
     function getVaultConversionStartTime() external view returns (uint256) {
         return _getBoringVaultPredepositStorage().vaultConversionStartTime;
-    }
-
-    /// @notice Returns the total shares for a given stablecoin
-    /// @param stablecoin The stablecoin to query
-    /// @return uint256 The total shares for the stablecoin
-    function getVaultTotalShares(
-        IERC20 stablecoin
-    ) external view returns (uint256) {
-        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        return $.vaultTotalShares[stablecoin];
     }
 
     // Utility Functions
