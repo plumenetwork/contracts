@@ -630,7 +630,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
 
-        ERC20 boringVaultToken = ERC20($.vault.vault);
+        ERC20 boringVaultToken = ERC20(address($.vault.vault));
 
         for (uint256 i = 0; i < stablecoins.length; i++) {
             IERC20 stablecoin = stablecoins[i];
@@ -671,7 +671,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         ITeller teller = $.vault.teller;
         require(address(teller) != address(0), "Teller not set");
 
-        ERC20 boringVaultToken = ERC20($.vault.vault);
+        ERC20 boringVaultToken = ERC20(address($.vault.vault));
 
         for (uint256 i = 0; i < users.length; i++) {
             address user = users[i];
@@ -712,7 +712,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     /// @return uint256 The amount of vault shares
     function getUserVaultShares(address user, IERC20 stablecoin) external view returns (uint256) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        return $.userVaultShares[user][stablecoin];
+        return $.userStates[user].vaultShares[stablecoin];
     }
 
     /// @notice Converts an amount from token decimals to base units (18 decimals)

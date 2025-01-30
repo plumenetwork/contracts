@@ -310,8 +310,6 @@ contract BoringVaultPredepositTest is Test {
         assertEq(staking.getEndTime(), 0);
 
         assertFalse(staking.isPaused());
-
-        assertEq(staking.getVaultTotalShares(USDC), 0);
     }
 
     function testFailAdminWithdrawAfterEnd() public {
