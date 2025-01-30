@@ -88,9 +88,10 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         mapping(address => mapping(IERC20 => bool)) userPositionBridged;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldStaking")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldBoringVaultPredeposit")) - 1)) &
+    // ~bytes32(uint256(0xff))
     bytes32 private constant BORINGVAULT_PREDEPOSIT_STORAGE_LOCATION =
-        0x91fba57b99f8ab5feaeb3c341c9ead66b71426630d0f57b5ca97617e91ea5000;
+        0x714034f23dd5282a94e73061db4134cb46d9e6964d121d2c45f80404b7307c00;
 
     function _getBoringVaultPredepositStorage() private pure returns (BoringVaultPredepositStorage storage $) {
         assembly {

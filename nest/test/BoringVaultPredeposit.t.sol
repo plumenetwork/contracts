@@ -90,15 +90,15 @@ contract BoringVaultPredepositTest is Test {
         deal(address(USDe), user2, 1000 * 1e18);
     }
 
-    function test_StorageSlot() public {
+    function testStorageSlot() public {
         // Calculate the storage slot
-        bytes32 slot =
-            keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldStaking")) - 1)) & ~bytes32(uint256(0xff));
+        bytes32 slot = keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldBoringVaultPredeposit")) - 1))
+            & ~bytes32(uint256(0xff));
 
         // Log the results for verification
-        console.logBytes32(keccak256("plume.storage.nYieldStaking"));
+        console.logBytes32(keccak256("plume.storage.nYieldBoringVaultPredeposit"));
         console.log("Minus 1:");
-        console.logBytes32(bytes32(uint256(keccak256("plume.storage.nYieldStaking")) - 1));
+        console.logBytes32(bytes32(uint256(keccak256("plume.storage.nYieldBoringVaultPredeposit")) - 1));
         console.log("Final slot:");
         console.logBytes32(slot);
 
@@ -493,71 +493,6 @@ contract BoringVaultPredepositTest is Test {
         vm.prank(admin);
         staking.allowStablecoin(USDC); // Should revert with AlreadyAllowedStablecoin
     }
-    /*
-    function testFailAllowTooManyDecimals() public {
-    // Create or use a token with more than 18 decimals
-    MockERC20 token24 = new MockERC20("TOKEN24", "T24", 24);
-    
-    vm.prank(admin);
-    staking.allowStablecoin(IERC20(address(token24))); // Should revert with TooManyDecimals
-    }
-    */
-    /*
-    function testBatchTransferShares() public {
-    // Setup initial state with staking and converting to shares
-    vm.startPrank(user1);
-    USDC.approve(address(staking), 100 * 1e6);
-    staking.stake(100 * 1e6, USDC);
-    
-    USDT.approve(address(staking), 50 * 1e6);
-    staking.stake(50 * 1e6, USDT);
-    vm.stopPrank();
-
-    // Convert to vault shares
-    vm.warp(block.timestamp + 2 days); // Move past vault conversion start time
-    
-    vm.startPrank(user1);
-    staking.convertToBoringVault(USDC, ITeller(nYieldTeller), 60 * 1e6);
-    staking.convertToBoringVault(USDT, ITeller(nYieldTeller), 30 * 1e6);
-    vm.stopPrank();
-
-    // Setup transfer parameters
-    IERC20[] memory stablecoins = new IERC20[](2);
-    stablecoins[0] = USDC;
-    stablecoins[1] = USDT;
-
-    address[] memory recipients = new address[](2);
-    recipients[0] = user2;
-    recipients[1] = user2;
-
-    uint256[] memory amounts = new uint256[](2);
-    amounts[0] = 30 * 1e6;
-    amounts[1] = 15 * 1e6;
-
-    // Get initial states for verification
-    uint256 user1InitialUSDCShares = staking.getUserVaultShares(user1, USDC);
-    uint256 user1InitialUSDTShares = staking.getUserVaultShares(user1, USDT);
-    uint256 user1InitialUSDCStaked = staking.getUserStablecoinAmounts(user1, USDC);
-    uint256 user1InitialUSDTStaked = staking.getUserStablecoinAmounts(user1, USDT);
-
-    // Transfer shares
-    vm.prank(user1);
-    staking.batchTransferShares(stablecoins, recipients, amounts);
-
-    // Verify all state changes
-    // USDC checks
-    assertEq(staking.getUserVaultShares(user1, USDC), user1InitialUSDCShares - 30 * 1e6);
-    assertEq(staking.getUserVaultShares(user2, USDC), 30 * 1e6);
-    assertEq(staking.getUserStablecoinAmounts(user1, USDC), user1InitialUSDCStaked - 30 * 1e6);
-    assertEq(staking.getUserStablecoinAmounts(user2, USDC), 30 * 1e6);
-
-    // USDT checks
-    assertEq(staking.getUserVaultShares(user1, USDT), user1InitialUSDTShares - 15 * 1e6);
-    assertEq(staking.getUserVaultShares(user2, USDT), 15 * 1e6);
-    assertEq(staking.getUserStablecoinAmounts(user1, USDT), user1InitialUSDTStaked - 15 * 1e6);
-    assertEq(staking.getUserStablecoinAmounts(user2, USDT), 15 * 1e6);
-    }
-    */
 
     function testFailBatchTransferSharesInsufficientBalance() public {
         // Setup
