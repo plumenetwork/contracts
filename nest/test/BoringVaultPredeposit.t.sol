@@ -368,46 +368,6 @@ contract BoringVaultPredepositTest is Test {
         assertEq(staking.getUserStablecoinAmounts(user1, USDC), 50 * 1e6); // Amount in USDC decimals (6)
         assertEq(staking.getTotalAmountStaked(), 50 * 1e6 * 1e12); // This one stays in base units (18 decimals)
     }
-    /*
-    function testBatchTransferShares() public {
-    // Setup
-    vm.startPrank(user1);
-    USDC.approve(address(staking), 100 * 1e6);
-    staking.stake(100 * 1e6, USDC);
-    
-    USDT.approve(address(staking), 50 * 1e6);
-    staking.stake(50 * 1e6, USDT);
-    vm.stopPrank();
-
-    // Convert to vault shares
-    vm.startPrank(user1);
-    staking.convertToBoringVault(USDC, ITeller(nYieldTeller), 60 * 1e6);
-    staking.convertToBoringVault(USDT, ITeller(nYieldTeller), 30 * 1e6);
-    vm.stopPrank();
-
-    IERC20[] memory stablecoins = new IERC20[](2);
-    stablecoins[0] = USDC;
-    stablecoins[1] = USDT;
-
-    address[] memory recipients = new address[](2);
-    recipients[0] = user2;
-    recipients[1] = user2;
-
-    uint256[] memory amounts = new uint256[](2);
-    amounts[0] = 30 * 1e6;
-    amounts[1] = 15 * 1e6;
-
-    // Transfer shares
-    vm.prank(user1);
-    staking.batchTransferShares(stablecoins, recipients, amounts);
-
-    // Assertions
-    assertEq(staking.getUserVaultShares(user1, USDC), 30 * 1e6);
-    assertEq(staking.getUserVaultShares(user2, USDC), 30 * 1e6);
-    assertEq(staking.getUserVaultShares(user1, USDT), 15 * 1e6);
-    assertEq(staking.getUserVaultShares(user2, USDT), 15 * 1e6);
-    }
-    */
 
     function testBaseUnitConversions() public {
         // Use DAI which has 18 decimals (same as _BASE)
