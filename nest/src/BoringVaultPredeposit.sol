@@ -31,7 +31,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     using SafeERC20 for IERC20;
 
     /**
-     * @notice State of a user that deposits into the RWAStaking contract
+     * @notice State of a user that deposits into the BoringVaultPredeposit contract
      * @param amountSeconds Cumulative sum of the amount of stablecoins staked by the user,
      *   multiplied by the number of seconds that the user has staked this amount for
      * @param amountStaked Total amount of stablecoins staked by the user
@@ -46,15 +46,101 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         mapping(IERC20 stablecoin => uint256 amount) stablecoinAmounts;
     }
 
-    /// @notice Thrown when a user tries to withdraw or transfer more than their available balance
-    /// @param available The user's current available balance
-    /// @param required The amount the user attempted to withdraw or transfer
-    error InsufficientBalance(uint256 available, uint256 required);
+    // Storage
 
-    /// @notice Thrown when a user tries to convert to vault shares before the conversion start time
-    /// @param currentTime The current block timestamp
-    /// @param startTime The configured vault conversion start time
-    error ConversionNotStarted(uint256 currentTime, uint256 startTime);
+    struct BoringVault {
+        ITeller teller;
+        IBoringVault vault;
+        IAtomicQueue atomicQueue;
+        ILens lens;
+        IAccountantWithRateProviders accountant;
+    }
+
+    /// @custom:storage-location erc7201:plume.storage.BoringVaultPredeposit
+    struct BoringVaultPredepositStorage {
+        /// @dev Total amount of stablecoins staked in the BoringVaultPredeposit contract
+        uint256 totalAmountStaked;
+        /// @dev List of users who have staked into the BoringVaultPredeposit contract
+        address[] users;
+        /// @dev Mapping of users to their state in the BoringVaultPredeposit contract
+        mapping(address user => UserState userState) userStates;
+        /// @dev List of stablecoins allowed to be staked in the BoringVaultPredeposit contract
+        IERC20[] stablecoins;
+        /// @dev Mapping of stablecoins to whether they are allowed to be staked
+        mapping(IERC20 stablecoin => bool allowed) allowedStablecoins;
+        /// @dev Timestamp of when pre-staking ends, when the admin withdraws all stablecoins
+        uint256 endTime;
+        /// @dev True if the BoringVaultPredeposit contract is paused for deposits, false otherwise
+        bool paused;
+        /// @dev Multisig address that withdraws the tokens and proposes/executes Timelock transactions
+        address multisig;
+        /// @dev nYIELD vault address
+        BoringVault vault;
+        /// @dev Timelock contract address
+        TimelockController timelock;
+        /// @dev Timestamp when users can start converting
+        uint256 vaultConversionStartTime;
+        // New storage for vault conversion
+        mapping(IERC20 => IBoringVault) stablecoinToVault;
+        mapping(IERC20 => uint256) vaultTotalShares;
+        mapping(address => mapping(IERC20 => uint256)) userVaultShares;
+        mapping(address => mapping(IERC20 => bool)) userBridgeOptIn;
+        mapping(address => mapping(IERC20 => bool)) userPositionBridged;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldStaking")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant BORINGVAULT_PREDEPOSIT_STORAGE_LOCATION =
+        0x91fba57b99f8ab5feaeb3c341c9ead66b71426630d0f57b5ca97617e91ea5000;
+
+    function _getBoringVaultPredepositStorage() private pure returns (BoringVaultPredepositStorage storage $) {
+        assembly {
+            $.slot := BORINGVAULT_PREDEPOSIT_STORAGE_LOCATION
+        }
+    }
+
+    // Constants
+
+    /// @notice Role for the admin of the BoringVaultPredeposit contract
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    /// @notice Number of decimals for the base unit of amount
+    uint8 public constant _BASE = 18;
+
+    // Events
+
+    /**
+     * @notice Emitted when an admin withdraws stablecoins from the BoringVaultPredeposit contract
+     * @param user Address of the admin who withdrew stablecoins
+     * @param stablecoin Stablecoin token contract address
+     * @param amount Amount of stablecoins withdrawn
+     */
+    event AdminWithdrawn(address indexed user, IERC20 indexed stablecoin, uint256 amount);
+
+    /**
+     * @notice Emitted when a user withdraws stablecoins from the BoringVaultPredeposit contract
+     * @param user Address of the user who withdrew stablecoins
+     * @param stablecoin Stablecoin token contract address
+     * @param amount Amount of stablecoins withdrawn
+     */
+    event Withdrawn(address indexed user, IERC20 indexed stablecoin, uint256 amount);
+
+    /**
+     * @notice Emitted when a user stakes stablecoins into the BoringVaultPredeposit contract
+     * @param user Address of the user who staked stablecoins
+     * @param stablecoin Stablecoin token contract address
+     * @param amount Amount of stablecoins staked
+     */
+    event Staked(address indexed user, IERC20 indexed stablecoin, uint256 amount);
+
+    /// @notice Emitted when the BoringVaultPredeposit contract is paused for deposits
+    event Paused();
+
+    /// @notice Emitted when the BoringVaultPredeposit contract is unpaused for deposits
+    event Unpaused();
+
+    /// @notice Emitted when a new stablecoin is allowed for staking
+    /// @param stablecoin The address of the stablecoin that was allowed
+    /// @param decimals The number of decimals of the stablecoin
+    event StablecoinAllowed(IERC20 indexed stablecoin, uint8 decimals);
 
     /// @notice Emitted when the admin sets the time when users can start converting their stablecoins to vault shares
     /// @param startTime The timestamp when conversion will be enabled
@@ -111,99 +197,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     /// @param shares The amount of shares transferred
     event VaultSharesTransferred(address indexed user, IERC20 indexed stablecoin, uint256 shares);
 
-    // Storage
-
-    struct BoringVault {
-        ITeller teller;
-        IBoringVault vault;
-        IAtomicQueue atomicQueue;
-        ILens lens;
-        IAccountantWithRateProviders accountant;
-    }
-
-    /// @custom:storage-location erc7201:plume.storage.RWAStaking
-    struct BoringVaultPredepositStorage {
-        /// @dev Total amount of stablecoins staked in the RWAStaking contract
-        uint256 totalAmountStaked;
-        /// @dev List of users who have staked into the RWAStaking contract
-        address[] users;
-        /// @dev Mapping of users to their state in the RWAStaking contract
-        mapping(address user => UserState userState) userStates;
-        /// @dev List of stablecoins allowed to be staked in the RWAStaking contract
-        IERC20[] stablecoins;
-        /// @dev Mapping of stablecoins to whether they are allowed to be staked
-        mapping(IERC20 stablecoin => bool allowed) allowedStablecoins;
-        /// @dev Timestamp of when pre-staking ends, when the admin withdraws all stablecoins
-        uint256 endTime;
-        /// @dev True if the RWAStaking contract is paused for deposits, false otherwise
-        bool paused;
-        /// @dev Multisig address that withdraws the tokens and proposes/executes Timelock transactions
-        address multisig;
-        /// @dev nYIELD vault address
-        BoringVault vault;
-        /// @dev Timelock contract address
-        TimelockController timelock;
-        /// @dev Timestamp when users can start converting
-        uint256 vaultConversionStartTime;
-        // New storage for vault conversion
-        mapping(IERC20 => IBoringVault) stablecoinToVault;
-        mapping(IERC20 => uint256) vaultTotalShares;
-        mapping(address => mapping(IERC20 => uint256)) userVaultShares;
-        mapping(address => mapping(IERC20 => bool)) userBridgeOptIn;
-        mapping(address => mapping(IERC20 => bool)) userPositionBridged;
-    }
-
-    // keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldStaking")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant BORINGVAULT_PREDEPOSIT_STORAGE_LOCATION =
-        0x91fba57b99f8ab5feaeb3c341c9ead66b71426630d0f57b5ca97617e91ea5000;
-
-    function _getBoringVaultPredepositStorage() private pure returns (BoringVaultPredepositStorage storage $) {
-        assembly {
-            $.slot := BORINGVAULT_PREDEPOSIT_STORAGE_LOCATION
-        }
-    }
-
-    // Constants
-
-    /// @notice Role for the admin of the RWAStaking contract
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    /// @notice Number of decimals for the base unit of amount
-    uint8 public constant _BASE = 18;
-
-    // Events
-
-    /**
-     * @notice Emitted when an admin withdraws stablecoins from the RWAStaking contract
-     * @param user Address of the admin who withdrew stablecoins
-     * @param stablecoin Stablecoin token contract address
-     * @param amount Amount of stablecoins withdrawn
-     */
-    event AdminWithdrawn(address indexed user, IERC20 indexed stablecoin, uint256 amount);
-
-    /**
-     * @notice Emitted when a user withdraws stablecoins from the RWAStaking contract
-     * @param user Address of the user who withdrew stablecoins
-     * @param stablecoin Stablecoin token contract address
-     * @param amount Amount of stablecoins withdrawn
-     */
-    event Withdrawn(address indexed user, IERC20 indexed stablecoin, uint256 amount);
-
-    /**
-     * @notice Emitted when a user stakes stablecoins into the RWAStaking contract
-     * @param user Address of the user who staked stablecoins
-     * @param stablecoin Stablecoin token contract address
-     * @param amount Amount of stablecoins staked
-     */
-    event Staked(address indexed user, IERC20 indexed stablecoin, uint256 amount);
-
-    /// @notice Emitted when the RWAStaking contract is paused for deposits
-    event Paused();
-
-    /// @notice Emitted when the RWAStaking contract is unpaused for deposits
-    event Unpaused();
-
-    event StablecoinAllowed(IERC20 indexed stablecoin, uint8 decimals);
-
     // Errors
 
     /**
@@ -249,6 +242,16 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      */
     error InsufficientStaked(address user, IERC20 stablecoin, uint256 amount, uint256 amountStaked);
 
+    /// @notice Thrown when a user tries to withdraw or transfer more than their available balance
+    /// @param available The user's current available balance
+    /// @param required The amount the user attempted to withdraw or transfer
+    error InsufficientBalance(uint256 available, uint256 required);
+
+    /// @notice Thrown when a user tries to convert to vault shares before the conversion start time
+    /// @param currentTime The current block timestamp
+    /// @param startTime The configured vault conversion start time
+    error ConversionNotStarted(uint256 currentTime, uint256 startTime);
+
     // Modifiers
 
     /// @notice Only the timelock contract can call this function
@@ -270,9 +273,9 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /**
-     * @notice Initialize the RWAStaking contract
+     * @notice Initialize the BoringVaultPredeposit contract
      * @param timelock Timelock contract address
-     * @param owner Address of the owner of the RWAStaking contract
+     * @param owner Address of the owner of the BoringVaultPredeposit contract
      */
     function initialize(
         TimelockController timelock,
@@ -295,7 +298,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /**
-     * @notice Reinitialize the RWAStaking contract by adding the timelock and multisig contract address
+     * @notice Reinitialize the BoringVaultPredeposit contract by adding the timelock and multisig contract address
      * @param multisig Multisig contract address
      * @param timelock Timelock contract address
      */
@@ -341,7 +344,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /**
-     * @notice Allow a stablecoin to be staked into the RWAStaking contract
+     * @notice Allow a stablecoin to be staked into the BoringVaultPredeposit contract
      * @dev This function can only be called by an admin
      * @param stablecoin Stablecoin token contract address
      */
@@ -372,8 +375,8 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /**
-     * @notice Stop the RWAStaking contract by withdrawing all stablecoins
-     * @dev Only the admin can withdraw stablecoins from the RWAStaking contract
+     * @notice Stop the BoringVaultPredeposit contract by withdrawing all stablecoins
+     * @dev Only the admin can withdraw stablecoins from the BoringVaultPredeposit contract
      */
     function adminWithdraw() external nonReentrant onlyTimelock {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
@@ -424,8 +427,8 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /**
-     * @notice Pause the RWAStaking contract for deposits
-     * @dev Only the admin can pause the RWAStaking contract for deposits
+     * @notice Pause the BoringVaultPredeposit contract for deposits
+     * @dev Only the admin can pause the BoringVaultPredeposit contract for deposits
      */
     function pause() external onlyRole(ADMIN_ROLE) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
@@ -436,11 +439,9 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         emit Paused();
     }
 
-    // Errors
-
     /**
-     * @notice Unpause the RWAStaking contract for deposits
-     * @dev Only the admin can unpause the RWAStaking contract for deposits
+     * @notice Unpause the BoringVaultPredeposit contract for deposits
+     * @dev Only the admin can unpause the BoringVaultPredeposit contract for deposits
      */
     function unpause() external onlyRole(ADMIN_ROLE) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
@@ -454,7 +455,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     // User Functions
 
     /**
-     * @notice Stake stablecoins into the RWAStaking contract
+     * @notice Stake stablecoins into the BoringVaultPredeposit contract
      * @param amount Amount of stablecoins to stake
      * @param stablecoin Stablecoin token contract address
      */
@@ -490,7 +491,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /**
-     * @notice Withdraw stablecoins from the RWAStaking contract
+     * @notice Withdraw stablecoins from the BoringVaultPredeposit contract
      * @param amount Amount of stablecoins to withdraw
      * @param stablecoin Stablecoin token contract address
      */
@@ -526,17 +527,17 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
     // Getter View Functions
 
-    /// @notice Total amount of stablecoins staked in the RWAStaking contract
+    /// @notice Total amount of stablecoins staked in the BoringVaultPredeposit contract
     function getTotalAmountStaked() external view returns (uint256) {
         return _getBoringVaultPredepositStorage().totalAmountStaked;
     }
 
-    /// @notice List of users who have staked into the RWAStaking contract
+    /// @notice List of users who have staked into the BoringVaultPredeposit contract
     function getUsers() external view returns (address[] memory) {
         return _getBoringVaultPredepositStorage().users;
     }
 
-    /// @notice State of a user who has staked into the RWAStaking contract
+    /// @notice State of a user who has staked into the BoringVaultPredeposit contract
     function getUserState(
         address user
     ) external view returns (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) {
@@ -549,19 +550,13 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
             userState.lastUpdate
         );
     }
-    /*
-    /// @notice Amount of stablecoins staked by a user for each stablecoin
-    function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
-        return _getBoringVaultPredepositStorage().userStates[user].stablecoinAmounts[stablecoin];
-    }
-    */
-    /// @notice List of stablecoins allowed to be staked in the RWAStaking contract
 
+    /// @notice List of stablecoins allowed to be staked in the BoringVaultPredeposit contract
     function getAllowedStablecoins() external view returns (IERC20[] memory) {
         return _getBoringVaultPredepositStorage().stablecoins;
     }
 
-    /// @notice Whether a stablecoin is allowed to be staked in the RWAStaking contract
+    /// @notice Whether a stablecoin is allowed to be staked in the BoringVaultPredeposit contract
     function isAllowedStablecoin(
         IERC20 stablecoin
     ) external view returns (bool) {
@@ -573,7 +568,8 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return _getBoringVaultPredepositStorage().endTime;
     }
 
-    /// @notice Returns true if the RWAStaking contract is pauseWhether the RWAStaking contract is paused for deposits
+    /// @notice Returns true if the BoringVaultPredeposit contract is pauseWhether the BoringVaultPredeposit contract is
+    /// paused for deposits
     function isPaused() external view returns (bool) {
         return _getBoringVaultPredepositStorage().paused;
     }
