@@ -12,7 +12,7 @@ import { IAccountantWithRateProviders } from "../src/interfaces/IAccountantWithR
 import { IAtomicQueue } from "../src/interfaces/IAtomicQueue.sol";
 import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
 import { ILens } from "../src/interfaces/ILens.sol";
-import { ITeller } from "../src/interfaces/ITeller.sol";
+import { BridgeData, ITeller } from "../src/interfaces/ITeller.sol";
 
 contract nYieldStakingTest is Test {
 
@@ -29,6 +29,10 @@ contract nYieldStakingTest is Test {
     IERC20 constant USDe = IERC20(0x4c9EDD5852cd905f086C759E8383e09bff1E68B3);
     IERC20 constant sUSDe = IERC20(0x9D39A5DE30e57443BfF2A8307A4256c8797A3497);
     IERC20 constant nYIELD = IERC20(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8);
+
+    address constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    address nYieldTeller = 0x92A735f600175FE9bA350a915572a86F68EBBE66;
 
     function setUp() public {
         // Fork mainnet
@@ -66,7 +70,7 @@ contract nYieldStakingTest is Test {
         PlumenYieldStaking proxy = new PlumenYieldStaking(address(implementation), initData);
 
         // Cast proxy to nYieldStaking for easier interaction
-        staking = nYieldStaking(address(proxy));
+        staking = nYieldStaking(payable(address(proxy)));
 
         // Setup initial state
         vm.startPrank(admin);
@@ -129,7 +133,7 @@ contract nYieldStakingTest is Test {
         vm.warp(block.timestamp + 2 days);
 
         // Get teller address from deployment
-        address teller = address(0x123); // Replace with actual teller address
+        address teller = nYieldTeller; // Replace with actual teller address
 
         // Convert to vault
         vm.startPrank(user1);
@@ -148,13 +152,13 @@ contract nYieldStakingTest is Test {
         staking.stake(100 * 1e6, USDC);
 
         // Try to convert before start time
-        address teller = address(0x123); // Replace with actual teller address
+        address teller = nYieldTeller; // Replace with actual teller address
         staking.convertToBoringVault(USDC, ITeller(teller), 50 * 1e6);
         vm.stopPrank();
     }
 
     function testBatchTransferShares() public {
-        address teller = address(0x123); // Replace with actual teller address
+        address teller = nYieldTeller; // Replace with actual teller address
 
         // Setup users with shares
         address[] memory users = new address[](2);
@@ -198,6 +202,152 @@ contract nYieldStakingTest is Test {
     function testFailNonAdminSetStartTime() public {
         vm.prank(user1);
         staking.setVaultConversionStartTime(block.timestamp + 1 days);
+    }
+
+    function testReinitialize() public {
+        address newMultisig = address(0x123);
+        TimelockController newTimelock = new TimelockController(0, new address[](0), new address[](0), address(this));
+
+        vm.prank(admin);
+        staking.reinitialize(newMultisig, newTimelock);
+
+        assertEq(staking.getMultisig(), newMultisig);
+        assertEq(address(staking.getTimelock()), address(newTimelock));
+    }
+
+    function testSetMultisig() public {
+        address newMultisig = address(0x123);
+
+        vm.prank(address(staking.getTimelock()));
+        staking.setMultisig(newMultisig);
+
+        assertEq(staking.getMultisig(), newMultisig);
+    }
+
+    function testAdminWithdraw() public {
+        // Setup initial state
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 100 * 1e6);
+        staking.stake(100 * 1e6, USDC);
+        vm.stopPrank();
+
+        uint256 initialBalance = USDC.balanceOf(staking.getMultisig());
+
+        vm.prank(address(staking.getTimelock()));
+        staking.adminWithdraw();
+
+        uint256 finalBalance = USDC.balanceOf(staking.getMultisig());
+        assertEq(finalBalance - initialBalance, 100 * 1e6);
+        assertGt(staking.getEndTime(), 0);
+    }
+
+    function testAdminBridge() public {
+        // Setup initial state
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 100 * 1e6);
+        staking.stake(100 * 1e6, USDC);
+        vm.stopPrank();
+
+        // Get teller address from deployment
+        address teller = nYieldTeller;
+
+        // Deal some ETH to the timelock for bridge fees
+        vm.deal(address(staking.getTimelock()), 1 ether);
+
+        // Approve both teller and vault to spend USDC
+        vm.startPrank(address(staking));
+        USDC.approve(teller, 100 * 1e6);
+        USDC.approve(address(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8), 100 * 1e6); // Approve vault
+        vm.stopPrank();
+
+        BridgeData memory bridgeData = BridgeData({
+            chainSelector: 30_318, // Actual chain selector
+            destinationChainReceiver: address(0x04354e44ed31022716e77eC6320C04Eda153010c), // Actual receiver
+            bridgeFeeToken: IERC20(NATIVE), // Using native ETH for fees
+            messageGas: 100_000, // Actual gas limit
+            data: "" // Additional data
+         });
+
+        vm.prank(address(staking.getTimelock()));
+        // Increase ETH value to cover the bridge fee
+        staking.adminBridge{ value: 0.1 ether }(ITeller(teller), bridgeData);
+
+        assertGt(staking.getEndTime(), 0);
+    }
+
+    function testPause() public {
+        vm.prank(admin);
+        staking.pause();
+
+        assertTrue(staking.isPaused());
+    }
+
+    function testUnpause() public {
+        vm.startPrank(admin);
+        staking.pause();
+        staking.unpause();
+        vm.stopPrank();
+
+        assertFalse(staking.isPaused());
+    }
+
+    function testGetters() public {
+        assertEq(staking.getTotalAmountStaked(), 0);
+
+        address[] memory users = staking.getUsers();
+        assertEq(users.length, 0);
+
+        (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = staking.getUserState(user1);
+        assertEq(amountSeconds, 0);
+        assertEq(amountStaked, 0);
+        assertEq(lastUpdate, 0);
+
+        IERC20[] memory stablecoins = staking.getAllowedStablecoins();
+        assertTrue(stablecoins.length > 0);
+
+        assertTrue(staking.isAllowedStablecoin(USDC));
+
+        assertEq(staking.getEndTime(), 0);
+
+        assertFalse(staking.isPaused());
+
+        assertEq(staking.getVaultTotalShares(USDC), 0);
+    }
+
+    function testFailAdminWithdrawAfterEnd() public {
+        vm.prank(address(staking.getTimelock()));
+        staking.adminWithdraw();
+
+        vm.prank(address(staking.getTimelock()));
+        staking.adminWithdraw(); // Should fail as staking has ended
+    }
+
+    function testFailAdminBridgeAfterEnd() public {
+        vm.prank(address(staking.getTimelock()));
+        staking.adminWithdraw();
+
+        BridgeData memory bridgeData = BridgeData({
+            chainSelector: 1,
+            destinationChainReceiver: address(0x123),
+            bridgeFeeToken: USDC,
+            messageGas: 200_000,
+            data: ""
+        });
+
+        vm.prank(address(staking.getTimelock()));
+        staking.adminBridge(ITeller(nYieldTeller), bridgeData); // Should fail as staking has ended
+    }
+
+    function testFailPauseWhenPaused() public {
+        vm.startPrank(admin);
+        staking.pause();
+        staking.pause(); // Should fail
+        vm.stopPrank();
+    }
+
+    function testFailUnpauseWhenNotPaused() public {
+        vm.prank(admin);
+        staking.unpause(); // Should fail as contract is not paused
     }
 
 }

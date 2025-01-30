@@ -56,6 +56,12 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     event UserBridgeOptInUpdated(address indexed user, IERC20 indexed stablecoin, bool optIn);
     event UserPositionBridged(address indexed user, IERC20 indexed stablecoin, uint256 shares);
 
+    event ConvertedToBoringVault(
+        address indexed user, IERC20 indexed stablecoin, uint256 amount, uint256 receivedShares
+    );
+
+    event SharesTransferred(address indexed from, address indexed to, IERC20 indexed stablecoin, uint256 amount);
+
     event UserConvertedToVault(
         address indexed user, IERC20 indexed stablecoin, ITeller vault, uint256 amount, uint256 shares
     );
@@ -346,7 +352,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      * @param teller Teller contract address
      * @param bridgeData Data required for bridging
      */
-    function adminBridge(ITeller teller, BridgeData calldata bridgeData) external nonReentrant onlyTimelock {
+    function adminBridge(ITeller teller, BridgeData calldata bridgeData) external payable nonReentrant onlyTimelock {
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
@@ -360,7 +366,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
             if (amount > 0) {
                 stablecoin.forceApprove(address($.vault.teller), amount);
                 uint256 fee = teller.previewFee(amount, bridgeData);
-                teller.depositAndBridge{ value: fee }(ERC20(address(stablecoin)), amount, amount, bridgeData);
+                teller.depositAndBridge{ value: msg.value }(ERC20(address(stablecoin)), amount, amount, bridgeData);
                 emit AdminWithdrawn(
                     $.multisig, stablecoin, amount * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals())
                 );
@@ -407,37 +413,33 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
      */
     function stake(uint256 amount, IERC20 stablecoin) external nonReentrant {
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
-        if ($.endTime != 0) {
-            revert StakingEnded();
-        }
-        if ($.paused) {
-            revert DepositPaused();
-        }
-        if (!$.allowedStablecoins[stablecoin]) {
-            revert NotAllowedStablecoin(stablecoin);
-        }
+        require($.allowedStablecoins[stablecoin], "Stablecoin not allowed");
+        require(amount > 0, "Amount must be greater than 0");
 
-        uint256 previousBalance = stablecoin.balanceOf(address(this));
+        // Get initial balance to verify transfer
+        uint256 initialBalance = stablecoin.balanceOf(address(this));
 
+        // Transfer tokens from user
         stablecoin.safeTransferFrom(msg.sender, address(this), amount);
 
-        uint256 newBalance = stablecoin.balanceOf(address(this));
-        // Convert the amount to the base unit of amount, i.e. USDC amount gets multiplied by 10^12
-        uint256 actualAmount =
-            (newBalance - previousBalance) * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals());
+        // Verify transfer amount
+        uint256 actualAmount = stablecoin.balanceOf(address(this)) - initialBalance;
+        require(actualAmount == amount, "Transfer amount mismatch");
 
-        uint256 timestamp = block.timestamp;
+        // Convert to base units (18 decimals) for internal accounting
+        uint256 baseAmount = _toBaseUnits(amount, stablecoin);
+
+        // Update state
         UserState storage userState = $.userStates[msg.sender];
-        if (userState.lastUpdate == 0) {
-            $.users.push(msg.sender);
-        }
-        userState.amountSeconds += userState.amountStaked * (timestamp - userState.lastUpdate);
-        userState.amountStaked += actualAmount;
-        userState.lastUpdate = timestamp;
-        userState.stablecoinAmounts[stablecoin] += actualAmount;
-        $.totalAmountStaked += actualAmount;
+        userState.amountStaked += baseAmount;
+        userState.stablecoinAmounts[stablecoin] += baseAmount;
+        $.totalAmountStaked += baseAmount;
 
-        emit Staked(msg.sender, stablecoin, actualAmount);
+        // Also track shares 1:1 with staked amount
+        $.userVaultShares[msg.sender][stablecoin] += amount;
+        $.vaultTotalShares[stablecoin] += amount;
+
+        emit Staked(msg.sender, stablecoin, amount);
     }
 
     /**
@@ -500,13 +502,14 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
             userState.lastUpdate
         );
     }
-
+    /*
     /// @notice Amount of stablecoins staked by a user for each stablecoin
     function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
         return _getnYieldStakingStorage().userStates[user].stablecoinAmounts[stablecoin];
     }
-
+    */
     /// @notice List of stablecoins allowed to be staked in the RWAStaking contract
+
     function getAllowedStablecoins() external view returns (IERC20[] memory) {
         return _getnYieldStakingStorage().stablecoins;
     }
@@ -538,44 +541,75 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return _getnYieldStakingStorage().timelock;
     }
 
-    function convertToBoringVault(IERC20 stablecoin, ITeller teller, uint256 amount) external {
+    function convertToBoringVault(IERC20 stablecoin, ITeller teller, uint256 amount) external nonReentrant {
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        require(block.timestamp >= $.vaultConversionStartTime, "Conversion not started");
+        require($.allowedStablecoins[stablecoin], "Stablecoin not allowed");
 
-        // Check if conversion period has started
-        if (block.timestamp < $.vaultConversionStartTime) {
-            revert ConversionNotStarted(block.timestamp, $.vaultConversionStartTime);
-        }
+        uint256 baseAmount = _toBaseUnits(amount, stablecoin);
+        require($.userStates[msg.sender].stablecoinAmounts[stablecoin] >= baseAmount, "Insufficient balance");
 
-        UserState storage userState = $.userStates[msg.sender];
+        // Update state before transfer
+        $.userStates[msg.sender].amountStaked -= baseAmount;
+        $.userStates[msg.sender].stablecoinAmounts[stablecoin] -= baseAmount;
+        $.totalAmountStaked -= baseAmount;
 
-        // Verify stablecoin is allowed
-        if (!$.allowedStablecoins[stablecoin]) {
-            revert NotAllowedStablecoin(stablecoin);
-        }
+        // Update shares
+        $.userVaultShares[msg.sender][stablecoin] -= amount;
+        $.vaultTotalShares[stablecoin] -= amount;
 
-        // Check user has enough balance
-        uint256 userBalance = userState.stablecoinAmounts[stablecoin];
-        if (userBalance < amount) {
-            revert InsufficientBalance(userBalance, amount);
-        }
+        // Approve vault to spend tokens
+        IERC20(stablecoin).approve(address($.vault.vault), amount);
 
-        // Approve stablecoin transfer
-        stablecoin.approve(address(teller), amount);
+        // Approve teller to spend tokens
+        IERC20(stablecoin).approve(address(teller), amount);
 
-        // Deposit into teller and receive shares
-        uint256 minimumMint = 0; // Can be parameterized if needed
+        // Deposit into Boring vault
         uint256 receivedShares = teller.deposit(
-            ERC20(address(stablecoin)), // depositAsset
-            amount, // depositAmount
-            minimumMint // minimumMint
+            ERC20(address(stablecoin)),
+            amount,
+            0 // minimum shares to receive
         );
 
-        // Update user's stablecoin and share balances
-        userState.stablecoinAmounts[stablecoin] -= amount;
-        $.userVaultShares[msg.sender][stablecoin] += receivedShares;
-        $.vaultTotalShares[stablecoin] += receivedShares;
+        emit ConvertedToBoringVault(msg.sender, stablecoin, amount, receivedShares);
+    }
 
-        emit UserConvertedToVault(msg.sender, stablecoin, teller, amount, receivedShares);
+    function batchTransferShares(
+        IERC20[] calldata stablecoins,
+        address[] calldata recipients,
+        uint256[] calldata amounts
+    ) external nonReentrant {
+        require(
+            stablecoins.length == recipients.length && recipients.length == amounts.length, "Array lengths must match"
+        );
+
+        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+
+        for (uint256 i = 0; i < stablecoins.length; i++) {
+            IERC20 stablecoin = stablecoins[i];
+            address recipient = recipients[i];
+            uint256 amount = amounts[i];
+
+            require($.allowedStablecoins[stablecoin], "Stablecoin not allowed");
+            require(recipient != address(0), "Invalid recipient");
+
+            uint256 baseAmount = _toBaseUnits(amount, stablecoin);
+            require($.userStates[msg.sender].stablecoinAmounts[stablecoin] >= baseAmount, "Insufficient balance");
+
+            // Update sender state
+            $.userStates[msg.sender].amountStaked -= baseAmount;
+            $.userStates[msg.sender].stablecoinAmounts[stablecoin] -= baseAmount;
+
+            // Update recipient state
+            $.userStates[recipient].amountStaked += baseAmount;
+            $.userStates[recipient].stablecoinAmounts[stablecoin] += baseAmount;
+
+            // Update shares
+            $.userVaultShares[msg.sender][stablecoin] -= amount;
+            $.userVaultShares[recipient][stablecoin] += amount;
+
+            emit SharesTransferred(msg.sender, recipient, stablecoin, amount);
+        }
     }
 
     /**
@@ -591,7 +625,8 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
 
         // Get the teller
-        ITeller teller = ITeller(address($.stablecoinToVault[stablecoin]));
+        //ITeller teller = ITeller(address($.stablecoinToVault[stablecoin]));
+        ITeller teller = $.vault.teller;
         require(address(teller) != address(0), "Teller not set");
 
         // nYIELD token
@@ -617,11 +652,12 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     function getVaultConversionStartTime() external view returns (uint256) {
         return _getnYieldStakingStorage().vaultConversionStartTime;
     }
-
+    /*
     function getUserVaultShares(address user, IERC20 stablecoin) external view returns (uint256) {
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
         return $.userVaultShares[user][stablecoin];
     }
+    */
 
     function getVaultTotalShares(
         IERC20 stablecoin
@@ -629,5 +665,36 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         nYieldStakingStorage storage $ = _getnYieldStakingStorage();
         return $.vaultTotalShares[stablecoin];
     }
+
+    // Utility Functions
+
+    function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
+        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        uint256 baseAmount = $.userStates[user].stablecoinAmounts[stablecoin];
+        return _fromBaseUnits(baseAmount, stablecoin);
+    }
+
+    function getUserVaultShares(address user, IERC20 stablecoin) external view returns (uint256) {
+        nYieldStakingStorage storage $ = _getnYieldStakingStorage();
+        return $.userVaultShares[user][stablecoin];
+    }
+
+    function _toBaseUnits(uint256 amount, IERC20 token) internal view returns (uint256) {
+        uint8 decimals = IERC20Metadata(address(token)).decimals();
+        if (decimals == _BASE) {
+            return amount;
+        }
+        return amount * (10 ** (_BASE - decimals));
+    }
+
+    function _fromBaseUnits(uint256 amount, IERC20 token) internal view returns (uint256) {
+        uint8 decimals = IERC20Metadata(address(token)).decimals();
+        if (decimals == _BASE) {
+            return amount;
+        }
+        return amount / (10 ** (_BASE - decimals));
+    }
+
+    receive() external payable { }
 
 }
