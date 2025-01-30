@@ -22,7 +22,7 @@ import { console } from "forge-std/console.sol";
 /**
  * @title BoringVaultPredeposit
  * @author Eugene Y. Q. Shen, Alp Guneysel
- * @notice Pre-staking contract for nYIELD Staking on Plume
+ * @notice Pre-deposit contract for integration with BoringVaults on Plume
  */
 contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
@@ -46,26 +46,69 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         mapping(IERC20 stablecoin => uint256 amount) stablecoinAmounts;
     }
 
+    /// @notice Thrown when a user tries to withdraw or transfer more than their available balance
+    /// @param available The user's current available balance
+    /// @param required The amount the user attempted to withdraw or transfer
     error InsufficientBalance(uint256 available, uint256 required);
 
+    /// @notice Thrown when a user tries to convert to vault shares before the conversion start time
+    /// @param currentTime The current block timestamp
+    /// @param startTime The configured vault conversion start time
     error ConversionNotStarted(uint256 currentTime, uint256 startTime);
 
+    /// @notice Emitted when the admin sets the time when users can start converting their stablecoins to vault shares
+    /// @param startTime The timestamp when conversion will be enabled
     event VaultConversionStartTimeSet(uint256 startTime);
 
+    /// @notice Emitted when stablecoins are converted to vault shares
+    /// @param stablecoin The address of the stablecoin that was converted
+    /// @param vault The address of the vault that received the stablecoins
+    /// @param amount The amount of stablecoins converted
+    /// @param shares The amount of vault shares received
     event StablecoinConvertedToVault(IERC20 stablecoin, IBoringVault vault, uint256 amount, uint256 shares);
+
+    /// @notice Emitted when a user updates their bridge opt-in status for a specific stablecoin
+    /// @param user The address of the user who updated their opt-in status
+    /// @param stablecoin The stablecoin for which the opt-in status was updated
+    /// @param optIn The new opt-in status (true = opted in, false = opted out)
     event UserBridgeOptInUpdated(address indexed user, IERC20 indexed stablecoin, bool optIn);
+
+    /// @notice Emitted when a user's position is bridged to another chain
+    /// @param user The address of the user whose position was bridged
+    /// @param stablecoin The stablecoin that was bridged
+    /// @param shares The amount of shares that were bridged
     event UserPositionBridged(address indexed user, IERC20 indexed stablecoin, uint256 shares);
 
+    /// @notice Emitted when a user converts their stablecoins to BoringVault shares
+    /// @param user The address of the user who converted their stablecoins
+    /// @param stablecoin The stablecoin that was converted
+    /// @param amount The amount of stablecoins converted
+    /// @param receivedShares The amount of vault shares received
     event ConvertedToBoringVault(
         address indexed user, IERC20 indexed stablecoin, uint256 amount, uint256 receivedShares
     );
 
+    /// @notice Emitted when vault shares are transferred between users
+    /// @param from The address sending the shares
+    /// @param to The address receiving the shares
+    /// @param stablecoin The stablecoin associated with the shares
+    /// @param amount The amount of shares transferred
     event SharesTransferred(address indexed from, address indexed to, IERC20 indexed stablecoin, uint256 amount);
 
+    /// @notice Emitted when a user converts their stablecoins to vault shares through the Teller contract
+    /// @param user The address of the user who converted their stablecoins
+    /// @param stablecoin The stablecoin that was converted
+    /// @param vault The Teller contract used for the conversion
+    /// @param amount The amount of stablecoins converted
+    /// @param shares The amount of vault shares received
     event UserConvertedToVault(
         address indexed user, IERC20 indexed stablecoin, ITeller vault, uint256 amount, uint256 shares
     );
 
+    /// @notice Emitted when vault shares are transferred to a user
+    /// @param user The address receiving the vault shares
+    /// @param stablecoin The stablecoin associated with the shares
+    /// @param shares The amount of shares transferred
     event VaultSharesTransferred(address indexed user, IERC20 indexed stablecoin, uint256 shares);
 
     // Storage
@@ -284,6 +327,10 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         _getBoringVaultPredepositStorage().multisig = multisig;
     }
 
+    /// @notice Sets the time when users can start converting their stablecoins to vault shares
+    /// @dev Only callable by admin role
+    /// @param startTime The timestamp when conversion will be enabled
+    /// @custom:throws If startTime is not in the future
     function setVaultConversionStartTime(
         uint256 startTime
     ) external onlyRole(ADMIN_ROLE) {
@@ -541,6 +588,12 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return _getBoringVaultPredepositStorage().timelock;
     }
 
+    /// @notice Converts user's stablecoins to BoringVault shares through the Teller contract
+    /// @dev Requires conversion period to have started and sufficient balance
+    /// @param stablecoin The stablecoin to convert
+    /// @param teller The Teller contract to use for conversion
+    /// @param amount The amount of stablecoins to convert
+    /// @custom:throws If conversion hasn't started, stablecoin not allowed, or insufficient balance
     function convertToBoringVault(IERC20 stablecoin, ITeller teller, uint256 amount) external nonReentrant {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         require(block.timestamp >= $.vaultConversionStartTime, "Conversion not started");
@@ -574,6 +627,12 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         emit ConvertedToBoringVault(msg.sender, stablecoin, amount, receivedShares);
     }
 
+    /// @notice Transfers vault shares to multiple recipients in a single transaction
+    /// @dev All arrays must be the same length
+    /// @param stablecoins Array of stablecoin addresses
+    /// @param recipients Array of recipient addresses
+    /// @param amounts Array of amounts to transfer
+    /// @custom:throws If array lengths don't match, stablecoin not allowed, invalid recipient, or insufficient balance
     function batchTransferShares(
         IERC20[] calldata stablecoins,
         address[] calldata recipients,
@@ -649,10 +708,15 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         }
     }
 
+    /// @notice Returns the timestamp when vault conversion will be enabled
+    /// @return uint256 The conversion start timestamp
     function getVaultConversionStartTime() external view returns (uint256) {
         return _getBoringVaultPredepositStorage().vaultConversionStartTime;
     }
 
+    /// @notice Returns the total shares for a given stablecoin
+    /// @param stablecoin The stablecoin to query
+    /// @return uint256 The total shares for the stablecoin
     function getVaultTotalShares(
         IERC20 stablecoin
     ) external view returns (uint256) {
@@ -662,17 +726,30 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
     // Utility Functions
 
+    /// @notice Returns the amount of stablecoins a user has staked
+    /// @param user The address of the user
+    /// @param stablecoin The stablecoin to query
+    /// @return uint256 The amount of stablecoins in the token's native decimals
     function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         uint256 baseAmount = $.userStates[user].stablecoinAmounts[stablecoin];
         return _fromBaseUnits(baseAmount, stablecoin);
     }
 
+    /// @notice Returns the amount of vault shares a user has for a given stablecoin
+    /// @param user The address of the user
+    /// @param stablecoin The stablecoin to query
+    /// @return uint256 The amount of vault shares
     function getUserVaultShares(address user, IERC20 stablecoin) external view returns (uint256) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         return $.userVaultShares[user][stablecoin];
     }
 
+    /// @notice Converts an amount from token decimals to base units (18 decimals)
+    /// @dev Used for internal accounting
+    /// @param amount The amount to convert
+    /// @param token The token whose decimals to use
+    /// @return uint256 The amount in base units
     function _toBaseUnits(uint256 amount, IERC20 token) internal view returns (uint256) {
         uint8 decimals = IERC20Metadata(address(token)).decimals();
         if (decimals == _BASE) {
@@ -681,6 +758,11 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return amount * (10 ** (_BASE - decimals));
     }
 
+    /// @notice Converts an amount from base units (18 decimals) to token decimals
+    /// @dev Used for external-facing functions
+    /// @param amount The amount in base units to convert
+    /// @param token The token whose decimals to convert to
+    /// @return uint256 The amount in token decimals
     function _fromBaseUnits(uint256 amount, IERC20 token) internal view returns (uint256) {
         uint8 decimals = IERC20Metadata(address(token)).decimals();
         if (decimals == _BASE) {
@@ -689,6 +771,8 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return amount / (10 ** (_BASE - decimals));
     }
 
+    /// @notice Allows the contract to receive ETH
+    /// @dev Required for bridge fees
     receive() external payable { }
 
 }
