@@ -584,79 +584,51 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return shares;
     }
 
-    /// @notice Transfers vault shares to multiple recipients in a single transaction
-    /// @dev All arrays must be the same length
-    /// @param stablecoins Array of stablecoin addresses
-    /// @param recipients Array of recipient addresses
-    /// @param amounts Array of amounts to transfer
-    /// @custom:throws If array lengths don't match, stablecoin not allowed, invalid recipient, or insufficient balance
-    function batchTransferShares(
-        IERC20[] calldata stablecoins,
+    /// @notice Admin function to deposit multiple users' funds into vault and distribute shares
+    /// @param recipients Array of addresses to receive vault shares
+    /// @param depositAssets Array of stablecoins to deposit for each recipient
+    /// @param amounts Array of amounts to deposit for each recipient
+    /// @return shares Array of share amounts received for each deposit
+    function batchDepositToVault(
         address[] calldata recipients,
+        ERC20[] calldata depositAssets,
         uint256[] calldata amounts
-    ) external nonReentrant {
+    ) external nonReentrant onlyRole(ADMIN_ROLE) returns (uint256[] memory shares) {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+
         require(
-            stablecoins.length == recipients.length && recipients.length == amounts.length, "Array lengths must match"
+            recipients.length == depositAssets.length && depositAssets.length == amounts.length,
+            "Array lengths must match"
         );
 
-        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+        shares = new uint256[](recipients.length);
 
-        ERC20 boringVaultToken = ERC20(address($.vault.vault));
-
-        for (uint256 i = 0; i < stablecoins.length; i++) {
-            IERC20 stablecoin = stablecoins[i];
+        for (uint256 i = 0; i < recipients.length; i++) {
             address recipient = recipients[i];
-            uint256 amount = amounts[i];
+            ERC20 depositAsset = depositAssets[i];
+            uint256 depositAmount = amounts[i];
 
-            require($.allowedStablecoins[stablecoin], "Stablecoin not allowed");
+            require($.allowedStablecoins[IERC20(address(depositAsset))], "Stablecoin not allowed");
             require(recipient != address(0), "Invalid recipient");
+            require(depositAmount > 0, "Amount must be greater than 0");
 
-            UserState storage senderState = $.userStates[msg.sender];
-            UserState storage recipientState = $.userStates[recipients[i]];
+            // Approve both teller and vault to spend tokens
+            depositAsset.approve(address($.vault.teller), depositAmount);
+            depositAsset.approve(address($.vault.vault), depositAmount);
 
-            // Check if sender has enough shares
-            require(senderState.vaultShares[stablecoin] >= amount, "Insufficient vault shares");
+            // Calculate minimum shares (99% of deposit amount)
+            uint256 minimumMint = (depositAmount * 99) / 100;
 
-            // Transfer the actual boringVaultToken tokens
-            require(boringVaultToken.transfer(recipient, amount), "Transfer failed");
+            // Deposit into vault through Teller
+            shares[i] = $.vault.teller.deposit(depositAsset, depositAmount, minimumMint);
 
-            // Update share accounting
-            senderState.vaultShares[stablecoin] -= amount;
-            recipientState.vaultShares[stablecoin] += amount;
+            // Transfer shares directly to recipient
+            ERC20(address($.vault.vault)).transfer(recipient, shares[i]);
 
-            emit SharesTransferred(msg.sender, recipients[i], stablecoin, amount);
+            emit ConvertedToBoringVault(recipient, IERC20(address(depositAsset)), depositAmount, shares[i]);
         }
-    }
 
-    /**
-     * @notice Batch transfer vault shares to users
-     * @param stablecoin The stablecoin whose vault shares to transfer
-     * @param users Array of users to transfer shares to
-     * @dev Called periodically (e.g., every 12 hours) to save gas
-     */
-    function batchTransferVaultShares(
-        IERC20 stablecoin,
-        address[] calldata users
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        ITeller teller = $.vault.teller;
-        require(address(teller) != address(0), "Teller not set");
-
-        ERC20 boringVaultToken = ERC20(address($.vault.vault));
-
-        for (uint256 i = 0; i < users.length; i++) {
-            address user = users[i];
-            uint256 shares = $.userStates[user].vaultShares[stablecoin];
-
-            if (shares > 0) {
-                // Transfer boringVaultTokens to user
-                boringVaultToken.transfer(user, shares);
-                // Clear the shares after transfer
-                $.userStates[user].vaultShares[stablecoin] = 0;
-
-                emit VaultSharesTransferred(user, stablecoin, shares);
-            }
-        }
+        return shares;
     }
 
     /// @notice Returns the timestamp when vault conversion will be enabled

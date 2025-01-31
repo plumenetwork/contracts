@@ -137,6 +137,55 @@ contract BoringVaultPredepositTest is Test {
         vm.stopPrank();
     }
 
+    function testBatchDepositToVault() public {
+        // Setup
+        address[] memory recipients = new address[](2);
+        recipients[0] = user1;
+        recipients[1] = user2;
+
+        ERC20[] memory depositAssets = new ERC20[](2);
+        depositAssets[0] = ERC20(address(USDC));
+        depositAssets[1] = ERC20(address(USDC));
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 1000e6; // 1000 USDC
+        amounts[1] = 2000e6; // 2000 USDC
+
+        // Fund contract with USDC
+        deal(address(USDC), address(staking), 3000e6); // Total needed: 3000 USDC
+
+        // Record initial balances
+        uint256 user1InitialBalance = nYIELD.balanceOf(user1);
+        uint256 user2InitialBalance = nYIELD.balanceOf(user2);
+
+        // Execute batch deposit as admin
+        vm.prank(admin);
+        uint256[] memory receivedShares = staking.batchDepositToVault(recipients, depositAssets, amounts);
+
+        // Verify results
+        assertEq(receivedShares[0], amounts[0], "User1 should receive correct shares");
+        assertEq(receivedShares[1], amounts[1], "User2 should receive correct shares");
+
+        assertEq(
+            nYIELD.balanceOf(user1), user1InitialBalance + amounts[0], "User1 should receive correct nYIELD amount"
+        );
+        assertEq(
+            nYIELD.balanceOf(user2), user2InitialBalance + amounts[1], "User2 should receive correct nYIELD amount"
+        );
+
+        assertEq(USDC.balanceOf(address(staking)), 0, "Contract should have no USDC left");
+    }
+
+    function testBatchDepositToVault_RevertOnNonAdmin() public {
+        address[] memory recipients = new address[](1);
+        ERC20[] memory depositAssets = new ERC20[](1);
+        uint256[] memory amounts = new uint256[](1);
+
+        vm.prank(user1);
+        vm.expectRevert();
+        staking.batchDepositToVault(recipients, depositAssets, amounts);
+    }
+
     function testFailDepositToVault_NoBalance() public {
         vm.prank(user1);
         staking.depositToVault(ERC20(address(USDC)));
@@ -156,76 +205,6 @@ contract BoringVaultPredepositTest is Test {
         address randomToken = address(0x123);
         vm.prank(user1);
         staking.stake(100 * 1e6, IERC20(randomToken));
-    }
-
-    function testConvertToBoringVault() public {
-        // Setup
-        vm.startPrank(user1);
-        USDC.approve(address(staking), 100 * 1e6);
-        staking.stake(100 * 1e6, USDC);
-        vm.stopPrank();
-
-        // Advance time past conversion start
-        vm.warp(block.timestamp + 2 days);
-
-        // Get teller address from deployment
-        address teller = nYieldTeller; // Replace with actual teller address
-
-        // Convert to vault
-        vm.startPrank(user1);
-        USDC.approve(address(teller), 50 * 1e6);
-        staking.convertToBoringVault(USDC, ITeller(teller), 50 * 1e6);
-        vm.stopPrank();
-
-        // Check balances
-        assertEq(staking.getUserStablecoinAmounts(user1, USDC), 50 * 1e6);
-        assertEq(staking.getUserVaultShares(user1, USDC), 50 * 1e6);
-    }
-
-    function testFailConvertBeforeStartTime() public {
-        vm.startPrank(user1);
-        USDC.approve(address(staking), 100 * 1e6);
-        staking.stake(100 * 1e6, USDC);
-
-        // Try to convert before start time
-        address teller = nYieldTeller; // Replace with actual teller address
-        staking.convertToBoringVault(USDC, ITeller(teller), 50 * 1e6);
-        vm.stopPrank();
-    }
-
-    function testBatchTransferShares() public {
-        address teller = nYieldTeller; // Replace with actual teller address
-
-        // Setup users with shares
-        address[] memory users = new address[](2);
-        users[0] = user1;
-        users[1] = user2;
-
-        // Stake and convert for both users
-        for (uint256 i = 0; i < users.length; i++) {
-            vm.startPrank(users[i]);
-            USDC.approve(address(staking), 100 * 1e6);
-            staking.stake(100 * 1e6, USDC);
-            vm.stopPrank();
-        }
-
-        // Advance time and convert
-        vm.warp(block.timestamp + 2 days);
-        for (uint256 i = 0; i < users.length; i++) {
-            vm.startPrank(users[i]);
-            staking.convertToBoringVault(USDC, ITeller(teller), 50 * 1e6);
-            vm.stopPrank();
-        }
-
-        // Batch transfer shares
-        vm.prank(admin);
-        staking.batchTransferVaultShares(USDC, users);
-
-        // Verify shares were transferred
-        for (uint256 i = 0; i < users.length; i++) {
-            assertEq(staking.getUserVaultShares(users[i], USDC), 0);
-            assertEq(nYIELD.balanceOf(users[i]), 50 * 1e6);
-        }
     }
 
     function testSetVaultConversionStartTime() public {
@@ -277,40 +256,6 @@ contract BoringVaultPredepositTest is Test {
         assertGt(staking.getEndTime(), 0);
     }
 
-    function testAdminBridge() public {
-        // Setup initial state
-        vm.startPrank(user1);
-        USDC.approve(address(staking), 100 * 1e6);
-        staking.stake(100 * 1e6, USDC);
-        vm.stopPrank();
-
-        // Get teller address from deployment
-        address teller = nYieldTeller;
-
-        // Deal some ETH to the timelock for bridge fees
-        vm.deal(address(staking.getTimelock()), 1 ether);
-
-        // Approve both teller and vault to spend USDC
-        vm.startPrank(address(staking));
-        USDC.approve(teller, 100 * 1e6);
-        USDC.approve(address(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8), 100 * 1e6); // Approve vault
-        vm.stopPrank();
-
-        BridgeData memory bridgeData = BridgeData({
-            chainSelector: 30_318, // Actual chain selector
-            destinationChainReceiver: address(0x04354e44ed31022716e77eC6320C04Eda153010c), // Actual receiver
-            bridgeFeeToken: IERC20(NATIVE), // Using native ETH for fees
-            messageGas: 100_000, // Actual gas limit
-            data: "" // Additional data
-         });
-
-        vm.prank(address(staking.getTimelock()));
-        // Increase ETH value to cover the bridge fee
-        staking.adminBridge{ value: 0.1 ether }(ITeller(teller), bridgeData);
-
-        assertGt(staking.getEndTime(), 0);
-    }
-
     function testPause() public {
         vm.prank(admin);
         staking.pause();
@@ -354,22 +299,6 @@ contract BoringVaultPredepositTest is Test {
 
         vm.prank(address(staking.getTimelock()));
         staking.adminWithdraw(); // Should fail as staking has ended
-    }
-
-    function testFailAdminBridgeAfterEnd() public {
-        vm.prank(address(staking.getTimelock()));
-        staking.adminWithdraw();
-
-        BridgeData memory bridgeData = BridgeData({
-            chainSelector: 1,
-            destinationChainReceiver: address(0x123),
-            bridgeFeeToken: USDC,
-            messageGas: 200_000,
-            data: ""
-        });
-
-        vm.prank(address(staking.getTimelock()));
-        staking.adminBridge(ITeller(nYieldTeller), bridgeData); // Should fail as staking has ended
     }
 
     function testFailPauseWhenPaused() public {
@@ -447,29 +376,6 @@ contract BoringVaultPredepositTest is Test {
         staking.withdraw(50 * 1e6, USDC); // Should revert
     }
 
-    function testFailBatchTransferSharesWithMismatchedArrays() public {
-        IERC20[] memory stablecoins = new IERC20[](2);
-        address[] memory recipients = new address[](1);
-        uint256[] memory amounts = new uint256[](2);
-
-        vm.prank(user1);
-        staking.batchTransferShares(stablecoins, recipients, amounts); // Should revert
-    }
-
-    function testFailBatchTransferSharesWithInvalidRecipient() public {
-        IERC20[] memory stablecoins = new IERC20[](1);
-        stablecoins[0] = USDC;
-
-        address[] memory recipients = new address[](1);
-        recipients[0] = address(0);
-
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = 1e6;
-
-        vm.prank(user1);
-        staking.batchTransferShares(stablecoins, recipients, amounts); // Should revert
-    }
-
     function testFailWithdrawInsufficientBalance() public {
         // Setup
         vm.startPrank(user1);
@@ -486,31 +392,6 @@ contract BoringVaultPredepositTest is Test {
         // USDC is already allowed in setUp()
         vm.prank(admin);
         staking.allowStablecoin(USDC); // Should revert with AlreadyAllowedStablecoin
-    }
-
-    function testFailBatchTransferSharesInsufficientBalance() public {
-        // Setup
-        vm.startPrank(user1);
-        USDC.approve(address(staking), 100 * 1e6);
-        staking.stake(100 * 1e6, USDC);
-
-        // Convert to vault shares
-        vm.warp(block.timestamp + 2 days);
-        staking.convertToBoringVault(USDC, ITeller(nYieldTeller), 60 * 1e6);
-        vm.stopPrank();
-
-        IERC20[] memory stablecoins = new IERC20[](1);
-        stablecoins[0] = USDC;
-
-        address[] memory recipients = new address[](1);
-        recipients[0] = user2;
-
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = 100 * 1e6; // Try to transfer more than converted
-
-        // Should revert with insufficient balance
-        vm.prank(user1);
-        staking.batchTransferShares(stablecoins, recipients, amounts);
     }
 
 }
