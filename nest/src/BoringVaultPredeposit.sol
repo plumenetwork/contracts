@@ -15,9 +15,7 @@ import { IAccountantWithRateProviders } from "./interfaces/IAccountantWithRatePr
 import { IAtomicQueue } from "./interfaces/IAtomicQueue.sol";
 import { IBoringVault } from "./interfaces/IBoringVault.sol";
 import { ILens } from "./interfaces/ILens.sol";
-import { BridgeData, ITeller } from "./interfaces/ITeller.sol";
-
-import { console } from "forge-std/console.sol";
+import { ITeller } from "./interfaces/ITeller.sol";
 
 /**
  * @title BoringVaultPredeposit
