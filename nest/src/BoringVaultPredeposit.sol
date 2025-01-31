@@ -394,35 +394,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /**
-     * @notice Bridge stablecoins to Plume mainnet through the Teller contract
-     * @param teller Teller contract address
-     * @param bridgeData Data required for bridging
-     */
-    function adminBridge(ITeller teller, BridgeData calldata bridgeData) external payable nonReentrant onlyTimelock {
-        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        if ($.endTime != 0) {
-            revert StakingEnded();
-        }
-
-        IERC20[] storage stablecoins = $.stablecoins;
-        uint256 length = stablecoins.length;
-        for (uint256 i = 0; i < length; ++i) {
-            IERC20 stablecoin = stablecoins[i];
-            uint256 amount = stablecoin.balanceOf(address(this));
-            if (amount > 0) {
-                stablecoin.forceApprove(address($.vault.teller), amount);
-                uint256 fee = teller.previewFee(amount, bridgeData);
-                teller.depositAndBridge{ value: msg.value }(ERC20(address(stablecoin)), amount, amount, bridgeData);
-                emit AdminWithdrawn(
-                    $.multisig, stablecoin, amount * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals())
-                );
-            }
-        }
-
-        $.endTime = block.timestamp;
-    }
-
-    /**
      * @notice Pause the BoringVaultPredeposit contract for deposits
      * @dev Only the admin can pause the BoringVaultPredeposit contract for deposits
      */
@@ -574,43 +545,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     /// @notice Timelock contract that controls upgrades and withdrawals
     function getTimelock() external view returns (TimelockController) {
         return _getBoringVaultPredepositStorage().timelock;
-    }
-
-    /// @notice Converts user's stablecoins to BoringVault shares through the Teller contract
-    /// @dev Requires conversion period to have started and sufficient balance
-    /// @param stablecoin The stablecoin to convert
-    /// @param teller The Teller contract to use for conversion
-    /// @param amount The amount of stablecoins to convert
-    /// @custom:throws If conversion hasn't started, stablecoin not allowed, or insufficient balance
-    function convertToBoringVault(IERC20 stablecoin, ITeller teller, uint256 amount) external nonReentrant {
-        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        require(block.timestamp >= $.vaultConversionStartTime, "Conversion not started");
-        require($.allowedStablecoins[stablecoin], "Stablecoin not allowed");
-
-        uint256 baseAmount = _toBaseUnits(amount, stablecoin);
-        require($.userStates[msg.sender].stablecoinAmounts[stablecoin] >= baseAmount, "Insufficient balance");
-
-        // Update stablecoin balances
-        UserState storage userState = $.userStates[msg.sender];
-        userState.amountStaked -= baseAmount;
-        userState.stablecoinAmounts[stablecoin] -= baseAmount;
-        $.totalAmountStaked -= baseAmount;
-
-        // Approve and deposit into vault
-        IERC20(stablecoin).approve(address($.vault.vault), amount);
-        IERC20(stablecoin).approve(address(teller), amount);
-
-        // Deposit and receive shares
-        uint256 receivedShares = teller.deposit(
-            ERC20(address(stablecoin)),
-            amount,
-            0 // minimum shares to receive
-        );
-
-        // Track received vault shares
-        userState.vaultShares[stablecoin] += receivedShares;
-
-        emit ConvertedToBoringVault(msg.sender, stablecoin, amount, receivedShares);
     }
 
     /// @notice Deposits user's stablecoins into nYIELD vault and sends shares directly to user
