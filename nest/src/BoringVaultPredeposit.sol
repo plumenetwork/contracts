@@ -682,8 +682,4 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return amount / (10 ** (_BASE - decimals));
     }
 
-    /// @notice Allows the contract to receive ETH
-    /// @dev Required for bridge fees
-    receive() external payable { }
-
 }

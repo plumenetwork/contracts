@@ -10,15 +10,20 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
  */
 contract BoringVaultPredepositProxy is ERC1967Proxy {
 
+    /// @notice Indicates a failure because transferring ETH to the proxy is unsupported
+    error ETHTransferUnsupported();
+
     /// @notice Name of the proxy, used to ensure each named proxy has unique bytecode
-    bytes32 public constant PROXY_NAME = keccak256("BoringVaultPredepositProxy");
+    bytes32 public constant PROXY_NAME = keccak256("nYieldBoringVaultPredepositProxy");
 
     constructor(address logic, bytes memory data) ERC1967Proxy(logic, data) { }
 
     /// @dev Fallback function to silence compiler warnings
     function test() public virtual { }
 
-    /// @dev Allow receiving ETH for bridge fees
-    receive() external payable { }
+    /// @dev Fallback function to silence compiler warnings
+    receive() external payable {
+        revert ETHTransferUnsupported();
+    }
 
 }
