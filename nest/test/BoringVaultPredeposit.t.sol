@@ -106,6 +106,42 @@ contract BoringVaultPredepositTest is Test {
         console.log("Slot as uint256:", uint256(slot));
     }
 
+    function testDepositToVault() public {
+        // Setup
+        uint256 depositAmount = 1000e6; // 1000 USDC
+        deal(address(USDC), user1, depositAmount);
+
+        vm.startPrank(user1);
+
+        // First stake USDC
+        USDC.approve(address(staking), depositAmount);
+        staking.stake(depositAmount, USDC);
+
+        // Need to approve both teller and vault to spend USDC
+        USDC.approve(nYieldTeller, depositAmount);
+        USDC.approve(address(nYIELD), depositAmount); // nYIELD is the vault token
+
+        // Then deposit to vault
+        uint256 userInitialBalance = nYIELD.balanceOf(user1);
+        uint256 shares = staking.depositToVault(ERC20(address(USDC)));
+
+        // Verify results
+        assertEq(shares, depositAmount, "Should receive same amount of shares");
+        assertEq(nYIELD.balanceOf(user1), userInitialBalance + depositAmount, "Should receive nYIELD tokens");
+        assertEq(USDC.balanceOf(address(staking)), 0, "Should have no USDC left");
+
+        // Verify user state updated
+        (, uint256 amountStaked,) = staking.getUserState(user1);
+        assertEq(amountStaked, 0, "Should have no stake left");
+
+        vm.stopPrank();
+    }
+
+    function testFailDepositToVault_NoBalance() public {
+        vm.prank(user1);
+        staking.depositToVault(ERC20(address(USDC)));
+    }
+
     function testStaking() public {
         vm.startPrank(user1);
         USDC.approve(address(staking), 100 * 1e6);

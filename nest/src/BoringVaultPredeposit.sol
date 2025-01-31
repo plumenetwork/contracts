@@ -613,6 +613,43 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         emit ConvertedToBoringVault(msg.sender, stablecoin, amount, receivedShares);
     }
 
+    /// @notice Deposits user's stablecoins into nYIELD vault and sends shares directly to user
+    /// @param depositAsset The stablecoin to deposit
+    /// @return shares Amount of shares received
+    function depositToVault(
+        ERC20 depositAsset
+    ) external nonReentrant returns (uint256 shares) {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+        require($.allowedStablecoins[IERC20(address(depositAsset))], "Stablecoin not allowed");
+
+        UserState storage userState = $.userStates[msg.sender];
+        uint256 depositAmount =
+            _fromBaseUnits(userState.stablecoinAmounts[IERC20(address(depositAsset))], IERC20(address(depositAsset)));
+        require(depositAmount > 0, "No tokens to deposit");
+
+        // Update stablecoin balances
+        userState.amountStaked -= userState.stablecoinAmounts[IERC20(address(depositAsset))];
+        userState.stablecoinAmounts[IERC20(address(depositAsset))] = 0;
+        $.totalAmountStaked -= userState.stablecoinAmounts[IERC20(address(depositAsset))];
+
+        // Approve both teller and vault to spend tokens
+        depositAsset.approve(address($.vault.teller), depositAmount);
+        depositAsset.approve(address($.vault.vault), depositAmount);
+
+        // Calculate minimum shares (99% of deposit amount)
+        uint256 minimumMint = (depositAmount * 99) / 100;
+
+        // Deposit into vault through Teller
+        shares = $.vault.teller.deposit(depositAsset, depositAmount, minimumMint);
+
+        // Transfer shares directly to user
+        ERC20(address($.vault.vault)).transfer(msg.sender, shares);
+
+        emit ConvertedToBoringVault(msg.sender, IERC20(address(depositAsset)), depositAmount, shares);
+
+        return shares;
+    }
+
     /// @notice Transfers vault shares to multiple recipients in a single transaction
     /// @dev All arrays must be the same length
     /// @param stablecoins Array of stablecoin addresses
