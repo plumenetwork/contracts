@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { BridgeData, ITeller } from "./interfaces/ITeller.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title RWAStaking
- * @author Eugene Y. Q. Shen, Alp Guneysel
+ * @author Eugene Y. Q. Shen
  * @notice Pre-staking contract for RWA Staking on Plume
  */
 contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
@@ -266,39 +264,6 @@ contract RWAStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuar
                 $.multisig, stablecoin, amount * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals())
             );
         }
-        $.endTime = block.timestamp;
-    }
-
-    /**
-     * @notice Bridge stablecoins to Plume mainnet through the Teller contract
-     * @param teller Teller contract address
-     * @param bridgeData Data required for bridging
-     */
-    function adminBridge(
-        ITeller teller,
-        BridgeData calldata bridgeData,
-        address vault_
-    ) external nonReentrant onlyTimelock {
-        RWAStakingStorage storage $ = _getRWAStakingStorage();
-        if ($.endTime != 0) {
-            revert StakingEnded();
-        }
-
-        IERC20[] storage stablecoins = $.stablecoins;
-        uint256 length = stablecoins.length;
-        for (uint256 i = 0; i < length; ++i) {
-            IERC20 stablecoin = stablecoins[i];
-            uint256 amount = stablecoin.balanceOf(address(this));
-            if (amount > 0) {
-                stablecoin.forceApprove(vault_, amount);
-                uint256 fee = teller.previewFee(amount, bridgeData);
-                teller.depositAndBridge{ value: fee }(ERC20(address(stablecoin)), amount, amount, bridgeData);
-                emit AdminWithdrawn(
-                    $.multisig, stablecoin, amount * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals())
-                );
-            }
-        }
-
         $.endTime = block.timestamp;
     }
 
