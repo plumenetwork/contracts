@@ -22,7 +22,7 @@ import { ITeller } from "./interfaces/ITeller.sol";
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Pre-deposit contract for integration with BoringVaults on Plume
  */
-contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
+contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
     // Types
 
@@ -30,19 +30,19 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
     /**
      * @notice State of a user that deposits into the BoringVaultPredeposit contract
-     * @param amountSeconds Cumulative sum of the amount of stablecoins staked by the user,
+     * @param amountSeconds Cumulative sum of the amount of tokens staked by the user,
      *   multiplied by the number of seconds that the user has staked this amount for
-     * @param amountStaked Total amount of stablecoins staked by the user
+     * @param amountStaked Total amount of tokens staked by the user
      * @param lastUpdate Timestamp of the most recent update to amountSeconds
-     * @param stablecoinAmounts Mapping of stablecoin token contract addresses
-     *   to the amount of stablecoins staked by the user
+     * @param tokenAmounts Mapping of token contract addresses
+     *   to the amount of tokens staked by the user
      */
     struct UserState {
         uint256 amountSeconds;
         uint256 amountStaked;
         uint256 lastUpdate;
-        mapping(IERC20 stablecoin => uint256 amount) stablecoinAmounts;
-        mapping(IERC20 stablecoin => uint256 shares) vaultShares;
+        mapping(IERC20 => uint256) tokenAmounts;
+        mapping(IERC20 => uint256) vaultShares;
     }
 
     // Storage
@@ -57,17 +57,19 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
     /// @custom:storage-location erc7201:plume.storage.BoringVaultPredeposit
     struct BoringVaultPredepositStorage {
-        /// @dev Total amount of stablecoins staked in the BoringVaultPredeposit contract
+        /// @dev Total amount of tokens staked in the BoringVaultPredeposit contract
         uint256 totalAmountStaked;
         /// @dev List of users who have staked into the BoringVaultPredeposit contract
         address[] users;
         /// @dev Mapping of users to their state in the BoringVaultPredeposit contract
         mapping(address user => UserState userState) userStates;
-        /// @dev List of stablecoins allowed to be staked in the BoringVaultPredeposit contract
-        IERC20[] stablecoins;
-        /// @dev Mapping of stablecoins to whether they are allowed to be staked
-        mapping(IERC20 stablecoin => bool allowed) allowedStablecoins;
-        /// @dev Timestamp of when pre-staking ends, when the admin withdraws all stablecoins
+        /// @dev List of tokens allowed to be staked in the BoringVaultPredeposit contract
+        IERC20[] tokens;
+        /// @dev Mapping of tokens to whether they are allowed to be staked
+        mapping(IERC20 => bool) allowedTokens;
+        /// @dev Cache token decimals for allowed tokens (used for unit conversion)
+        mapping(IERC20 => uint8) tokenDecimals;
+        /// @dev Timestamp of when pre-staking ends, when the admin withdraws all tokens
         uint256 endTime;
         /// @dev True if the BoringVaultPredeposit contract is paused for deposits, false otherwise
         bool paused;
@@ -81,14 +83,17 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         uint256 vaultConversionStartTime;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("plume.storage.nYieldBoringVaultPredeposit")) - 1)) &
-    // ~bytes32(uint256(0xff))
-    bytes32 private constant BORINGVAULT_PREDEPOSIT_STORAGE_LOCATION =
-        0x714034f23dd5282a94e73061db4134cb46d9e6964d121d2c45f80404b7307c00;
+    // --- Dynamic Storage Slot ---
+    //
+    // We store the slot in a private variable.
+    // This variable is computed once (during initialize) based on a salt.
+    bytes32 private _storageSlot;
 
-    function _getBoringVaultPredepositStorage() private pure returns (BoringVaultPredepositStorage storage $) {
+    /// @dev Returns a pointer to our storage structure using the dynamic slot.
+    function _getBoringVaultPredepositStorage() private view returns (BoringVaultPredepositStorage storage $) {
+        bytes32 slot = _storageSlot;
         assembly {
-            $.slot := BORINGVAULT_PREDEPOSIT_STORAGE_LOCATION
+            $.slot := slot
         }
     }
 
@@ -102,28 +107,28 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     // Events
 
     /**
-     * @notice Emitted when an admin withdraws stablecoins from the BoringVaultPredeposit contract
-     * @param user Address of the admin who withdrew stablecoins
-     * @param stablecoin Stablecoin token contract address
-     * @param amount Amount of stablecoins withdrawn
+     * @notice Emitted when an admin withdraws tokens from the BoringVaultPredeposit contract
+     * @param user Address of the admin who withdrew tokens
+     * @param token Token contract address
+     * @param amount Amount of token withdrawn
      */
-    event AdminWithdrawn(address indexed user, IERC20 indexed stablecoin, uint256 amount);
+    event AdminWithdrawn(address indexed user, IERC20 indexed token, uint256 amount);
 
     /**
-     * @notice Emitted when a user withdraws stablecoins from the BoringVaultPredeposit contract
-     * @param user Address of the user who withdrew stablecoins
-     * @param stablecoin Stablecoin token contract address
-     * @param amount Amount of stablecoins withdrawn
+     * @notice Emitted when a user withdraws tokens from the BoringVaultPredeposit contract
+     * @param user Address of the user who withdrew tokens
+     * @param token Token contract address
+     * @param amount Amount of tokens withdrawn
      */
-    event Withdrawn(address indexed user, IERC20 indexed stablecoin, uint256 amount);
+    event Withdrawn(address indexed user, IERC20 indexed token, uint256 amount);
 
     /**
-     * @notice Emitted when a user stakes stablecoins into the BoringVaultPredeposit contract
-     * @param user Address of the user who staked stablecoins
-     * @param stablecoin Stablecoin token contract address
-     * @param amount Amount of stablecoins staked
+     * @notice Emitted when a user stakes tokens into the BoringVaultPredeposit contract
+     * @param user Address of the user who staked tokens
+     * @param token Token contract address
+     * @param amount Amount of tokens staked
      */
-    event Staked(address indexed user, IERC20 indexed stablecoin, uint256 amount);
+    event Staked(address indexed user, IERC20 indexed token, uint256 amount);
 
     /// @notice Emitted when the BoringVaultPredeposit contract is paused for deposits
     event Paused();
@@ -131,65 +136,44 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     /// @notice Emitted when the BoringVaultPredeposit contract is unpaused for deposits
     event Unpaused();
 
-    /// @notice Emitted when a new stablecoin is allowed for staking
-    /// @param stablecoin The address of the stablecoin that was allowed
-    /// @param decimals The number of decimals of the stablecoin
-    event StablecoinAllowed(IERC20 indexed stablecoin, uint8 decimals);
+    /// @notice Emitted when a new tokend is allowed for staking
+    /// @param token The address of the token that was allowed
+    /// @param decimals The number of decimals of the token
+    event TokenAllowed(IERC20 indexed token, uint8 decimals);
 
-    /// @notice Emitted when the admin sets the time when users can start converting their stablecoins to vault shares
+    /// @notice Emitted when the admin sets the time when users can start converting their tokens to vault shares
     /// @param startTime The timestamp when conversion will be enabled
     event VaultConversionStartTimeSet(uint256 startTime);
 
-    /// @notice Emitted when stablecoins are converted to vault shares
-    /// @param stablecoin The address of the stablecoin that was converted
-    /// @param vault The address of the vault that received the stablecoins
-    /// @param amount The amount of stablecoins converted
-    /// @param shares The amount of vault shares received
-    event StablecoinConvertedToVault(IERC20 stablecoin, IBoringVault vault, uint256 amount, uint256 shares);
-
-    /// @notice Emitted when a user updates their bridge opt-in status for a specific stablecoin
-    /// @param user The address of the user who updated their opt-in status
-    /// @param stablecoin The stablecoin for which the opt-in status was updated
-    /// @param optIn The new opt-in status (true = opted in, false = opted out)
-    event UserBridgeOptInUpdated(address indexed user, IERC20 indexed stablecoin, bool optIn);
-
-    /// @notice Emitted when a user's position is bridged to another chain
-    /// @param user The address of the user whose position was bridged
-    /// @param stablecoin The stablecoin that was bridged
-    /// @param shares The amount of shares that were bridged
-    event UserPositionBridged(address indexed user, IERC20 indexed stablecoin, uint256 shares);
-
-    /// @notice Emitted when a user converts their stablecoins to BoringVault shares
-    /// @param user The address of the user who converted their stablecoins
-    /// @param stablecoin The stablecoin that was converted
-    /// @param amount The amount of stablecoins converted
+    /// @notice Emitted when a user converts their tokens to BoringVault shares
+    /// @param user The address of the user who converted their tokens
+    /// @param token The token that was converted
+    /// @param amount The amount of tokens converted
     /// @param receivedShares The amount of vault shares received
-    event ConvertedToBoringVault(
-        address indexed user, IERC20 indexed stablecoin, uint256 amount, uint256 receivedShares
-    );
+    event ConvertedToBoringVault(address indexed user, IERC20 indexed token, uint256 amount, uint256 receivedShares);
 
     /// @notice Emitted when vault shares are transferred between users
     /// @param from The address sending the shares
     /// @param to The address receiving the shares
-    /// @param stablecoin The stablecoin associated with the shares
+    /// @param token The token associated with the shares
     /// @param amount The amount of shares transferred
-    event SharesTransferred(address indexed from, address indexed to, IERC20 indexed stablecoin, uint256 amount);
+    event SharesTransferred(address indexed from, address indexed to, IERC20 indexed token, uint256 amount);
 
-    /// @notice Emitted when a user converts their stablecoins to vault shares through the Teller contract
-    /// @param user The address of the user who converted their stablecoins
-    /// @param stablecoin The stablecoin that was converted
+    /// @notice Emitted when a user converts their tokens to vault shares through the Teller contract
+    /// @param user The address of the user who converted their tokens
+    /// @param token The token that was converted
     /// @param vault The Teller contract used for the conversion
-    /// @param amount The amount of stablecoins converted
+    /// @param amount The amount of tokens converted
     /// @param shares The amount of vault shares received
     event UserConvertedToVault(
-        address indexed user, IERC20 indexed stablecoin, ITeller vault, uint256 amount, uint256 shares
+        address indexed user, IERC20 indexed token, ITeller vault, uint256 amount, uint256 shares
     );
 
     /// @notice Emitted when vault shares are transferred to a user
     /// @param user The address receiving the vault shares
-    /// @param stablecoin The stablecoin associated with the shares
+    /// @param token The token associated with the shares
     /// @param shares The amount of shares transferred
-    event VaultSharesTransferred(address indexed user, IERC20 indexed stablecoin, uint256 shares);
+    event VaultSharesTransferred(address indexed user, IERC20 indexed token, uint256 shares);
 
     // Errors
 
@@ -212,29 +196,29 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     /// @notice Indicates a failure because the pre-staking period has ended
     error StakingEnded();
 
-    /// @notice Indicates a failure because the stablecoin has too many decimals
+    /// @notice Indicates a failure because the token has too many decimals
     error TooManyDecimals();
 
     /**
-     * @notice Indicates a failure because the stablecoin is already allowed to be staked
-     * @param stablecoin Stablecoin token contract address
+     * @notice Indicates a failure because the token is already allowed to be staked
+     * @param token Token contract address
      */
-    error AlreadyAllowedStablecoin(IERC20 stablecoin);
+    error AlreadyAllowedToken(IERC20 token);
 
     /**
-     * @notice Indicates a failure because the stablecoin is not allowed to be staked
-     * @param stablecoin Stablecoin token contract address
+     * @notice Indicates a failure because the token is not allowed to be staked
+     * @param token Token contract address
      */
-    error NotAllowedStablecoin(IERC20 stablecoin);
+    error NotAllowedToken(IERC20 token);
 
     /**
-     * @notice Indicates a failure because the user does not have enough stablecoins staked
-     * @param user Address of the user who does not have enough stablecoins staked
-     * @param stablecoin Stablecoin token contract address
-     * @param amount Amount of stablecoins that the user wants to withdraw
-     * @param amountStaked Amount of stablecoins that the user has staked
+     * @notice Indicates a failure because the user does not have enough tokens staked
+     * @param user Address of the user who does not have enough tokens staked
+     * @param token Token contract address
+     * @param amount Amount of tokens that the user wants to withdraw
+     * @param amountStaked Amount of tokens that the user has staked
      */
-    error InsufficientStaked(address user, IERC20 stablecoin, uint256 amount, uint256 amountStaked);
+    error InsufficientStaked(address user, IERC20 token, uint256 amount, uint256 amountStaked);
 
     /// @notice Thrown when a user tries to withdraw or transfer more than their available balance
     /// @param available The user's current available balance
@@ -267,24 +251,30 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /**
-     * @notice Initialize the BoringVaultPredeposit contract
-     * @param timelock Timelock contract address
-     * @param owner Address of the owner of the BoringVaultPredeposit contract
+     * @notice Initialize the contract.
+     * @param timelock The timelock contract address.
+     * @param owner The owner address.
+     * @param boringVaultConfig The configuration for the BoringVault.
+     * @param salt A value (e.g. derived from the vault’s parameters) used to derive a unique storage slot.
+     *
+     * The storage slot is computed as:
+     * keccak256(abi.encodePacked("plume.storage.BoringVaultPredeposit", salt))
      */
     function initialize(
         TimelockController timelock,
         address owner,
-        BoringVault memory boringVaultConfig
+        BoringVault memory boringVaultConfig,
+        bytes32 salt
     ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
+        _storageSlot = keccak256(abi.encodePacked("plume.storage.BoringVaultPredeposit", salt));
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+
         $.multisig = owner;
         $.timelock = timelock;
-
-        // Initialize BoringVault struct from parameters
         $.vault = boringVaultConfig;
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
@@ -324,7 +314,7 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         _getBoringVaultPredepositStorage().multisig = multisig;
     }
 
-    /// @notice Sets the time when users can start converting their stablecoins to vault shares
+    /// @notice Sets the time when users can start converting their tokens to vault shares
     /// @dev Only callable by admin role
     /// @param startTime The timestamp when conversion will be enabled
     /// @custom:throws If startTime is not in the future
@@ -338,55 +328,55 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     }
 
     /**
-     * @notice Allow a stablecoin to be staked into the BoringVaultPredeposit contract
+     * @notice Allow a token to be deposited.
      * @dev This function can only be called by an admin
-     * @param stablecoin Stablecoin token contract address
+     * @param token Token contract address
      */
-    function allowStablecoin(
-        IERC20 stablecoin
+    function allowToken(
+        IERC20 token
     ) external onlyRole(ADMIN_ROLE) {
-        _allowStablecoin(stablecoin);
+        _allowToken(token);
     }
 
-    // Internal function for allowing stablecoins
-    function _allowStablecoin(
-        IERC20 stablecoin
+    // Internal function for allowing tokens
+
+    function _allowToken(
+        IERC20 token
     ) internal {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        if ($.allowedStablecoins[stablecoin]) {
-            revert AlreadyAllowedStablecoin(stablecoin);
+        if ($.allowedTokens[token]) {
+            revert AlreadyAllowedToken(token);
         }
-
-        uint8 decimals = IERC20Metadata(address(stablecoin)).decimals();
+        uint8 decimals = IERC20Metadata(address(token)).decimals();
         if (decimals > _BASE) {
             revert TooManyDecimals();
         }
 
-        $.stablecoins.push(stablecoin);
-        $.allowedStablecoins[stablecoin] = true;
-
-        emit StablecoinAllowed(stablecoin, decimals);
+        $.tokens.push(token);
+        $.allowedTokens[token] = true;
+        $.tokenDecimals[token] = decimals;
+        emit TokenAllowed(token, decimals);
     }
 
     /**
-     * @notice Stop the BoringVaultPredeposit contract by withdrawing all stablecoins
-     * @dev Only the admin can withdraw stablecoins from the BoringVaultPredeposit contract
+     * @notice Stop the BoringVaultPredeposit contract by withdrawing all tokens
+     * @dev Only the admin can withdraw tokens from the BoringVaultPredeposit contract
      */
     function adminWithdraw() external nonReentrant onlyTimelock {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+        // TODO: Check if this is correct
         if ($.endTime != 0) {
             revert StakingEnded();
         }
 
-        IERC20[] storage stablecoins = $.stablecoins;
-        uint256 length = stablecoins.length;
-        for (uint256 i = 0; i < length; ++i) {
-            IERC20 stablecoin = stablecoins[i];
-            uint256 amount = stablecoin.balanceOf(address(this));
-            stablecoin.safeTransfer($.multisig, amount);
-            emit AdminWithdrawn(
-                $.multisig, stablecoin, amount * 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals())
-            );
+        uint256 len = $.tokens.length;
+        for (uint256 i = 0; i < len; ++i) {
+            IERC20 token = $.tokens[i];
+            uint256 amount = token.balanceOf(address(this));
+            token.safeTransfer($.multisig, amount);
+            uint8 decimals = $.tokenDecimals[token];
+            uint256 adjustedAmount = amount * (10 ** (_BASE - decimals));
+            emit AdminWithdrawn($.multisig, token, adjustedAmount);
         }
         $.endTime = block.timestamp;
     }
@@ -420,75 +410,202 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     // User Functions
 
     /**
-     * @notice Stake stablecoins into the BoringVaultPredeposit contract
-     * @param amount Amount of stablecoins to stake
-     * @param stablecoin Stablecoin token contract address
+     * @notice Stake tokens into the BoringVaultPredeposit contract
+     * @param amount Amount of tokens to stake
+     * @param token Token contract address
      */
-    function stake(uint256 amount, IERC20 stablecoin) external nonReentrant {
+    function stake(uint256 amount, IERC20 token) external nonReentrant {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        require($.allowedStablecoins[stablecoin], "Stablecoin not allowed");
+
+        if (!$.allowedTokens[token]) {
+            revert NotAllowedToken(token);
+        }
+        if ($.paused) {
+            revert DepositPaused();
+        }
+
+        //TODO: Check if this is correct
         require(amount > 0, "Amount must be greater than 0");
 
+        uint256 currentTime = block.timestamp;
+
         // Get initial balance to verify transfer
-        uint256 initialBalance = stablecoin.balanceOf(address(this));
+        uint256 initialBalance = token.balanceOf(address(this));
 
         // Transfer tokens from user
-        stablecoin.safeTransferFrom(msg.sender, address(this), amount);
+        token.safeTransferFrom(msg.sender, address(this), amount);
 
         // Verify transfer amount
-        uint256 actualAmount = stablecoin.balanceOf(address(this)) - initialBalance;
-        require(actualAmount == amount, "Transfer amount mismatch");
+        uint256 received = token.balanceOf(address(this)) - initialBalance;
+        require(received == amount, "Transfer amount mismatch");
 
         // Convert to base units (18 decimals) for internal accounting
-        uint256 baseAmount = _toBaseUnits(amount, stablecoin);
+        uint256 baseAmount = _toBaseUnits(amount, token);
 
         // Update state
         UserState storage userState = $.userStates[msg.sender];
+
+        // Add new user to list if first deposit.
+        // only checking lastUpdate = 0 would not work because user could have deposited and withdrawn so lastUpdate
+        // would not be 0
+        if (userState.lastUpdate == 0) {
+            $.users.push(msg.sender);
+        }
+
+        // Update accumulated stake-time.
+        if (userState.lastUpdate != 0) {
+            userState.amountSeconds += userState.amountStaked * (currentTime - userState.lastUpdate);
+        }
+
+        userState.lastUpdate = currentTime;
         userState.amountStaked += baseAmount;
-        userState.stablecoinAmounts[stablecoin] += baseAmount;
+        userState.tokenAmounts[token] += baseAmount;
         $.totalAmountStaked += baseAmount;
 
-        emit Staked(msg.sender, stablecoin, amount);
+        emit Staked(msg.sender, token, amount);
     }
 
     /**
-     * @notice Withdraw stablecoins from the BoringVaultPredeposit contract
-     * @param amount Amount of stablecoins to withdraw
-     * @param stablecoin Stablecoin token contract address
+     * @notice Withdraw tokens from the BoringVaultPredeposit contract
+     * @param amount Amount of tokens to withdraw
+     * @param token Token contract address
      */
-    function withdraw(uint256 amount, IERC20 stablecoin) external nonReentrant {
+    function withdraw(uint256 amount, IERC20 token) external nonReentrant {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         if ($.endTime != 0) {
             revert StakingEnded();
         }
 
-        uint256 baseUnitConversion = 10 ** (_BASE - IERC20Metadata(address(stablecoin)).decimals());
-        uint256 timestamp = block.timestamp;
+        uint8 decimals = $.tokenDecimals[token];
+        if (decimals == 0) {
+            decimals = IERC20Metadata(address(token)).decimals();
+        }
+        uint256 conversionFactor = 10 ** (_BASE - decimals);
+
         UserState storage userState = $.userStates[msg.sender];
-        if (userState.stablecoinAmounts[stablecoin] < amount * baseUnitConversion) {
-            revert InsufficientStaked(
-                msg.sender, stablecoin, amount * baseUnitConversion, userState.stablecoinAmounts[stablecoin]
-            );
+        uint256 requiredBase = amount * conversionFactor;
+        if (userState.tokenAmounts[token] < requiredBase) {
+            revert InsufficientStaked(msg.sender, token, requiredBase, userState.tokenAmounts[token]);
         }
 
-        userState.amountSeconds += userState.amountStaked * (timestamp - userState.lastUpdate);
-        uint256 previousBalance = stablecoin.balanceOf(address(this));
-        stablecoin.safeTransfer(msg.sender, amount);
-        uint256 newBalance = stablecoin.balanceOf(address(this));
-        uint256 actualAmount = (previousBalance - newBalance) * baseUnitConversion;
+        uint256 currentTime = block.timestamp;
+        // Update accumulated stake-time.
+        userState.amountSeconds += userState.amountStaked * (currentTime - userState.lastUpdate);
+        userState.lastUpdate = currentTime;
 
-        userState.amountSeconds -= userState.amountSeconds * actualAmount / userState.amountStaked;
-        userState.amountStaked -= actualAmount;
-        userState.lastUpdate = timestamp;
-        userState.stablecoinAmounts[stablecoin] -= actualAmount;
-        $.totalAmountStaked -= actualAmount;
+        uint256 initialBalance = token.balanceOf(address(this));
+        token.safeTransfer(msg.sender, amount);
+        uint256 finalBalance = token.balanceOf(address(this));
+        uint256 actualBase = (initialBalance - finalBalance) * conversionFactor;
 
-        emit Withdrawn(msg.sender, stablecoin, actualAmount);
+        // Adjust accumulated stake-time proportionally.
+        uint256 prevAmountStaked = userState.amountStaked;
+        userState.amountSeconds = (userState.amountSeconds * (prevAmountStaked - actualBase)) / prevAmountStaked;
+
+        userState.amountStaked -= actualBase;
+        userState.tokenAmounts[token] -= actualBase;
+        $.totalAmountStaked -= actualBase;
+
+        emit Withdrawn(msg.sender, token, actualBase);
+    }
+
+    /// @notice Deposits user's tokens into nYIELD vault and sends shares directly to user
+    /// @param depositAsset The token to deposit
+    /// @return shares Amount of shares received
+    function depositToVault(
+        ERC20 depositAsset
+    ) external nonReentrant returns (uint256 shares) {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+        if (block.timestamp < $.vaultConversionStartTime) {
+            revert ConversionNotStarted(block.timestamp, $.vaultConversionStartTime);
+        }
+        IERC20 tokenKey = IERC20(address(depositToken));
+        if (!$.allowedTokens[tokenKey]) {
+            revert NotAllowedToken(tokenKey);
+        }
+
+        UserState storage userState = $.userStates[msg.sender];
+        uint256 tokenBaseAmount = userState.tokenAmounts[tokenKey];
+        require(tokenBaseAmount > 0, "No tokens to deposit");
+        uint256 depositAmount = _fromBaseUnits(tokenBaseAmount, depositToken);
+        require(depositAmount > 0, "No tokens to deposit");
+
+        // Update bookkeeping.
+        userState.amountStaked -= tokenBaseAmount;
+        userState.tokenAmounts[tokenKey] = 0;
+        $.totalAmountStaked -= tokenBaseAmount;
+
+        // Approve Teller and Vault (resetting allowance to zero first).
+        depositToken.safeApprove(address($.vault.teller), 0);
+        depositToken.safeApprove(address($.vault.teller), depositAmount);
+        depositToken.safeApprove(address($.vault.vault), 0);
+        depositToken.safeApprove(address($.vault.vault), depositAmount);
+
+        // TODO: should be parameterized?
+        uint256 minimumMint = (depositAmount * 99) / 100;
+        shares = $.vault.teller.deposit(depositToken, depositAmount, minimumMint);
+
+        // Transfer vault shares to the user.
+        ERC20 vaultToken = ERC20(address($.vault.vault));
+        vaultToken.safeTransfer(msg.sender, shares);
+
+        // Record the vault shares earned.
+        userState.vaultShares[tokenKey] += shares;
+
+        emit ConvertedToBoringVault(msg.sender, tokenKey, depositAmount, shares);
+    }
+
+    /// @notice Admin function to deposit multiple users' funds into vault and distribute shares
+    /// @param recipients Array of addresses to receive vault shares
+    /// @param depositAssets Array of tokens to deposit for each recipient
+    /// @param amounts Array of amounts to deposit for each recipient
+    /// @return shares Array of share amounts received for each deposit
+    function batchDepositToVault(
+        address[] calldata recipients,
+        ERC20[] calldata depositAssets,
+        uint256[] calldata amounts
+    ) external nonReentrant onlyRole(ADMIN_ROLE) returns (uint256[] memory shares) {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+        if (block.timestamp < $.vaultConversionStartTime) {
+            revert ConversionNotStarted(block.timestamp, $.vaultConversionStartTime);
+        }
+        require(
+            recipients.length == depositTokens.length && depositTokens.length == amounts.length,
+            "Array lengths must match"
+        );
+
+        shares = new uint256[](recipients.length);
+        for (uint256 i = 0; i < recipients.length; i++) {
+            address recipient = recipients[i];
+            ERC20 depositToken = depositTokens[i];
+            uint256 depositAmount = amounts[i];
+
+            if (!$.allowedTokens[IERC20(address(depositToken))]) {
+                revert NotAllowedToken(IERC20(address(depositToken)));
+            }
+            require(recipient != address(0), "Invalid recipient");
+            require(depositAmount > 0, "Amount must be > 0");
+
+            depositToken.safeApprove(address($.vault.teller), 0);
+            depositToken.safeApprove(address($.vault.teller), depositAmount);
+            depositToken.safeApprove(address($.vault.vault), 0);
+            depositToken.safeApprove(address($.vault.vault), depositAmount);
+
+            uint256 minimumMint = (depositAmount * 99) / 100;
+            uint256 mintedShares = $.vault.teller.deposit(depositToken, depositAmount, minimumMint);
+            shares[i] = mintedShares;
+            ERC20(address($.vault.vault)).safeTransfer(recipient, mintedShares);
+
+            $.userStates[recipient].vaultShares[IERC20(address(depositToken))] += mintedShares;
+
+            emit ConvertedToBoringVault(recipient, IERC20(address(depositToken)), depositAmount, mintedShares);
+        }
+        return shares;
     }
 
     // Getter View Functions
 
-    /// @notice Total amount of stablecoins staked in the BoringVaultPredeposit contract
+    /// @notice Total amount of tokens staked in the BoringVaultPredeposit contract
     function getTotalAmountStaked() external view returns (uint256) {
         return _getBoringVaultPredepositStorage().totalAmountStaked;
     }
@@ -503,28 +620,25 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         address user
     ) external view returns (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        UserState storage userState = $.userStates[user];
-        return (
-            userState.amountSeconds
-                + userState.amountStaked * (($.endTime > 0 ? $.endTime : block.timestamp) - userState.lastUpdate),
-            userState.amountStaked,
-            userState.lastUpdate
-        );
+        UserState storage state = $.userStates[user];
+        uint256 effectiveTime = ($.endTime > 0 ? $.endTime : block.timestamp);
+        amountSeconds = state.amountSeconds + state.amountStaked * (effectiveTime - state.lastUpdate);
+        return (amountSeconds, state.amountStaked, state.lastUpdate);
     }
 
-    /// @notice List of stablecoins allowed to be staked in the BoringVaultPredeposit contract
-    function getAllowedStablecoins() external view returns (IERC20[] memory) {
-        return _getBoringVaultPredepositStorage().stablecoins;
+    /// @notice List of tokens allowed to be staked in the BoringVaultPredeposit contract
+    function getAllowedTokens() external view returns (IERC20[] memory) {
+        return _getBoringVaultPredepositStorage().tokens;
     }
 
-    /// @notice Whether a stablecoin is allowed to be staked in the BoringVaultPredeposit contract
-    function isAllowedStablecoin(
-        IERC20 stablecoin
+    /// @notice Whether a token is allowed to be staked in the BoringVaultPredeposit contract
+    function isAllowedToken(
+        IERC20 token
     ) external view returns (bool) {
-        return _getBoringVaultPredepositStorage().allowedStablecoins[stablecoin];
+        return _getBoringVaultPredepositStorage().allowedTokens[token];
     }
 
-    /// @notice Timestamp of when pre-staking ends, when the admin withdraws all stablecoins
+    /// @notice Timestamp of when pre-staking ends, when the admin withdraws all tokens
     function getEndTime() external view returns (uint256) {
         return _getBoringVaultPredepositStorage().endTime;
     }
@@ -545,90 +659,6 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
         return _getBoringVaultPredepositStorage().timelock;
     }
 
-    /// @notice Deposits user's stablecoins into nYIELD vault and sends shares directly to user
-    /// @param depositAsset The stablecoin to deposit
-    /// @return shares Amount of shares received
-    function depositToVault(
-        ERC20 depositAsset
-    ) external nonReentrant returns (uint256 shares) {
-        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        require($.allowedStablecoins[IERC20(address(depositAsset))], "Stablecoin not allowed");
-
-        UserState storage userState = $.userStates[msg.sender];
-        uint256 depositAmount =
-            _fromBaseUnits(userState.stablecoinAmounts[IERC20(address(depositAsset))], IERC20(address(depositAsset)));
-        require(depositAmount > 0, "No tokens to deposit");
-
-        // Update stablecoin balances
-        userState.amountStaked -= userState.stablecoinAmounts[IERC20(address(depositAsset))];
-        userState.stablecoinAmounts[IERC20(address(depositAsset))] = 0;
-        $.totalAmountStaked -= userState.stablecoinAmounts[IERC20(address(depositAsset))];
-
-        // Approve both teller and vault to spend tokens
-        depositAsset.approve(address($.vault.teller), depositAmount);
-        depositAsset.approve(address($.vault.vault), depositAmount);
-
-        // Calculate minimum shares (99% of deposit amount)
-        uint256 minimumMint = (depositAmount * 99) / 100;
-
-        // Deposit into vault through Teller
-        shares = $.vault.teller.deposit(depositAsset, depositAmount, minimumMint);
-
-        // Transfer shares directly to user
-        ERC20(address($.vault.vault)).transfer(msg.sender, shares);
-
-        emit ConvertedToBoringVault(msg.sender, IERC20(address(depositAsset)), depositAmount, shares);
-
-        return shares;
-    }
-
-    /// @notice Admin function to deposit multiple users' funds into vault and distribute shares
-    /// @param recipients Array of addresses to receive vault shares
-    /// @param depositAssets Array of stablecoins to deposit for each recipient
-    /// @param amounts Array of amounts to deposit for each recipient
-    /// @return shares Array of share amounts received for each deposit
-    function batchDepositToVault(
-        address[] calldata recipients,
-        ERC20[] calldata depositAssets,
-        uint256[] calldata amounts
-    ) external nonReentrant onlyRole(ADMIN_ROLE) returns (uint256[] memory shares) {
-        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-
-        require(
-            recipients.length == depositAssets.length && depositAssets.length == amounts.length,
-            "Array lengths must match"
-        );
-
-        shares = new uint256[](recipients.length);
-
-        for (uint256 i = 0; i < recipients.length; i++) {
-            address recipient = recipients[i];
-            ERC20 depositAsset = depositAssets[i];
-            uint256 depositAmount = amounts[i];
-
-            require($.allowedStablecoins[IERC20(address(depositAsset))], "Stablecoin not allowed");
-            require(recipient != address(0), "Invalid recipient");
-            require(depositAmount > 0, "Amount must be greater than 0");
-
-            // Approve both teller and vault to spend tokens
-            depositAsset.approve(address($.vault.teller), depositAmount);
-            depositAsset.approve(address($.vault.vault), depositAmount);
-
-            // Calculate minimum shares (99% of deposit amount)
-            uint256 minimumMint = (depositAmount * 99) / 100;
-
-            // Deposit into vault through Teller
-            shares[i] = $.vault.teller.deposit(depositAsset, depositAmount, minimumMint);
-
-            // Transfer shares directly to recipient
-            ERC20(address($.vault.vault)).transfer(recipient, shares[i]);
-
-            emit ConvertedToBoringVault(recipient, IERC20(address(depositAsset)), depositAmount, shares[i]);
-        }
-
-        return shares;
-    }
-
     /// @notice Returns the timestamp when vault conversion will be enabled
     /// @return uint256 The conversion start timestamp
     function getVaultConversionStartTime() external view returns (uint256) {
@@ -637,23 +667,23 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
 
     // Utility Functions
 
-    /// @notice Returns the amount of stablecoins a user has staked
+    /// @notice Returns the amount of tokens a user has staked
     /// @param user The address of the user
-    /// @param stablecoin The stablecoin to query
-    /// @return uint256 The amount of stablecoins in the token's native decimals
-    function getUserStablecoinAmounts(address user, IERC20 stablecoin) external view returns (uint256) {
+    /// @param token The token to query
+    /// @return uint256 The amount of tokens in the token's native decimals
+    function getUserTokenAmounts(address user, IERC20 token) external view returns (uint256) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        uint256 baseAmount = $.userStates[user].stablecoinAmounts[stablecoin];
-        return _fromBaseUnits(baseAmount, stablecoin);
+        uint256 baseAmount = $.userStates[user].tokenAmounts[token];
+        return _fromBaseUnits(baseAmount, token);
     }
 
-    /// @notice Returns the amount of vault shares a user has for a given stablecoin
+    /// @notice Returns the amount of vault shares a user has for a given token
     /// @param user The address of the user
-    /// @param stablecoin The stablecoin to query
+    /// @param token The token to query
     /// @return uint256 The amount of vault shares
-    function getUserVaultShares(address user, IERC20 stablecoin) external view returns (uint256) {
+    function getUserVaultShares(address user, IERC20 token) external view returns (uint256) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        return $.userStates[user].vaultShares[stablecoin];
+        return $.userStates[user].vaultShares[token];
     }
 
     /// @notice Converts an amount from token decimals to base units (18 decimals)
@@ -662,11 +692,15 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     /// @param token The token whose decimals to use
     /// @return uint256 The amount in base units
     function _toBaseUnits(uint256 amount, IERC20 token) internal view returns (uint256) {
-        uint8 decimals = IERC20Metadata(address(token)).decimals();
-        if (decimals == _BASE) {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+        uint8 tokenDec = $.tokenDecimals[token];
+        if (tokenDec == 0) {
+            tokenDec = IERC20Metadata(address(token)).decimals();
+        }
+        if (tokenDec == _BASE) {
             return amount;
         }
-        return amount * (10 ** (_BASE - decimals));
+        return amount * (10 ** (_BASE - tokenDec));
     }
 
     /// @notice Converts an amount from base units (18 decimals) to token decimals
@@ -675,11 +709,23 @@ contract nYieldStaking is AccessControlUpgradeable, UUPSUpgradeable, ReentrancyG
     /// @param token The token whose decimals to convert to
     /// @return uint256 The amount in token decimals
     function _fromBaseUnits(uint256 amount, IERC20 token) internal view returns (uint256) {
-        uint8 decimals = IERC20Metadata(address(token)).decimals();
-        if (decimals == _BASE) {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+        uint8 tokenDec = $.tokenDecimals[token];
+        if (tokenDec == 0) {
+            tokenDec = IERC20Metadata(address(token)).decimals();
+        }
+        if (tokenDec == _BASE) {
             return amount;
         }
-        return amount / (10 ** (_BASE - decimals));
+        return amount / (10 ** (_BASE - tokenDec));
+    }
+
+    /**
+     * @notice Returns the dynamic storage slot used by this contract.
+     * @return The storage slot as a bytes32 value.
+     */
+    function getStorageSlot() external view returns (bytes32) {
+        return _storageSlot;
     }
 
 }
