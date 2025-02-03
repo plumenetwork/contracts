@@ -35,7 +35,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
      */
     struct UserState {
         uint256 amountSeconds;
-        uint256 amountStaked;
         uint256 lastUpdate;
         mapping(IERC20 => uint256) tokenAmounts;
         mapping(IERC20 => uint256) vaultShares;
@@ -51,7 +50,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     /// @custom:storage-location erc7201:plume.storage.BoringVaultPredeposit
     struct BoringVaultPredepositStorage {
         /// @dev Total amount of tokens staked in the BoringVaultPredeposit contract
-        uint256 totalAmountStaked;
+        mapping(IERC20 => uint256) totalAmountStaked;
         /// @dev List of users who have staked into the BoringVaultPredeposit contract
         address[] users;
         /// @dev Mapping of users to their state in the BoringVaultPredeposit contract
@@ -453,9 +452,8 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         }
 
         userState.lastUpdate = currentTime;
-        userState.amountStaked += baseAmount;
         userState.tokenAmounts[token] += baseAmount;
-        $.totalAmountStaked += baseAmount;
+        $.totalAmountStaked[token] += baseAmount;
 
         emit Staked(msg.sender, token, amount);
     }
@@ -502,9 +500,8 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         uint256 prevAmountStaked = userState.amountStaked;
         userState.amountSeconds = (userState.amountSeconds * (prevAmountStaked - actualBase)) / prevAmountStaked;
 
-        userState.amountStaked -= actualBase;
         userState.tokenAmounts[token] -= actualBase;
-        $.totalAmountStaked -= actualBase;
+        $.totalAmountStaked[token] -= actualBase;
 
         emit Withdrawn(msg.sender, token, actualBase);
     }
@@ -544,9 +541,8 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         userState.lastUpdate = currentTime;
 
         // Update state before external calls
-        userState.amountStaked -= tokenBaseAmount;
         userState.tokenAmounts[token] = 0;
-        $.totalAmountStaked -= tokenBaseAmount;
+        $.totalAmountStaked[token] -= tokenBaseAmount; // Update per token
 
         // Approve spending
         token.safeIncreaseAllowance(address(vault.teller), depositAmount);
@@ -611,13 +607,12 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
             }
 
             // Update accumulated stake-time before modifying state
-            userState.amountSeconds += userState.amountStaked * (currentTime - userState.lastUpdate);
+            userState.amountSeconds += userState.tokenAmounts[token] * (currentTime - userState.lastUpdate);
             userState.lastUpdate = currentTime;
 
             // Update state before external calls
-            userState.amountStaked -= tokenBaseAmount;
             userState.tokenAmounts[token] = 0;
-            $.totalAmountStaked -= tokenBaseAmount;
+            $.totalAmountStaked[token] -= tokenBaseAmount; // Update per token
 
             // Calculate minimum shares for this deposit
             uint256 minimumShares = (depositAmount * minimumMintBps) / 10_000;
@@ -642,8 +637,12 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     // Getter View Functions
 
     /// @notice Total amount of tokens staked in the BoringVaultPredeposit contract
-    function getTotalAmountStaked() external view returns (uint256) {
-        return _getBoringVaultPredepositStorage().totalAmountStaked;
+    /// @param token The token to query
+    /// @return uint256 The total amount of tokens staked in the BoringVaultPredeposit contract
+    function getTotalAmountStaked(
+        IERC20 token
+    ) external view returns (uint256) {
+        return _getBoringVaultPredepositStorage().totalAmountStaked[token];
     }
 
     /// @notice List of users who have staked into the BoringVaultPredeposit contract
