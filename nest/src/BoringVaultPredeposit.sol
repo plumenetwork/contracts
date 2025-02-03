@@ -28,7 +28,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
      * @notice State of a user that deposits into the BoringVaultPredeposit contract
      * @param amountSeconds Cumulative sum of the amount of tokens staked by the user,
      *   multiplied by the number of seconds that the user has staked this amount for
-     * @param amountStaked Total amount of tokens staked by the user
      * @param lastUpdate Timestamp of the most recent update to amountSeconds
      * @param tokenAmounts Mapping of token contract addresses
      *   to the amount of tokens staked by the user
@@ -147,6 +146,14 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     /// @param amount The amount of tokens converted
     /// @param receivedShares The amount of vault shares received
     event ConvertedToBoringVault(address indexed user, IERC20 indexed token, uint256 amount, uint256 receivedShares);
+
+    /// @notice Emitted when timelock address is changed
+    /// @param newTimelock The new timelock address (zero address if disabled)
+    event TimelockSet(address newTimelock);
+
+    /// @notice Emitted when owner address is changed
+    /// @param newOwner The new owner address
+    event OwnerSet(address newOwner);
 
     // Errors
 
@@ -296,8 +303,31 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
      */
     function setMultisig(
         address multisig
-    ) external nonReentrant onlyTimelock {
+    ) external nonReentrant onlyRole(ADMIN_ROLE) {
         _getBoringVaultPredepositStorage().multisig = multisig;
+    }
+
+    /// @notice Changes the timelock address. Set to zero address to disable timelock.
+    /// @param newTimelock The new timelock contract address, or zero address
+    function setTimelock(
+        TimelockController newTimelock
+    ) external onlyRole(ADMIN_ROLE) {
+        _getBoringVaultPredepositStorage().timelock = newTimelock;
+        emit TimelockSet(address(newTimelock));
+    }
+
+    /// @notice Changes the owner address
+    /// @param newOwner The new owner address
+    function setOwner(
+        address newOwner
+    ) external onlyRole(ADMIN_ROLE) {
+        if (newOwner == address(0)) {
+            revert ZeroAddress();
+        }
+        _getBoringVaultPredepositStorage().multisig = newOwner;
+        _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
+        _grantRole(ADMIN_ROLE, newOwner);
+        emit OwnerSet(newOwner);
     }
 
     /// @notice Sets the time when users can start converting their tokens to vault shares
@@ -448,7 +478,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
         // Update accumulated stake-time.
         if (userState.lastUpdate != 0) {
-            userState.amountSeconds += userState.amountStaked * (currentTime - userState.lastUpdate);
+            userState.amountSeconds += userState.tokenAmounts[token] * (currentTime - userState.lastUpdate);
         }
 
         userState.lastUpdate = currentTime;
@@ -488,7 +518,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         uint256 currentTime = block.timestamp;
 
         // Update accumulated stake-time.
-        userState.amountSeconds += userState.amountStaked * (currentTime - userState.lastUpdate);
+        userState.amountSeconds += userState.tokenAmounts[token] * (currentTime - userState.lastUpdate);
         userState.lastUpdate = currentTime;
 
         uint256 initialBalance = token.balanceOf(address(this));
@@ -497,7 +527,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         uint256 actualBase = (initialBalance - finalBalance) * conversionFactor;
 
         // Adjust accumulated stake-time proportionally.
-        uint256 prevAmountStaked = userState.amountStaked;
+        uint256 prevAmountStaked = userState.tokenAmounts[token];
         userState.amountSeconds = (userState.amountSeconds * (prevAmountStaked - actualBase)) / prevAmountStaked;
 
         userState.tokenAmounts[token] -= actualBase;
@@ -537,7 +567,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
         // Update accumulated stake-time before modifying state
         uint256 currentTime = block.timestamp;
-        userState.amountSeconds += userState.amountStaked * (currentTime - userState.lastUpdate);
+        userState.amountSeconds += userState.tokenAmounts[token] * (currentTime - userState.lastUpdate);
         userState.lastUpdate = currentTime;
 
         // Update state before external calls
@@ -569,8 +599,20 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         IERC20[] calldata tokens,
         uint256[] calldata amounts,
         uint256 minimumMintBps
-    ) external nonReentrant onlyRole(ADMIN_ROLE) returns (uint256[] memory shares) {
+    ) external nonReentrant returns (uint256[] memory shares) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+
+        // If timelock is set, only timelock can call. Otherwise, only admin can call
+        if (address($.timelock) != address(0)) {
+            if (msg.sender != address($.timelock)) {
+                revert Unauthorized(msg.sender, address($.timelock));
+            }
+        } else {
+            if (!hasRole(ADMIN_ROLE, msg.sender)) {
+                revert Unauthorized(msg.sender, $.multisig);
+            }
+        }
+
         BoringVault memory vault = $.vault;
 
         if (block.timestamp < $.vaultConversionStartTime) {
@@ -657,8 +699,8 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         UserState storage state = $.userStates[user];
         uint256 effectiveTime = ($.endTime > 0 ? $.endTime : block.timestamp);
-        amountSeconds = state.amountSeconds + state.amountStaked * (effectiveTime - state.lastUpdate);
-        return (amountSeconds, state.amountStaked, state.lastUpdate);
+        amountSeconds = state.amountSeconds + state.tokenAmounts[token] * (effectiveTime - state.lastUpdate);
+        return (amountSeconds, state.tokenAmounts[token], state.lastUpdate);
     }
 
     /// @notice List of all tokens that have been added to the BoringVaultPredeposit contract
