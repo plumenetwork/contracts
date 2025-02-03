@@ -368,32 +368,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     }
 
     /**
-     * @notice Stop the BoringVaultPredeposit contract by withdrawing all tokens
-     * @dev Only the admin can withdraw tokens from the BoringVaultPredeposit contract
-     */
-    function adminWithdraw() external nonReentrant onlyTimelock {
-        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-
-        if ($.endTime != 0) {
-            revert StakingEnded();
-        }
-
-        uint256 len = $.tokens.length;
-        for (uint256 i = 0; i < len; ++i) {
-            IERC20 token = $.tokens[i];
-            uint256 amount = token.balanceOf(address(this));
-
-            token.safeTransfer($.multisig, amount);
-
-            uint8 decimals = $.tokenDecimals[token];
-            uint256 adjustedAmount = amount * (10 ** (_BASE - decimals));
-
-            emit AdminWithdrawn($.multisig, token, adjustedAmount);
-        }
-        $.endTime = block.timestamp;
-    }
-
-    /**
      * @notice Pause the BoringVaultPredeposit contract for deposits
      * @dev Only the admin can pause the BoringVaultPredeposit contract for deposits
      */
@@ -564,6 +538,11 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
             revert InvalidAmount(0, 0);
         }
 
+        // Update accumulated stake-time before modifying state
+        uint256 currentTime = block.timestamp;
+        userState.amountSeconds += userState.amountStaked * (currentTime - userState.lastUpdate);
+        userState.lastUpdate = currentTime;
+
         // Update state before external calls
         userState.amountStaked -= tokenBaseAmount;
         userState.tokenAmounts[token] = 0;
@@ -607,6 +586,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         }
 
         shares = new uint256[](recipients.length);
+        uint256 currentTime = block.timestamp;
 
         for (uint256 i = 0; i < recipients.length; i++) {
             address recipient = recipients[i];
@@ -622,6 +602,22 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
             if (!$.allowedTokens[token]) {
                 revert NotAllowedToken(token);
             }
+
+            // Get user's token balance and convert to base units
+            UserState storage userState = $.userStates[recipient];
+            uint256 tokenBaseAmount = userState.tokenAmounts[token];
+            if (tokenBaseAmount == 0) {
+                revert InvalidAmount(0, 0);
+            }
+
+            // Update accumulated stake-time before modifying state
+            userState.amountSeconds += userState.amountStaked * (currentTime - userState.lastUpdate);
+            userState.lastUpdate = currentTime;
+
+            // Update state before external calls
+            userState.amountStaked -= tokenBaseAmount;
+            userState.tokenAmounts[token] = 0;
+            $.totalAmountStaked -= tokenBaseAmount;
 
             // Calculate minimum shares for this deposit
             uint256 minimumShares = (depositAmount * minimumMintBps) / 10_000;
