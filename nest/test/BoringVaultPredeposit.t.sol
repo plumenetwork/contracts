@@ -1,23 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
-import "../src/BoringVaultPredeposit.sol";
-
+import { BoringVaultPredeposit } from "../src/BoringVaultPredeposit.sol";
 import "../src/proxy/BoringVaultPredepositProxy.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
 
-import { IAccountantWithRateProviders } from "../src/interfaces/IAccountantWithRateProviders.sol";
-import { IAtomicQueue } from "../src/interfaces/IAtomicQueue.sol";
 import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
-import { ILens } from "../src/interfaces/ILens.sol";
 import { BridgeData, ITeller } from "../src/interfaces/ITeller.sol";
 
 contract BoringVaultPredepositTest is Test {
 
-    nYieldStaking public implementation;
-    nYieldStaking public staking;
+    BoringVaultPredeposit public implementation;
+    BoringVaultPredeposit public staking;
     address public admin;
     address public user1;
     address public user2;
@@ -51,33 +47,30 @@ contract BoringVaultPredepositTest is Test {
         timelock = new TimelockController(0, proposers, executors, admin);
 
         // Create BoringVault config
-        nYieldStaking.BoringVault memory boringVaultConfig = nYieldStaking.BoringVault({
+        BoringVaultPredeposit.BoringVault memory boringVaultConfig = BoringVaultPredeposit.BoringVault({
             teller: ITeller(0x92A735f600175FE9bA350a915572a86F68EBBE66),
-            vault: IBoringVault(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8),
-            atomicQueue: IAtomicQueue(0xc7287780bfa0C5D2dD74e3e51E238B1cd9B221ee),
-            lens: ILens(0xE3F5867742443Bb34E20D8cFbF755dc70806eA05),
-            accountant: IAccountantWithRateProviders(0x5da1A1d004Fe6b63b37228F08dB6CaEb418A6467)
+            vault: IBoringVault(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8)
         });
 
         // Deploy implementation
-        implementation = new nYieldStaking();
+        implementation = new BoringVaultPredeposit();
 
         // Encode initialize function call
         bytes memory initData =
-            abi.encodeWithSelector(nYieldStaking.initialize.selector, timelock, admin, boringVaultConfig);
+            abi.encodeWithSelector(BoringVaultPredeposit.initialize.selector, timelock, admin, boringVaultConfig);
 
         // Deploy proxy
         BoringVaultPredepositProxy proxy = new BoringVaultPredepositProxy(address(implementation), initData);
 
         // Cast proxy to nYieldStaking for easier interaction
-        staking = nYieldStaking(payable(address(proxy)));
+        staking = BoringVaultPredeposit(payable(address(proxy)));
 
         // Setup initial state
         vm.startPrank(admin);
-        staking.allowStablecoin(USDC);
-        staking.allowStablecoin(USDT);
-        staking.allowStablecoin(USDe);
-        staking.allowStablecoin(sUSDe);
+        staking.allowToken(USDC);
+        staking.allowToken(USDT);
+        staking.allowToken(USDe);
+        staking.allowToken(sUSDe);
         staking.setVaultConversionStartTime(block.timestamp + 1 days);
         vm.stopPrank();
 
@@ -122,8 +115,10 @@ contract BoringVaultPredepositTest is Test {
         USDC.approve(address(nYIELD), depositAmount); // nYIELD is the vault token
 
         // Then deposit to vault
+        uint256 minimumMint = depositAmount * 99 / 100; // 1% slippage
+
         uint256 userInitialBalance = nYIELD.balanceOf(user1);
-        uint256 shares = staking.depositToVault(ERC20(address(USDC)));
+        uint256 shares = staking.depositToVault(IERC20(address(USDC)), minimumMint);
 
         // Verify results
         assertEq(shares, depositAmount, "Should receive same amount of shares");
@@ -143,9 +138,9 @@ contract BoringVaultPredepositTest is Test {
         recipients[0] = user1;
         recipients[1] = user2;
 
-        ERC20[] memory depositAssets = new ERC20[](2);
-        depositAssets[0] = ERC20(address(USDC));
-        depositAssets[1] = ERC20(address(USDC));
+        IERC20[] memory depositAssets = new IERC20[](2);
+        depositAssets[0] = IERC20(address(USDC));
+        depositAssets[1] = IERC20(address(USDC));
 
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = 1000e6; // 1000 USDC
@@ -160,7 +155,9 @@ contract BoringVaultPredepositTest is Test {
 
         // Execute batch deposit as admin
         vm.prank(admin);
-        uint256[] memory receivedShares = staking.batchDepositToVault(recipients, depositAssets, amounts);
+        uint256 minimumMint = (amounts[0] * 9900) / 10_000; // 1% slippage for first amount
+
+        uint256[] memory receivedShares = staking.batchDepositToVault(recipients, depositAssets, amounts, minimumMint);
 
         // Verify results
         assertEq(receivedShares[0], amounts[0], "User1 should receive correct shares");
@@ -178,17 +175,19 @@ contract BoringVaultPredepositTest is Test {
 
     function testBatchDepositToVault_RevertOnNonAdmin() public {
         address[] memory recipients = new address[](1);
-        ERC20[] memory depositAssets = new ERC20[](1);
+        IERC20[] memory depositAssets = new IERC20[](1);
         uint256[] memory amounts = new uint256[](1);
+        uint256 minimumMintBps = 9900; // 99%
 
         vm.prank(user1);
         vm.expectRevert();
-        staking.batchDepositToVault(recipients, depositAssets, amounts);
+        staking.batchDepositToVault(recipients, depositAssets, amounts, minimumMintBps);
     }
 
     function testFailDepositToVault_NoBalance() public {
+        uint256 minimumMint = 0;
         vm.prank(user1);
-        staking.depositToVault(ERC20(address(USDC)));
+        staking.depositToVault(IERC20(address(USDC)), minimumMint);
     }
 
     function testStaking() public {
@@ -197,7 +196,7 @@ contract BoringVaultPredepositTest is Test {
         staking.stake(100 * 1e6, USDC);
         vm.stopPrank();
 
-        assertEq(staking.getUserStablecoinAmounts(user1, USDC), 100 * 1e6);
+        assertEq(staking.getUserTokenAmounts(user1, USDC), 100 * 1e6);
     }
 
     function testFailStakingUnallowedToken() public {
@@ -283,10 +282,10 @@ contract BoringVaultPredepositTest is Test {
         assertEq(amountStaked, 0);
         assertEq(lastUpdate, 0);
 
-        IERC20[] memory stablecoins = staking.getAllowedStablecoins();
+        IERC20[] memory stablecoins = staking.getTokenList();
         assertTrue(stablecoins.length > 0);
 
-        assertTrue(staking.isAllowedStablecoin(USDC));
+        assertTrue(staking.isAllowedToken(USDC));
 
         assertEq(staking.getEndTime(), 0);
 
@@ -328,7 +327,7 @@ contract BoringVaultPredepositTest is Test {
 
         // Assertions
         assertEq(USDC.balanceOf(user1), initialBalance + 50 * 1e6);
-        assertEq(staking.getUserStablecoinAmounts(user1, USDC), 50 * 1e6); // Amount in USDC decimals (6)
+        assertEq(staking.getUserTokenAmounts(user1, USDC), 50 * 1e6); // Amount in USDC decimals (6)
         assertEq(staking.getTotalAmountStaked(), 50 * 1e6 * 1e12); // This one stays in base units (18 decimals)
     }
 
@@ -337,7 +336,7 @@ contract BoringVaultPredepositTest is Test {
         IERC20 token18 = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F); // DAI address
 
         vm.startPrank(admin);
-        staking.allowStablecoin(token18);
+        staking.allowToken(token18);
         vm.stopPrank();
 
         // Deal some DAI to user1
@@ -350,14 +349,14 @@ contract BoringVaultPredepositTest is Test {
         vm.stopPrank();
 
         // Should be equal since decimals == _BASE
-        assertEq(staking.getUserStablecoinAmounts(user1, token18), 1 ether); // Fixed function name
+        assertEq(staking.getUserTokenAmounts(user1, token18), 1 ether); // Fixed function name
 
         // Test withdraw to verify _fromBaseUnits
         vm.prank(user1);
         staking.withdraw(0.5 ether, token18);
 
         assertEq(token18.balanceOf(user1), 0.5 ether);
-        assertEq(staking.getUserStablecoinAmounts(user1, token18), 0.5 ether); // Fixed function name
+        assertEq(staking.getUserTokenAmounts(user1, token18), 0.5 ether); // Fixed function name
     }
 
     function testFailWithdrawAfterEnd() public {
@@ -391,7 +390,7 @@ contract BoringVaultPredepositTest is Test {
     function testFailAllowAlreadyAllowedStablecoin() public {
         // USDC is already allowed in setUp()
         vm.prank(admin);
-        staking.allowStablecoin(USDC); // Should revert with AlreadyAllowedStablecoin
+        staking.allowToken(USDC); // Should revert with AlreadyAllowedStablecoin
     }
 
 }

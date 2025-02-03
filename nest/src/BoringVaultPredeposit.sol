@@ -84,8 +84,9 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
     /// @dev Returns a pointer to our storage structure using the dynamic slot.
     function _getBoringVaultPredepositStorage() private view returns (BoringVaultPredepositStorage storage $) {
+        bytes32 slot = _storageSlot;
         assembly {
-            $.slot := _storageSlot
+            $.slot := slot
         }
     }
 
@@ -135,7 +136,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
     /// @notice Emitted when a new tokend is allowed for staking
     /// @param token The address of the token that was allowed
-    /// @param decimals The number of decimals of the token
     event TokenDisabled(IERC20 indexed token);
 
     /// @notice Emitted when the admin sets the time when users can start converting their tokens to vault shares
@@ -536,7 +536,8 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     }
 
     /// @notice Deposits user's tokens into nYIELD vault and sends shares directly to user
-    /// @param depositAsset The token to deposit
+    /// @param token The token to deposit
+    /// @param minimumMint The minimum amount of shares to mint
     /// @return shares Amount of shares received
     function depositToVault(IERC20 token, uint256 minimumMint) external nonReentrant returns (uint256 shares) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
@@ -576,7 +577,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         shares = vault.teller.deposit(token, depositAmount, minimumMint);
 
         // Transfer and record shares
-        IERC20(vaultAddress).safeTransfer(msg.sender, shares);
+        IERC20(address(vault.vault)).safeTransfer(msg.sender, shares);
         userState.vaultShares[token] += shares;
 
         emit ConvertedToBoringVault(msg.sender, token, depositAmount, shares);
@@ -584,14 +585,15 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
     /// @notice Admin function to deposit multiple users' funds into vault and distribute shares
     /// @param recipients Array of addresses to receive vault shares
-    /// @param depositAssets Array of tokens to deposit for each recipient
+    /// @param tokens Array of tokens to deposit for each recipient
     /// @param amounts Array of amounts to deposit for each recipient
+    /// @param minimumMintBps The minimum amount of shares to mint
     /// @return shares Array of share amounts received for each deposit
     function batchDepositToVault(
         address[] calldata recipients,
         IERC20[] calldata tokens,
         uint256[] calldata amounts,
-        uint256 minimumMint
+        uint256 minimumMintBps
     ) external nonReentrant onlyRole(ADMIN_ROLE) returns (uint256[] memory shares) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         BoringVault memory vault = $.vault;
@@ -621,14 +623,15 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
                 revert NotAllowedToken(token);
             }
 
+            // Calculate minimum shares for this deposit
+            uint256 minimumShares = (depositAmount * minimumMintBps) / 10_000;
+
             // Approve spending
-            token.safeApprove(address(vault.teller), 0);
-            token.safeApprove(address(vault.teller), depositAmount);
-            token.safeApprove(address(vault.vault), 0);
-            token.safeApprove(address(vault.vault), depositAmount);
+            token.safeIncreaseAllowance(address(vault.teller), depositAmount);
+            token.safeIncreaseAllowance(address(vault.vault), depositAmount);
 
             // Deposit and get shares
-            uint256 mintedShares = vault.teller.deposit(token, depositAmount, minimumMint);
+            uint256 mintedShares = vault.teller.deposit(token, depositAmount, minimumShares);
             shares[i] = mintedShares;
 
             // Transfer and record shares
