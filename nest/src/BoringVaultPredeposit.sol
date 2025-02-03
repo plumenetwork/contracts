@@ -10,10 +10,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { IAccountantWithRateProviders } from "./interfaces/IAccountantWithRateProviders.sol";
-import { IAtomicQueue } from "./interfaces/IAtomicQueue.sol";
 import { IBoringVault } from "./interfaces/IBoringVault.sol";
-import { ILens } from "./interfaces/ILens.sol";
 import { ITeller } from "./interfaces/ITeller.sol";
 
 /**
@@ -49,9 +46,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     struct BoringVault {
         ITeller teller;
         IBoringVault vault;
-        IAtomicQueue atomicQueue;
-        ILens lens;
-        IAccountantWithRateProviders accountant;
     }
 
     /// @custom:storage-location erc7201:plume.storage.BoringVaultPredeposit
@@ -180,6 +174,8 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     error TooManyDecimals();
 
     /// @notice Thrown when array lengths don't match
+    /// @param expected The expected length
+    /// @param received The received length
     error ArrayLengthMismatch(uint256 expected, uint256 received);
 
     /// @notice Thrown when there's an issue with the amount being transferred
@@ -201,6 +197,11 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
      * @param token Token contract address
      */
     error NotAllowedToken(IERC20 token);
+
+    /// @notice Thrown when a timestamp is invalid (e.g., not in future when required)
+    /// @param expected The expected timestamp
+    /// @param received The received timestamp
+    error InvalidTimestamp(uint256 expected, uint256 received);
 
     /**
      * @notice Indicates a failure because the user does not have enough tokens staked
@@ -307,7 +308,10 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     function setVaultConversionStartTime(
         uint256 startTime
     ) external onlyRole(ADMIN_ROLE) {
-        require(startTime > block.timestamp, "Start time must be in future");
+        if (startTime < block.timestamp) {
+            revert InvalidTimestamp(block.timestamp, startTime);
+        }
+
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         $.vaultConversionStartTime = startTime;
         emit VaultConversionStartTimeSet(startTime);
@@ -369,7 +373,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
      */
     function adminWithdraw() external nonReentrant onlyTimelock {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
-        // TODO: Check if this is correct
+
         if ($.endTime != 0) {
             revert StakingEnded();
         }
@@ -378,9 +382,12 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         for (uint256 i = 0; i < len; ++i) {
             IERC20 token = $.tokens[i];
             uint256 amount = token.balanceOf(address(this));
+
             token.safeTransfer($.multisig, amount);
+
             uint8 decimals = $.tokenDecimals[token];
             uint256 adjustedAmount = amount * (10 ** (_BASE - decimals));
+
             emit AdminWithdrawn($.multisig, token, adjustedAmount);
         }
         $.endTime = block.timestamp;
