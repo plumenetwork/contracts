@@ -175,6 +175,16 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         return $.probabilitiesToRewards[probability];
     }
 
+    /// @dev Allows the admin to pause the contract, preventing certain actions.
+    function pause() external onlyRole(ADMIN_ROLE) {
+        _pause();
+    }
+
+    /// @dev Allows the admin to unpause the contract, resuming normal operations.
+    function unpause() external onlyRole(ADMIN_ROLE) {
+        _unpause();
+    }
+
     // Utility Functions
     /**
      * @notice Checks if two dates are the same day.
