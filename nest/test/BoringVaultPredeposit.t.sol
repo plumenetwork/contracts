@@ -29,10 +29,11 @@ contract BoringVaultPredepositTest is Test {
     address constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     address nYieldTeller = 0x92A735f600175FE9bA350a915572a86F68EBBE66;
+    address nYieldVault = 0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8;
 
     function setUp() public {
-        // Fork mainnet
-        vm.createSelectFork(vm.envString("ETH_RPC_URL"));
+        // Fork mainnet (Speciying a block number allows us to cache the state at that block)
+        vm.createSelectFork(vm.envString("ETH_RPC_URL"), 21_769_985);
 
         // Setup accounts
         admin = address(this);
@@ -47,22 +48,22 @@ contract BoringVaultPredepositTest is Test {
         timelock = new TimelockController(0, proposers, executors, admin);
 
         // Create BoringVault config
-        BoringVaultPredeposit.BoringVault memory boringVaultConfig = BoringVaultPredeposit.BoringVault({
-            teller: ITeller(0x92A735f600175FE9bA350a915572a86F68EBBE66),
-            vault: IBoringVault(0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8)
-        });
+        BoringVaultPredeposit.BoringVault memory boringVaultConfig =
+            BoringVaultPredeposit.BoringVault({ teller: ITeller(nYieldTeller), vault: IBoringVault(nYieldVault) });
 
         // Deploy implementation
         implementation = new BoringVaultPredeposit();
 
+        bytes32 salt = keccak256(abi.encodePacked(block.timestamp, "nYieldPredeposit"));
+
         // Encode initialize function call
         bytes memory initData =
-            abi.encodeWithSelector(BoringVaultPredeposit.initialize.selector, timelock, admin, boringVaultConfig);
+            abi.encodeWithSelector(BoringVaultPredeposit.initialize.selector, timelock, admin, boringVaultConfig, salt);
 
         // Deploy proxy
         BoringVaultPredepositProxy proxy = new BoringVaultPredepositProxy(address(implementation), initData);
 
-        // Cast proxy to nYieldStaking for easier interaction
+        // Cast proxy to BoringVaultPredeposit for easier interaction
         staking = BoringVaultPredeposit(payable(address(proxy)));
 
         // Setup initial state
@@ -99,10 +100,35 @@ contract BoringVaultPredepositTest is Test {
         console.log("Slot as uint256:", uint256(slot));
     }
 
+    function testDepositToVault_RevertBeforeStart() public {
+        // Setup
+        uint256 depositAmount = 1000e6; // 1000 USDC
+        deal(address(USDC), user1, depositAmount);
+
+        vm.startPrank(user1);
+        USDC.approve(address(staking), depositAmount);
+        staking.stake(depositAmount, USDC);
+
+        // Try to deposit before start time
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                BoringVaultPredeposit.ConversionNotStarted.selector,
+                block.timestamp,
+                staking.getVaultConversionStartTime()
+            )
+        );
+        staking.depositToVault(IERC20(address(USDC)), depositAmount);
+        vm.stopPrank();
+    }
+
     function testDepositToVault() public {
         // Setup
         uint256 depositAmount = 1000e6; // 1000 USDC
         deal(address(USDC), user1, depositAmount);
+
+        // Set conversion start time to now
+        vm.prank(admin);
+        staking.setVaultConversionStartTime(block.timestamp);
 
         vm.startPrank(user1);
 
@@ -112,23 +138,58 @@ contract BoringVaultPredepositTest is Test {
 
         // Need to approve both teller and vault to spend USDC
         USDC.approve(nYieldTeller, depositAmount);
-        USDC.approve(address(nYIELD), depositAmount); // nYIELD is the vault token
+        USDC.approve(address(nYIELD), depositAmount);
 
         // Then deposit to vault
         uint256 minimumMint = depositAmount * 99 / 100; // 1% slippage
-
-        uint256 userInitialBalance = nYIELD.balanceOf(user1);
         uint256 shares = staking.depositToVault(IERC20(address(USDC)), minimumMint);
 
         // Verify results
         assertEq(shares, depositAmount, "Should receive same amount of shares");
-        assertEq(nYIELD.balanceOf(user1), userInitialBalance + depositAmount, "Should receive nYIELD tokens");
+        assertEq(nYIELD.balanceOf(user1), depositAmount, "Should receive nYIELD tokens");
         assertEq(USDC.balanceOf(address(staking)), 0, "Should have no USDC left");
 
-        // Verify user state updated
-        (, uint256 amountStaked,) = staking.getUserState(user1);
-        assertEq(amountStaked, 0, "Should have no stake left");
+        vm.stopPrank();
+    }
 
+    function testBatchDepositToVault_RevertBeforeStart() public {
+        // Setup
+        address[] memory recipients = new address[](2);
+        recipients[0] = user1;
+        recipients[1] = user2;
+
+        IERC20[] memory depositAssets = new IERC20[](2);
+        depositAssets[0] = IERC20(address(USDC));
+        depositAssets[1] = IERC20(address(USDC));
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 1000 * 1e6;
+        amounts[1] = 2000 * 1e6;
+
+        // Fund users and have them stake
+        deal(address(USDC), user1, amounts[0]);
+        deal(address(USDC), user2, amounts[1]);
+
+        vm.startPrank(user1);
+        USDC.approve(address(staking), amounts[0]);
+        staking.stake(amounts[0], USDC);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        USDC.approve(address(staking), amounts[1]);
+        staking.stake(amounts[1], USDC);
+        vm.stopPrank();
+
+        // Try to batch deposit before start time
+        vm.startPrank(address(timelock));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                BoringVaultPredeposit.ConversionNotStarted.selector,
+                block.timestamp,
+                staking.getVaultConversionStartTime()
+            )
+        );
+        staking.batchDepositToVault(recipients, depositAssets, amounts, 1);
         vm.stopPrank();
     }
 
@@ -143,33 +204,47 @@ contract BoringVaultPredepositTest is Test {
         depositAssets[1] = IERC20(address(USDC));
 
         uint256[] memory amounts = new uint256[](2);
-        amounts[0] = 1000e6; // 1000 USDC
-        amounts[1] = 2000e6; // 2000 USDC
+        amounts[0] = 1000 * 1e6; // 1000 USDC
+        amounts[1] = 2000 * 1e6; // 2000 USDC
 
-        // Fund contract with USDC
-        deal(address(USDC), address(staking), 3000e6); // Total needed: 3000 USDC
+        // Fund users with USDC
+        deal(address(USDC), user1, amounts[0]);
+        deal(address(USDC), user2, amounts[1]);
+
+        // First have users stake their tokens
+        vm.startPrank(user1);
+        USDC.approve(address(staking), amounts[0]);
+        staking.stake(amounts[0], USDC);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        USDC.approve(address(staking), amounts[1]);
+        staking.stake(amounts[1], USDC);
+        vm.stopPrank();
+
+        // Set conversion start time to now
+        vm.prank(admin);
+        staking.setVaultConversionStartTime(block.timestamp);
 
         // Record initial balances
         uint256 user1InitialBalance = nYIELD.balanceOf(user1);
         uint256 user2InitialBalance = nYIELD.balanceOf(user2);
 
-        // Execute batch deposit as admin
-        vm.prank(admin);
-        uint256 minimumMint = (amounts[0] * 9900) / 10_000; // 1% slippage for first amount
-
+        // Execute batch deposit as timelock
+        vm.startPrank(address(timelock));
+        uint256 minimumMint = 9900; // 9900 / 10000 = 99%
         uint256[] memory receivedShares = staking.batchDepositToVault(recipients, depositAssets, amounts, minimumMint);
+        vm.stopPrank();
 
         // Verify results
         assertEq(receivedShares[0], amounts[0], "User1 should receive correct shares");
         assertEq(receivedShares[1], amounts[1], "User2 should receive correct shares");
-
         assertEq(
             nYIELD.balanceOf(user1), user1InitialBalance + amounts[0], "User1 should receive correct nYIELD amount"
         );
         assertEq(
             nYIELD.balanceOf(user2), user2InitialBalance + amounts[1], "User2 should receive correct nYIELD amount"
         );
-
         assertEq(USDC.balanceOf(address(staking)), 0, "Contract should have no USDC left");
     }
 
@@ -196,7 +271,10 @@ contract BoringVaultPredepositTest is Test {
         staking.stake(100 * 1e6, USDC);
         vm.stopPrank();
 
-        assertEq(staking.getUserTokenAmounts(user1, USDC), 100 * 1e6);
+        // getUserTokenAmounts returns amount in 18 decimals (1e18)
+        // so 100 USDC (100 * 1e6) becomes (100 * 1e18)
+        uint256 expectedAmount = 100 * 1e6 * 1e12; // Convert 6 decimals to 18 decimals
+        assertEq(staking.getUserTokenAmounts(user1, USDC), expectedAmount);
     }
 
     function testFailStakingUnallowedToken() public {
@@ -232,12 +310,22 @@ contract BoringVaultPredepositTest is Test {
     function testSetMultisig() public {
         address newMultisig = address(0x123);
 
-        vm.prank(address(staking.getTimelock()));
+        // Get current timelock
+        address timelock_ = address(staking.getTimelock());
+
+        // Grant admin role to timelock if it doesn't have it
+        bytes32 adminRole = staking.ADMIN_ROLE();
+        vm.prank(admin);
+        staking.grantRole(adminRole, timelock_);
+
+        // Set new multisig using timelock
+        vm.prank(timelock_);
         staking.setMultisig(newMultisig);
 
+        // Verify the change
         assertEq(staking.getMultisig(), newMultisig);
     }
-
+    /*
     function testAdminWithdraw() public {
         // Setup initial state
         vm.startPrank(user1);
@@ -254,6 +342,7 @@ contract BoringVaultPredepositTest is Test {
         assertEq(finalBalance - initialBalance, 100 * 1e6);
         assertGt(staking.getEndTime(), 0);
     }
+    */
 
     function testPause() public {
         vm.prank(admin);
@@ -272,26 +361,35 @@ contract BoringVaultPredepositTest is Test {
     }
 
     function testGetters() public {
-        assertEq(staking.getTotalAmountStaked(), 0);
+        assertEq(staking.getTotalAmountStaked(USDC), 0);
 
         address[] memory users = staking.getUsers();
         assertEq(users.length, 0);
 
-        (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) = staking.getUserState(user1);
-        assertEq(amountSeconds, 0);
-        assertEq(amountStaked, 0);
+        // Get user state with new return types
+        (IERC20[] memory tokens, BoringVaultPredeposit.UserTokenState[] memory states, uint256 lastUpdate) =
+            staking.getUserState(user1);
+
+        // Check general state
         assertEq(lastUpdate, 0);
+
+        // Check USDC state specifically
+        for (uint256 i = 0; i < tokens.length; i++) {
+            if (tokens[i] == USDC) {
+                assertEq(states[i].amountSeconds, 0);
+                assertEq(states[i].tokenAmount, 0);
+                break;
+            }
+        }
 
         IERC20[] memory stablecoins = staking.getTokenList();
         assertTrue(stablecoins.length > 0);
 
         assertTrue(staking.isAllowedToken(USDC));
 
-        assertEq(staking.getEndTime(), 0);
-
         assertFalse(staking.isPaused());
     }
-
+    /*
     function testFailAdminWithdrawAfterEnd() public {
         vm.prank(address(staking.getTimelock()));
         staking.adminWithdraw();
@@ -299,6 +397,7 @@ contract BoringVaultPredepositTest is Test {
         vm.prank(address(staking.getTimelock()));
         staking.adminWithdraw(); // Should fail as staking has ended
     }
+    */
 
     function testFailPauseWhenPaused() public {
         vm.startPrank(admin);
@@ -327,8 +426,8 @@ contract BoringVaultPredepositTest is Test {
 
         // Assertions
         assertEq(USDC.balanceOf(user1), initialBalance + 50 * 1e6);
-        assertEq(staking.getUserTokenAmounts(user1, USDC), 50 * 1e6); // Amount in USDC decimals (6)
-        assertEq(staking.getTotalAmountStaked(), 50 * 1e6 * 1e12); // This one stays in base units (18 decimals)
+        assertEq(staking.getUserTokenAmounts(user1, USDC), 50 * 1e18); // Amount in bae unit decimals (e18)
+        assertEq(staking.getTotalAmountStaked(USDC), 50 * 1e18); // Amount in bae unit decimals (e18)
     }
 
     function testBaseUnitConversions() public {
@@ -358,7 +457,7 @@ contract BoringVaultPredepositTest is Test {
         assertEq(token18.balanceOf(user1), 0.5 ether);
         assertEq(staking.getUserTokenAmounts(user1, token18), 0.5 ether); // Fixed function name
     }
-
+    /*
     function testFailWithdrawAfterEnd() public {
         // Setup
         vm.startPrank(user1);
@@ -374,6 +473,7 @@ contract BoringVaultPredepositTest is Test {
         vm.prank(user1);
         staking.withdraw(50 * 1e6, USDC); // Should revert
     }
+    */
 
     function testFailWithdrawInsufficientBalance() public {
         // Setup

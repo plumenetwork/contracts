@@ -39,6 +39,11 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         mapping(IERC20 => uint256) vaultShares;
     }
 
+    struct UserTokenState {
+        uint256 amountSeconds;
+        uint256 tokenAmount;
+    }
+
     // Storage
 
     struct BoringVault {
@@ -692,15 +697,62 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         return _getBoringVaultPredepositStorage().users;
     }
 
-    /// @notice State of a user who has staked into the BoringVaultPredeposit contract
+    /// @notice Get user's state for all tokens
+    /// @param user The address of the user
+    /// @return tokens Array of token addresses
+    /// @return states Array of UserTokenState structs containing amountSeconds and amount for each token
+    /// @return lastUpdate Last update timestamp
     function getUserState(
         address user
-    ) external view returns (uint256 amountSeconds, uint256 amountStaked, uint256 lastUpdate) {
+    ) external view returns (IERC20[] memory tokens, UserTokenState[] memory states, uint256 lastUpdate) {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+        UserState storage userState = $.userStates[user];
+
+        tokens = $.tokens;
+        states = new UserTokenState[](tokens.length);
+
+        uint256 currentTime = block.timestamp;
+        lastUpdate = userState.lastUpdate;
+
+        // Calculate current amountSeconds and get token amounts for each token
+        if (lastUpdate != 0) {
+            for (uint256 i = 0; i < tokens.length; i++) {
+                IERC20 token = tokens[i];
+                uint256 tokenAmount = userState.tokenAmounts[token];
+
+                states[i] = UserTokenState({
+                    amountSeconds: userState.amountSeconds + tokenAmount * (currentTime - lastUpdate),
+                    tokenAmount: tokenAmount
+                });
+            }
+        }
+
+        return (tokens, states, lastUpdate);
+    }
+
+    /// @notice Get user's state for a specific token
+    /// @param user The address of the user
+    /// @param token The token to query
+    /// @return amountSeconds Amount-seconds for the specific token
+    /// @return tokenAmount Amount of token staked
+    /// @return lastUpdate Last update timestamp
+    function getUserStateForToken(
+        address user,
+        IERC20 token
+    ) external view returns (uint256 amountSeconds, uint256 tokenAmount, uint256 lastUpdate) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         UserState storage state = $.userStates[user];
-        uint256 effectiveTime = ($.endTime > 0 ? $.endTime : block.timestamp);
-        amountSeconds = state.amountSeconds + state.tokenAmounts[token] * (effectiveTime - state.lastUpdate);
-        return (amountSeconds, state.tokenAmounts[token], state.lastUpdate);
+
+        uint256 currentTime = block.timestamp;
+        tokenAmount = state.tokenAmounts[token];
+        lastUpdate = state.lastUpdate;
+
+        amountSeconds = state.amountSeconds;
+        if (lastUpdate != 0) {
+            amountSeconds += tokenAmount * (currentTime - lastUpdate);
+        }
+
+        return (amountSeconds, tokenAmount, lastUpdate);
     }
 
     /// @notice List of all tokens that have been added to the BoringVaultPredeposit contract
