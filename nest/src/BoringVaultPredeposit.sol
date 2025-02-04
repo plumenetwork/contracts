@@ -103,14 +103,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     // Events
 
     /**
-     * @notice Emitted when an admin withdraws tokens from the BoringVaultPredeposit contract
-     * @param user Address of the admin who withdrew tokens
-     * @param token Token contract address
-     * @param amount Amount of token withdrawn
-     */
-    event AdminWithdrawn(address indexed user, IERC20 indexed token, uint256 amount);
-
-    /**
      * @notice Emitted when a user withdraws tokens from the BoringVaultPredeposit contract
      * @param user Address of the user who withdrew tokens
      * @param token Token contract address
@@ -159,6 +151,10 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     /// @notice Emitted when owner address is changed
     /// @param newOwner The new owner address
     event OwnerSet(address newOwner);
+
+    /// @notice Emitted when multisig address is changed
+    /// @param newMultisig The new multisig address
+    event MultisigSet(address newMultisig);
 
     // Errors
 
@@ -310,6 +306,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         address multisig
     ) external nonReentrant onlyRole(ADMIN_ROLE) {
         _getBoringVaultPredepositStorage().multisig = multisig;
+        emit MultisigSet(multisig);
     }
 
     /// @notice Changes the timelock address. Set to zero address to disable timelock.
@@ -580,7 +577,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         $.totalAmountStaked[token] -= tokenBaseAmount; // Update per token
 
         // Approve spending
-        token.safeIncreaseAllowance(address(vault.teller), depositAmount);
         token.safeIncreaseAllowance(address(vault.vault), depositAmount);
 
         // Deposit and get shares
@@ -665,7 +661,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
             uint256 minimumShares = (depositAmount * minimumMintBps) / 10_000;
 
             // Approve spending
-            token.safeIncreaseAllowance(address(vault.teller), depositAmount);
             token.safeIncreaseAllowance(address(vault.vault), depositAmount);
 
             // Deposit and get shares

@@ -136,8 +136,7 @@ contract BoringVaultPredepositTest is Test {
         USDC.approve(address(staking), depositAmount);
         staking.stake(depositAmount, USDC);
 
-        // Need to approve both teller and vault to spend USDC
-        USDC.approve(nYieldTeller, depositAmount);
+        // Need to approve vault to spend USDC
         USDC.approve(address(nYIELD), depositAmount);
 
         // Then deposit to vault
