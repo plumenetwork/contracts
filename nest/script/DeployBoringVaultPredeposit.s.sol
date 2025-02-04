@@ -24,23 +24,30 @@ contract DeployBoringVaultPredeposit is Script {
     bytes32 private constant SALT = keccak256("nYIELD");
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = vm.envUint("PLUME_PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy implementation
+        // 1. Deploy implementation
         BoringVaultPredeposit implementation = new BoringVaultPredeposit();
+        console2.log("Implementation deployed to:", address(implementation));
 
-        // Configure vault parameters
+        // 2. Prepare initialization data
         BoringVaultPredeposit.BoringVault memory vaultConfig =
             BoringVaultPredeposit.BoringVault({ teller: ITeller(TELLER), vault: IBoringVault(VAULT) });
 
-        // Initialize implementation
-        implementation.initialize(TimelockController(TIMELOCK), ADMIN, vaultConfig, SALT);
+        bytes memory initData = abi.encodeWithSelector(
+            BoringVaultPredeposit.initialize.selector, TimelockController(TIMELOCK), ADMIN, vaultConfig, SALT
+        );
+
+        // 3. Deploy custom proxy
+        BoringVaultPredepositProxy proxy = new BoringVaultPredepositProxy(address(implementation), initData);
 
         vm.stopBroadcast();
 
         // Log deployments
-        console2.log("BoringVaultPredeposit implementation deployed to:", address(implementation));
+        console2.log("BoringVaultPredeposit implementation:", address(implementation));
+        console2.log("BoringVaultPredeposit proxy:", address(proxy));
+        console2.log("To interact with BoringVaultPredeposit, use proxy address:", address(proxy));
     }
 
 }
