@@ -13,7 +13,6 @@ import "../interfaces/ISupraRouterContract.sol";
 contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
 
     // Storage
-
     /// @custom:storage-location erc7201:plume.storage.Spin
     struct SpinStorage {
         /// @dev Address of the admin managing the Spin contract
@@ -28,6 +27,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         mapping(address => uint256) lastSpinDate;
         /// @dev Mapping of probabilities to rewards
         mapping(uint256 => uint256) probabilitiesToRewards;
+        /// @dev Mapping of nonce to user
+        mapping(uint256 => address) userNonce;
         /// @dev Reference to the Supra VRF interface
         ISupraRouterContract supraRouter;
         /// @dev Reference to the DateTime contract
@@ -47,36 +48,60 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     // Events
+    /// @notice Emitted when a spin is requested
     event SpinRequested(uint256 indexed nonce, address indexed user);
+    /// @notice Emitted when a spin is completed
     event SpinCompleted(address indexed walletAddress, uint256 feathersGained);
 
+    // Errors
+    /// @notice Revert if the caller is not an admin
+    error NotAdmin();
+    /// @notice Revert if the user has already spun today
+    error AlreadySpunToday();
+    /// @notice Revert if the callback is unauthorized
+    error UnauthorizedCallback();
+    /// @notice Revert if the nonce is invalid
+    error InvalidNonce();
+
     // Modifiers
-    modifier onlyAdmin() {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Caller is not an admin");
-        _;
-    }
 
+    /// @notice Ensures that the user can only spin once per day by checking their last spin date.
+    ///      This modifier retrieves the last recorded spin date from storage, compares it with
+    ///      the current date using the `isSameDay` function, and reverts if the user has already spun today.
     modifier canSpin() {
-        SpinStorage storage s = _getSpinStorage();
-        IDateTime dateTime = s.dateTime;
+        SpinStorage storage $ = _getSpinStorage();
+        IDateTime dateTime = $.dateTime;
 
-        uint16 lastSpinYear = dateTime.getYear(s.lastSpinDate[msg.sender]);
-        uint8 lastSpinMonth = dateTime.getMonth(s.lastSpinDate[msg.sender]);
-        uint8 lastSpinDay = dateTime.getDay(s.lastSpinDate[msg.sender]);
-
-        uint16 currentYear = dateTime.getYear(block.timestamp);
-        uint8 currentMonth = dateTime.getMonth(block.timestamp);
-        uint8 currentDay = dateTime.getDay(block.timestamp);
-
-        require(
-            !isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay),
-            "Can only spin once per day"
+        // Retrieve last spin date components
+        (uint16 lastSpinYear, uint8 lastSpinMonth, uint8 lastSpinDay) = (
+            dateTime.getYear($.lastSpinDate[msg.sender]),
+            dateTime.getMonth($.lastSpinDate[msg.sender]),
+            dateTime.getDay($.lastSpinDate[msg.sender])
         );
+
+        // Retrieve current date components
+        (uint16 currentYear, uint8 currentMonth, uint8 currentDay) =
+            (dateTime.getYear(block.timestamp), dateTime.getMonth(block.timestamp), dateTime.getDay(block.timestamp));
+
+        // Ensure the user hasn't already spun today
+        if (isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
+            revert AlreadySpunToday();
+        }
+
         _;
     }
 
-    // Initializer
-    function initialize(address supraRouterAddress, address dateTimeAddress, uint256 _cooldownPeriod) public initializer {
+    /**
+     * @notice Initializes the Spin contract.
+     * @param supraRouterAddress The address of the Supra Router contract.
+     * @param dateTimeAddress The address of the DateTime contract.
+     * @param _cooldownPeriod The cooldown period between spins in seconds.
+     */
+    function initialize(
+        address supraRouterAddress,
+        address dateTimeAddress,
+        uint256 _cooldownPeriod
+    ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
@@ -84,50 +109,82 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
 
-        SpinStorage storage s = _getSpinStorage();
-        s.supraRouter = ISupraRouterContract(supraRouterAddress);
-        s.dateTime = IDateTime(dateTimeAddress);
-        s.cooldownPeriod = _cooldownPeriod;
-        s.admin = msg.sender;
+        SpinStorage storage $ = _getSpinStorage();
+        $.supraRouter = ISupraRouterContract(supraRouterAddress);
+        $.dateTime = IDateTime(dateTimeAddress);
+        $.cooldownPeriod = _cooldownPeriod;
+        $.admin = msg.sender;
     }
 
+    /// @notice Starts the spin process by generating a random number and recording the spin date.
+    /// @dev This function is called by the user to initiate a spin.
     function startSpin() external whenNotPaused canSpin {
-        SpinStorage storage s = _getSpinStorage();
+        SpinStorage storage $ = _getSpinStorage();
         string memory callbackSignature = "handleRandomness(uint256,uint256[])";
-        uint8 rngCount = 1; 
-        uint256 numConfirmations = 1; 
+        uint8 rngCount = 1;
+        uint256 numConfirmations = 1;
         uint256 clientSeed = uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp)));
 
-        uint256 nonce = s.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, address(this));
-        s.lastSpinDate[msg.sender] = block.timestamp;
+        uint256 nonce =
+            $.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, address(this));
+        $.lastSpinDate[msg.sender] = block.timestamp;
+        $.userNonce[nonce] = msg.sender;
 
         emit SpinRequested(nonce, msg.sender);
     }
 
+    /**
+     * @notice Handles the randomness callback from the Supra Router.
+     * @dev This function is called by the Supra Router to provide the random number and determine the reward.
+     * @param nonce The nonce associated with the spin request.
+     * @param rngList The list of random numbers generated.
+     */
     function handleRandomness(uint256 nonce, uint256[] memory rngList) external {
-        SpinStorage storage s = _getSpinStorage();
-        require(msg.sender == address(s.supraRouter), "Unauthorized callback");
+        SpinStorage storage $ = _getSpinStorage();
+        if (msg.sender != address($.supraRouter)) {
+            revert UnauthorizedCallback();
+        }
 
-        uint256 vrfValue = rngList[0]; 
+        address user = $.userNonce[nonce];
+        if (user == address(0)) {
+            revert InvalidNonce();
+        }
+
+        uint256 vrfValue = rngList[0];
         uint256 reward = determineReward(vrfValue);
 
         if (reward > 0) {
-            s.feathersGained[msg.sender] += reward;
-            s.dailyStreak[msg.sender] += 1;
+            $.feathersGained[msg.sender] += reward;
+            $.dailyStreak[msg.sender] += 1;
         } else {
-            s.dailyStreak[msg.sender] = 0; 
+            $.dailyStreak[msg.sender] = 0;
         }
 
         emit SpinCompleted(msg.sender, reward);
     }
 
-    function determineReward(uint256 randomness) internal view returns (uint256) {
-        SpinStorage storage s = _getSpinStorage();
+    /**
+     * @notice Determines the reward based on the random number generated.
+     * @param randomness The random number generated by the Supra Router.
+     */
+    function determineReward(
+        uint256 randomness
+    ) internal view returns (uint256) {
+        SpinStorage storage $ = _getSpinStorage();
         uint256 probability = randomness % 100; // Probabilities are 0-99
-        return s.probabilitiesToRewards[probability];
+        return $.probabilitiesToRewards[probability];
     }
 
     // Utility Functions
+    /**
+     * @notice Checks if two dates are the same day.
+     * @param year1 The year of the first date.
+     * @param month1 The month of the first date.
+     * @param day1 The day of the first date.
+     * @param year2 The year of the second date.
+     * @param month2 The month of the second date.
+     * @param day2 The day of the second date.
+     */
     function isSameDay(
         uint16 year1,
         uint8 month1,
@@ -140,11 +197,24 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     }
 
     // View Functions
-    function getStreakAndFeathers(address walletAddress) external view returns (uint256 streak, uint256 feathers) {
-        SpinStorage storage s = _getSpinStorage();
-        return (s.dailyStreak[walletAddress], s.feathersGained[walletAddress]);
+    /**
+     * @notice Gets the current streak and feathers for a wallet address.
+     * @param walletAddress The address of the wallet.
+     */
+    function getStreakAndFeathers(
+        address walletAddress
+    ) external view returns (uint256 streak, uint256 feathers) {
+        SpinStorage storage $ = _getSpinStorage();
+        return ($.dailyStreak[walletAddress], $.feathersGained[walletAddress]);
     }
 
     // UUPS Authorization
-    function _authorizeUpgrade(address newImplementation) internal override onlyAdmin {}
+    /**
+     * @notice Authorizes the upgrade of the contract.
+     * @param newImplementation The address of the new implementation.
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(ADMIN_ROLE) { }
+
 }

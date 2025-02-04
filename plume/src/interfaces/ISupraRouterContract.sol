@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 interface ISupraRouterContract {
+
     function generateRequest(
         string memory _functionSig,
         uint8 _rngCount,
@@ -22,5 +23,6 @@ interface ISupraRouterContract {
         uint256[] memory rngList,
         address _clientContractAddress,
         string memory _functionSig
-    ) external returns (bool, bytes memory) ;
+    ) external returns (bool, bytes memory);
+
 }
