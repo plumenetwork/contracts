@@ -4,20 +4,19 @@ pragma solidity ^0.8.25;
 import "../src/interfaces/ISupraRouterContract.sol";
 import "../src/spin/DateTime.sol";
 import "../src/spin/Spin.sol";
-import "forge-std/Test.sol"; // Using your actual DateTime contract
+import "forge-std/Test.sol"; 
 
 contract SpinTest is Test {
 
     Spin spin;
     ISupraRouterContract supraRouter;
-    DateTime dateTime; // Using actual DateTime contract
+    DateTime dateTime; 
 
     address constant ADMIN = address(0x1);
     address constant USER = address(0x2);
-    address constant SUPRA_ORACLE = address(0x3280Ffd457A354E21A34F7Adf131136bD55E6596); // Replace with deployed Supra
-        // Oracle address
+    address constant SUPRA_ORACLE = address(0x3280Ffd457A354E21A34F7Adf131136bD55E6596);
 
-    uint256 constant COOLDOWN_PERIOD = 86_400; // 1 day
+    uint256 constant COOLDOWN_PERIOD = 86_400;   // 1 day
     uint8 constant RNG_COUNT = 1;
     uint256 constant NUM_CONFIRMATIONS = 1;
 
@@ -32,7 +31,6 @@ contract SpinTest is Test {
         spin = new Spin();
         spin.initialize(SUPRA_ORACLE, address(dateTime), COOLDOWN_PERIOD);
 
-        // Assign roles
         vm.prank(ADMIN);
         spin.grantRole(spin.ADMIN_ROLE(), ADMIN);
     }
