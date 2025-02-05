@@ -472,8 +472,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         UserState storage userState = $.userStates[msg.sender];
 
         // Add new user to list if first deposit.
-        // only checking lastUpdate = 0 would not work because user could have deposited and withdrawn so lastUpdate
-        // would not be 0
         if (userState.lastUpdate == 0) {
             $.users.push(msg.sender);
         }
