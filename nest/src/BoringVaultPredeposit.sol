@@ -629,7 +629,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     function batchDepositToVault(
         address[] calldata recipients,
         IERC20[] calldata tokens,
-        uint256[] calldata amounts,
         uint256 minimumMintBps
     ) external nonReentrant returns (uint256[] memory shares) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
@@ -661,7 +660,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         for (uint256 i = 0; i < recipients.length; i++) {
             address recipient = recipients[i];
             IERC20 token = tokens[i];
-            uint256 depositAmount = amounts[i];
 
             if (recipient == address(0)) {
                 revert ZeroAddress();
@@ -677,6 +675,11 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
             UserState storage userState = $.userStates[recipient];
             uint256 tokenBaseAmount = userState.tokenAmounts[token];
             if (tokenBaseAmount == 0) {
+                revert InvalidAmount(0, 0);
+            }
+
+            uint256 depositAmount = _fromBaseUnits(tokenBaseAmount, token);
+            if (depositAmount == 0) {
                 revert InvalidAmount(0, 0);
             }
 
