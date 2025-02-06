@@ -431,7 +431,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
      * @param amount Amount of tokens to stake
      * @param token Token contract address
      */
-    function stake(uint256 amount, IERC20 token) external nonReentrant {
+    function deposit(uint256 amount, IERC20 token) external nonReentrant {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
 
         if ($.paused) {
@@ -534,6 +534,39 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         $.totalAmountStaked[token] -= actualBase;
 
         emit Withdrawn(msg.sender, token, actualBase);
+    }
+
+    /// @notice Deposits all user's tokens into the vault
+    /// @param minimumMintBps The minimum amount of shares to mint as basis points of deposit amount (e.g. 9500 = 95%)
+    /// @return shares Array of share amounts received for each token deposit
+    function depositAllTokensToVault(
+        uint256 minimumMintBps
+    ) external nonReentrant returns (uint256[] memory shares) {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+
+        // Get list of all possible tokens
+        IERC20[] memory tokens = $.tokens;
+        shares = new uint256[](tokens.length);
+
+        // Try to deposit each token
+        for (uint256 i = 0; i < tokens.length; i++) {
+            IERC20 token = tokens[i];
+            uint256 tokenAmount = $.userStates[msg.sender].tokenAmounts[token];
+
+            // Skip if user has no balance of this token
+            if (tokenAmount == 0) {
+                continue;
+            }
+
+            // Calculate minimum shares for this deposit
+            uint256 depositAmount = _fromBaseUnits(tokenAmount, token);
+            uint256 minimumShares = (depositAmount * minimumMintBps) / 10_000;
+
+            // Deposit token and store shares received
+            shares[i] = depositToVault(token, minimumShares);
+        }
+
+        return shares;
     }
 
     /// @notice Deposits user's tokens into nYIELD vault and sends shares directly to user
@@ -679,7 +712,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     /// @notice Total amount of tokens staked in the BoringVaultPredeposit contract
     /// @param token The token to query
     /// @return uint256 The total amount of tokens staked in the BoringVaultPredeposit contract
-    function getTotalAmountStaked(
+    function getTotalAmount(
         IERC20 token
     ) external view returns (uint256) {
         return _getBoringVaultPredepositStorage().totalAmountStaked[token];
