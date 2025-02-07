@@ -575,12 +575,8 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         userState.tokenAmounts[token] -= actualBase;
         $.totalAmountStaked[token] -= actualBase;
 
-        // Check if user still meets minimum requirements for automigration
-        if ($.hasRequestedAutomigration[msg.sender] && !_meetsAutomigrationRequirements(msg.sender)) {
-            $.hasRequestedAutomigration[msg.sender] = false;
-            $.automigrationRequests--;
-            emit AutomigrationRequestCancelled(msg.sender);
-        }
+        // Check automigration status after state updates
+        _checkAndUpdateAutomigrationStatus(msg.sender);
 
         emit Withdrawn(msg.sender, token, actualBase);
     }
@@ -978,24 +974,17 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         }
 
         // Check if user meets minimum deposit requirement for any token
-        bool meetsMinimum = false;
-        for (uint256 i = 0; i < $.tokens.length; i++) {
-            IERC20 token = $.tokens[i];
-            uint256 userAmount = $.userStates[msg.sender].tokenAmounts[token];
-            uint256 minRequired = $.minTokenDepositForAutomigration[token];
+        if (!_meetsAutomigrationRequirements(msg.sender)) {
+            IERC20[] memory tokens = $.tokens;
+            uint256[] memory userAmounts = new uint256[](tokens.length);
+            uint256[] memory minimums = new uint256[](tokens.length);
 
-            if (minRequired > 0 && userAmount >= minRequired) {
-                meetsMinimum = true;
-                break;
+            for (uint256 i = 0; i < tokens.length; i++) {
+                userAmounts[i] = $.userStates[msg.sender].tokenAmounts[tokens[i]];
+                minimums[i] = $.minTokenDepositForAutomigration[tokens[i]];
             }
-        }
 
-        if (!meetsMinimum) {
-            // Get the first token's requirements for the error message
-            IERC20 token = $.tokens[0];
-            revert InsufficientDepositForAutomigration(
-                token, $.userStates[msg.sender].tokenAmounts[token], $.minTokenDepositForAutomigration[token]
-            );
+            revert InsufficientDepositForAutomigration(tokens, userAmounts, minimums);
         }
 
         $.hasRequestedAutomigration[msg.sender] = true;
@@ -1046,6 +1035,23 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         IERC20 token
     ) external view returns (uint256) {
         return _getBoringVaultPredepositStorage().minTokenDepositForAutomigration[token];
+    }
+
+    /**
+     * @notice Helper function to check and update user's automigration status
+     * @dev Cancels automigration request if user no longer meets requirements
+     * @param user Address of the user to check
+     */
+    function _checkAndUpdateAutomigrationStatus(
+        address user
+    ) internal {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+
+        if ($.hasRequestedAutomigration[user] && !_meetsAutomigrationRequirements(user)) {
+            $.hasRequestedAutomigration[user] = false;
+            $.automigrationRequests--;
+            emit AutomigrationRequestCancelled(user);
+        }
     }
 
     /**
