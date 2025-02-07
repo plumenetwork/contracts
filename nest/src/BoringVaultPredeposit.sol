@@ -235,14 +235,27 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     /// @param startTime The configured vault conversion start time
     error ConversionNotStarted(uint256 currentTime, uint256 startTime);
 
+    /// @notice Thrown when the maximum number of automigration requests has been reached
     error AutomigrationCapReached();
+
+    /// @notice Thrown when a user tries to request automigration more than once
     error AlreadyRequestedAutomigration();
+
+    /// @notice Thrown when a user's deposits are below the required minimum for automigration
+    /// @param tokens Array of token addresses being checked
+    /// @param userAmounts Array of user's deposited amounts for each token
+    /// @param requiredMinimums Array of minimum required amounts for each token
     error InsufficientDepositForAutomigration(IERC20[] tokens, uint256[] userAmounts, uint256[] requiredMinimums);
 
     /// @notice Error thrown when user hasn't requested automigration
     error NoAutomigrationRequest();
 
+    /// @notice Thrown when attempting to convert tokens to vault shares before conversion is enabled
     error VaultConversionNotStarted();
+
+    /// @notice Thrown when the number of vault shares received is less than the expected minimum
+    /// @param received The actual number of shares received from the vault
+    /// @param minimum The minimum number of shares that was expected
     error InsufficientSharesReceived(uint256 received, uint256 minimum);
 
     // Modifiers
@@ -857,7 +870,9 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         return _storageSlot;
     }
 
-    // Admin functions
+    /// @notice Sets the maximum number of users that can request automigration
+    /// @dev Reverts if new cap is less than current number of requests
+    /// @param newCap The new maximum number of automigration requests allowed
     function setAutomigrationCap(
         uint256 newCap
     ) external onlyRole(ADMIN_ROLE) {
@@ -869,6 +884,9 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         emit AutomigrationCapUpdated(newCap);
     }
 
+    /// @notice Sets the minimum token deposit required for a user to be eligible for automigration
+    /// @param token The token address to set the minimum for
+    /// @param minDeposit The minimum amount required in the token's native decimals
     function setMinTokenDepositForAutomigration(IERC20 token, uint256 minDeposit) external onlyRole(ADMIN_ROLE) {
         _getBoringVaultPredepositStorage().minTokenDepositForAutomigration[token] = minDeposit;
         emit MinTokenDepositUpdated(token, minDeposit);
@@ -910,6 +928,9 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     }
 
     // View functions
+
+    /// @notice Returns the number of remaining automigration slots available
+    /// @return uint256 Number of slots remaining before cap is reached
     function getRemainingAutomigrationSlots() external view returns (uint256) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         if ($.automigrationRequests >= $.automigrationCap) {
@@ -918,6 +939,10 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         return $.automigrationCap - $.automigrationRequests;
     }
 
+    /// @notice Checks if a user is eligible to request automigration
+    /// @dev User is eligible if they haven't already requested, cap isn't reached, and they meet minimum deposits
+    /// @param user Address of the user to check
+    /// @return bool True if user is eligible for automigration
     function isEligibleForAutomigration(
         address user
     ) external view returns (bool) {
@@ -947,6 +972,9 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         return false;
     }
 
+    /// @notice Gets the minimum deposit required for automigration for a specific token
+    /// @param token The token address to query
+    /// @return uint256 The minimum amount required in the token's native decimals
     function getMinTokenDepositForAutomigration(
         IERC20 token
     ) external view returns (uint256) {
