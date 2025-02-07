@@ -9,6 +9,7 @@ import "forge-std/Test.sol";
 
 import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
 import { BridgeData, ITeller } from "../src/interfaces/ITeller.sol";
+import { console2 } from "forge-std/console2.sol";
 
 contract BoringVaultPredepositTest is Test {
 
@@ -107,7 +108,7 @@ contract BoringVaultPredepositTest is Test {
 
         vm.startPrank(user1);
         USDC.approve(address(staking), depositAmount);
-        staking.stake(depositAmount, USDC);
+        staking.deposit(depositAmount, USDC);
 
         // Try to deposit before start time
         vm.expectRevert(
@@ -120,6 +121,64 @@ contract BoringVaultPredepositTest is Test {
         staking.depositToVault(IERC20(address(USDC)), depositAmount);
         vm.stopPrank();
     }
+    /*
+    function testBatchDepositGas() public {
+        // Setup test data
+        uint256 batchSize = 1000; // Reduced from 20000 to 1000
+
+        address[] memory recipients = new address[](batchSize);
+        IERC20[] memory tokens = new IERC20[](batchSize);
+        // Ensure contract has enough ETH for gas
+        vm.deal(address(staking), 100 ether);
+        uint256 initialBalance = address(staking).balance;
+        console2.log("Initial contract balance (ETH):", initialBalance / 1e18);
+        // Fill arrays with test data
+        for (uint256 i = 0; i < batchSize; i++) {
+            recipients[i] = address(uint160(i + 1));
+            tokens[i] = USDC; // Use USDC for all users
+
+            // Fund and stake some USDC for each user
+            deal(address(USDC), recipients[i], 1000 * 1e6); // Give each user 1000 USDC
+            vm.startPrank(recipients[i]);
+            USDC.approve(address(staking), 1000 * 1e6);
+            staking.deposit(1000 * 1e6, USDC);
+            vm.stopPrank();
+        }
+
+        // Set conversion start time to now
+        vm.prank(admin);
+        staking.setVaultConversionStartTime(block.timestamp);
+
+        // Call as timelock
+        vm.startPrank(address(timelock));
+        // Measure gas
+        uint256 startGas = gasleft();
+        staking.batchDepositToVault(recipients, tokens, 9500);
+        uint256 gasUsed = startGas - gasleft();
+        vm.stopPrank();
+
+        uint256 gweiPrice = 3.919e9; // 3.919 gwei in wei
+        uint256 ethPrice = 3500; // $3,500 per ETH
+
+        uint256 ethCost = (gasUsed * gweiPrice) / 1e18;
+        uint256 usdCost = ethCost * ethPrice;
+
+        uint256 finalBalance = address(staking).balance;
+        uint256 actualEthUsed = initialBalance - finalBalance;
+
+        console2.log("Final contract balance (ETH):", finalBalance / 1e18);
+        console2.log("Actual ETH used:", actualEthUsed / 1e18);
+
+        console2.log("Gas used:", gasUsed);
+        console2.log("Estimated cost in ETH:", ethCost);
+        console2.log("Estimated cost in USD:", usdCost);
+
+        // Extrapolate to 20k users
+        console2.log("Estimated total gas for 20k users:", gasUsed * 20);
+        console2.log("Estimated total ETH cost for 20k users:", ethCost * 20);
+        console2.log("Estimated total USD cost for 20k users:", usdCost * 20);
+    }
+    */
 
     function testDepositToVault() public {
         // Setup
@@ -134,7 +193,7 @@ contract BoringVaultPredepositTest is Test {
 
         // First stake USDC
         USDC.approve(address(staking), depositAmount);
-        staking.stake(depositAmount, USDC);
+        staking.deposit(depositAmount, USDC);
 
         // Need to approve vault to spend USDC
         USDC.approve(address(nYIELD), depositAmount);
@@ -152,43 +211,37 @@ contract BoringVaultPredepositTest is Test {
     }
 
     function testBatchDepositToVault_RevertBeforeStart() public {
-        // Setup
-        address[] memory recipients = new address[](2);
-        recipients[0] = user1;
-        recipients[1] = user2;
+        // Setup users with deposits
+        address[] memory users = new address[](2);
+        users[0] = user1;
+        users[1] = user2;
 
-        IERC20[] memory depositAssets = new IERC20[](2);
-        depositAssets[0] = IERC20(address(USDC));
-        depositAssets[1] = IERC20(address(USDC));
+        IERC20[] memory tokens = new IERC20[](2);
+        tokens[0] = USDC;
+        tokens[1] = USDC;
 
-        uint256[] memory amounts = new uint256[](2);
-        amounts[0] = 1000 * 1e6;
-        amounts[1] = 2000 * 1e6;
-
-        // Fund users and have them stake
-        deal(address(USDC), user1, amounts[0]);
-        deal(address(USDC), user2, amounts[1]);
-
+        // Give users USDC and let them deposit
+        deal(address(USDC), user1, 1e9);
         vm.startPrank(user1);
-        USDC.approve(address(staking), amounts[0]);
-        staking.stake(amounts[0], USDC);
+        USDC.approve(address(staking), 1e9);
+        staking.deposit(1e9, USDC);
         vm.stopPrank();
 
+        deal(address(USDC), user2, 2e9);
         vm.startPrank(user2);
-        USDC.approve(address(staking), amounts[1]);
-        staking.stake(amounts[1], USDC);
+        USDC.approve(address(staking), 2e9);
+        staking.deposit(2e9, USDC);
         vm.stopPrank();
+
+        // Set future conversion start time
+        uint256 startTime = block.timestamp + 1 days;
+        vm.prank(admin);
+        staking.setVaultConversionStartTime(startTime);
 
         // Try to batch deposit before start time
         vm.startPrank(address(timelock));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                BoringVaultPredeposit.ConversionNotStarted.selector,
-                block.timestamp,
-                staking.getVaultConversionStartTime()
-            )
-        );
-        staking.batchDepositToVault(recipients, depositAssets, amounts, 1);
+        vm.expectRevert(abi.encodeWithSelector(BoringVaultPredeposit.VaultConversionNotStarted.selector));
+        staking.batchDepositToVault(users, tokens, 1);
         vm.stopPrank();
     }
 
@@ -213,12 +266,12 @@ contract BoringVaultPredepositTest is Test {
         // First have users stake their tokens
         vm.startPrank(user1);
         USDC.approve(address(staking), amounts[0]);
-        staking.stake(amounts[0], USDC);
+        staking.deposit(amounts[0], USDC);
         vm.stopPrank();
 
         vm.startPrank(user2);
         USDC.approve(address(staking), amounts[1]);
-        staking.stake(amounts[1], USDC);
+        staking.deposit(amounts[1], USDC);
         vm.stopPrank();
 
         // Set conversion start time to now
@@ -232,7 +285,7 @@ contract BoringVaultPredepositTest is Test {
         // Execute batch deposit as timelock
         vm.startPrank(address(timelock));
         uint256 minimumMint = 9900; // 9900 / 10000 = 99%
-        uint256[] memory receivedShares = staking.batchDepositToVault(recipients, depositAssets, amounts, minimumMint);
+        uint256[] memory receivedShares = staking.batchDepositToVault(recipients, depositAssets, minimumMint);
         vm.stopPrank();
 
         // Verify results
@@ -255,7 +308,7 @@ contract BoringVaultPredepositTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        staking.batchDepositToVault(recipients, depositAssets, amounts, minimumMintBps);
+        staking.batchDepositToVault(recipients, depositAssets, minimumMintBps);
     }
 
     function testFailDepositToVault_NoBalance() public {
@@ -267,20 +320,23 @@ contract BoringVaultPredepositTest is Test {
     function testStaking() public {
         vm.startPrank(user1);
         USDC.approve(address(staking), 100 * 1e6);
-        staking.stake(100 * 1e6, USDC);
+        staking.deposit(100 * 1e6, USDC);
         vm.stopPrank();
 
-        // getUserTokenAmounts returns amount in 18 decimals (1e18)
-        // so 100 USDC (100 * 1e6) becomes (100 * 1e18)
-        uint256 expectedAmount = 100 * 1e6 * 1e12; // Convert 6 decimals to 18 decimals
-        assertEq(staking.getUserTokenAmounts(user1, USDC), expectedAmount);
+        // Get user state for specific token
+        (uint256 tokenAmount, uint256 lastUpdate) = staking.getUserStateForToken(user1, USDC);
+
+        // Verify amounts
+        assertEq(tokenAmount, 100 * 1e18); // Amount in base unit decimals (e18)
+        assertTrue(lastUpdate > 0);
+        assertEq(staking.getUserTokenAmounts(user1, USDC), 100 * 1e18);
     }
 
     function testFailStakingUnallowedToken() public {
         // Create a random token address that's not allowed
         address randomToken = address(0x123);
         vm.prank(user1);
-        staking.stake(100 * 1e6, IERC20(randomToken));
+        staking.deposit(100 * 1e6, IERC20(randomToken));
     }
 
     function testSetVaultConversionStartTime() public {
@@ -329,7 +385,7 @@ contract BoringVaultPredepositTest is Test {
         // Setup initial state
         vm.startPrank(user1);
         USDC.approve(address(staking), 100 * 1e6);
-        staking.stake(100 * 1e6, USDC);
+        staking.deposit(100 * 1e6, USDC);
         vm.stopPrank();
 
         uint256 initialBalance = USDC.balanceOf(staking.getMultisig());
@@ -360,14 +416,13 @@ contract BoringVaultPredepositTest is Test {
     }
 
     function testGetters() public {
-        assertEq(staking.getTotalAmountStaked(USDC), 0);
+        assertEq(staking.getTotalAmount(USDC), 0);
 
         address[] memory users = staking.getUsers();
         assertEq(users.length, 0);
 
         // Get user state with new return types
-        (IERC20[] memory tokens, BoringVaultPredeposit.UserTokenState[] memory states, uint256 lastUpdate) =
-            staking.getUserState(user1);
+        (IERC20[] memory tokens, uint256[] memory amounts, uint256 lastUpdate) = staking.getUserState(user1);
 
         // Check general state
         assertEq(lastUpdate, 0);
@@ -375,8 +430,7 @@ contract BoringVaultPredepositTest is Test {
         // Check USDC state specifically
         for (uint256 i = 0; i < tokens.length; i++) {
             if (tokens[i] == USDC) {
-                assertEq(states[i].amountSeconds, 0);
-                assertEq(states[i].tokenAmount, 0);
+                assertEq(amounts[i], 0);
                 break;
             }
         }
@@ -414,7 +468,7 @@ contract BoringVaultPredepositTest is Test {
         // Setup
         vm.startPrank(user1);
         USDC.approve(address(staking), 100 * 1e6);
-        staking.stake(100 * 1e6, USDC);
+        staking.deposit(100 * 1e6, USDC);
         vm.stopPrank();
 
         uint256 initialBalance = USDC.balanceOf(user1);
@@ -426,7 +480,7 @@ contract BoringVaultPredepositTest is Test {
         // Assertions
         assertEq(USDC.balanceOf(user1), initialBalance + 50 * 1e6);
         assertEq(staking.getUserTokenAmounts(user1, USDC), 50 * 1e18); // Amount in bae unit decimals (e18)
-        assertEq(staking.getTotalAmountStaked(USDC), 50 * 1e18); // Amount in bae unit decimals (e18)
+        assertEq(staking.getTotalAmount(USDC), 50 * 1e18); // Amount in bae unit decimals (e18)
     }
 
     function testBaseUnitConversions() public {
@@ -443,42 +497,29 @@ contract BoringVaultPredepositTest is Test {
         // Test _toBaseUnits with 18 decimals
         vm.startPrank(user1);
         token18.approve(address(staking), 1 ether);
-        staking.stake(1 ether, token18);
+        staking.deposit(1 ether, token18);
         vm.stopPrank();
 
-        // Should be equal since decimals == _BASE
-        assertEq(staking.getUserTokenAmounts(user1, token18), 1 ether); // Fixed function name
+        // Get user state and verify amounts
+        (uint256 tokenAmount, uint256 lastUpdate) = staking.getUserStateForToken(user1, token18);
+        assertEq(tokenAmount, 1 ether);
+        assertTrue(lastUpdate > 0);
 
         // Test withdraw to verify _fromBaseUnits
         vm.prank(user1);
         staking.withdraw(0.5 ether, token18);
 
+        // Verify final state
+        (tokenAmount, lastUpdate) = staking.getUserStateForToken(user1, token18);
+        assertEq(tokenAmount, 0.5 ether);
         assertEq(token18.balanceOf(user1), 0.5 ether);
-        assertEq(staking.getUserTokenAmounts(user1, token18), 0.5 ether); // Fixed function name
     }
-    /*
-    function testFailWithdrawAfterEnd() public {
-        // Setup
-        vm.startPrank(user1);
-        USDC.approve(address(staking), 100 * 1e6);
-        staking.stake(100 * 1e6, USDC);
-        vm.stopPrank();
-
-        // End staking
-        vm.prank(address(staking.getTimelock()));
-        staking.adminWithdraw();
-
-        // Try to withdraw after end
-        vm.prank(user1);
-        staking.withdraw(50 * 1e6, USDC); // Should revert
-    }
-    */
 
     function testFailWithdrawInsufficientBalance() public {
         // Setup
         vm.startPrank(user1);
         USDC.approve(address(staking), 100 * 1e6);
-        staking.stake(100 * 1e6, USDC);
+        staking.deposit(100 * 1e6, USDC);
         vm.stopPrank();
 
         // Try to withdraw more than staked
@@ -490,6 +531,191 @@ contract BoringVaultPredepositTest is Test {
         // USDC is already allowed in setUp()
         vm.prank(admin);
         staking.allowToken(USDC); // Should revert with AlreadyAllowedStablecoin
+    }
+
+    function testRequestAutomigration() public {
+        // Setup
+        uint256 depositAmount = 1000e6; // 1000 USDC
+        vm.prank(admin);
+        staking.setAutomigrationCap(100);
+        vm.prank(admin);
+        staking.setMinTokenDepositForAutomigration(USDC, 500e6); // 500 USDC minimum
+
+        // Deposit enough to meet requirements
+        vm.startPrank(user1);
+        USDC.approve(address(staking), depositAmount);
+        staking.deposit(depositAmount, USDC);
+
+        // Request automigration
+        staking.requestAutomigration();
+        vm.stopPrank();
+
+        assertTrue(staking.hasRequestedAutomigration(user1));
+        assertEq(staking.getRemainingAutomigrationSlots(), 99);
+    }
+
+    function testRequestAutomigrationWithMultipleTokens() public {
+        // Setup automigration parameters
+        vm.startPrank(admin);
+        staking.setAutomigrationCap(100);
+        staking.setMinTokenDepositForAutomigration(USDC, 1e9); // 1000 USDC
+        staking.setMinTokenDepositForAutomigration(USDT, 5e8); // 500 USDT
+        vm.stopPrank();
+
+        // Setup user balances
+        vm.startPrank(user1);
+        deal(address(USDC), user1, 6e8); // 600 USDC
+        deal(address(USDT), user1, 3e8); // 300 USDT
+
+        // Approve and deposit
+        USDC.approve(address(staking), 6e8);
+        USDT.approve(address(staking), 3e8);
+
+        // Deposit both tokens
+        staking.deposit(6e8, USDC);
+        staking.deposit(3e8, USDT);
+
+        // Try to request automigration
+        vm.expectRevert(
+            abi.encodeWithSelector(BoringVaultPredeposit.InsufficientDepositForAutomigration.selector, user1, USDC)
+        );
+        staking.requestAutomigration();
+        vm.stopPrank();
+    }
+
+    function testFailRequestAutomigrationInsufficientDeposit() public {
+        // Setup
+        vm.prank(admin);
+        staking.setAutomigrationCap(100);
+        vm.prank(admin);
+        staking.setMinTokenDepositForAutomigration(USDC, 1000e6); // 1000 USDC minimum
+
+        // Deposit less than minimum
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 500e6);
+        staking.deposit(500e6, USDC);
+
+        // Should fail
+        staking.requestAutomigration();
+        vm.stopPrank();
+    }
+
+    function testFailRequestAutomigrationCapReached() public {
+        // Setup
+        vm.prank(admin);
+        staking.setAutomigrationCap(1);
+        vm.prank(admin);
+        staking.setMinTokenDepositForAutomigration(USDC, 500e6);
+
+        // First user requests automigration
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 1000e6);
+        staking.deposit(1000e6, USDC);
+        staking.requestAutomigration();
+        vm.stopPrank();
+
+        // Second user tries to request (should fail)
+        vm.startPrank(user2);
+        USDC.approve(address(staking), 1000e6);
+        staking.deposit(1000e6, USDC);
+        staking.requestAutomigration();
+        vm.stopPrank();
+    }
+
+    function testCancelAutomigrationRequest() public {
+        // Setup
+        vm.prank(admin);
+        staking.setAutomigrationCap(100);
+        vm.prank(admin);
+        staking.setMinTokenDepositForAutomigration(USDC, 500e6);
+
+        // Request automigration
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 1000e6);
+        staking.deposit(1000e6, USDC);
+        staking.requestAutomigration();
+
+        // Cancel request
+        staking.cancelAutomigrationRequest();
+        vm.stopPrank();
+
+        assertFalse(staking.hasRequestedAutomigration(user1));
+        assertEq(staking.getRemainingAutomigrationSlots(), 100);
+    }
+
+    function testFailCancelNonexistentAutomigrationRequest() public {
+        vm.prank(user1);
+        staking.cancelAutomigrationRequest();
+    }
+
+    function testAutomigrationStatusAfterWithdraw() public {
+        // Setup
+        vm.prank(admin);
+        staking.setAutomigrationCap(100);
+        vm.prank(admin);
+        staking.setMinTokenDepositForAutomigration(USDC, 500e6); // 500 USDC minimum
+
+        // Request automigration
+        vm.startPrank(user1);
+        USDC.approve(address(staking), 1000e6);
+        staking.deposit(1000e6, USDC);
+        staking.requestAutomigration();
+
+        // Withdraw enough to fall below minimum (600e6)
+        // This should leave 400e6 which is below the 500e6 minimum
+        staking.withdraw(600e6, USDC);
+        vm.stopPrank();
+
+        // Check automigration was cancelled
+        assertFalse(staking.hasRequestedAutomigration(user1));
+        assertEq(staking.getRemainingAutomigrationSlots(), 100);
+    }
+
+    function testBatchDepositToVaultWithAutomigration() public {
+        // Setup
+        vm.prank(admin);
+        staking.setAutomigrationCap(100);
+        vm.prank(admin);
+        staking.setMinTokenDepositForAutomigration(USDC, 500e6); // 500 USDC minimum
+
+        // Setup users
+        address[] memory users = new address[](2);
+        users[0] = user1;
+        users[1] = user2;
+
+        // Setup tokens
+        IERC20[] memory tokens = new IERC20[](2);
+        tokens[0] = USDC;
+        tokens[1] = USDC;
+
+        // Set conversion start time to now
+        vm.prank(admin);
+        staking.setVaultConversionStartTime(block.timestamp);
+
+        // Setup deposits and automigration requests
+        for (uint256 i = 0; i < users.length; i++) {
+            deal(address(USDC), users[i], 1000e6); // Give users USDC
+            vm.startPrank(users[i]);
+            USDC.approve(address(staking), 1000e6);
+            staking.deposit(1000e6, USDC);
+            staking.requestAutomigration();
+            vm.stopPrank();
+        }
+
+        // Execute batch deposit
+        vm.startPrank(address(timelock));
+        uint256[] memory shares = staking.batchDepositToVault(users, tokens, 9900);
+        vm.stopPrank();
+
+        // Verify results
+        for (uint256 i = 0; i < users.length; i++) {
+            assertEq(shares[i], 1000e6, "Should receive correct shares");
+            assertTrue(staking.hasRequestedAutomigration(users[i]), "Automigration request should remain active");
+            assertEq(staking.getUserVaultShares(users[i], tokens[i]), 1000e6, "Should receive correct vault tokens");
+        }
+
+        // Verify automigration cap remains unchanged
+        assertEq(staking.getRemainingAutomigrationSlots(), 98, "Automigration slots should remain unchanged");
     }
 
 }

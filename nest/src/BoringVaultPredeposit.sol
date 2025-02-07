@@ -26,22 +26,14 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
     /**
      * @notice State of a user that deposits into the BoringVaultPredeposit contract
-     * @param amountSeconds Cumulative sum of the amount of tokens staked by the user,
-     *   multiplied by the number of seconds that the user has staked this amount for
-     * @param lastUpdate Timestamp of the most recent update to amountSeconds
+     * @param lastUpdate Timestamp of the most recent update
      * @param tokenAmounts Mapping of token contract addresses
      *   to the amount of tokens staked by the user
      */
     struct UserState {
-        uint256 amountSeconds;
         uint256 lastUpdate;
         mapping(IERC20 => uint256) tokenAmounts;
         mapping(IERC20 => uint256) vaultShares;
-    }
-
-    struct UserTokenState {
-        uint256 amountSeconds;
-        uint256 tokenAmount;
     }
 
     // Storage
@@ -170,6 +162,11 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
     /// @notice Emitted when a user cancels their automigration request
     event AutomigrationRequestCancelled(address indexed user);
+
+    // Events
+    event VaultDeposited(address indexed user, IERC20 indexed token, uint256 amount, uint256 shares);
+    event AutomigrationProcessed(address indexed user);
+
     // Errors
 
     /**
@@ -244,6 +241,9 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
     /// @notice Error thrown when user hasn't requested automigration
     error NoAutomigrationRequest();
+
+    error VaultConversionNotStarted();
+    error InsufficientSharesReceived(uint256 received, uint256 minimum);
 
     // Modifiers
 
@@ -515,39 +515,39 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
      */
     function withdraw(uint256 amount, IERC20 token) external nonReentrant {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+
         if ($.endTime != 0) {
             revert StakingEnded();
         }
-
         if (amount == 0) {
             revert InvalidAmount(0, 0);
         }
 
-        uint8 decimals = $.tokenDecimals[token];
-        if (decimals == 0) {
-            decimals = IERC20Metadata(address(token)).decimals();
-        }
-        uint256 conversionFactor = 10 ** (_BASE - decimals);
+        uint256 baseAmount = _toBaseUnits(amount, token);
 
         UserState storage userState = $.userStates[msg.sender];
-        uint256 requiredBase = amount * conversionFactor;
-        if (userState.tokenAmounts[token] < requiredBase) {
-            revert InsufficientStaked(msg.sender, token, requiredBase, userState.tokenAmounts[token]);
+        if (userState.tokenAmounts[token] < baseAmount) {
+            revert InsufficientStaked(msg.sender, token, baseAmount, userState.tokenAmounts[token]);
         }
 
         uint256 currentTime = block.timestamp;
-
         userState.lastUpdate = currentTime;
 
+        // Get initial balance to verify transfer
         uint256 initialBalance = token.balanceOf(address(this));
-        token.safeTransfer(msg.sender, amount);
-        uint256 finalBalance = token.balanceOf(address(this));
-        uint256 actualBase = (initialBalance - finalBalance) * conversionFactor;
 
+        // Transfer tokens
+        token.safeTransfer(msg.sender, amount);
+
+        // Verify transfer amount
+        uint256 withdrawn = initialBalance - token.balanceOf(address(this));
+        uint256 actualBase = _toBaseUnits(withdrawn, token);
+
+        // Update state
         userState.tokenAmounts[token] -= actualBase;
         $.totalAmountStaked[token] -= actualBase;
 
-        // Check automigration status after state updates
+        // Check and update automigration status
         _checkAndUpdateAutomigrationStatus(msg.sender);
 
         emit Withdrawn(msg.sender, token, actualBase);
@@ -637,107 +637,66 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     }
 
     /// @notice Admin function to deposit multiple users' funds into vault and distribute shares
-    /// @param recipients Array of addresses to receive vault shares
-    /// @param tokens Array of tokens to deposit for each recipient
-    /// @param minimumMintBps The minimum amount of shares to mint
+    /// @param users Array of user addresses to process deposits for
+    /// @param tokens Array of tokens to deposit for each user
+    /// @param minimumMintBps Minimum share percentage to accept (in basis points)
     /// @return shares Array of share amounts received for each deposit
     function batchDepositToVault(
-        address[] calldata recipients,
+        address[] calldata users,
         IERC20[] calldata tokens,
         uint256 minimumMintBps
-    ) external nonReentrant returns (uint256[] memory shares) {
+    ) external onlyTimelock returns (uint256[] memory shares) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
 
-        // If timelock is set, only timelock can call. Otherwise, only admin can call
-        if (address($.timelock) != address(0)) {
-            if (msg.sender != address($.timelock)) {
-                revert Unauthorized(msg.sender, address($.timelock));
-            }
-        } else {
-            if (!hasRole(ADMIN_ROLE, msg.sender)) {
-                revert Unauthorized(msg.sender, $.multisig);
-            }
+        if ($.vaultConversionStartTime == 0 || block.timestamp < $.vaultConversionStartTime) {
+            revert VaultConversionNotStarted();
+        }
+        if (users.length != tokens.length) {
+            revert ArrayLengthMismatch(users.length, tokens.length);
         }
 
-        BoringVault memory vault = $.vault;
+        shares = new uint256[](users.length);
+        IERC20 vaultToken = IERC20(address($.vault.vault));
 
-        if (block.timestamp < $.vaultConversionStartTime) {
-            revert ConversionNotStarted(block.timestamp, $.vaultConversionStartTime);
-        }
-
-        if (recipients.length != tokens.length) {
-            revert ArrayLengthMismatch(recipients.length, tokens.length);
-        }
-
-        shares = new uint256[](recipients.length);
-        uint256 currentTime = block.timestamp;
-        uint256 processedAutomigrations = 0;
-        uint256 remainingSlots = $.automigrationCap - $.automigrationRequests;
-
-        for (uint256 i = 0; i < recipients.length; i++) {
-            address recipient = recipients[i];
+        for (uint256 i = 0; i < users.length; i++) {
+            address user = users[i];
             IERC20 token = tokens[i];
+            UserState storage userState = $.userStates[user];
 
-            if (recipient == address(0)) {
-                revert ZeroAddress();
-            }
-
-            if (!$.allowedTokens[token]) {
-                revert NotAllowedToken(token);
-            }
-
-            // Skip if user hasn't requested automigration
-            if (!$.hasRequestedAutomigration[recipient]) {
+            // Get user's token amount in base units
+            uint256 amount = userState.tokenAmounts[token];
+            if (amount == 0) {
                 continue;
             }
 
-            // Skip if we've reached the automigration cap
-            if (processedAutomigrations >= remainingSlots) {
-                continue;
-            }
+            // Convert from base units back to token decimals
+            uint256 tokenAmount = _fromBaseUnits(amount, token);
 
-            // Get user's token balance and convert to base units
-            UserState storage userState = $.userStates[recipient];
-            uint256 tokenBaseAmount = userState.tokenAmounts[token];
-            if (tokenBaseAmount == 0) {
-                continue;
-            }
+            // Calculate minimum shares (e.g., 9900 = 99%)
+            uint256 minimumShares = (tokenAmount * minimumMintBps) / 10_000;
 
-            uint256 depositAmount = _fromBaseUnits(tokenBaseAmount, token);
-            if (depositAmount == 0) {
-                continue;
-            }
+            // Approve vault to spend tokens
+            token.approve(address($.vault.vault), tokenAmount);
 
-            // Update accumulated stake-time before modifying state
-            userState.lastUpdate = currentTime;
+            // Deposit to vault and get shares (shares will be minted to proxy)
+            uint256 shareAmount = $.vault.teller.deposit(token, tokenAmount, minimumShares);
 
-            // Update state before external calls
+            // Transfer vault shares to user
+            vaultToken.transfer(user, shareAmount);
+
+            // Update state
             userState.tokenAmounts[token] = 0;
-            $.totalAmountStaked[token] -= tokenBaseAmount; // Update per token
+            userState.vaultShares[token] = shareAmount;
+            $.totalAmountStaked[token] -= amount;
 
-            // Calculate minimum shares for this deposit
-            uint256 minimumShares = (depositAmount * minimumMintBps) / 10_000;
+            // Emit event if this was an automigration
+            if ($.hasRequestedAutomigration[user]) {
+                emit AutomigrationProcessed(user);
+            }
 
-            // Approve spending
-            token.safeIncreaseAllowance(address(vault.vault), depositAmount);
-
-            // Deposit and get shares
-            uint256 mintedShares = vault.teller.deposit(token, depositAmount, minimumShares);
-            shares[i] = mintedShares;
-
-            // Transfer and record shares
-            IERC20(address(vault.vault)).safeTransfer(recipient, mintedShares);
-            userState.vaultShares[token] += mintedShares;
-
-            // Update automigration tracking
-            $.hasRequestedAutomigration[recipient] = false;
-            processedAutomigrations++;
-
-            emit ConvertedToBoringVault(recipient, token, depositAmount, mintedShares);
+            shares[i] = shareAmount;
+            emit VaultDeposited(user, token, tokenAmount, shareAmount);
         }
-
-        // Update total automigration requests
-        $.automigrationRequests -= processedAutomigrations;
 
         return shares;
     }
@@ -761,59 +720,41 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     /// @notice Get user's state for all tokens
     /// @param user The address of the user
     /// @return tokens Array of token addresses
-    /// @return states Array of UserTokenState structs containing amountSeconds and amount for each token
+    /// @return amounts Array of token amounts
     /// @return lastUpdate Last update timestamp
     function getUserState(
         address user
-    ) external view returns (IERC20[] memory tokens, UserTokenState[] memory states, uint256 lastUpdate) {
+    ) external view returns (IERC20[] memory tokens, uint256[] memory amounts, uint256 lastUpdate) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         UserState storage userState = $.userStates[user];
 
         tokens = $.tokens;
-        states = new UserTokenState[](tokens.length);
-
-        uint256 currentTime = block.timestamp;
+        amounts = new uint256[](tokens.length);
         lastUpdate = userState.lastUpdate;
 
-        // Calculate current amountSeconds and get token amounts for each token
-        if (lastUpdate != 0) {
-            for (uint256 i = 0; i < tokens.length; i++) {
-                IERC20 token = tokens[i];
-                uint256 tokenAmount = userState.tokenAmounts[token];
-
-                states[i] = UserTokenState({
-                    amountSeconds: userState.amountSeconds + tokenAmount * (currentTime - lastUpdate),
-                    tokenAmount: tokenAmount
-                });
-            }
+        for (uint256 i = 0; i < tokens.length; i++) {
+            amounts[i] = userState.tokenAmounts[tokens[i]];
         }
 
-        return (tokens, states, lastUpdate);
+        return (tokens, amounts, lastUpdate);
     }
 
     /// @notice Get user's state for a specific token
     /// @param user The address of the user
     /// @param token The token to query
-    /// @return amountSeconds Amount-seconds for the specific token
     /// @return tokenAmount Amount of token staked
     /// @return lastUpdate Last update timestamp
     function getUserStateForToken(
         address user,
         IERC20 token
-    ) external view returns (uint256 amountSeconds, uint256 tokenAmount, uint256 lastUpdate) {
+    ) external view returns (uint256 tokenAmount, uint256 lastUpdate) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         UserState storage state = $.userStates[user];
 
-        uint256 currentTime = block.timestamp;
         tokenAmount = state.tokenAmounts[token];
         lastUpdate = state.lastUpdate;
 
-        amountSeconds = state.amountSeconds;
-        if (lastUpdate != 0) {
-            amountSeconds += tokenAmount * (currentTime - lastUpdate);
-        }
-
-        return (amountSeconds, tokenAmount, lastUpdate);
+        return (tokenAmount, lastUpdate);
     }
 
     /// @notice List of all tokens that have been added to the BoringVaultPredeposit contract
@@ -1046,11 +987,13 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
         for (uint256 i = 0; i < $.tokens.length; i++) {
             IERC20 token = $.tokens[i];
-            uint256 userAmount = userState.tokenAmounts[token];
             uint256 minRequired = $.minTokenDepositForAutomigration[token];
 
             // Only consider tokens that have a minimum requirement
             if (minRequired > 0) {
+                // Convert user's base amount back to token decimals for comparison
+                uint256 userAmount = _fromBaseUnits(userState.tokenAmounts[token], token);
+
                 // Calculate percentage with 2 decimal precision (e.g., 50.25% = 5025)
                 uint256 percentage = (userAmount * 10_000) / minRequired;
                 totalPercentage += percentage;
