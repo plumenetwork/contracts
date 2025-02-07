@@ -703,6 +703,8 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
         shares = new uint256[](recipients.length);
         uint256 currentTime = block.timestamp;
+        uint256 processedAutomigrations = 0;
+        uint256 remainingSlots = $.automigrationCap - $.automigrationRequests;
 
         for (uint256 i = 0; i < recipients.length; i++) {
             address recipient = recipients[i];
@@ -721,16 +723,21 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
                 continue;
             }
 
+            // Skip if we've reached the automigration cap
+            if (processedAutomigrations >= remainingSlots) {
+                continue;
+            }
+
             // Get user's token balance and convert to base units
             UserState storage userState = $.userStates[recipient];
             uint256 tokenBaseAmount = userState.tokenAmounts[token];
             if (tokenBaseAmount == 0) {
-                revert InvalidAmount(0, 0);
+                continue;
             }
 
             uint256 depositAmount = _fromBaseUnits(tokenBaseAmount, token);
             if (depositAmount == 0) {
-                revert InvalidAmount(0, 0);
+                continue;
             }
 
             // Update accumulated stake-time before modifying state
@@ -752,10 +759,18 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
             // Transfer and record shares
             IERC20(address(vault.vault)).safeTransfer(recipient, mintedShares);
-            $.userStates[recipient].vaultShares[token] += mintedShares;
+            userState.vaultShares[token] += mintedShares;
+
+            // Update automigration tracking
+            $.hasRequestedAutomigration[recipient] = false;
+            processedAutomigrations++;
 
             emit ConvertedToBoringVault(recipient, token, depositAmount, mintedShares);
         }
+
+        // Update total automigration requests
+        $.automigrationRequests -= processedAutomigrations;
+
         return shares;
     }
 
