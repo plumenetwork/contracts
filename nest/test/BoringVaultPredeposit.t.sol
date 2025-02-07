@@ -125,64 +125,6 @@ contract BoringVaultPredepositTest is Test {
         staking.depositAllTokensToVault(9900);
         vm.stopPrank();
     }
-    /*
-    function testBatchDepositGas() public {
-        // Setup test data
-        uint256 batchSize = 1000; // Reduced from 20000 to 1000
-
-        address[] memory recipients = new address[](batchSize);
-        IERC20[] memory tokens = new IERC20[](batchSize);
-        // Ensure contract has enough ETH for gas
-        vm.deal(address(staking), 100 ether);
-        uint256 initialBalance = address(staking).balance;
-        console2.log("Initial contract balance (ETH):", initialBalance / 1e18);
-        // Fill arrays with test data
-        for (uint256 i = 0; i < batchSize; i++) {
-            recipients[i] = address(uint160(i + 1));
-            tokens[i] = USDC; // Use USDC for all users
-
-            // Fund and stake some USDC for each user
-            deal(address(USDC), recipients[i], 1000 * 1e6); // Give each user 1000 USDC
-            vm.startPrank(recipients[i]);
-            USDC.approve(address(staking), 1000 * 1e6);
-            staking.deposit(1000 * 1e6, USDC);
-            vm.stopPrank();
-        }
-
-        // Set conversion start time to now
-        vm.prank(admin);
-        staking.setVaultConversionStartTime(block.timestamp);
-
-        // Call as timelock
-        vm.startPrank(address(timelock));
-        // Measure gas
-        uint256 startGas = gasleft();
-        staking.batchDepositToVault(recipients, tokens, 9500);
-        uint256 gasUsed = startGas - gasleft();
-        vm.stopPrank();
-
-        uint256 gweiPrice = 3.919e9; // 3.919 gwei in wei
-        uint256 ethPrice = 3500; // $3,500 per ETH
-
-        uint256 ethCost = (gasUsed * gweiPrice) / 1e18;
-        uint256 usdCost = ethCost * ethPrice;
-
-        uint256 finalBalance = address(staking).balance;
-        uint256 actualEthUsed = initialBalance - finalBalance;
-
-        console2.log("Final contract balance (ETH):", finalBalance / 1e18);
-        console2.log("Actual ETH used:", actualEthUsed / 1e18);
-
-        console2.log("Gas used:", gasUsed);
-        console2.log("Estimated cost in ETH:", ethCost);
-        console2.log("Estimated cost in USD:", usdCost);
-
-        // Extrapolate to 20k users
-        console2.log("Estimated total gas for 20k users:", gasUsed * 20);
-        console2.log("Estimated total ETH cost for 20k users:", ethCost * 20);
-        console2.log("Estimated total USD cost for 20k users:", usdCost * 20);
-    }
-    */
 
     function testDepositToVault() public {
         // Setup
@@ -385,24 +327,6 @@ contract BoringVaultPredepositTest is Test {
         // Verify the change
         assertEq(staking.getMultisig(), newMultisig);
     }
-    /*
-    function testAdminWithdraw() public {
-        // Setup initial state
-        vm.startPrank(user1);
-        USDC.approve(address(staking), 100 * 1e6);
-        staking.deposit(100 * 1e6, USDC);
-        vm.stopPrank();
-
-        uint256 initialBalance = USDC.balanceOf(staking.getMultisig());
-
-        vm.prank(address(staking.getTimelock()));
-        staking.adminWithdraw();
-
-        uint256 finalBalance = USDC.balanceOf(staking.getMultisig());
-        assertEq(finalBalance - initialBalance, 100 * 1e6);
-        assertGt(staking.getEndTime(), 0);
-    }
-    */
 
     function testPause() public {
         vm.prank(admin);
@@ -447,15 +371,6 @@ contract BoringVaultPredepositTest is Test {
 
         assertFalse(staking.isPaused());
     }
-    /*
-    function testFailAdminWithdrawAfterEnd() public {
-        vm.prank(address(staking.getTimelock()));
-        staking.adminWithdraw();
-
-        vm.prank(address(staking.getTimelock()));
-        staking.adminWithdraw(); // Should fail as staking has ended
-    }
-    */
 
     function test_RevertWhen_PausingAlreadyPaused() public {
         vm.startPrank(admin);
@@ -760,5 +675,64 @@ contract BoringVaultPredepositTest is Test {
         // Verify automigration cap remains unchanged
         assertEq(staking.getRemainingAutomigrationSlots(), 98, "Automigration slots should remain unchanged");
     }
+
+    /*
+    function testBatchDepositGas() public {
+        // Setup test data
+        uint256 batchSize = 1000; // Reduced from 20000 to 1000
+
+        address[] memory recipients = new address[](batchSize);
+        IERC20[] memory tokens = new IERC20[](batchSize);
+        // Ensure contract has enough ETH for gas
+        vm.deal(address(staking), 100 ether);
+        uint256 initialBalance = address(staking).balance;
+        console2.log("Initial contract balance (ETH):", initialBalance / 1e18);
+        // Fill arrays with test data
+        for (uint256 i = 0; i < batchSize; i++) {
+            recipients[i] = address(uint160(i + 1));
+            tokens[i] = USDC; // Use USDC for all users
+
+            // Fund and stake some USDC for each user
+            deal(address(USDC), recipients[i], 1000 * 1e6); // Give each user 1000 USDC
+            vm.startPrank(recipients[i]);
+            USDC.approve(address(staking), 1000 * 1e6);
+            staking.deposit(1000 * 1e6, USDC);
+            vm.stopPrank();
+        }
+
+        // Set conversion start time to now
+        vm.prank(admin);
+        staking.setVaultConversionStartTime(block.timestamp);
+
+        // Call as timelock
+        vm.startPrank(address(timelock));
+        // Measure gas
+        uint256 startGas = gasleft();
+        staking.batchDepositToVault(recipients, tokens, 9500);
+        uint256 gasUsed = startGas - gasleft();
+        vm.stopPrank();
+
+        uint256 gweiPrice = 3.919e9; // 3.919 gwei in wei
+        uint256 ethPrice = 3500; // $3,500 per ETH
+
+        uint256 ethCost = (gasUsed * gweiPrice) / 1e18;
+        uint256 usdCost = ethCost * ethPrice;
+
+        uint256 finalBalance = address(staking).balance;
+        uint256 actualEthUsed = initialBalance - finalBalance;
+
+        console2.log("Final contract balance (ETH):", finalBalance / 1e18);
+        console2.log("Actual ETH used:", actualEthUsed / 1e18);
+
+        console2.log("Gas used:", gasUsed);
+        console2.log("Estimated cost in ETH:", ethCost);
+        console2.log("Estimated cost in USD:", usdCost);
+
+        // Extrapolate to 20k users
+        console2.log("Estimated total gas for 20k users:", gasUsed * 20);
+        console2.log("Estimated total ETH cost for 20k users:", ethCost * 20);
+        console2.log("Estimated total USD cost for 20k users:", usdCost * 20);
+    }
+    */
 
 }
