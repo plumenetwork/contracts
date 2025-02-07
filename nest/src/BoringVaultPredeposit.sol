@@ -507,18 +507,32 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
         emit Staked(msg.sender, token, amount);
 
-        // Then in the deposit function
-        if (!_meetsAutomigrationRequirements(msg.sender)) {
-            IERC20[] memory tokens = $.tokens;
-            uint256[] memory userAmounts = new uint256[](tokens.length);
-            uint256[] memory minimums = new uint256[](tokens.length);
-
-            for (uint256 i = 0; i < tokens.length; i++) {
-                userAmounts[i] = $.userStates[msg.sender].tokenAmounts[tokens[i]];
-                minimums[i] = $.minTokenDepositForAutomigration[tokens[i]];
+        // Handle automigration request if requested
+        if (requestAutomigration) {
+            if ($.hasRequestedAutomigration[msg.sender]) {
+                revert AlreadyRequestedAutomigration();
             }
 
-            revert InsufficientDepositForAutomigration(tokens, userAmounts, minimums);
+            if ($.automigrationRequests >= $.automigrationCap) {
+                revert AutomigrationCapReached();
+            }
+
+            if (!_meetsAutomigrationRequirements(msg.sender)) {
+                IERC20[] memory tokens = $.tokens;
+                uint256[] memory userAmounts = new uint256[](tokens.length);
+                uint256[] memory minimums = new uint256[](tokens.length);
+
+                for (uint256 i = 0; i < tokens.length; i++) {
+                    userAmounts[i] = $.userStates[msg.sender].tokenAmounts[tokens[i]];
+                    minimums[i] = $.minTokenDepositForAutomigration[tokens[i]];
+                }
+
+                revert InsufficientDepositForAutomigration(tokens, userAmounts, minimums);
+            }
+
+            $.hasRequestedAutomigration[msg.sender] = true;
+            $.automigrationRequests++;
+            emit AutomigrationRequested(msg.sender);
         }
     }
 
@@ -1019,22 +1033,36 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         return _getBoringVaultPredepositStorage().minTokenDepositForAutomigration[token];
     }
 
+    /**
+     * @notice Checks if a user meets automigration requirements based on total percentage across all tokens
+     * @dev User passes if sum of (amount/requirement) percentages across all tokens >= 100%
+     * @param user Address of the user to check
+     * @return bool True if user meets requirements
+     */
     function _meetsAutomigrationRequirements(
         address user
     ) internal view returns (bool) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
         UserState storage userState = $.userStates[user];
 
+        // Calculate sum of percentages across all tokens
+        uint256 totalPercentage = 0;
+
         for (uint256 i = 0; i < $.tokens.length; i++) {
             IERC20 token = $.tokens[i];
             uint256 userAmount = userState.tokenAmounts[token];
             uint256 minRequired = $.minTokenDepositForAutomigration[token];
 
-            if (minRequired > 0 && userAmount >= minRequired) {
-                return true;
+            // Only consider tokens that have a minimum requirement
+            if (minRequired > 0) {
+                // Calculate percentage with 2 decimal precision (e.g., 50.25% = 5025)
+                uint256 percentage = (userAmount * 10_000) / minRequired;
+                totalPercentage += percentage;
             }
         }
-        return false;
+
+        // Pass if total percentage >= 100% (10000 with our 2 decimal precision)
+        return totalPercentage >= 10_000;
     }
 
     /// @notice Get minimum deposit requirements for all tokens
