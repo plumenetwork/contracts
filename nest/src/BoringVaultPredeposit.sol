@@ -923,7 +923,11 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     function setAutomigrationCap(
         uint256 newCap
     ) external onlyRole(ADMIN_ROLE) {
-        _getBoringVaultPredepositStorage().automigrationCap = newCap;
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+        if (newCap < $.automigrationRequests) {
+            revert("Cannot set cap below current requests");
+        }
+        $.automigrationCap = newCap;
         emit AutomigrationCapUpdated(newCap);
     }
 
