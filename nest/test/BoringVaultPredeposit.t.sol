@@ -122,7 +122,7 @@ contract BoringVaultPredepositTest is Test {
                 staking.getVaultConversionStartTime()
             )
         );
-        staking.depositToVault(IERC20(address(USDC)), depositAmount);
+        staking.depositAllTokensToVault(9900);
         vm.stopPrank();
     }
     /*
@@ -203,11 +203,11 @@ contract BoringVaultPredepositTest is Test {
         USDC.approve(address(nYIELD), depositAmount);
 
         // Then deposit to vault
-        uint256 minimumMint = depositAmount * 99 / 100; // 1% slippage
-        uint256 shares = staking.depositToVault(IERC20(address(USDC)), minimumMint);
+        uint256 minimumMintBps = 9900;
+        uint256[] memory shares = staking.depositAllTokensToVault(minimumMintBps);
 
-        // Verify results
-        assertEq(shares, depositAmount, "Should receive same amount of shares");
+        // Verify results - check the USDC position in the shares array
+        assertEq(shares[0], depositAmount, "Should receive same amount of shares");
         assertEq(nYIELD.balanceOf(user1), depositAmount, "Should receive nYIELD tokens");
         assertEq(USDC.balanceOf(address(staking)), 0, "Should have no USDC left");
 
@@ -315,10 +315,9 @@ contract BoringVaultPredepositTest is Test {
         staking.batchDepositToVault(recipients, depositAssets, minimumMintBps);
     }
 
-    function testFailDepositToVault_NoBalance() public {
-        uint256 minimumMint = 0;
+    function test_RevertWhen_NoBalance() public {
         vm.prank(user1);
-        staking.depositToVault(IERC20(address(USDC)), minimumMint);
+        staking.depositAllTokensToVault(9900);
     }
 
     function testStaking() public {
@@ -336,10 +335,11 @@ contract BoringVaultPredepositTest is Test {
         assertEq(staking.getUserTokenAmounts(user1, USDC), 100 * 1e18);
     }
 
-    function testFailStakingUnallowedToken() public {
+    function test_RevertWhen_StakingUnallowedToken() public {
         // Create a random token address that's not allowed
         address randomToken = address(0x123);
         vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(BoringVaultPredeposit.NotAllowedToken.selector, randomToken));
         staking.deposit(100 * 1e6, IERC20(randomToken));
     }
 
@@ -350,8 +350,9 @@ contract BoringVaultPredepositTest is Test {
         assertEq(staking.getVaultConversionStartTime(), newStartTime);
     }
 
-    function testFailNonAdminSetStartTime() public {
+    function test_RevertWhen_NonAdminSetsStartTime() public {
         vm.prank(user1);
+        vm.expectRevert();
         staking.setVaultConversionStartTime(block.timestamp + 1 days);
     }
 
@@ -456,15 +457,17 @@ contract BoringVaultPredepositTest is Test {
     }
     */
 
-    function testFailPauseWhenPaused() public {
+    function test_RevertWhen_PausingAlreadyPaused() public {
         vm.startPrank(admin);
         staking.pause();
+        vm.expectRevert(BoringVaultPredeposit.AlreadyPaused.selector);
         staking.pause(); // Should fail
         vm.stopPrank();
     }
 
-    function testFailUnpauseWhenNotPaused() public {
+    function test_RevertWhen_UnpausingWhenNotPaused() public {
         vm.prank(admin);
+        vm.expectRevert(BoringVaultPredeposit.NotPaused.selector);
         staking.unpause(); // Should fail as contract is not paused
     }
 
@@ -519,7 +522,7 @@ contract BoringVaultPredepositTest is Test {
         assertEq(token18.balanceOf(user1), 0.5 ether);
     }
 
-    function testFailWithdrawInsufficientBalance() public {
+    function test_RevertWhen_WithdrawingInsufficientBalance() public {
         // Setup
         vm.startPrank(user1);
         USDC.approve(address(staking), 100 * 1e6);
@@ -528,12 +531,23 @@ contract BoringVaultPredepositTest is Test {
 
         // Try to withdraw more than staked
         vm.prank(user1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                BoringVaultPredeposit.InsufficientStaked.selector,
+                user1,
+                USDC,
+                150e18, // Amount in base units
+                100e18 // Current balance in base units
+            )
+        );
         staking.withdraw(150 * 1e6, USDC); // Should revert with InsufficientStaked
     }
 
-    function testFailAllowAlreadyAllowedStablecoin() public {
+    function test_RevertWhen_AllowingAlreadyAllowedStablecoin() public {
         // USDC is already allowed in setUp()
         vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(BoringVaultPredeposit.AlreadyAllowedToken.selector, USDC));
         staking.allowToken(USDC); // Should revert with AlreadyAllowedStablecoin
     }
 
@@ -608,7 +622,7 @@ contract BoringVaultPredepositTest is Test {
         vm.stopPrank();
     }
 
-    function testFailRequestAutomigrationInsufficientDeposit() public {
+    function test_RevertWhen_InsufficientDepositForAutomigration() public {
         // Setup
         vm.prank(admin);
         staking.setAutomigrationCap(100);
@@ -620,12 +634,13 @@ contract BoringVaultPredepositTest is Test {
         USDC.approve(address(staking), 500e6);
         staking.deposit(500e6, USDC);
 
+        vm.expectRevert();
         // Should fail
         staking.requestAutomigration();
         vm.stopPrank();
     }
 
-    function testFailRequestAutomigrationCapReached() public {
+    function test_RevertWhen_AutomigrationCapReached() public {
         // Setup
         vm.prank(admin);
         staking.setAutomigrationCap(1);
@@ -643,6 +658,8 @@ contract BoringVaultPredepositTest is Test {
         vm.startPrank(user2);
         USDC.approve(address(staking), 1000e6);
         staking.deposit(1000e6, USDC);
+
+        vm.expectRevert(BoringVaultPredeposit.AutomigrationCapReached.selector);
         staking.requestAutomigration();
         vm.stopPrank();
     }
@@ -668,8 +685,9 @@ contract BoringVaultPredepositTest is Test {
         assertEq(staking.getRemainingAutomigrationSlots(), 100);
     }
 
-    function testFailCancelNonexistentAutomigrationRequest() public {
+    function test_RevertWhen_CancelingNonexistentAutomigrationRequest() public {
         vm.prank(user1);
+        vm.expectRevert(BoringVaultPredeposit.NoAutomigrationRequest.selector);
         staking.cancelAutomigrationRequest();
     }
 

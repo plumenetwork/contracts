@@ -570,7 +570,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     /// @param token The token to deposit
     /// @param minimumMint The minimum amount of shares to mint
     /// @return shares Amount of shares received
-    function depositToVault(IERC20 token, uint256 minimumMint) external nonReentrant returns (uint256 shares) {
+    function depositToVault(IERC20 token, uint256 minimumMint) internal returns (uint256 shares) {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
 
         BoringVault memory vault = $.vault;
@@ -643,7 +643,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
             uint256 minimumShares = (depositAmount * minimumMintBps) / 10_000;
 
             // Deposit token and store shares received
-            shares[i] = this.depositToVault(token, minimumShares);
+            shares[i] = depositToVault(token, minimumShares);
         }
 
         return shares;
