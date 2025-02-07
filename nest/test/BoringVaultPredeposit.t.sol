@@ -5,6 +5,8 @@ import { BoringVaultPredeposit } from "../src/BoringVaultPredeposit.sol";
 import "../src/proxy/BoringVaultPredepositProxy.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "forge-std/Test.sol";
 
 import { IBoringVault } from "../src/interfaces/IBoringVault.sol";
@@ -32,14 +34,16 @@ contract BoringVaultPredepositTest is Test {
     address nYieldTeller = 0x92A735f600175FE9bA350a915572a86F68EBBE66;
     address nYieldVault = 0x892DFf5257B39f7afB7803dd7C81E8ECDB6af3E8;
 
+    using SafeERC20 for IERC20;
+
     function setUp() public {
         // Fork mainnet (Speciying a block number allows us to cache the state at that block)
         vm.createSelectFork(vm.envString("ETH_RPC_URL"), 21_769_985);
 
         // Setup accounts
         admin = address(this);
-        user1 = address(0x1);
-        user2 = address(0x2);
+        user1 = makeAddr("user1");
+        user2 = makeAddr("user2");
 
         // Deploy timelock
         address[] memory proposers = new address[](1);
@@ -558,27 +562,48 @@ contract BoringVaultPredepositTest is Test {
         // Setup automigration parameters
         vm.startPrank(admin);
         staking.setAutomigrationCap(100);
-        staking.setMinTokenDepositForAutomigration(USDC, 1e9); // 1000 USDC
-        staking.setMinTokenDepositForAutomigration(USDT, 5e8); // 500 USDT
+        staking.setMinTokenDepositForAutomigration(USDC, 1000e6); // 1000 USDC
+        staking.setMinTokenDepositForAutomigration(USDT, 1000e6); // 1000 USDT (same as USDC)
         vm.stopPrank();
 
-        // Setup user balances
+        // Setup user balances and deposits
         vm.startPrank(user1);
-        deal(address(USDC), user1, 6e8); // 600 USDC
-        deal(address(USDT), user1, 3e8); // 300 USDT
 
-        // Approve and deposit
-        USDC.approve(address(staking), 6e8);
-        USDT.approve(address(staking), 3e8);
+        // For USDC (6 decimals)
+        deal(address(USDC), user1, 600e6); // 600 USDC
+        USDC.safeIncreaseAllowance(address(staking), 600e6);
+        staking.deposit(600e6, USDC);
 
-        // Deposit both tokens
-        staking.deposit(6e8, USDC);
-        staking.deposit(3e8, USDT);
+        // For USDT (6 decimals)
+        deal(address(USDT), user1, 300e6); // 300 USDT
+        USDT.safeIncreaseAllowance(address(staking), 300e6);
+        staking.deposit(300e6, USDT);
 
-        // Try to request automigration
+        // Create arrays for the expected error
+        IERC20[] memory tokens = new IERC20[](4);
+        tokens[0] = USDC;
+        tokens[1] = USDT;
+        tokens[2] = IERC20(0x4c9EDD5852cd905f086C759E8383e09bff1E68B3);
+        tokens[3] = IERC20(0x9D39A5DE30e57443BfF2A8307A4256c8797A3497);
+
+        uint256[] memory amounts = new uint256[](4);
+        amounts[0] = 600e18; // 600 in base units (e18)
+        amounts[1] = 300e18; // 300 in base units (e18)
+        amounts[2] = 0;
+        amounts[3] = 0;
+
+        uint256[] memory minAmounts = new uint256[](4);
+        minAmounts[0] = 1000e6; // 1000 USDC minimum
+        minAmounts[1] = 1000e6; // 1000 USDT minimum (same as USDC)
+        minAmounts[2] = 0;
+        minAmounts[3] = 0;
+
         vm.expectRevert(
-            abi.encodeWithSelector(BoringVaultPredeposit.InsufficientDepositForAutomigration.selector, user1, USDC)
+            abi.encodeWithSelector(
+                BoringVaultPredeposit.InsufficientDepositForAutomigration.selector, tokens, amounts, minAmounts
+            )
         );
+
         staking.requestAutomigration();
         vm.stopPrank();
     }
