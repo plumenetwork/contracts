@@ -36,7 +36,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         uint256 amountSeconds;
         uint256 lastUpdate;
         mapping(IERC20 => uint256) tokenAmounts;
-        mapping(IERC20 => uint256) tokenAmountSeconds;
         mapping(IERC20 => uint256) vaultShares;
     }
 
@@ -169,6 +168,8 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     event AutomigrationCapUpdated(uint256 newCap);
     event MinTokenDepositUpdated(IERC20 indexed token, uint256 newMinDeposit);
 
+    /// @notice Emitted when a user cancels their automigration request
+    event AutomigrationRequestCancelled(address indexed user);
     // Errors
 
     /**
@@ -240,6 +241,9 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
     error AutomigrationCapReached();
     error AlreadyRequestedAutomigration();
     error InsufficientDepositForAutomigration(IERC20[] tokens, uint256[] userAmounts, uint256[] requiredMinimums);
+
+    /// @notice Error thrown when user hasn't requested automigration
+    error NoAutomigrationRequest();
 
     // Modifiers
 
@@ -497,11 +501,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
             $.users.push(msg.sender);
         }
 
-        // Update accumulated stake-time.
-        if (userState.lastUpdate != 0) {
-            userState.amountSeconds += userState.tokenAmounts[token] * (currentTime - userState.lastUpdate);
-        }
-
         userState.lastUpdate = currentTime;
         userState.tokenAmounts[token] += baseAmount;
         $.totalAmountStaked[token] += baseAmount;
@@ -552,8 +551,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
         uint256 currentTime = block.timestamp;
 
-        // Update accumulated stake-time.
-        userState.amountSeconds += userState.tokenAmounts[token] * (currentTime - userState.lastUpdate);
         userState.lastUpdate = currentTime;
 
         uint256 initialBalance = token.balanceOf(address(this));
@@ -561,12 +558,15 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         uint256 finalBalance = token.balanceOf(address(this));
         uint256 actualBase = (initialBalance - finalBalance) * conversionFactor;
 
-        // Adjust accumulated stake-time proportionally.
-        uint256 prevAmountStaked = userState.tokenAmounts[token];
-        userState.amountSeconds = (userState.amountSeconds * (prevAmountStaked - actualBase)) / prevAmountStaked;
-
         userState.tokenAmounts[token] -= actualBase;
         $.totalAmountStaked[token] -= actualBase;
+
+        // Check if user still meets minimum requirements for automigration
+        if ($.hasRequestedAutomigration[msg.sender] && !_meetsAutomigrationRequirements(msg.sender)) {
+            $.hasRequestedAutomigration[msg.sender] = false;
+            $.automigrationRequests--;
+            emit AutomigrationRequestCancelled(msg.sender);
+        }
 
         emit Withdrawn(msg.sender, token, actualBase);
     }
@@ -602,7 +602,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
 
         // Update accumulated stake-time before modifying state
         uint256 currentTime = block.timestamp;
-        userState.amountSeconds += userState.tokenAmounts[token] * (currentTime - userState.lastUpdate);
         userState.lastUpdate = currentTime;
 
         // Update state before external calls
@@ -721,7 +720,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
             }
 
             // Update accumulated stake-time before modifying state
-            userState.amountSeconds += userState.tokenAmounts[token] * (currentTime - userState.lastUpdate);
             userState.lastUpdate = currentTime;
 
             // Update state before external calls
@@ -1051,6 +1049,23 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         address user
     ) external view returns (bool) {
         return _getBoringVaultPredepositStorage().hasRequestedAutomigration[user];
+    }
+
+    /**
+     * @notice Allows a user to cancel their automigration request
+     * @dev Reverts if user hasn't requested automigration
+     */
+    function cancelAutomigrationRequest() external {
+        BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
+
+        if (!$.hasRequestedAutomigration[msg.sender]) {
+            revert NoAutomigrationRequest();
+        }
+
+        $.hasRequestedAutomigration[msg.sender] = false;
+        $.automigrationRequests--;
+
+        emit AutomigrationRequestCancelled(msg.sender);
     }
 
 }
