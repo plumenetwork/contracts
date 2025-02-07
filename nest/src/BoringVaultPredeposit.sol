@@ -456,7 +456,7 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
      * @param amount Amount of tokens to stake
      * @param token Token contract address
      */
-    function deposit(uint256 amount, IERC20 token, bool requestAutomigration) external nonReentrant {
+    function deposit(uint256 amount, IERC20 token) external nonReentrant {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
 
         if ($.paused) {
@@ -506,34 +506,6 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         $.totalAmountStaked[token] += baseAmount;
 
         emit Staked(msg.sender, token, amount);
-
-        // Handle automigration request if requested
-        if (requestAutomigration) {
-            if ($.hasRequestedAutomigration[msg.sender]) {
-                revert AlreadyRequestedAutomigration();
-            }
-
-            if ($.automigrationRequests >= $.automigrationCap) {
-                revert AutomigrationCapReached();
-            }
-
-            if (!_meetsAutomigrationRequirements(msg.sender)) {
-                IERC20[] memory tokens = $.tokens;
-                uint256[] memory userAmounts = new uint256[](tokens.length);
-                uint256[] memory minimums = new uint256[](tokens.length);
-
-                for (uint256 i = 0; i < tokens.length; i++) {
-                    userAmounts[i] = $.userStates[msg.sender].tokenAmounts[tokens[i]];
-                    minimums[i] = $.minTokenDepositForAutomigration[tokens[i]];
-                }
-
-                revert InsufficientDepositForAutomigration(tokens, userAmounts, minimums);
-            }
-
-            $.hasRequestedAutomigration[msg.sender] = true;
-            $.automigrationRequests++;
-            emit AutomigrationRequested(msg.sender);
-        }
     }
 
     /**
@@ -961,7 +933,10 @@ contract BoringVaultPredeposit is AccessControlUpgradeable, UUPSUpgradeable, Ree
         emit MinTokenDepositUpdated(token, minDeposit);
     }
 
-    // User functions
+    /**
+     * @notice Request automigration for user's deposits
+     * @dev Reverts if user has already requested, cap is reached, or requirements not met
+     */
     function requestAutomigration() external {
         BoringVaultPredepositStorage storage $ = _getBoringVaultPredepositStorage();
 
