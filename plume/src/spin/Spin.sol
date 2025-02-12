@@ -123,10 +123,10 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         string memory callbackSignature = "handleRandomness(uint256,uint256[])";
         uint8 rngCount = 1;
         uint256 numConfirmations = 1;
-        uint256 clientSeed = uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp)));
+        uint256 clientSeed = uint256(keccak256(abi.encodePacked($.admin, block.timestamp)));
 
         uint256 nonce =
-            $.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, address(this));
+            $.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, $.admin);
         $.lastSpinDate[msg.sender] = block.timestamp;
         $.userNonce[nonce] = msg.sender;
 
