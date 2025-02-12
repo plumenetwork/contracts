@@ -276,8 +276,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     function _updateReward(
         address user
     ) internal {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[user];
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        StakeInfo storage info = s.stakeInfo[user];
         if (info.amount == 0) {
             return;
         }
@@ -285,15 +285,45 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         if (elapsed > 0) {
             uint256 reward = (info.amount * elapsed * info.rewardRate) / 1e18;
             if (info.autoCompoundPeriod > 0 && elapsed >= info.autoCompoundPeriod) {
-                // Auto-compound rewards: add rewards directly to the staked amount
                 info.amount += reward;
                 emit RewardsCompounded(user, reward);
             } else {
-                // Accumulate rewards for manual claiming/compounding
                 info.accumulatedRewards += reward;
             }
             info.lastRewardClaim = block.timestamp;
         }
+    }
+
+    /**
+     * @notice Computes the effective reward rate for an arbitrary staking duration.
+     * @dev Decomposes the requested duration into segments corresponding to allowed lockup options.
+     *      Assumes that the allowed options are sorted in descending order by duration.
+     * @param duration The requested staking duration in seconds.
+     * @return rewardRate The effective per-second reward rate.
+     */
+    function _computeEffectiveRewardRate(
+        uint256 duration
+    ) internal view returns (uint256 rewardRate) {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        uint256 totalWeightedAPY = 0;
+        uint256 remaining = duration;
+        // Loop over allowed options (sorted in descending order).
+        for (uint256 i = 0; i < s.lockupOptions.length; i++) {
+            LockupOption memory opt = s.lockupOptions[i];
+            if (remaining >= opt.duration) {
+                uint256 count = remaining / opt.duration;
+                totalWeightedAPY += count * opt.duration * opt.apy;
+                remaining = remaining % opt.duration;
+            }
+        }
+        // If any remainder remains, use the smallest allowed option’s APY.
+        if (remaining > 0) {
+            // Here we assume that the last element is the smallest duration.
+            LockupOption memory smallest = s.lockupOptions[s.lockupOptions.length - 1];
+            totalWeightedAPY += remaining * smallest.apy;
+        }
+        uint256 effectiveAPY = totalWeightedAPY / duration;
+        rewardRate = _computeRewardRate(effectiveAPY);
     }
 
     /**
@@ -370,20 +400,23 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         uint256 duration,
         uint256 apy
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        require(index < $.lockupOptions.length, "Invalid index");
-        $.lockupOptions[index] = LockupOption({ duration: duration, apy: apy });
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        if (index >= s.lockupOptions.length) {
+            revert InvalidIndex();
+        }
+        s.lockupOptions[index] = LockupOption({ duration: duration, apy: apy });
         emit LockupOptionUpdated(index, duration, apy);
     }
 
     function removeLockupOption(
         uint256 index
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        require(index < $.lockupOptions.length, "Invalid index");
-        // Swap with last and pop.
-        $.lockupOptions[index] = $.lockupOptions[$.lockupOptions.length - 1];
-        $.lockupOptions.pop();
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        if (index >= s.lockupOptions.length) {
+            revert InvalidIndex();
+        }
+        s.lockupOptions[index] = s.lockupOptions[s.lockupOptions.length - 1];
+        s.lockupOptions.pop();
         emit LockupOptionRemoved(index);
     }
 
@@ -406,16 +439,13 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     function setAutoCompoundPeriod(
         uint256 period
     ) external nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[msg.sender];
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        StakeInfo storage info = s.stakeInfo[msg.sender];
         if (info.amount == 0) {
             revert NoActiveStake();
         }
-        if (period > 0) {
-            // Check that period is a multiple of 90 days and does not exceed the lock duration.
-            if (period % (90 days) != 0 || period > info.lockDuration) {
-                revert InvalidUnlockTime();
-            }
+        if (period > 0 && (period % (90 days) != 0 || period > info.lockDuration)) {
+            revert InvalidAutoCompoundPeriod();
         }
         info.autoCompoundPeriod = period;
         emit AutoCompoundPeriodSet(msg.sender, period);
@@ -441,55 +471,33 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /**
      * @notice Stake $PLUME in the contract using parked funds.
-     * @dev TODO: unlockTime == 0 for auto-extending staking.
      * @param amount Amount of $PLUME to stake.
      * @param timestamp Timestamp at which the assets at stake unlock.
      */
     function stake(uint256 amount, uint256 timestamp) external nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.cooldownEnd[msg.sender] > block.timestamp) {
-            revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        if (amount < s.minStakeAmount) {
+            revert InvalidAmount(amount, s.minStakeAmount);
         }
-        if (amount < $.minStakeAmount) {
-            revert InvalidAmount(amount, $.minStakeAmount);
-        }
-        if (
-            ($.unlockTime[msg.sender] != 0 && timestamp != $.unlockTime[msg.sender]) || timestamp <= block.timestamp
-                || timestamp > block.timestamp + $.maxStakeInterval
-        ) {
+        if (timestamp <= block.timestamp || timestamp > block.timestamp + s.maxStakeInterval) {
             revert InvalidUnlockTime();
         }
-        if ($.parked[msg.sender] < amount) {
-            revert InsufficientBalance(amount, $.parked[msg.sender]);
+        if (s.parked[msg.sender] < amount) {
+            revert InsufficientBalance(amount, s.parked[msg.sender]);
         }
+        s.parked[msg.sender] -= amount;
 
-        $.parked[msg.sender] -= amount;
-        $.staked[msg.sender] += amount;
-        if ($.unlockTime[msg.sender] == 0) {
-            $.unlockTime[msg.sender] = timestamp;
-        }
-
-        // Initialize the user's detailed stake info.
+        // Compute lock duration and effective reward rate.
         uint256 lockDuration = timestamp - block.timestamp;
-        bool found = false;
-        LockupOption memory option;
-        for (uint256 i = 0; i < $.lockupOptions.length; i++) {
-            if ($.lockupOptions[i].duration == lockDuration) {
-                option = $.lockupOptions[i];
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            revert InvalidUnlockTime();
-        }
-        $.stakeInfo[msg.sender] = StakeInfo({
+        uint256 computedRewardRate = _computeEffectiveRewardRate(lockDuration);
+
+        s.stakeInfo[msg.sender] = StakeInfo({
             amount: amount,
             startTime: block.timestamp,
             lockDuration: lockDuration,
-            rewardRate: _computeRewardRate(option.apy),
+            rewardRate: computedRewardRate,
             lastRewardClaim: block.timestamp,
-            autoCompoundPeriod: 0,
+            autoCompoundPeriod: s.defaultAutoCompoundPeriod,
             accumulatedRewards: 0
         });
 
@@ -498,52 +506,29 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /**
      * @notice Park and stake $PLUME in the contract
-     * @dev TODO unlockTime == 0 for auto-extending staking
      * @param amount Amount of $PLUME to park and stake
      * @param timestamp Timestamp at which the assets at stake unlock
      */
     function parkAndStake(uint256 amount, uint256 timestamp) external nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.cooldownEnd[msg.sender] > block.timestamp) {
-            revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        if (amount < s.minStakeAmount) {
+            revert InvalidAmount(amount, s.minStakeAmount);
         }
-        if (amount < $.minStakeAmount) {
-            revert InvalidAmount(amount, $.minStakeAmount);
-        }
-        if (
-            ($.unlockTime[msg.sender] != 0 && timestamp != $.unlockTime[msg.sender]) || timestamp <= block.timestamp
-                || timestamp > block.timestamp + $.maxStakeInterval
-        ) {
+        if (timestamp <= block.timestamp || timestamp > block.timestamp + s.maxStakeInterval) {
             revert InvalidUnlockTime();
         }
+        SafeERC20.safeTransferFrom(s.plume, msg.sender, address(this), amount);
 
-        SafeERC20.safeTransferFrom($.plume, msg.sender, address(this), amount);
-        $.staked[msg.sender] += amount;
-        if ($.unlockTime[msg.sender] == 0) {
-            $.unlockTime[msg.sender] = timestamp;
-        }
-
-        // Initialize detailed stake info.
         uint256 lockDuration = timestamp - block.timestamp;
-        bool found = false;
-        LockupOption memory option;
-        for (uint256 i = 0; i < $.lockupOptions.length; i++) {
-            if ($.lockupOptions[i].duration == lockDuration) {
-                option = $.lockupOptions[i];
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            revert InvalidUnlockTime();
-        }
-        $.stakeInfo[msg.sender] = StakeInfo({
+        uint256 computedRewardRate = _computeEffectiveRewardRate(lockDuration);
+
+        s.stakeInfo[msg.sender] = StakeInfo({
             amount: amount,
             startTime: block.timestamp,
             lockDuration: lockDuration,
-            rewardRate: _computeRewardRate(option.apy),
+            rewardRate: computedRewardRate,
             lastRewardClaim: block.timestamp,
-            autoCompoundPeriod: $.defaultAutoCompoundPeriod,
+            autoCompoundPeriod: s.defaultAutoCompoundPeriod,
             accumulatedRewards: 0
         });
 
@@ -555,40 +540,48 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @notice Extend the unlock time for the staked assets
      * @param timestamp New timestamp at which the assets at stake unlock
      */
+    /**
+     * @notice Extend the unlock time for the active stake.
+     * @param timestamp New unlock timestamp.
+     */
     function extendTime(
         uint256 timestamp
     ) external nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.cooldownEnd[msg.sender] > block.timestamp) {
-            revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
-        }
-        uint256 currentUnlock = $.unlockTime[msg.sender];
-        if (timestamp <= currentUnlock || timestamp > currentUnlock + $.maxStakeInterval) {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        uint256 currentUnlock = s.stakeInfo[msg.sender].startTime + s.stakeInfo[msg.sender].lockDuration;
+        if (timestamp <= currentUnlock || timestamp > currentUnlock + s.maxStakeInterval) {
             revert InvalidUnlockTime();
         }
         uint256 newLockDuration = timestamp - block.timestamp;
-        $.unlockTime[msg.sender] = timestamp;
-        // Update detailed stake info.
-        StakeInfo storage info = $.stakeInfo[msg.sender];
-        if (info.amount == 0) {
-            revert NoActiveStake();
-        }
-        bool found = false;
-        LockupOption memory option;
-        for (uint256 i = 0; i < $.lockupOptions.length; i++) {
-            if ($.lockupOptions[i].duration == newLockDuration) {
-                option = $.lockupOptions[i];
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            revert InvalidUnlockTime();
-        }
-        info.lockDuration = newLockDuration;
-        info.rewardRate = _computeRewardRate(option.apy);
-        info.lastRewardClaim = block.timestamp;
+        s.stakeInfo[msg.sender].lockDuration = newLockDuration;
+        s.stakeInfo[msg.sender].rewardRate = _computeEffectiveRewardRate(newLockDuration);
+        s.stakeInfo[msg.sender].lastRewardClaim = block.timestamp;
         emit ExtendedTime(msg.sender, timestamp);
+    }
+
+    /**
+     * @notice Unstake a portion of the active stake.
+     * @param amount Amount to unstake.
+     * @return unstakedAmount Amount that was unstaked.
+     */
+    function partialUnstake(
+        uint256 amount
+    ) external nonReentrant returns (uint256 unstakedAmount) {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        StakeInfo storage info = s.stakeInfo[msg.sender];
+        if (block.timestamp < info.startTime + info.lockDuration) {
+            revert NotUnlocked();
+        }
+        if (amount == 0 || amount > info.amount) {
+            revert InsufficientBalance(amount, info.amount);
+        }
+        _updateReward(msg.sender);
+        info.amount -= amount;
+        unstakedAmount = amount;
+        // Move unstaked tokens into cooldown.
+        s.cooldownAmount[msg.sender] += amount;
+        s.cooldownEnd[msg.sender] = block.timestamp + s.cooldownInterval;
+        emit PartialUnstaked(msg.sender, amount);
     }
 
     /**
@@ -598,22 +591,18 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      *   - you cannot set the amount that you unstake; it all unstakes at once
      *   - you cannot stake again until after the cooldown period ends
      */
-    function unstake() external nonReentrant returns (uint256 amount) {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.unlockTime[msg.sender] > block.timestamp) {
+    function unstake() external nonReentrant returns (uint256 unstakedAmount) {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        StakeInfo storage info = s.stakeInfo[msg.sender];
+        uint256 unlockTime = info.startTime + info.lockDuration;
+        if (block.timestamp < unlockTime) {
             revert NotUnlocked();
         }
-
-        amount = $.staked[msg.sender];
-        $.staked[msg.sender] = 0;
-        $.cooled[msg.sender] += amount;
-        $.unlockTime[msg.sender] = 0;
-        $.cooldownEnd[msg.sender] = block.timestamp + $.cooldownInterval;
-
-        // Clear the detailed stake info for the user.
-        delete $.stakeInfo[msg.sender];
-
-        emit Unstaked(msg.sender, amount);
+        unstakedAmount = info.amount;
+        delete s.stakeInfo[msg.sender];
+        s.cooldownAmount[msg.sender] += unstakedAmount;
+        s.cooldownEnd[msg.sender] = block.timestamp + s.cooldownInterval;
+        emit Unstaked(msg.sender, unstakedAmount);
     }
 
     /**
@@ -623,17 +612,17 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     function unpark(
         uint256 amount
     ) external nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.cooled[msg.sender] > 0 && $.cooldownEnd[msg.sender] >= block.timestamp) {
-            $.parked[msg.sender] += $.cooled[msg.sender];
-            $.cooled[msg.sender] = 0;
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        // If cooldown has ended, move cooled tokens to parked.
+        if (s.cooldownEnd[msg.sender] <= block.timestamp && s.cooldownAmount[msg.sender] > 0) {
+            s.parked[msg.sender] += s.cooldownAmount[msg.sender];
+            s.cooldownAmount[msg.sender] = 0;
         }
-
-        if (amount > $.parked[msg.sender]) {
-            revert InsufficientBalance(amount, $.parked[msg.sender]);
+        if (amount > s.parked[msg.sender]) {
+            revert InsufficientBalance(amount, s.parked[msg.sender]);
         }
-        $.parked[msg.sender] -= amount;
-        SafeERC20.safeTransfer($.plume, msg.sender, amount);
+        s.parked[msg.sender] -= amount;
+        SafeERC20.safeTransfer(s.plume, msg.sender, amount);
         emit Unparked(msg.sender, amount);
     }
 
@@ -643,16 +632,19 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     function claimPlume(
         uint256 amount
-    ) external {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        $.claimablePlume[msg.sender] = claimablePlumeBalance(msg.sender);
-        if (amount > $.claimablePlume[msg.sender]) {
-            revert InsufficientBalance(amount, $.claimablePlume[msg.sender]);
+    ) external nonReentrant {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        uint256 totalReward = _totalReward(msg.sender);
+
+        // Reward distribution: If the contract holds enough pUSD, rewards are paid in pUSD; otherwise, the shortfall is
+        // paid in PLUME.
+        uint256 availableStable = s.pUSD.balanceOf(address(this));
+        uint256 plumeReward = (availableStable >= totalReward) ? 0 : totalReward - availableStable;
+        if (amount > plumeReward) {
+            revert InsufficientBalance(amount, plumeReward);
         }
-
-        $.claimablePlume[msg.sender] -= amount;
-        SafeERC20.safeTransfer($.plume, msg.sender, amount);
-
+        // In a real system, update internal accounting accordingly.
+        SafeERC20.safeTransfer(s.plume, msg.sender, amount);
         emit ClaimedPlume(msg.sender, amount);
     }
 
@@ -662,16 +654,15 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     function claimStable(
         uint256 amount
-    ) external {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        $.claimableStable[msg.sender] = claimableStableBalance(msg.sender);
-        if (amount > $.claimableStable[msg.sender]) {
-            revert InsufficientBalance(amount, $.claimableStable[msg.sender]);
+    ) external nonReentrant {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        uint256 totalReward = _totalReward(msg.sender);
+        uint256 availableStable = s.pUSD.balanceOf(address(this));
+        uint256 stableReward = (availableStable >= totalReward) ? totalReward : availableStable;
+        if (amount > stableReward) {
+            revert InsufficientBalance(amount, stableReward);
         }
-
-        $.claimableStable[msg.sender] -= amount;
-        SafeERC20.safeTransfer($.pUSD, msg.sender, amount);
-
+        SafeERC20.safeTransfer(s.pUSD, msg.sender, amount);
         emit ClaimedStable(msg.sender, amount);
     }
 
@@ -813,6 +804,17 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         address user
     ) external view returns (StakeInfo memory info) {
         return _getPlumeStakingStorage().stakeInfo[user];
+    }
+
+    /**
+     * @notice Returns the unlock timestamp for an active stake.
+     */
+    function stakeUnlockTime(
+        address user
+    ) external view returns (uint256) {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        StakeInfo storage info = s.stakeInfo[user];
+        return info.startTime + info.lockDuration;
     }
 
 }
