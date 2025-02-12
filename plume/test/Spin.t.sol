@@ -5,6 +5,7 @@ import "../src/interfaces/ISupraRouterContract.sol";
 import "../src/spin/DateTime.sol";
 import "../src/spin/Spin.sol";
 import "forge-std/Test.sol";
+import "forge-std/console.sol";
 
 interface IDepositContract {
 
@@ -93,9 +94,20 @@ IDepositContract(DEPOSIT_CONTRACT).setMinBalanceClient(0.05 ether);
         (uint256 streak, uint256 feathers) = spin.getStreakAndFeathers(USER);
         assertEq(streak, 0, "Initial streak should be 0");
         assertEq(feathers, 0, "Initial feathers should be 0");
-
+        vm.record();
         vm.prank(USER);
         spin.startSpin();
+        // Retrieve the recorded storage accesses
+        (bytes32[] memory reads, bytes32[] memory writes) = vm.accesses(address(spin));
+
+        // Get the call data size
+        uint256 callDataSize = writes.length * 32; // Each slot is 32 bytes
+
+        // Log the size (useful for debugging)
+        emit log_named_uint("Call Data Size (bytes)", callDataSize);
+
+        // Assert that the call data is non-zero
+        assertGt(callDataSize, 0, "Call Data Size should be greater than 0");
 
     }
 
