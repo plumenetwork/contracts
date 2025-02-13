@@ -4,7 +4,7 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -217,35 +217,35 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /**
      * @notice Set the minimum amount of $PLUME that can be staked
-     * @param minStakeAmount Minimum amount of $PLUME that can be staked
+     * @param minStakeAmount_ Minimum amount of $PLUME that can be staked
      */
     function setMinStakeAmount(
-        uint256 minStakeAmount
+        uint256 minStakeAmount_
     ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        _getPlumeStakingStorage().minStakeAmount = minStakeAmount;
-        emit SetMinStakeAmount(minStakeAmount);
+        _getPlumeStakingStorage().minStakeAmount = minStakeAmount_;
+        emit SetMinStakeAmount(minStakeAmount_);
     }
 
     /**
      * @notice Set the cooldown interval for staked assets to be unlocked and parked
-     * @param cooldownInterval Cooldown interval for staked assets to be unlocked and parked
+     * @param cooldownInterval_ Cooldown interval for staked assets to be unlocked and parked
      */
     function setCooldownInterval(
-        uint256 cooldownInterval
+        uint256 cooldownInterval_
     ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        _getPlumeStakingStorage().cooldownInterval = cooldownInterval;
-        emit SetCooldownInterval(cooldownInterval);
+        _getPlumeStakingStorage().cooldownInterval = cooldownInterval_;
+        emit SetCooldownInterval(cooldownInterval_);
     }
 
     /**
      * @notice Set the rate of $pUSD rewarded per $PLUME staked per second
-     * @param perSecondRewardRate Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
+     * @param perSecondRewardRate_ Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
      */
     function setPerSecondRewardRate(
-        uint256 perSecondRewardRate
+        uint256 perSecondRewardRate_
     ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        _getPlumeStakingStorage().perSecondRewardRate = perSecondRewardRate;
-        emit SetPerSecondRewardRate(perSecondRewardRate);
+        _getPlumeStakingStorage().perSecondRewardRate = perSecondRewardRate_;
+        emit SetPerSecondRewardRate(perSecondRewardRate_);
     }
 
     // User Functions
@@ -421,7 +421,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     function stakeInfo(
         address user
-    ) external view returns (StakeInfo info) {
+    ) external view returns (StakeInfo memory info) {
         info = _getPlumeStakingStorage().stakeInfo[user];
     }
 
