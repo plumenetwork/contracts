@@ -4,7 +4,7 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -12,10 +12,13 @@ import { Plume } from "./Plume.sol";
 
 /**
  * @title PlumeStaking
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Staking contract for $PLUME
  */
-contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
+contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
+
+    using SafeERC20 for Plume;
+    using SafeERC20 for IERC20;
 
     // Storage
 
@@ -29,22 +32,20 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         uint256 minStakeAmount;
         /// @dev Maximum interval for which assets can be staked for
         uint256 maxStakeInterval;
-        /// @dev Cooldown interval for staked assets to be unlocked and parked
+        /// @dev Cooldown interval for unstaked assets to be unlocked and parked
         uint256 cooldownInterval;
-        /// @dev Amount of $PLUME staked by each user
-        mapping(address user => uint256 amount) staked;
-        /// @dev Amount of $PLUME parked by each user
+        /// @dev Rate of $pUSD rewarded per $PLUME staked per year, scaled by _BASE
+        uint256 annualRewardRate;
+        /// @dev Amount of $PLUME deposited but not staked by each user
         mapping(address user => uint256 amount) parked;
-        /// @dev Amount of $PLUME awaiting cooldown by each user
+        /// @dev Amount of $PLUME that are in cooldown (unstaked but not yet withdrawable)
         mapping(address user => uint256 amount) cooled;
-        /// @dev Timestamp at which the assets at stake unlock for each user
+        /// @dev Timestamp at which the cooldown period ends for a user
         mapping(address user => uint256 timestamp) unlockTime;
         /// @dev Timestamp at which the cooldown period ends when the user is unstaking
         mapping(address user => uint256 timestamp) cooldownEnd;
-        /// @dev Amount of $PLUME available to claim by each user
-        mapping(address user => uint256 amount) claimablePlume;
-        /// @dev Amount of $pUSD available to claim by each user
-        mapping(address user => uint256 amount) claimableStable;
+        /// @dev Detailed active stake info for each user
+        mapping(address user => StakeInfo info) stakeInfo;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.PlumeStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -57,12 +58,53 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         }
     }
 
+    // Structs
+
+    /// @dev Detailed active stake information for each user
+    struct StakeInfo {
+        /// @dev Amount of $PLUME staked
+        uint256 amount;
+        /// @dev Accumulated rewards for the stake
+        uint256 accumulatedRewards;
+        /// @dev Timestamp at which the stake info was last updated
+        uint256 lastUpdateTimestamp;
+    }
+
     // Constants
 
+    /// @notice Role for the admin of PlumeStaking
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of PlumeStaking
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
+    /// @notice Scaling factor for reward rates
+    uint256 public constant _BASE = 1e18;
+
     // Events
+
+    /**
+     * @notice Emitted when the minimum stake amount is set
+     * @param minStakeAmount Minimum amount of $PLUME that can be staked
+     */
+    event SetMinStakeAmount(uint256 minStakeAmount);
+
+    /**
+     * @notice Emitted when the maximum stake interval is set
+     * @param maxStakeInterval Maximum interval for which assets can be staked for
+     */
+    event SetMaxStakeInterval(uint256 maxStakeInterval);
+
+    /**
+     * @notice Emitted when the cooldown interval is set
+     * @param cooldownInterval Cooldown interval for staked assets to be unlocked and parked
+     */
+    event SetCooldownInterval(uint256 cooldownInterval);
+
+    /**
+     * @notice Emitted when the rate of $pUSD rewarded per $PLUME staked per year is set
+     * @param annualRewardRate Rate of $pUSD rewarded per $PLUME staked per year, scaled by _BASE
+     */
+    event SetAnnualRewardRate(uint256 annualRewardRate);
 
     /**
      * @notice Emitted when a user parks $PLUME
@@ -168,6 +210,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     function initialize(address owner, address plume_, address pUSD) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
 
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         $.plume = Plume(plume_);
@@ -175,8 +218,10 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         $.minStakeAmount = 1e18;
         $.maxStakeInterval = 365 * 4 + 1 days;
         $.cooldownInterval = 7 days;
+        $.annualRewardRate = 1e18 + 1e18 * 0.05 * 0.12;
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(ADMIN_ROLE, owner);
         _grantRole(UPGRADER_ROLE, owner);
     }
 
@@ -190,6 +235,52 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         address newImplementation
     ) internal override onlyRole(UPGRADER_ROLE) { }
 
+    // Admin Functions
+
+    /**
+     * @notice Set the minimum amount of $PLUME that can be staked
+     * @param minStakeAmount Minimum amount of $PLUME that can be staked
+     */
+    function setMinStakeAmount(
+        uint256 minStakeAmount
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        _getPlumeStakingStorage().minStakeAmount = minStakeAmount;
+        emit SetMinStakeAmount(minStakeAmount);
+    }
+
+    /**
+     * @notice Set the maximum interval for which assets can be staked for
+     * @param maxStakeInterval Maximum interval for which assets can be staked for
+     */
+    function setMaxStakeInterval(
+        uint256 maxStakeInterval
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        _getPlumeStakingStorage().maxStakeInterval = maxStakeInterval;
+        emit SetMaxStakeInterval(maxStakeInterval);
+    }
+
+    /**
+     * @notice Set the cooldown interval for staked assets to be unlocked and parked
+     * @param cooldownInterval Cooldown interval for staked assets to be unlocked and parked
+     */
+    function setCooldownInterval(
+        uint256 cooldownInterval
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        _getPlumeStakingStorage().cooldownInterval = cooldownInterval;
+        emit SetCooldownInterval(cooldownInterval);
+    }
+
+    /**
+     * @notice Set the rate of $pUSD rewarded per $PLUME staked per year
+     * @param annualRewardRate Rate of $pUSD rewarded per $PLUME staked per year, scaled by _BASE
+     */
+    function setAnnualRewardRate(
+        uint256 annualRewardRate
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        _getPlumeStakingStorage().annualRewardRate = annualRewardRate;
+        emit SetAnnualRewardRate(annualRewardRate);
+    }
+
     // User Functions
 
     /**
@@ -198,7 +289,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     function park(
         uint256 amount
-    ) external {
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         if (amount < $.minStakeAmount) {
             revert InvalidAmount(amount, $.minStakeAmount);
@@ -216,7 +307,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param amount Amount of $PLUME to stake
      * @param timestamp Timestamp at which the assets at stake unlock
      */
-    function stake(uint256 amount, uint256 timestamp) external {
+    function stake(uint256 amount, uint256 timestamp) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         if ($.cooldownEnd[msg.sender] > block.timestamp) {
             revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
@@ -249,7 +340,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param amount Amount of $PLUME to park and stake
      * @param timestamp Timestamp at which the assets at stake unlock
      */
-    function parkAndStake(uint256 amount, uint256 timestamp) external {
+    function parkAndStake(uint256 amount, uint256 timestamp) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         if ($.cooldownEnd[msg.sender] > block.timestamp) {
             revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
@@ -280,7 +371,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     function extendTime(
         uint256 timestamp
-    ) external {
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         if ($.cooldownEnd[msg.sender] > block.timestamp) {
             revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
@@ -301,7 +392,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      *   - you cannot set the amount that you unstake; it all unstakes at once
      *   - you cannot stake again until after the cooldown period ends
      */
-    function unstake() external returns (uint256 amount) {
+    function unstake() external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         if ($.unlockTime[msg.sender] > block.timestamp) {
             revert NotUnlocked();
@@ -322,7 +413,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     function unpark(
         uint256 amount
-    ) external {
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         if ($.cooled[msg.sender] > 0 && $.cooldownEnd[msg.sender] >= block.timestamp) {
             $.parked[msg.sender] += $.cooled[msg.sender];
@@ -344,7 +435,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     function claimPlume(
         uint256 amount
-    ) external {
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         $.claimablePlume[msg.sender] = claimablePlumeBalance(msg.sender);
         if (amount > $.claimablePlume[msg.sender]) {
@@ -363,7 +454,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     function claimStable(
         uint256 amount
-    ) external {
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         $.claimableStable[msg.sender] = claimableStableBalance(msg.sender);
         if (amount > $.claimableStable[msg.sender]) {
@@ -396,6 +487,22 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     /// @notice Cooldown interval for staked assets to be unlocked and parked
     function cooldownInterval() external view returns (uint256) {
         return _getPlumeStakingStorage().cooldownInterval;
+    }
+
+    /// @notice Rate of $pUSD rewarded per $PLUME staked per year, scaled by _BASE
+    function annualRewardRate() external view returns (uint256) {
+        return _getPlumeStakingStorage().annualRewardRate;
+    }
+
+    /**
+     * @notice Detailed active stake information for a user
+     * @param user Address of the user
+     * @return info Detailed active stake information for the user
+     */
+    function stakeInfo(
+        address user
+    ) external view returns (StakeInfo info) {
+        info = _getPlumeStakingStorage().stakeInfo[user];
     }
 
     /**
