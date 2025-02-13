@@ -38,8 +38,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         mapping(address user => uint256 amount) parked;
         /// @dev Amount of $PLUME that are in cooldown (unstaked but not yet withdrawable)
         mapping(address user => uint256 amount) cooled;
-        /// @dev Timestamp at which the cooldown period ends for a user
-        mapping(address user => uint256 timestamp) unlockTime;
         /// @dev Timestamp at which the cooldown period ends when the user is unstaking
         mapping(address user => uint256 timestamp) cooldownEnd;
         /// @dev Detailed active stake info for each user
@@ -109,16 +107,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @notice Emitted when a user stakes $PLUME
      * @param user Address of the user that staked $PLUME
      * @param amount Amount of $PLUME staked
-     * @param timestamp Timestamp at which the assets at stake unlock
      */
-    event Staked(address indexed user, uint256 amount, uint256 timestamp);
-
-    /**
-     * @notice Emitted when a user extends the time of their stake
-     * @param user Address of the user that extended the time of their stake
-     * @param timestamp Timestamp at which the assets at stake unlock
-     */
-    event ExtendedTime(address indexed user, uint256 timestamp);
+    event Staked(address indexed user, uint256 amount);
 
     /**
      * @notice Emitted when a user unstakes $PLUME
@@ -156,9 +146,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param minStakeAmount Minimum amount of $PLUME allowed
      */
     error InvalidAmount(uint256 amount, uint256 minStakeAmount);
-
-    /// @notice Indicates a failure because the unlock time is invalid
-    error InvalidUnlockTime();
 
     /// @notice Indicates a failure because the assets at stake are not unlocked
     error NotUnlocked();
@@ -283,22 +270,17 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /**
      * @notice Stake $PLUME in the contract
-     * @dev TODO unlockTime == 0 for auto-extending staking
      * @param amount Amount of $PLUME to stake
-     * @param timestamp Timestamp at which the assets at stake unlock
      */
-    function stake(uint256 amount, uint256 timestamp) external nonReentrant {
+    function stake(
+        uint256 amount
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         if ($.cooldownEnd[msg.sender] > block.timestamp) {
             revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
         }
         if (amount < $.minStakeAmount) {
             revert InvalidAmount(amount, $.minStakeAmount);
-        }
-        if (
-            ($.unlockTime[msg.sender] != 0 && timestamp != $.unlockTime[msg.sender]) || timestamp <= block.timestamp
-        ) {
-            revert InvalidUnlockTime();
         }
         if ($.parked[msg.sender] < amount) {
             revert InsufficientBalance(amount, $.parked[msg.sender]);
@@ -306,20 +288,17 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
         $.parked[msg.sender] -= amount;
         $.staked[msg.sender] += amount;
-        if ($.unlockTime[msg.sender] == 0) {
-            $.unlockTime[msg.sender] = timestamp;
-        }
 
-        emit Staked(msg.sender, amount, timestamp);
+        emit Staked(msg.sender, amount);
     }
 
     /**
      * @notice Park and stake $PLUME in the contract
-     * @dev TODO unlockTime == 0 for auto-extending staking
      * @param amount Amount of $PLUME to park and stake
-     * @param timestamp Timestamp at which the assets at stake unlock
      */
-    function parkAndStake(uint256 amount, uint256 timestamp) external nonReentrant {
+    function parkAndStake(
+        uint256 amount
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         if ($.cooldownEnd[msg.sender] > block.timestamp) {
             revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
@@ -327,40 +306,12 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         if (amount < $.minStakeAmount) {
             revert InvalidAmount(amount, $.minStakeAmount);
         }
-        if (
-            ($.unlockTime[msg.sender] != 0 && timestamp != $.unlockTime[msg.sender]) || timestamp <= block.timestamp
-        ) {
-            revert InvalidUnlockTime();
-        }
 
         SafeERC20.safeTransferFrom($.plume, msg.sender, address(this), amount);
         $.staked[msg.sender] += amount;
-        if ($.unlockTime[msg.sender] == 0) {
-            $.unlockTime[msg.sender] = timestamp;
-        }
 
         emit Parked(msg.sender, amount);
-        emit Staked(msg.sender, amount, timestamp);
-    }
-
-    /**
-     * @notice Extend the unlock time for the staked assets
-     * @param timestamp New timestamp at which the assets at stake unlock
-     */
-    function extendTime(
-        uint256 timestamp
-    ) external nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.cooldownEnd[msg.sender] > block.timestamp) {
-            revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
-        }
-        if (timestamp <= $.unlockTime[msg.sender]) {
-            revert InvalidUnlockTime();
-        }
-
-        $.unlockTime[msg.sender] = timestamp;
-
-        emit ExtendedTime(msg.sender, timestamp);
+        emit Staked(msg.sender, amount);
     }
 
     /**
@@ -372,14 +323,10 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     function unstake() external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.unlockTime[msg.sender] > block.timestamp) {
-            revert NotUnlocked();
-        }
 
         amount = $.staked[msg.sender];
         $.staked[msg.sender] = 0;
         $.cooled[msg.sender] += amount;
-        $.unlockTime[msg.sender] = 0;
         $.cooldownEnd[msg.sender] = block.timestamp + $.cooldownInterval;
 
         emit Unstaked(msg.sender, amount);
@@ -509,17 +456,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         address user
     ) external view returns (uint256) {
         return _getPlumeStakingStorage().cooled[user];
-    }
-
-    /**
-     * @notice Timestamp at which the assets at stake unlock for a user
-     * @param user Address of the user
-     * @return timestamp Timestamp at which the assets at stake unlock
-     */
-    function unlockTime(
-        address user
-    ) external view returns (uint256) {
-        return _getPlumeStakingStorage().unlockTime[user];
     }
 
     /**
