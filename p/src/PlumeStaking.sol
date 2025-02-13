@@ -453,4 +453,5 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             amount += (info.staked * (block.timestamp - info.lastUpdateTimestamp) * $.perSecondRewardRate) / _BASE;
         }
     }
+
 }
