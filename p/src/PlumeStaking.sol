@@ -179,7 +179,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         $.pUSD = IERC20(pUSD);
         $.minStakeAmount = 1e18;
         $.cooldownInterval = 7 days;
-        $.perSecondRewardRate = _BASE * 0.05 * 0.12;
+        $.perSecondRewardRate = (_BASE * 5 * 12) / (100 * 100);
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
@@ -207,14 +207,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     ) internal {
         PlumeStakingStorage storage s = _getPlumeStakingStorage();
         StakeInfo storage info = s.stakeInfo[user];
-        info = StakeInfo({
-            staked: info.staked,
-            parked: info.parked,
-            cooled: info.cooled,
-            cooldownEnd: info.cooldownEnd,
-            accumulatedRewards: claimableBalance(user),
-            lastUpdateTimestamp: block.timestamp
-        });
+        info.accumulatedRewards = claimableBalance(user);
+        info.lastUpdateTimestamp = block.timestamp;
     }
 
     // Admin Functions
