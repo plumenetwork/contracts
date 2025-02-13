@@ -34,8 +34,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         uint256 maxStakeInterval;
         /// @dev Cooldown interval for unstaked assets to be unlocked and parked
         uint256 cooldownInterval;
-        /// @dev Rate of $pUSD rewarded per $PLUME staked per year, scaled by _BASE
-        uint256 annualRewardRate;
+        /// @dev Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
+        uint256 perSecondRewardRate;
         /// @dev Amount of $PLUME deposited but not staked by each user
         mapping(address user => uint256 amount) parked;
         /// @dev Amount of $PLUME that are in cooldown (unstaked but not yet withdrawable)
@@ -101,10 +101,10 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     event SetCooldownInterval(uint256 cooldownInterval);
 
     /**
-     * @notice Emitted when the rate of $pUSD rewarded per $PLUME staked per year is set
-     * @param annualRewardRate Rate of $pUSD rewarded per $PLUME staked per year, scaled by _BASE
+     * @notice Emitted when the rate of $pUSD rewarded per $PLUME staked per second is set
+     * @param perSecondRewardRate Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
      */
-    event SetAnnualRewardRate(uint256 annualRewardRate);
+    event SetPerSecondRewardRate(uint256 perSecondRewardRate);
 
     /**
      * @notice Emitted when a user parks $PLUME
@@ -218,7 +218,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         $.minStakeAmount = 1e18;
         $.maxStakeInterval = 365 * 4 + 1 days;
         $.cooldownInterval = 7 days;
-        $.annualRewardRate = 1e18 + 1e18 * 0.05 * 0.12;
+        $.perSecondRewardRate = 1e18 * 0.05 * 0.12;
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
@@ -271,14 +271,14 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     /**
-     * @notice Set the rate of $pUSD rewarded per $PLUME staked per year
-     * @param annualRewardRate Rate of $pUSD rewarded per $PLUME staked per year, scaled by _BASE
+     * @notice Set the rate of $pUSD rewarded per $PLUME staked per second
+     * @param perSecondRewardRate Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
      */
-    function setAnnualRewardRate(
-        uint256 annualRewardRate
+    function setPerSecondRewardRate(
+        uint256 perSecondRewardRate
     ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        _getPlumeStakingStorage().annualRewardRate = annualRewardRate;
-        emit SetAnnualRewardRate(annualRewardRate);
+        _getPlumeStakingStorage().perSecondRewardRate = perSecondRewardRate;
+        emit SetPerSecondRewardRate(perSecondRewardRate);
     }
 
     // User Functions
@@ -489,9 +489,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         return _getPlumeStakingStorage().cooldownInterval;
     }
 
-    /// @notice Rate of $pUSD rewarded per $PLUME staked per year, scaled by _BASE
-    function annualRewardRate() external view returns (uint256) {
-        return _getPlumeStakingStorage().annualRewardRate;
+    /// @notice Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
+    function perSecondRewardRate() external view returns (uint256) {
+        return _getPlumeStakingStorage().perSecondRewardRate;
     }
 
     /**
