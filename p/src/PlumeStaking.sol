@@ -4,21 +4,21 @@ pragma solidity ^0.8.25;
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { Plume } from "./Plume.sol";
 
 /**
  * @title PlumeStaking
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Staking contract for $PLUME
  */
-contract PlumeStaking is
-    Initializable,
-    AccessControlUpgradeable,
-    UUPSUpgradeable
-{
+contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
+
+    using SafeERC20 for Plume;
+    using SafeERC20 for IERC20;
 
     // Storage
 
@@ -30,24 +30,12 @@ contract PlumeStaking is
         IERC20 pUSD;
         /// @dev Minimum amount of $PLUME that can be staked
         uint256 minStakeAmount;
-        /// @dev Maximum interval for which assets can be staked for
-        uint256 maxStakeInterval;
-        /// @dev Cooldown interval for staked assets to be unlocked and parked
+        /// @dev Cooldown interval for unstaked assets to be unlocked and parked
         uint256 cooldownInterval;
-        /// @dev Amount of $PLUME staked by each user
-        mapping(address user => uint256 amount) staked;
-        /// @dev Amount of $PLUME parked by each user
-        mapping(address user => uint256 amount) parked;
-        /// @dev Amount of $PLUME awaiting cooldown by each user
-        mapping(address user => uint256 amount) cooled;
-        /// @dev Timestamp at which the assets at stake unlock for each user
-        mapping(address user => uint256 timestamp) unlockTime;
-        /// @dev Timestamp at which the cooldown period ends when the user is unstaking
-        mapping(address user => uint256 timestamp) cooldownEnd;
-        /// @dev Amount of $PLUME available to claim by each user
-        mapping(address user => uint256 amount) claimablePlume;
-        /// @dev Amount of $pUSD available to claim by each user
-        mapping(address user => uint256 amount) claimableStable;
+        /// @dev Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
+        uint256 perSecondRewardRate;
+        /// @dev Detailed active stake info for each user
+        mapping(address user => StakeInfo info) stakeInfo;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.PlumeStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -60,12 +48,53 @@ contract PlumeStaking is
         }
     }
 
+    // Structs
+
+    /// @dev Detailed active stake information for each user
+    struct StakeInfo {
+        /// @dev Amount of $PLUME staked
+        uint256 staked;
+        /// @dev Amount of $PLUME deposited but not staked by the user
+        uint256 parked;
+        /// @dev Amount of $PLUME that are in cooldown, i.e. unstaked but not yet withdrawable
+        uint256 cooled;
+        /// @dev Timestamp at which the cooldown period ends for the stake
+        uint256 cooldownEnd;
+        /// @dev Accumulated rewards for the stake
+        uint256 accumulatedRewards;
+        /// @dev Timestamp at which the stake info was last updated
+        uint256 lastUpdateTimestamp;
+    }
+
     // Constants
 
+    /// @notice Role for the admin of PlumeStaking
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for the upgrader of PlumeStaking
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
+    /// @notice Scaling factor for reward rates
+    uint256 public constant _BASE = 1e18;
+
     // Events
+
+    /**
+     * @notice Emitted when the minimum stake amount is set
+     * @param minStakeAmount Minimum amount of $PLUME that can be staked
+     */
+    event SetMinStakeAmount(uint256 minStakeAmount);
+
+    /**
+     * @notice Emitted when the cooldown interval is set
+     * @param cooldownInterval Cooldown interval for staked assets to be unlocked and parked
+     */
+    event SetCooldownInterval(uint256 cooldownInterval);
+
+    /**
+     * @notice Emitted when the rate of $pUSD rewarded per $PLUME staked per second is set
+     * @param perSecondRewardRate Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
+     */
+    event SetPerSecondRewardRate(uint256 perSecondRewardRate);
 
     /**
      * @notice Emitted when a user parks $PLUME
@@ -78,16 +107,8 @@ contract PlumeStaking is
      * @notice Emitted when a user stakes $PLUME
      * @param user Address of the user that staked $PLUME
      * @param amount Amount of $PLUME staked
-     * @param timestamp Timestamp at which the assets at stake unlock
      */
-    event Staked(address indexed user, uint256 amount, uint256 timestamp);
-
-    /**
-     * @notice Emitted when a user extends the time of their stake
-     * @param user Address of the user that extended the time of their stake
-     * @param timestamp Timestamp at which the assets at stake unlock
-     */
-    event ExtendedTime(address indexed user, uint256 timestamp);
+    event Staked(address indexed user, uint256 amount);
 
     /**
      * @notice Emitted when a user unstakes $PLUME
@@ -104,33 +125,20 @@ contract PlumeStaking is
     event Unparked(address indexed user, uint256 amount);
 
     /**
-     * @notice Emitted when a user claims $PLUME
-     * @param user Address of the user that claimed $PLUME
-     * @param amount Amount of $PLUME claimed
-     */
-    event ClaimedPlume(address indexed user, uint256 amount);
-
-    /**
      * @notice Emitted when a user claims $pUSD
      * @param user Address of the user that claimed $pUSD
      * @param amount Amount of $pUSD claimed
      */
-    event ClaimedStable(address indexed user, uint256 amount);
+    event Claimed(address indexed user, uint256 amount);
 
     // Errors
 
-    /** 
+    /**
      * @notice Indicates a failure because the amount is invalid
      * @param amount Amount of $PLUME requested
      * @param minStakeAmount Minimum amount of $PLUME allowed
      */
     error InvalidAmount(uint256 amount, uint256 minStakeAmount);
-
-    /// @notice Indicates a failure because the unlock time is invalid
-    error InvalidUnlockTime();
-
-    /// @notice Indicates a failure because the assets at stake are not unlocked
-    error NotUnlocked();
 
     /**
      * @notice Indicates a failure because the user has insufficient balance
@@ -138,13 +146,6 @@ contract PlumeStaking is
      * @param balance Amount of $PLUME available
      */
     error InsufficientBalance(uint256 amount, uint256 balance);
-
-    /**
-     * @notice Indicates a failure because the user has insufficient stablecoin balance
-     * @param amount Amount of $pUSD requested
-     * @param balance Amount of $pUSD available
-     */
-    error InsufficientStableBalance(uint256 amount, uint256 balance);
 
     /**
      * @notice Indicates a failure because the cooldown period has not ended
@@ -168,22 +169,20 @@ contract PlumeStaking is
      * @dev Give all roles to the admin address passed into the constructor
      * @param owner Address of the owner of PlumeStaking
      */
-    function initialize(
-        address owner,
-        address plume_,
-        address pUSD
-    ) public initializer {
+    function initialize(address owner, address plume_, address pUSD) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
 
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         $.plume = Plume(plume_);
         $.pUSD = IERC20(pUSD);
         $.minStakeAmount = 1e18;
-        $.maxStakeInterval = 365 * 4 + 1 days;
         $.cooldownInterval = 7 days;
+        $.perSecondRewardRate = (_BASE * 5 * 12) / (100 * 100);
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(ADMIN_ROLE, owner);
         _grantRole(UPGRADER_ROLE, owner);
     }
 
@@ -197,106 +196,122 @@ contract PlumeStaking is
         address newImplementation
     ) internal override onlyRole(UPGRADER_ROLE) { }
 
+    // Internal Functions
+
+    /**
+     * @notice Update the reward accumulated by the given user
+     * @param user Address of the user
+     */
+    function _updateRewards(
+        address user
+    ) internal {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        StakeInfo storage info = s.stakeInfo[user];
+        info.accumulatedRewards = claimableBalance(user);
+        info.lastUpdateTimestamp = block.timestamp;
+    }
+
+    // Admin Functions
+
+    /**
+     * @notice Set the minimum amount of $PLUME that can be staked
+     * @param minStakeAmount_ Minimum amount of $PLUME that can be staked
+     */
+    function setMinStakeAmount(
+        uint256 minStakeAmount_
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        _getPlumeStakingStorage().minStakeAmount = minStakeAmount_;
+        emit SetMinStakeAmount(minStakeAmount_);
+    }
+
+    /**
+     * @notice Set the cooldown interval for staked assets to be unlocked and parked
+     * @param cooldownInterval_ Cooldown interval for staked assets to be unlocked and parked
+     */
+    function setCooldownInterval(
+        uint256 cooldownInterval_
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        _getPlumeStakingStorage().cooldownInterval = cooldownInterval_;
+        emit SetCooldownInterval(cooldownInterval_);
+    }
+
+    /**
+     * @notice Set the rate of $pUSD rewarded per $PLUME staked per second
+     * @param perSecondRewardRate_ Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
+     */
+    function setPerSecondRewardRate(
+        uint256 perSecondRewardRate_
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        _getPlumeStakingStorage().perSecondRewardRate = perSecondRewardRate_;
+        emit SetPerSecondRewardRate(perSecondRewardRate_);
+    }
+
     // User Functions
 
     /**
      * @notice Park $PLUME in the contract
      * @param amount Amount of $PLUME to park
      */
-    function park(uint256 amount) external {
+    function park(
+        uint256 amount
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         if (amount < $.minStakeAmount) {
             revert InvalidAmount(amount, $.minStakeAmount);
         }
 
-        SafeERC20.safeTransferFrom($.plume, msg.sender, address(this), amount);
-        $.parked[msg.sender] += amount;
+        $.plume.safeTransferFrom(msg.sender, address(this), amount);
+        $.stakeInfo[msg.sender].parked += amount;
 
         emit Parked(msg.sender, amount);
     }
-    
+
     /**
      * @notice Stake $PLUME in the contract
-     * @dev TODO unlockTime == 0 for auto-extending staking
      * @param amount Amount of $PLUME to stake
-     * @param timestamp Timestamp at which the assets at stake unlock
      */
-    function stake(uint256 amount, uint256 timestamp) external {
+    function stake(
+        uint256 amount
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.cooldownEnd[msg.sender] > block.timestamp) {
-            revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
+        if ($.stakeInfo[msg.sender].cooldownEnd > block.timestamp) {
+            revert CooldownPeriodNotEnded($.stakeInfo[msg.sender].cooldownEnd);
         }
         if (amount < $.minStakeAmount) {
             revert InvalidAmount(amount, $.minStakeAmount);
         }
-        if (
-            ($.unlockTime[msg.sender] != 0 && timestamp != $.unlockTime[msg.sender])
-            || timestamp <= block.timestamp 
-            || timestamp > block.timestamp + $.maxStakeInterval
-        ) {
-            revert InvalidUnlockTime();
-        }
-        if ($.parked[msg.sender] < amount) {
-            revert InsufficientBalance(amount, $.parked[msg.sender]);
+        if ($.stakeInfo[msg.sender].parked < amount) {
+            revert InsufficientBalance(amount, $.stakeInfo[msg.sender].parked);
         }
 
-        $.parked[msg.sender] -= amount;
-        $.staked[msg.sender] += amount;
-        if ($.unlockTime[msg.sender] == 0) {
-            $.unlockTime[msg.sender] = timestamp;
-        }
+        _updateRewards(msg.sender);
+        $.stakeInfo[msg.sender].parked -= amount;
+        $.stakeInfo[msg.sender].staked += amount;
 
-        emit Staked(msg.sender, amount, timestamp);
+        emit Staked(msg.sender, amount);
     }
 
     /**
      * @notice Park and stake $PLUME in the contract
-     * @dev TODO unlockTime == 0 for auto-extending staking
      * @param amount Amount of $PLUME to park and stake
-     * @param timestamp Timestamp at which the assets at stake unlock
      */
-    function parkAndStake(uint256 amount, uint256 timestamp) external {
+    function parkAndStake(
+        uint256 amount
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.cooldownEnd[msg.sender] > block.timestamp) {
-            revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
+        if ($.stakeInfo[msg.sender].cooldownEnd > block.timestamp) {
+            revert CooldownPeriodNotEnded($.stakeInfo[msg.sender].cooldownEnd);
         }
         if (amount < $.minStakeAmount) {
             revert InvalidAmount(amount, $.minStakeAmount);
         }
-        if (
-            ($.unlockTime[msg.sender] != 0 && timestamp != $.unlockTime[msg.sender])
-            || timestamp <= block.timestamp 
-            || timestamp > block.timestamp + $.maxStakeInterval
-        ) {
-            revert InvalidUnlockTime();
-        }
 
-        SafeERC20.safeTransferFrom($.plume, msg.sender, address(this), amount);
-        $.staked[msg.sender] += amount;
-        if ($.unlockTime[msg.sender] == 0) {
-            $.unlockTime[msg.sender] = timestamp;
-        }
+        _updateRewards(msg.sender);
+        $.plume.safeTransferFrom(msg.sender, address(this), amount);
+        $.stakeInfo[msg.sender].staked += amount;
 
         emit Parked(msg.sender, amount);
-        emit Staked(msg.sender, amount, timestamp);
-    }
-
-    /**
-     * @notice Extend the unlock time for the staked assets
-     * @param timestamp New timestamp at which the assets at stake unlock
-     */
-    function extendTime(uint256 timestamp) external {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.cooldownEnd[msg.sender] > block.timestamp) {
-            revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
-        }
-        if (timestamp <= $.unlockTime[msg.sender] || timestamp > $.unlockTime[msg.sender] + $.maxStakeInterval) {
-            revert InvalidUnlockTime();
-        }
-
-        $.unlockTime[msg.sender] = timestamp;
-
-        emit ExtendedTime(msg.sender, timestamp);
+        emit Staked(msg.sender, amount);
     }
 
     /**
@@ -306,17 +321,20 @@ contract PlumeStaking is
      *   - you cannot set the amount that you unstake; it all unstakes at once
      *   - you cannot stake again until after the cooldown period ends
      */
-    function unstake() external returns (uint256 amount) {
+    function unstake() external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.unlockTime[msg.sender] > block.timestamp) {
-            revert NotUnlocked();
-        }
+        StakeInfo storage oldInfo = $.stakeInfo[msg.sender];
 
-        amount = $.staked[msg.sender];
-        $.staked[msg.sender] = 0;
-        $.cooled[msg.sender] += amount;
-        $.unlockTime[msg.sender] = 0;
-        $.cooldownEnd[msg.sender] = block.timestamp + $.cooldownInterval;
+        _updateRewards(msg.sender);
+        amount = oldInfo.staked;
+        $.stakeInfo[msg.sender] = StakeInfo({
+            staked: 0,
+            parked: oldInfo.parked,
+            cooled: oldInfo.cooled + amount,
+            cooldownEnd: block.timestamp + $.cooldownInterval,
+            accumulatedRewards: oldInfo.accumulatedRewards,
+            lastUpdateTimestamp: block.timestamp
+        });
 
         emit Unstaked(msg.sender, amount);
     }
@@ -325,54 +343,49 @@ contract PlumeStaking is
      * @notice Unpark $PLUME from the contract
      * @param amount Amount of $PLUME to unpark
      */
-    function unpark(uint256 amount) external {
+    function unpark(
+        uint256 amount
+    ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.cooled[msg.sender] > 0 && $.cooldownEnd[msg.sender] >= block.timestamp) {
-            $.parked[msg.sender] += $.cooled[msg.sender];
-            $.cooled[msg.sender] = 0;
+        StakeInfo storage oldInfo = $.stakeInfo[msg.sender];
+
+        _updateRewards(msg.sender);
+        if (oldInfo.cooled > 0 && oldInfo.cooldownEnd >= block.timestamp) {
+            $.stakeInfo[msg.sender] = StakeInfo({
+                staked: oldInfo.staked,
+                parked: oldInfo.parked + oldInfo.cooled,
+                cooled: 0,
+                cooldownEnd: 0,
+                accumulatedRewards: oldInfo.accumulatedRewards,
+                lastUpdateTimestamp: block.timestamp
+            });
         }
 
-        if (amount > $.parked[msg.sender]) {
-            revert InsufficientBalance(amount, $.parked[msg.sender]);
+        if (amount > oldInfo.parked) {
+            revert InsufficientBalance(amount, oldInfo.parked);
         }
-        $.parked[msg.sender] -= amount;
-        SafeERC20.safeTransfer($.plume, msg.sender, amount);
+        $.stakeInfo[msg.sender].parked -= amount;
+        $.plume.safeTransfer(msg.sender, amount);
 
         emit Unparked(msg.sender, amount);
     }
 
-    /**
-     * @notice Claim $PLUME
-     * @param amount Amount of $PLUME to claim
-     */
-    function claimPlume(uint256 amount) external {
+    /// @notice Claim all $pUSD rewards from the contract
+    function claim() external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        $.claimablePlume[msg.sender] = claimablePlumeBalance(msg.sender);
-        if (amount > $.claimablePlume[msg.sender]) {
-            revert InsufficientBalance(amount, $.claimablePlume[msg.sender]);
-        }
+        uint256 amount = claimableBalance(msg.sender);
 
-        $.claimablePlume[msg.sender] -= amount;
-        SafeERC20.safeTransfer($.plume, msg.sender, amount);
+        $.pUSD.safeTransfer(msg.sender, amount);
+        $.stakeInfo[msg.sender] = StakeInfo({
+            staked: $.stakeInfo[msg.sender].staked,
+            parked: $.stakeInfo[msg.sender].parked,
+            cooled: $.stakeInfo[msg.sender].cooled,
+            cooldownEnd: $.stakeInfo[msg.sender].cooldownEnd,
+            accumulatedRewards: 0,
+            lastUpdateTimestamp: block.timestamp
+        });
 
-        emit ClaimedPlume(msg.sender, amount);
-    }
-
-    /**
-     * @notice Claim $pUSD
-     * @param amount Amount of $pUSD to claim
-     */
-    function claimStable(uint256 amount) external {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        $.claimableStable[msg.sender] = claimableStableBalance(msg.sender);
-        if (amount > $.claimableStable[msg.sender]) {
-            revert InsufficientBalance(amount, $.claimableStable[msg.sender]);
-        }
-
-        $.claimableStable[msg.sender] -= amount;
-        SafeERC20.safeTransfer($.pUSD, msg.sender, amount);
-
-        emit ClaimedStable(msg.sender, amount);
+        emit Claimed(msg.sender, amount);
     }
 
     // View Functions
@@ -387,59 +400,25 @@ contract PlumeStaking is
         return _getPlumeStakingStorage().minStakeAmount;
     }
 
-    /// @notice Maximum interval for which assets can be staked for
-    function maxStakeInterval() external view returns (uint256) {
-        return _getPlumeStakingStorage().maxStakeInterval;
-    }
-
     /// @notice Cooldown interval for staked assets to be unlocked and parked
     function cooldownInterval() external view returns (uint256) {
         return _getPlumeStakingStorage().cooldownInterval;
     }
 
-    /**
-     * @notice Amount of $PLUME staked by a user
-     * @param user Address of the user
-     * @return amount Amount of $PLUME staked by the user
-     */
-    function staked(address user) external view returns (uint256) {
-        return _getPlumeStakingStorage().staked[user];
+    /// @notice Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
+    function perSecondRewardRate() external view returns (uint256) {
+        return _getPlumeStakingStorage().perSecondRewardRate;
     }
 
     /**
-     * @notice Amount of $PLUME parked by a user
+     * @notice Detailed active stake information for a user
      * @param user Address of the user
-     * @return amount Amount of $PLUME parked by the user
+     * @return info Detailed active stake information for the user
      */
-    function parked(address user) external view returns (uint256) {
-        return _getPlumeStakingStorage().parked[user];
-    }
-
-    /**
-     * @notice Amount of $PLUME awaiting cooldown by a user
-     * @param user Address of the user
-     * @return amount Amount of $PLUME awaiting cooldown by the user
-     */
-    function cooled(address user) external view returns (uint256) {
-        return _getPlumeStakingStorage().cooled[user];
-    }
-
-    /**
-     * @notice Timestamp at which the assets at stake unlock for a user
-     * @param user Address of the user
-     * @return timestamp Timestamp at which the assets at stake unlock
-     */
-    function unlockTime(address user) external view returns (uint256) {
-        return _getPlumeStakingStorage().unlockTime[user];
-    }
-
-    /**
-     * @notice Timestamp at which the cooldown period ends when the user is unstaking
-     * @param user Address of the user
-     * @return timestamp Timestamp at which the cooldown period ends
-     */
-    function cooldownEnd(address user) external view returns (uint256) {
-        return _getPlumeStakingStorage().cooldownEnd[user];
+    function stakeInfo(
+        address user
+    ) external view returns (StakeInfo memory info) {
+        info = _getPlumeStakingStorage().stakeInfo[user];
     }
 
     /**
@@ -447,31 +426,32 @@ contract PlumeStaking is
      * @param user Address of the user
      * @return amount Amount of $PLUME available to unpark
      */
-    function withdrawableBalance(address user) external view returns (uint256 amount) {
+    function withdrawableBalance(
+        address user
+    ) external view returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        amount = $.parked[user];
-        if ($.cooled[user] > 0 && $.cooldownEnd[user] >= block.timestamp) {
-            amount += $.cooled[user];
+        StakeInfo storage info = $.stakeInfo[user];
+        amount = info.parked;
+        if (info.cooled > 0 && info.cooldownEnd >= block.timestamp) {
+            amount += info.cooled;
         }
     }
 
     /**
-     * @notice Claimable $PLUME balance of a user
-     * @param user Address of the user
-     * @return amount Amount of $PLUME available to claim
-     */
-    function claimablePlumeBalance(address user) public view returns (uint256 amount) {
-        amount = _getPlumeStakingStorage().claimablePlume[user];
-        // TODO additional calculation here
-    }
-
-    /**
-     * @notice Claimable $pUSD balance of a user
+     * @notice Claimable $pUSD rewards of a user
      * @param user Address of the user
      * @return amount Amount of $pUSD available to claim
      */
-    function claimableStableBalance(address user) public view returns (uint256 amount) {
-        amount = _getPlumeStakingStorage().claimableStable[user];
-        // TODO additional calculation here
+    function claimableBalance(
+        address user
+    ) public view returns (uint256 amount) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        StakeInfo storage info = $.stakeInfo[user];
+
+        amount = info.accumulatedRewards;
+        if (info.staked > 0 && block.timestamp > info.lastUpdateTimestamp) {
+            amount += (info.staked * (block.timestamp - info.lastUpdateTimestamp) * $.perSecondRewardRate) / _BASE;
+        }
     }
+
 }
