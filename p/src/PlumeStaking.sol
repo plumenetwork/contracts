@@ -30,8 +30,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         IERC20 pUSD;
         /// @dev Minimum amount of $PLUME that can be staked
         uint256 minStakeAmount;
-        /// @dev Maximum interval for which assets can be staked for
-        uint256 maxStakeInterval;
         /// @dev Cooldown interval for unstaked assets to be unlocked and parked
         uint256 cooldownInterval;
         /// @dev Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
@@ -87,12 +85,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param minStakeAmount Minimum amount of $PLUME that can be staked
      */
     event SetMinStakeAmount(uint256 minStakeAmount);
-
-    /**
-     * @notice Emitted when the maximum stake interval is set
-     * @param maxStakeInterval Maximum interval for which assets can be staked for
-     */
-    event SetMaxStakeInterval(uint256 maxStakeInterval);
 
     /**
      * @notice Emitted when the cooldown interval is set
@@ -216,7 +208,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         $.plume = Plume(plume_);
         $.pUSD = IERC20(pUSD);
         $.minStakeAmount = 1e18;
-        $.maxStakeInterval = 365 * 4 + 1 days;
         $.cooldownInterval = 7 days;
         $.perSecondRewardRate = 1e18 * 0.05 * 0.12;
 
@@ -246,17 +237,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     ) external onlyRole(ADMIN_ROLE) nonReentrant {
         _getPlumeStakingStorage().minStakeAmount = minStakeAmount;
         emit SetMinStakeAmount(minStakeAmount);
-    }
-
-    /**
-     * @notice Set the maximum interval for which assets can be staked for
-     * @param maxStakeInterval Maximum interval for which assets can be staked for
-     */
-    function setMaxStakeInterval(
-        uint256 maxStakeInterval
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        _getPlumeStakingStorage().maxStakeInterval = maxStakeInterval;
-        emit SetMaxStakeInterval(maxStakeInterval);
     }
 
     /**
@@ -317,7 +297,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         }
         if (
             ($.unlockTime[msg.sender] != 0 && timestamp != $.unlockTime[msg.sender]) || timestamp <= block.timestamp
-                || timestamp > block.timestamp + $.maxStakeInterval
         ) {
             revert InvalidUnlockTime();
         }
@@ -350,7 +329,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         }
         if (
             ($.unlockTime[msg.sender] != 0 && timestamp != $.unlockTime[msg.sender]) || timestamp <= block.timestamp
-                || timestamp > block.timestamp + $.maxStakeInterval
         ) {
             revert InvalidUnlockTime();
         }
@@ -376,7 +354,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         if ($.cooldownEnd[msg.sender] > block.timestamp) {
             revert CooldownPeriodNotEnded($.cooldownEnd[msg.sender]);
         }
-        if (timestamp <= $.unlockTime[msg.sender] || timestamp > $.unlockTime[msg.sender] + $.maxStakeInterval) {
+        if (timestamp <= $.unlockTime[msg.sender]) {
             revert InvalidUnlockTime();
         }
 
@@ -477,11 +455,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     /// @notice Minimum amount of $PLUME that can be staked
     function minStakeAmount() external view returns (uint256) {
         return _getPlumeStakingStorage().minStakeAmount;
-    }
-
-    /// @notice Maximum interval for which assets can be staked for
-    function maxStakeInterval() external view returns (uint256) {
-        return _getPlumeStakingStorage().maxStakeInterval;
     }
 
     /// @notice Cooldown interval for staked assets to be unlocked and parked
