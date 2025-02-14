@@ -228,15 +228,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         $.minStakeAmount = 1e18;
         $.cooldownInterval = 7 days;
 
-        // Set initial reward tokens.
-        // According to spec, rewards are initially paid out in both pUSD and PLUME.
-        $.rewardTokens.push(pUSD_);
-        $.rewardTokens.push(plume_);
-        // Set initial reward rates (example values). Replace with the desired economics.
-        // For example, both are set to 6e15 (this value can be updated by admin).
-        $.rewardRates[pUSD_] = (_BASE * 5 * 12) / (100 * 100); // 6e15
-        $.rewardRates[plume_] = (_BASE * 5 * 12) / (100 * 100); // 6e15
-
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
         _grantRole(UPGRADER_ROLE, owner);
@@ -261,15 +252,18 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     function _updateRewards(
         address user
     ) internal {
-        PlumeStakingStorage storage s = _getPlumeStakingStorage();
-        StakeInfo storage info = s.stakeInfo[user];
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        StakeInfo storage info = $.stakeInfo[user];
+        if (info.lastUpdateTimestamp == 0) {
+            info.lastUpdateTimestamp = block.timestamp;
+            return;
+        }
         uint256 delta = block.timestamp - info.lastUpdateTimestamp;
         if (delta > 0 && info.staked > 0) {
-            // For each reward token, update the accrued reward.
-            for (uint256 i = 0; i < s.rewardTokens.length; i++) {
-                address token = s.rewardTokens[i];
-                uint256 rate = s.rewardRates[token];
-                s.rewardAccrued[user][token] += (info.staked * delta * rate) / _BASE;
+            for (uint256 i = 0; i < $.rewardTokens.length; i++) {
+                address token = $.rewardTokens[i];
+                uint256 rate = $.rewardRates[token];
+                $.rewardAccrued[user][token] += (info.staked * delta * rate) / _BASE;
             }
             info.lastUpdateTimestamp = block.timestamp;
         }
