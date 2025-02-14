@@ -386,8 +386,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     function setMaxRewardRate(
         uint256 newMaxRewardRate
     ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        PlumeStakingStorage storage s = _getPlumeStakingStorage();
-        s.maxRewardRate = newMaxRewardRate;
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        $.maxRewardRate = newMaxRewardRate;
         emit MaxRewardRateUpdated(newMaxRewardRate);
     }
 
