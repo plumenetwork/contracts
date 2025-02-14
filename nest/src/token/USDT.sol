@@ -65,7 +65,7 @@ contract USDT is ComponentToken {
         address controller
     ) public override(ComponentToken) returns (uint256 shares) {
         if (assets == 0) {
-            revert ZeroAmount();
+            revert ZeroAmount(ZeroAmountParam.ASSETS);
         }
 
         if (!IERC20(asset()).transferFrom(controller, address(this), assets)) {
