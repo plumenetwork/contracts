@@ -40,6 +40,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         mapping(address => uint256) rewardRates;
         /// @dev Mapping from user to reward token to accumulated reward amount
         mapping(address => mapping(address => uint256)) rewardAccrued;
+        /// @dev Maximum reward rate that can be set (scaled by _BASE)
+        uint256 maxRewardRate;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.PlumeStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -79,7 +81,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /// @notice Scaling factor for reward rates
     uint256 public constant _BASE = 1e18;
-    uint256 public constant MAX_REWARD_RATE = 1e20; // 100 tokens per staked token per second
 
     // Events
 
@@ -136,6 +137,12 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param amount Amount of $pUSD claimed
      */
     event ClaimedRewards(address indexed user, address indexed token, uint256 amount);
+
+    /**
+     * @notice Emitted when the maximum reward rate is updated
+     * @param newMaxRewardRate The new maximum reward rate
+     */
+    event MaxRewardRateUpdated(uint256 newMaxRewardRate);
 
     // Errors
 
@@ -227,6 +234,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         $.pUSD = IERC20(pUSD_);
         $.minStakeAmount = 1e18;
         $.cooldownInterval = 7 days;
+        $.maxRewardRate = 1e20;
 
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(ADMIN_ROLE, owner);
@@ -364,11 +372,23 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         if (!_rewardTokenExists(token)) {
             revert TokenDoesNotExist(token);
         }
-        if (rewardRate_ > MAX_REWARD_RATE) {
-            revert RewardRateExceedsMax(rewardRate_, MAX_REWARD_RATE);
+        if (rewardRate_ > _getPlumeStakingStorage().maxRewardRate) {
+            revert RewardRateExceedsMax(rewardRate_, _getPlumeStakingStorage().maxRewardRate);
         }
         _getPlumeStakingStorage().rewardRates[token] = rewardRate_;
         emit SetRewardRate(token, rewardRate_);
+    }
+
+    /**
+     * @notice Set the maximum reward rate that can be set
+     * @param newMaxRewardRate The new maximum reward rate
+     */
+    function setMaxRewardRate(
+        uint256 newMaxRewardRate
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        s.maxRewardRate = newMaxRewardRate;
+        emit MaxRewardRateUpdated(newMaxRewardRate);
     }
 
     // User Functions
