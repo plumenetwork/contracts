@@ -509,6 +509,22 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     // View Functions
 
+    /**
+     * @notice Returns the list of reward token addresses and their reward rates.
+     * @return tokens An array of reward token addresses.
+     * @return rates An array of reward rates corresponding to each token.
+     */
+    function getRewardTokens() external view returns (address[] memory tokens, uint256[] memory rates) {
+        PlumeStakingStorage storage s = _getPlumeStakingStorage();
+        uint256 length = s.rewardTokens.length;
+        tokens = new address[](length);
+        rates = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            tokens[i] = s.rewardTokens[i];
+            rates[i] = s.rewardRates[s.rewardTokens[i]];
+        }
+    }
+
     /// @notice Address of the $PLUME token
     function plume() external view returns (Plume) {
         return _getPlumeStakingStorage().plume;
