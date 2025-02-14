@@ -79,6 +79,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /// @notice Scaling factor for reward rates
     uint256 public constant _BASE = 1e18;
+    uint256 public constant MAX_REWARD_RATE = 1e20; // 100 tokens per staked token per second
 
     // Events
 
@@ -159,7 +160,47 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     error CooldownPeriodNotEnded(uint256 endTime);
 
+    /**
+     * @notice Thrown when trying to perform an operation that requires an active stake, but user has none
+     */
     error NoActiveStake();
+
+    /**
+     * @notice Thrown when a zero address is provided for a parameter that requires a valid address
+     * @param parameter The name of the parameter that was zero
+     */
+    error ZeroAddress(string parameter);
+
+    /**
+     * @notice Thrown when attempting to add a token that is already in the rewards list
+     * @param token The address of the token that already exists
+     */
+    error TokenAlreadyExists(address token);
+
+    /**
+     * @notice Thrown when attempting to interact with a token that is not in the rewards list
+     * @param token The address of the non-existent reward token
+     */
+    error TokenDoesNotExist(address token);
+
+    /**
+     * @notice Thrown when attempting to set a reward rate higher than the maximum allowed
+     * @param rate The proposed reward rate
+     * @param maxRate The maximum allowed reward rate
+     */
+    error RewardRateExceedsMax(uint256 rate, uint256 maxRate);
+
+    /**
+     * @notice Emitted when a new token is added to the rewards list
+     * @param token The address of the newly added reward token
+     */
+    event RewardTokenAdded(address indexed token);
+
+    /**
+     * @notice Emitted when a token is removed from the rewards list
+     * @param token The address of the removed reward token
+     */
+    event RewardTokenRemoved(address indexed token);
 
     // Initializer
 
@@ -237,6 +278,68 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     // Admin Functions
 
     /**
+     * @notice Adds a new token to the list of reward tokens
+     * @dev Only callable by admin role
+     * @param token The address of the token to add as a reward
+     * @custom:reverts ZeroAddress if token address is zero
+     * @custom:reverts TokenAlreadyExists if token is already in rewards list
+     */
+    function addRewardToken(
+        address token
+    ) external onlyRole(ADMIN_ROLE) {
+        if (token == address(0)) {
+            revert ZeroAddress("token");
+        }
+        if (_rewardTokenExists(token)) {
+            revert TokenAlreadyExists(token);
+        }
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        $.rewardTokens.push(token);
+        emit RewardTokenAdded(token);
+    }
+
+    /**
+     * @notice Removes a token from the list of reward tokens
+     * @dev Only callable by admin role. Sets reward rate to 0 and removes token from list.
+     * @param token The address of the token to remove from rewards
+     * @custom:reverts TokenDoesNotExist if token is not in rewards list
+     */
+    function removeRewardToken(
+        address token
+    ) external onlyRole(ADMIN_ROLE) {
+        if (!_rewardTokenExists(token)) {
+            revert TokenDoesNotExist(token);
+        }
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        for (uint256 i = 0; i < $.rewardTokens.length; i++) {
+            if ($.rewardTokens[i] == token) {
+                $.rewardTokens[i] = $.rewardTokens[$.rewardTokens.length - 1];
+                $.rewardTokens.pop();
+                $.rewardRates[token] = 0;
+                emit RewardTokenRemoved(token);
+                break;
+            }
+        }
+    }
+
+    /**
+     * @notice Check if a token exists in the reward tokens array
+     * @param token Address of the token to check
+     * @return bool True if the token exists in the reward tokens array
+     */
+    function _rewardTokenExists(
+        address token
+    ) internal view returns (bool) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        for (uint256 i = 0; i < $.rewardTokens.length; i++) {
+            if ($.rewardTokens[i] == token) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * @notice Set the minimum amount of $PLUME that can be staked
      * @param minStakeAmount_ Minimum amount of $PLUME that can be staked
      */
@@ -264,6 +367,12 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param rewardRate_ Rate of token rewarded per $PLUME staked per second, scaled by _BASE
      */
     function setRewardRate(address token, uint256 rewardRate_) external onlyRole(ADMIN_ROLE) nonReentrant {
+        if (!_rewardTokenExists(token)) {
+            revert TokenDoesNotExist(token);
+        }
+        if (rewardRate_ > MAX_REWARD_RATE) {
+            revert RewardRateExceedsMax(rewardRate_, MAX_REWARD_RATE);
+        }
         _getPlumeStakingStorage().rewardRates[token] = rewardRate_;
         emit SetRewardRate(token, rewardRate_);
     }
@@ -450,7 +559,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[user];
         amount = info.parked;
-        if (info.cooled > 0 && info.cooldownEnd >= block.timestamp) {
+        if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
             amount += info.cooled;
         }
     }
