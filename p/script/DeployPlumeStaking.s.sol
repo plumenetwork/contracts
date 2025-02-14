@@ -23,9 +23,9 @@ contract DeployPlumeStaking is Script, Test {
 
     // Initial reward rates (scaled by 1e18)
     // Current setting: 6e15 (this value can be updated by admin)
-    // Calculated as: (BASE * 5 * 12) / (100 * 100)
-    uint256 private constant PLUME_REWARD_RATE = 6e15; // ~5% APY
-    uint256 private constant PUSD_REWARD_RATE = 6e15; // ~5% APY
+    // Calculated as: (BASE * 0.05 ) / (31536000)
+    uint256 private constant PLUME_REWARD_RATE = 0; // ~0% APY
+    uint256 private constant PUSD_REWARD_RATE = 1_587_301_587; // ~5% APY
 
     function test() public { }
 
