@@ -230,7 +230,7 @@ contract AssetVault is WalletUtils, IAssetVault {
     /**
      * @notice Redistribute yield to the beneficiaries of the AssetToken, using yield distributions
      * @dev Only the user wallet can initiate the yield redistribution. The yield redistributed
-     *   to each beneficiary is rounded down, and any remaining CurrencyToken are kept in the vault.
+     *   to each beneficiary is rounded down, and any remaining CurrencyToken is kept in the vault.
      *   The Solidity compiler adds a check that the target address has `extcodesize > 0`
      *   and otherwise reverts for high-level calls, so we have to use a low-level call here
      * @param assetToken AssetToken from which the yield is to be redistributed
@@ -348,7 +348,7 @@ contract AssetVault is WalletUtils, IAssetVault {
             return;
         }
 
-        // Look for existing distribution with same beneficiary and expiration
+        // Look for existing distribution with the same beneficiary and expiration
         while (true) {
             if (distribution.beneficiary == beneficiary && distribution.yield.expiration == expiration) {
                 distribution.yield.amount += amount;
@@ -378,7 +378,7 @@ contract AssetVault is WalletUtils, IAssetVault {
      *   If there are too many yield distributions to process, the function will stop to avoid
      *   reaching the gas limit, and the beneficiary must call the function again to renounce more.
      * @param assetToken AssetToken from which the yield is to be redistributed
-     * @param amount Amount of AssetTokens to renounce from from the yield distribution
+     * @param amount Amount of AssetTokens to renounce from the yield distribution
      * @param expiration Timestamp at which the yield expires
      */
     function renounceYieldDistribution(
