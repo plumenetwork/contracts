@@ -26,7 +26,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     enum StakeSource {
         WALLET, // Direct stake from wallet
         PARKED, // Stake from parked balance
-        COOLING // Stake from cooling balance (if cooldown ended)
+        COOLING, // Stake from cooling balance
+        CLAIM // Claim rewards and stake them
 
     }
 
@@ -40,16 +41,22 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         uint256 minStakeAmount;
         /// @dev Cooldown interval for unstaked assets to be unlocked and parked
         uint256 cooldownInterval;
-        /// @dev Detailed active stake info for each user
-        mapping(address user => StakeInfo info) stakeInfo;
         /// @dev List of reward tokens (ERC20) to be distributed as rewards
         address[] rewardTokens;
+        /// @dev Total amount of PLUME currently staked
+        uint256 totalStaked;
+        /// @dev Total amount of PLUME in cooling period
+        uint256 totalCooling;
+        /// @dev Total amount of PLUME that's withdrawable (parked)
+        uint256 totalWithdrawable;
+        /// @dev Detailed active stake info for each user
+        mapping(address user => StakeInfo info) stakeInfo;
+        /// @dev Total claimable rewards per token
+        mapping(address => uint256) totalClaimableByToken;
         /// @dev Mapping from reward token address to its per-second reward rate (scaled by _BASE)
         mapping(address => uint256) rewardRates;
         /// @dev Mapping from user to reward token to accumulated reward amount
         mapping(address => mapping(address => uint256)) rewardAccrued;
-        /// @dev Maximum reward rate that can be set (scaled by _BASE)
-        //uint256 maxRewardRate;
         /// @dev Mapping from reward token address to its maximum reward rate (scaled by _BASE)
         mapping(address => uint256) maxRewardRates;
     }
@@ -168,6 +175,13 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param newMaxRate The new maximum reward rate
      */
     event MaxRewardRateUpdated(address indexed token, uint256 newMaxRate);
+
+    /**
+     * @notice Emitted when a user withdraws $PLUME
+     * @param user Address of the user that withdrew $PLUME
+     * @param amount Amount of $PLUME withdrawn
+     */
+    event Withdrawn(address indexed user, uint256 amount);
 
     // Errors
 
@@ -503,19 +517,51 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         emit Staked(msg.sender, amount);
     }
 
-    /**
-     * @notice Park and stake $PLUME in the contract
-     * @param amount Amount of $PLUME to park and stake
-     */
     function stake(uint256 amount, StakeSource source) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
 
-        if (amount < $.minStakeAmount) {
-            revert InvalidAmount(amount, $.minStakeAmount);
+        // Special handling for CLAIM source - no minimum amount check needed
+        if (source == StakeSource.CLAIM) {
+            _updateRewards(msg.sender);
+            uint256 totalClaimed = 0;
+
+            // Claim and stake PLUME rewards if any
+            uint256 plumeRewards = $.rewardAccrued[msg.sender][address($.plume)];
+            if (plumeRewards > 0) {
+                $.rewardAccrued[msg.sender][address($.plume)] = 0;
+                info.staked += plumeRewards;
+                totalClaimed = plumeRewards;
+            }
+
+            // Handle other reward tokens normally (transfer to user)
+            for (uint256 i = 0; i < $.rewardTokens.length; i++) {
+                address token = $.rewardTokens[i];
+                if (token != address($.plume)) {
+                    // Skip PLUME as we handled it
+                    uint256 rewardAmount = $.rewardAccrued[msg.sender][token];
+                    if (rewardAmount > 0) {
+                        $.rewardAccrued[msg.sender][token] = 0;
+                        IERC20(token).safeTransfer(msg.sender, rewardAmount);
+                        emit ClaimedRewards(msg.sender, token, rewardAmount);
+                    }
+                }
+            }
+
+            if (totalClaimed > 0) {
+                _updateRewards(msg.sender);
+                emit ClaimedRewards(msg.sender, address($.plume), totalClaimed);
+                emit Staked(msg.sender, totalClaimed);
+            }
+            return;
         }
 
-        _updateRewards(msg.sender); // Capture rewards at old stake amount
+        // Regular staking logic
+        if (amount < $.minStakeAmount) {
+            revert InsufficientBalance(amount, $.minStakeAmount);
+        }
+
+        _updateRewards(msg.sender);
 
         if (source == StakeSource.WALLET) {
             $.plume.safeTransferFrom(msg.sender, address(this), amount);
@@ -531,10 +577,12 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
                 revert InsufficientBalance(amount, info.cooled);
             }
             info.cooled -= amount;
+            $.totalCooling -= amount; // Added this
             info.staked += amount;
+            $.totalStaked += amount;
         }
 
-        _updateRewards(msg.sender); // Update rewards after stake amount changes
+        _updateRewards(msg.sender);
         emit Staked(msg.sender, amount);
     }
 
@@ -553,7 +601,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
         amount = info.staked;
         info.staked = 0;
+        $.totalStaked -= amount;
         info.cooled += amount;
+        $.totalCooling += amount; // Added this
         info.cooldownEnd = block.timestamp + $.cooldownInterval;
 
         _updateRewards(msg.sender); // Update rewards after stake amount changes
@@ -581,6 +631,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         // If cooldown period has passed, move cooled funds to parked.
         if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
             info.parked += info.cooled;
+            $.totalWithdrawable += info.cooled;
+            $.totalCooling -= info.cooled; // Added this
             info.cooled = 0;
             info.cooldownEnd = 0;
         }
@@ -597,7 +649,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     /// @notice Claim all $pUSD rewards from the contract
-    function claim() external nonReentrant {
+    function claim() external {
         _updateRewards(msg.sender); // Calculate up-to-date rewards
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
 
@@ -786,23 +838,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     function totalAmountClaimable(
         address token
     ) external view returns (uint256 total) {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        // Get all users who have ever staked
-        address[] memory users = _getStakers();
-
-        // Sum up claimable amounts for all users
-        for (uint256 i = 0; i < users.length; i++) {
-            address user = users[i];
-            StakeInfo storage info = $.stakeInfo[user];
-
-            // Add accrued rewards
-            total += $.rewardAccrued[user][token];
-
-            // Add pending rewards
-            if (info.staked > 0 && block.timestamp > info.lastUpdateTimestamp) {
-                total += (info.staked * (block.timestamp - info.lastUpdateTimestamp) * $.rewardRates[token]) / _BASE;
-            }
-        }
+        return _getPlumeStakingStorage().totalClaimableByToken[token];
     }
 
     /**
@@ -818,12 +854,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @return total Total amount of PLUME in cooling period
      */
     function totalAmountCooling() external view returns (uint256 total) {
-        address[] memory users = _getStakers();
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-
-        for (uint256 i = 0; i < users.length; i++) {
-            total += $.stakeInfo[users[i]].cooled;
-        }
+        return _getPlumeStakingStorage().totalCooling;
     }
 
     /**
@@ -845,16 +876,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @return total Total amount of PLUME available to withdraw
      */
     function totalAmountWithdrawable() external view returns (uint256 total) {
-        address[] memory users = _getStakers();
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-
-        for (uint256 i = 0; i < users.length; i++) {
-            StakeInfo storage info = $.stakeInfo[users[i]];
-            total += info.parked;
-            if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
-                total += info.cooled;
-            }
-        }
+        return _getPlumeStakingStorage().totalWithdrawable;
     }
 
     /**
@@ -870,12 +892,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @return total Total amount of PLUME staked
      */
     function totalAmountStaked() external view returns (uint256 total) {
-        address[] memory users = _getStakers();
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-
-        for (uint256 i = 0; i < users.length; i++) {
-            total += $.stakeInfo[users[i]].staked;
-        }
+        return _getPlumeStakingStorage().totalStaked;
     }
 
 }
