@@ -628,6 +628,25 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         return _getPlumeStakingStorage().cooldownInterval;
     }
 
+    /**
+     * @notice Returns the timestamp when the cooldown period ends for the caller
+     * @return timestamp The Unix timestamp when the cooldown ends (0 if no active cooldown)
+     */
+    function cooldownEndDate() external view returns (uint256) {
+        return _getPlumeStakingStorage().stakeInfo[msg.sender].cooldownEnd;
+    }
+
+    /**
+     * @notice Returns the timestamp when the cooldown period ends for a specific user
+     * @param user The address of the user to check
+     * @return timestamp The Unix timestamp when the cooldown ends (0 if no active cooldown)
+     */
+    function cooldownEndDateOf(
+        address user
+    ) external view returns (uint256) {
+        return _getPlumeStakingStorage().stakeInfo[user].cooldownEnd;
+    }
+
     /// @notice Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
     function rewardRate(
         address token
