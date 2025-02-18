@@ -128,11 +128,14 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     event Parked(address indexed user, uint256 amount);
 
     /**
-     * @notice Emitted when a user stakes $PLUME
-     * @param user Address of the user that staked $PLUME
-     * @param amount Amount of $PLUME staked
+     * @notice Emitted when a user stakes PLUME
+     * @param user Address of the user that staked PLUME
+     * @param amount Amount of PLUME staked
+     * @param fromCooling Amount taken from cooling balance
+     * @param fromParked Amount taken from parked balance
+     * @param fromWallet Amount taken from wallet
      */
-    event Staked(address indexed user, uint256 amount);
+    event Staked(address indexed user, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 fromWallet);
 
     /**
      * @notice Emitted when a user unstakes $PLUME
@@ -230,6 +233,18 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     error TokenDoesNotExist(address token);
 
     /**
+     * @notice Thrown when the length of tokens array does not match the length of rates array
+     * @dev This error occurs in setRewardRates when tokens.length != rewardRates_.length
+     */
+    error ArrayLengthMismatch();
+
+    /**
+     * @notice Thrown when attempting to set reward rates with empty arrays
+     * @dev This error occurs in setRewardRates when tokens.length == 0
+     */
+    error EmptyArray();
+
+    /**
      * @notice Thrown when attempting to set a reward rate higher than the maximum allowed
      * @param rate The proposed reward rate
      * @param maxRate The maximum allowed reward rate
@@ -309,7 +324,10 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             for (uint256 i = 0; i < $.rewardTokens.length; i++) {
                 address token = $.rewardTokens[i];
                 uint256 rate = $.rewardRates[token];
-                $.rewardAccrued[user][token] += (info.staked * delta * rate) / _BASE;
+
+                uint256 newRewards = (info.staked * delta * rate) / _BASE;
+                $.rewardAccrued[user][token] += newRewards;
+                $.totalClaimableByToken[token] += newRewards;
             }
             info.lastUpdateTimestamp = block.timestamp;
         }
@@ -402,24 +420,43 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     /**
-     * @notice Set the rate of $pUSD rewarded per $PLUME staked per second
-     * @param token Address of the reward token
-     * @param rewardRate_ Rate of token rewarded per $PLUME staked per second, scaled by _BASE
+     * @notice Set reward rates for one or multiple tokens
+     * @param tokens Array of reward token addresses
+     * @param rewardRates_ Array of reward rates for corresponding tokens
+     * @dev Arrays must be the same length
      */
-    function setRewardRate(address token, uint256 rewardRate_) external onlyRole(ADMIN_ROLE) nonReentrant {
-        if (!_rewardTokenExists(token)) {
-            revert TokenDoesNotExist(token);
+    function setRewardRates(
+        address[] calldata tokens,
+        uint256[] calldata rewardRates_
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        if (tokens.length != rewardRates_.length) {
+            revert ArrayLengthMismatch();
         }
+        if (tokens.length == 0) {
+            revert EmptyArray();
+        }
+
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        uint256 maxRate = $.maxRewardRates[token];
-        if (maxRate == 0) {
-            maxRate = 1e20; // Default max rate if not set
+
+        for (uint256 i = 0; i < tokens.length; i++) {
+            address token = tokens[i];
+            uint256 rate = rewardRates_[i];
+
+            if (!_rewardTokenExists(token)) {
+                revert TokenDoesNotExist(token);
+            }
+
+            uint256 maxRate = $.maxRewardRates[token];
+            if (maxRate == 0) {
+                maxRate = 1e20; // Default max rate if not set
+            }
+            if (rate > maxRate) {
+                revert RewardRateExceedsMax(rate, maxRate);
+            }
+
+            $.rewardRates[token] = rate;
+            emit SetRewardRate(token, rate);
         }
-        if (rewardRate_ > maxRate) {
-            revert RewardRateExceedsMax(rewardRate_, maxRate);
-        }
-        $.rewardRates[token] = rewardRate_;
-        emit SetRewardRate(token, rewardRate_);
     }
 
     /**
@@ -472,118 +509,53 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     // User Functions
 
-    /**
-     * @notice Park $PLUME in the contract
-     * @param amount Amount of $PLUME to park
-     */
-    function park(
-        uint256 amount
-    ) external nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if (amount < $.minStakeAmount) {
-            revert InvalidAmount(amount, $.minStakeAmount);
-        }
-
-        $.plume.safeTransferFrom(msg.sender, address(this), amount);
-        $.stakeInfo[msg.sender].parked += amount;
-
-        emit Parked(msg.sender, amount);
-    }
-
-    /**
-     * @notice Stake $PLUME in the contract
-     * @param amount Amount of $PLUME to stake
-     */
-    function restake(
+    function stake(
         uint256 amount
     ) external nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
 
-        if ($.stakeInfo[msg.sender].cooldownEnd > block.timestamp) {
-            revert CooldownPeriodNotEnded($.stakeInfo[msg.sender].cooldownEnd);
-        }
         if (amount < $.minStakeAmount) {
             revert InvalidAmount(amount, $.minStakeAmount);
         }
-        if (info.parked < amount) {
-            revert InsufficientBalance(amount, info.parked);
-        }
 
         _updateRewards(msg.sender);
-        info.parked -= amount;
+
+        uint256 remainingToStake = amount;
+        uint256 fromCooling;
+        uint256 fromParked;
+        uint256 fromWallet;
+
+        // First: Use cooling tokens if available
+        if (info.cooled > 0) {
+            fromCooling = remainingToStake > info.cooled ? info.cooled : remainingToStake;
+            info.cooled -= fromCooling;
+            remainingToStake -= fromCooling;
+        }
+
+        // Second: Use parked (withdrawable) tokens if needed
+        if (remainingToStake > 0 && info.parked > 0) {
+            fromParked = remainingToStake > info.parked ? info.parked : remainingToStake;
+            info.parked -= fromParked;
+            remainingToStake -= fromParked;
+        }
+
+        // Last: Take remaining from wallet if needed
+        if (remainingToStake > 0) {
+            fromWallet = remainingToStake;
+            $.plume.safeTransferFrom(msg.sender, address(this), fromWallet);
+        }
+
+        // Update total staked amount
         info.staked += amount;
-
-        emit Staked(msg.sender, amount);
-    }
-
-    function stake(uint256 amount, StakeSource source) external nonReentrant {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[msg.sender];
-
-        // Special handling for CLAIM source - no minimum amount check needed
-        if (source == StakeSource.CLAIM) {
-            _updateRewards(msg.sender);
-            uint256 totalClaimed = 0;
-
-            // Claim and stake PLUME rewards if any
-            uint256 plumeRewards = $.rewardAccrued[msg.sender][address($.plume)];
-            if (plumeRewards > 0) {
-                $.rewardAccrued[msg.sender][address($.plume)] = 0;
-                info.staked += plumeRewards;
-                totalClaimed = plumeRewards;
-            }
-
-            // Handle other reward tokens normally (transfer to user)
-            for (uint256 i = 0; i < $.rewardTokens.length; i++) {
-                address token = $.rewardTokens[i];
-                if (token != address($.plume)) {
-                    // Skip PLUME as we handled it
-                    uint256 rewardAmount = $.rewardAccrued[msg.sender][token];
-                    if (rewardAmount > 0) {
-                        $.rewardAccrued[msg.sender][token] = 0;
-                        IERC20(token).safeTransfer(msg.sender, rewardAmount);
-                        emit ClaimedRewards(msg.sender, token, rewardAmount);
-                    }
-                }
-            }
-
-            if (totalClaimed > 0) {
-                _updateRewards(msg.sender);
-                emit ClaimedRewards(msg.sender, address($.plume), totalClaimed);
-                emit Staked(msg.sender, totalClaimed);
-            }
-            return;
-        }
-
-        // Regular staking logic
-        if (amount < $.minStakeAmount) {
-            revert InsufficientBalance(amount, $.minStakeAmount);
-        }
+        $.totalStaked += amount;
+        $.totalCooling -= fromCooling;
+        $.totalWithdrawable -= fromParked;
 
         _updateRewards(msg.sender);
 
-        if (source == StakeSource.WALLET) {
-            $.plume.safeTransferFrom(msg.sender, address(this), amount);
-            info.staked += amount;
-        } else if (source == StakeSource.PARKED) {
-            if (info.parked < amount) {
-                revert InsufficientBalance(amount, info.parked);
-            }
-            info.parked -= amount;
-            info.staked += amount;
-        } else if (source == StakeSource.COOLING) {
-            if (info.cooled < amount) {
-                revert InsufficientBalance(amount, info.cooled);
-            }
-            info.cooled -= amount;
-            $.totalCooling -= amount; // Added this
-            info.staked += amount;
-            $.totalStaked += amount;
-        }
-
-        _updateRewards(msg.sender);
-        emit Staked(msg.sender, amount);
+        // Single event with all source information
+        emit Staked(msg.sender, amount, fromCooling, fromParked, fromWallet);
     }
 
     /**
@@ -669,6 +641,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             for (uint256 i = 0; i < $.rewardTokens.length; i++) {
                 if (amounts[i] > 0) {
                     $.rewardAccrued[msg.sender][$.rewardTokens[i]] = 0;
+                    $.totalClaimableByToken[$.rewardTokens[i]] -= amounts[i]; // Deduct from total claimable
                 }
             }
 
@@ -815,9 +788,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         }
         amount = $.rewardAccrued[user][address($.pUSD)] + pending;
     }
-
-    // TODO: Refactor these functions
-    // Simplest implementation
 
     /**
      * @notice Returns the claimable amount for a specific token for the caller
