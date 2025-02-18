@@ -1,6 +1,6 @@
 [profile.default]
 solc = "0.8.25"
-evm_version = "paris"
+evm_version = "cancun"
 src = "src"
 out = "out"
 libs = ["lib"]
