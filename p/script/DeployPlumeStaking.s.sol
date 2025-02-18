@@ -55,8 +55,19 @@ contract DeployPlumeStaking is Script, Test {
         plumeStaking.addRewardToken(PUSD_TOKEN_ADDRESS);
         plumeStaking.addRewardToken(PLUME_TOKEN_ADDRESS);
 
-        plumeStaking.setRewardRate(PUSD_TOKEN_ADDRESS, PUSD_REWARD_RATE);
-        plumeStaking.setRewardRate(PLUME_TOKEN_ADDRESS, PLUME_REWARD_RATE);
+        //plumeStaking.setRewardRate(PUSD_TOKEN_ADDRESS, PUSD_REWARD_RATE);
+        //plumeStaking.setRewardRate(PLUME_TOKEN_ADDRESS, PLUME_REWARD_RATE);
+
+        // 5. Set reward rates using arrays
+        address[] memory tokens = new address[](2);
+        uint256[] memory rates = new uint256[](2);
+
+        tokens[0] = PUSD_TOKEN_ADDRESS;
+        tokens[1] = PLUME_TOKEN_ADDRESS;
+        rates[0] = PUSD_REWARD_RATE;
+        rates[1] = PLUME_REWARD_RATE;
+
+        plumeStaking.setRewardRates(tokens, rates);
 
         // Log deployment information
         console2.log("\nDeployment Configuration:");
