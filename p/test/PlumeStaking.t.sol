@@ -40,7 +40,7 @@ contract PlumeStakingTest is Test {
     function setUp() public {
         // Fork mainnet
         string memory PLUME_RPC = vm.envOr("PLUME_RPC_URL", string(""));
-        uint256 FORK_BLOCK = 373_551; // Specify the block number you want to fork from
+        uint256 FORK_BLOCK = 373_551;
         vm.createSelectFork(vm.rpcUrl(PLUME_RPC), FORK_BLOCK);
 
         vm.startPrank(ADMIN);
@@ -108,7 +108,7 @@ contract PlumeStakingTest is Test {
 
     function testRewardAccrual() public {
         uint256 amount = 100e18;
-        uint256 rewardPoolAmount = 1000e18; // Large enough pool for rewards
+        uint256 rewardPoolAmount = 1000e18;
         uint256 balanceBefore = IERC20(PUSD_TOKEN).balanceOf(user1);
 
         deal(PUSD_TOKEN, address(staking), rewardPoolAmount);

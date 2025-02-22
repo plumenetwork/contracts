@@ -23,24 +23,6 @@ contract pUSDStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
 
     // Storage
 
-    /// @dev Source of stake
-    enum StakeSource {
-        WALLET, // Direct stake from wallet
-        PARKED, // Stake from parked balance
-        COOLING, // Stake from cooling balance
-        CLAIM // Claim rewards and stake them
-
-    }
-
-    event DebugClaim(
-        address token,
-        uint256 amount,
-        uint256 contractBalance,
-        uint256 userAccruedReward,
-        uint256 userStaked,
-        uint256 lastUpdateTime
-    );
-
     /// @custom:storage-location erc7201:plume.storage.PlumeStaking
     struct PlumeStakingStorage {
         /// @dev Address of the $PLUME token
@@ -780,7 +762,7 @@ contract pUSDStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         info.staked = 0;
         $.totalStaked -= amount;
         info.cooled += amount;
-        $.totalCooling += amount; // Added this
+        $.totalCooling += amount;
         info.cooldownEnd = block.timestamp + $.cooldownInterval;
 
         _updateRewards(msg.sender); // Update rewards after stake amount changes
@@ -821,8 +803,8 @@ contract pUSDStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         $.totalWithdrawable -= amount; // Update total withdrawable after deducting from parked
         _updateRewards(msg.sender);
 
-        $.pUSD.safeTransfer(msg.sender, amount); // Changed from plume to pUSD
-        emit Withdrawn(msg.sender, amount); // Renamed event
+        $.pUSD.safeTransfer(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount);
     }
 
     /// @notice Claim all $pUSD rewards from the contract
@@ -864,6 +846,9 @@ contract pUSDStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
 
                     // Scale down the amount for 6 decimal token
                     uint256 scaledAmount = amounts[i];
+
+                    // TODO: Need decimals support for arbitrary tokens
+
                     if (token == address($.pUSD)) {
                         scaledAmount = amounts[i] / 1e12; // Convert from 18 to 6 decimals
                     }
@@ -1001,6 +986,7 @@ contract pUSDStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         StakeInfo storage info = $.stakeInfo[user];
         uint256 pending = 0;
         if (info.staked > 0 && block.timestamp > info.lastUpdateTimestamp) {
+            // TODO: Need to support arbitrary tokens
             pending = (info.staked * 1e12 * (block.timestamp - info.lastUpdateTimestamp) * $.rewardRates[token]) / _BASE;
         }
         amount = $.rewardAccrued[user][token] + pending;
