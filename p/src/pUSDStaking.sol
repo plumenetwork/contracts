@@ -9,36 +9,19 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { Plume } from "./Plume.sol";
-
+import { console2 } from "forge-std/console2.sol";
 /**
  * @title PlumeStaking
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Staking contract for $PLUME
  */
-contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
+
+contract pUSDStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
     using SafeERC20 for Plume;
     using SafeERC20 for IERC20;
 
     // Storage
-
-    /// @dev Source of stake
-    enum StakeSource {
-        WALLET, // Direct stake from wallet
-        PARKED, // Stake from parked balance
-        COOLING, // Stake from cooling balance
-        CLAIM // Claim rewards and stake them
-
-    }
-
-    event DebugClaim(
-        address token,
-        uint256 amount,
-        uint256 contractBalance,
-        uint256 userAccruedReward,
-        uint256 userStaked,
-        uint256 lastUpdateTime
-    );
 
     /// @custom:storage-location erc7201:plume.storage.PlumeStaking
     struct PlumeStakingStorage {
@@ -74,9 +57,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         mapping(address => bool) isStaker;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("plume.storage.PlumeStaking")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("plume.storage.pUSDStaking")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant PLUME_STAKING_STORAGE_LOCATION =
-        0x40f2ca4cf3a525ed9b1b2649f0f850db77540accc558be58ba47f8638359e800;
+        0xda2caf89f03a29ad7273c0a945481ed190f879ad9205f9cad4997c75b7fee100;
 
     function _getPlumeStakingStorage() internal pure returns (PlumeStakingStorage storage $) {
         assembly {
@@ -706,6 +689,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     function stake(
         uint256 amount
     ) external nonReentrant {
+        console2.log("Staking pUSD");
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
 
@@ -746,7 +730,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         // Last: Take remaining from wallet if needed
         if (remainingToStake > 0) {
             fromWallet = remainingToStake;
-            $.plume.safeTransferFrom(msg.sender, address(this), fromWallet);
+            $.pUSD.safeTransferFrom(msg.sender, address(this), fromWallet);
         }
 
         // Update total staked amount
@@ -758,7 +742,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         _updateRewards(msg.sender);
         _addStakerIfNew(msg.sender);
 
-        // Single event with all source information
         emit Staked(msg.sender, amount, fromCooling, fromParked, fromWallet);
     }
 
@@ -779,7 +762,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         info.staked = 0;
         $.totalStaked -= amount;
         info.cooled += amount;
-        $.totalCooling += amount; // Added this
+        $.totalCooling += amount;
         info.cooldownEnd = block.timestamp + $.cooldownInterval;
 
         _updateRewards(msg.sender); // Update rewards after stake amount changes
@@ -820,8 +803,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         $.totalWithdrawable -= amount; // Update total withdrawable after deducting from parked
         _updateRewards(msg.sender);
 
-        $.plume.safeTransfer(msg.sender, amount);
-        emit Withdrawn(msg.sender, amount); // Renamed event
+        $.pUSD.safeTransfer(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount);
     }
 
     /// @notice Claim all $pUSD rewards from the contract
@@ -863,6 +846,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
                     // Scale down the amount for 6 decimal token
                     uint256 scaledAmount = amounts[i];
+
+                    // TODO: Need decimals support for arbitrary tokens
+
                     if (token == address($.pUSD)) {
                         scaledAmount = amounts[i] / 1e12; // Convert from 18 to 6 decimals
                     }
@@ -1000,7 +986,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         StakeInfo storage info = $.stakeInfo[user];
         uint256 pending = 0;
         if (info.staked > 0 && block.timestamp > info.lastUpdateTimestamp) {
-            pending = (info.staked * (block.timestamp - info.lastUpdateTimestamp) * $.rewardRates[token]) / _BASE;
+            // TODO: Need to support arbitrary tokens
+            pending = (info.staked * 1e12 * (block.timestamp - info.lastUpdateTimestamp) * $.rewardRates[token]) / _BASE;
         }
         amount = $.rewardAccrued[user][token] + pending;
     }
