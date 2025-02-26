@@ -1,4 +1,5 @@
 @openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/
 @openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
 @solmate/=lib/solmate/src/
-@boringvault/=lib/nucleus-boring-vault/
+@layerzerolabs/lz-evm-protocol-v2/=lib/layerzero-v2/packages/layerzero-v2/evm/protocol
+@layerzerolabs/lz-evm-oapp-v2/=lib/layerzero-v2/packages/layerzero-v2/evm/oapp

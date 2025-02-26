@@ -39,4 +39,10 @@
 	url = https://github.com/transmissions11/solmate
 [submodule "nest/lib/nucleus-boring-vault"]
 	path = nest/lib/nucleus-boring-vault
-	url = https://github.com/plumenetwork/nucleus-boring-vault
+	url = https://github.com/Ion-Protocol/nucleus-boring-vault
+[submodule "nest/lib/devtools"]
+	path = nest/lib/devtools
+	url = https://github.com/LayerZero-Labs/devtools
+[submodule "nest/lib/layerzero-v2"]
+	path = nest/lib/layerzero-v2
+	url = https://github.com/LayerZero-Labs/layerzero-v2
