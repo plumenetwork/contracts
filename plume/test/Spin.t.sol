@@ -51,6 +51,7 @@ contract SpinTest is Test {
 
         // Deploy the DateTime contract from src/DateTime.sol
         dateTime = new DateTime();
+        vm.warp(dateTime.toTimestamp(2025, 3, 1, 10, 0, 0));
 
         // Deploy the Spin contract
         vm.prank(ADMIN);
@@ -93,6 +94,7 @@ contract SpinTest is Test {
     function testStartSpin() public {
         // Ensure last spin date is set correctly
         vm.record();
+        vm.warp(dateTime.toTimestamp(2025, 3, 2, 10, 0, 0));
         vm.prank(USER);
         spin.startSpin();
         // Retrieve the recorded storage accesses
@@ -119,5 +121,21 @@ contract SpinTest is Test {
         vm.prank(USER);
         spin.startSpin();
     }
+
+    function testSimulateVRFCallback() public {
+        vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
+        vm.prank(address(10));
+        spin.startSpin();
+
+        vm.prank(address(9));
+        spin.startSpin();
+    uint256 testNonce = 9; // Ensure it's an actual sent nonce
+    uint256[] memory testRNG = new uint256[](1);
+    testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
+
+    vm.prank(SUPRA_ORACLE); // Simulate Supra calling
+    spin.handleRandomness(testNonce, testRNG);
+}
+
 
 }

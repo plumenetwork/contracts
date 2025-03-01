@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "../interfaces/IDateTime.sol";
 import "../interfaces/ISupraRouterContract.sol";
+import {console} from "forge-std/console.sol";
 
 /// @custom:oz-upgrades-from Spin
 contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
@@ -153,6 +154,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             $.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, $.admin);
         $.lastSpinDate[msg.sender] = block.timestamp;
         $.userNonce[nonce] = msg.sender;
+        console.logUint(nonce);
 
         emit SpinRequested(nonce, msg.sender);
     }
@@ -164,6 +166,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
      * @param rngList The list of random numbers generated.
      */
     function handleRandomness(uint256 nonce, uint256[] memory rngList) external {
+        console.log("handleRandomness CALLED");
         SpinStorage storage $ = _getSpinStorage();
         if (msg.sender != address($.supraRouter)) {
             revert UnauthorizedCallback();
@@ -189,12 +192,16 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
             userData.jackpotWins++;
             userData.lastJackpotClaim = block.timestamp;
+            console.log("Jackpot win");
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Raffle Ticket"))) {
             userData.raffleTickets += rewardAmount;
+            console.log("Raffle Ticket win");
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("XP"))) {
             userData.xpGained += rewardAmount;
+            console.log("XP win");
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Plume Token"))) {
             userData.plumeTokens += rewardAmount;
+            console.log("Plume Token win");
         }
 
         emit SpinCompleted(user, rewardCategory, rewardAmount);
@@ -214,6 +221,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint8 weekNumber = uint8(daysSinceStart / 7 + 1);
         uint8 jackpotIndex = (weekNumber - 1) % 7; 
         uint256 jackpotThreshold = (1_000_000 * $.jackpotProbabilities[jackpotIndex]) / 100;
+        console.logUint(probability);
 
         if (probability < jackpotThreshold) {
             return ("Jackpot", 1); // Jackpot win
