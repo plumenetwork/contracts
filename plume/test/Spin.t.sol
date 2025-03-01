@@ -14,11 +14,17 @@ interface IDepositContract {
     ) external;
     function addClientToWhitelist(address clientAddress, bool snap) external;
     function depositFundClient() external payable;
-    function isClientWhitelisted(address clientAddress) external view returns (bool);
-    function isContractWhitelisted(address client ,address contractAddress) external view returns (bool);
-    function checkEffectiveBalance(address clientAddress) external view returns (uint256);
-    function isContractEligible(address client ,address contractAddress) external view returns (bool);
-    function setMinBalanceClient(uint256 minBalance) external;
+    function isClientWhitelisted(
+        address clientAddress
+    ) external view returns (bool);
+    function isContractWhitelisted(address client, address contractAddress) external view returns (bool);
+    function checkEffectiveBalance(
+        address clientAddress
+    ) external view returns (uint256);
+    function isContractEligible(address client, address contractAddress) external view returns (bool);
+    function setMinBalanceClient(
+        uint256 minBalance
+    ) external;
 
 }
 
@@ -59,41 +65,33 @@ contract SpinTest is Test {
         bool isWhitelisted = IDepositContract(DEPOSIT_CONTRACT).isClientWhitelisted(ADMIN);
         assertTrue(isWhitelisted, "Spin contract is not whitelisted under ADMIN");
 
-         vm.deal(ADMIN, 1 ether); 
-         vm.prank(ADMIN);
-         IDepositContract(DEPOSIT_CONTRACT).depositFundClient{ value: 0.1 ether }();
+        vm.deal(ADMIN, 1 ether);
+        vm.prank(ADMIN);
+        IDepositContract(DEPOSIT_CONTRACT).depositFundClient{ value: 0.1 ether }();
 
-         vm.prank(ADMIN);
-         IDepositContract(DEPOSIT_CONTRACT).addContractToWhitelist(address(spin));
+        vm.prank(ADMIN);
+        IDepositContract(DEPOSIT_CONTRACT).addContractToWhitelist(address(spin));
 
         vm.prank(SUPRA_OWNER);
-         bool isContractWhitelisted = IDepositContract(DEPOSIT_CONTRACT).isContractWhitelisted(ADMIN, address(spin));
-         assertTrue(isContractWhitelisted, "Spin contract is not whitelisted under ADMIN");
+        bool isContractWhitelisted = IDepositContract(DEPOSIT_CONTRACT).isContractWhitelisted(ADMIN, address(spin));
+        assertTrue(isContractWhitelisted, "Spin contract is not whitelisted under ADMIN");
 
-         vm.prank(ADMIN);
-IDepositContract(DEPOSIT_CONTRACT).setMinBalanceClient(0.05 ether);
-
+        vm.prank(ADMIN);
+        IDepositContract(DEPOSIT_CONTRACT).setMinBalanceClient(0.05 ether);
 
         vm.prank(SUPRA_OWNER);
         uint256 effectiveBalance = IDepositContract(DEPOSIT_CONTRACT).checkEffectiveBalance(ADMIN);
         assertGt(effectiveBalance, 0, "Insufficient balance in Supra Deposit Contract");
 
         vm.prank(SUPRA_OWNER);
-          bool contractEligible = IDepositContract(DEPOSIT_CONTRACT).isContractEligible(ADMIN, address(spin));
-    assertTrue(contractEligible, "Spin contract is not eligible for VRF");
+        bool contractEligible = IDepositContract(DEPOSIT_CONTRACT).isContractEligible(ADMIN, address(spin));
+        assertTrue(contractEligible, "Spin contract is not eligible for VRF");
 
-    assertTrue(spin.hasRole(spin.DEFAULT_ADMIN_ROLE(), ADMIN), "ADMIN is not the contract admin");
-
-        
+        assertTrue(spin.hasRole(spin.DEFAULT_ADMIN_ROLE(), ADMIN), "ADMIN is not the contract admin");
     }
 
     function testStartSpin() public {
-        
-
         // Ensure last spin date is set correctly
-        (uint256 streak, uint256 feathers) = spin.getStreakAndFeathers(USER);
-        assertEq(streak, 0, "Initial streak should be 0");
-        assertEq(feathers, 0, "Initial feathers should be 0");
         vm.record();
         vm.prank(USER);
         spin.startSpin();
@@ -108,7 +106,6 @@ IDepositContract(DEPOSIT_CONTRACT).setMinBalanceClient(0.05 ether);
 
         // Assert that the call data is non-zero
         assertGt(callDataSize, 0, "Call Data Size should be greater than 0");
-
     }
 
     function testCooldownEnforcement() public {

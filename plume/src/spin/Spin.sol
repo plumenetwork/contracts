@@ -13,20 +13,35 @@ import "../interfaces/ISupraRouterContract.sol";
 contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
 
     // Storage
+    struct UserRewards {
+        uint256 jackpotWins;
+        uint256 raffleTickets;
+        uint256 xpGained;
+        uint256 plumeTokens;
+        uint256 lastJackpotClaim;
+        uint256 streakCount;
+    }
     /// @custom:storage-location erc7201:plume.storage.Spin
+
     struct SpinStorage {
         /// @dev Address of the admin managing the Spin contract
         address admin;
         /// @dev Cooldown period between spins (in seconds)
         uint256 cooldownPeriod;
-        /// @dev Mapping of wallet address to feathers gained
-        mapping(address => uint256) feathersGained;
-        /// @dev Mapping of wallet address to current daily streak
-        mapping(address => uint256) dailyStreak;
+        /// @dev Mapping of wallet address to rewards
+        mapping(address => UserRewards) userRewards;
+        /// @dev Timestamp of start time of Spin Game
+        uint256 startTimestamp;
         /// @dev Mapping of wallet address to the last spin date (timestamp)
         mapping(address => uint256) lastSpinDate;
-        /// @dev Mapping of probabilities to rewards
-        mapping(uint256 => uint256) probabilitiesToRewards;
+        /// @dev Mapping of Week daya to Jackpot probabilities
+        mapping(uint8 => uint256) jackpotProbabilities;
+        /// @dev Raffle Multiplier
+        uint256 baseRaffleMultiplier;
+        /// @dev XP gained per spin
+        uint256 xpPerSpin;
+        /// @dev Plume Token Rewards
+        uint256[3] plumeAmounts;
         /// @dev Mapping of nonce to user
         mapping(uint256 => address) userNonce;
         /// @dev Reference to the Supra VRF interface
@@ -51,7 +66,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     /// @notice Emitted when a spin is requested
     event SpinRequested(uint256 indexed nonce, address indexed user);
     /// @notice Emitted when a spin is completed
-    event SpinCompleted(address indexed walletAddress, uint256 feathersGained);
+    event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
 
     // Errors
     /// @notice Revert if the caller is not an admin
@@ -114,6 +129,15 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         $.dateTime = IDateTime(dateTimeAddress);
         $.cooldownPeriod = _cooldownPeriod;
         $.admin = msg.sender;
+        $.startTimestamp = block.timestamp;
+
+        $.jackpotProbabilities[1] = 5;
+        $.jackpotProbabilities[2] = 10;
+        $.jackpotProbabilities[3] = 15;
+        $.jackpotProbabilities[4] = 25;
+        $.jackpotProbabilities[5] = 35;
+        $.jackpotProbabilities[6] = 50;
+        $.jackpotProbabilities[7] = 65;
     }
 
     /// @notice Starts the spin process by generating a random number and recording the spin date.
@@ -150,29 +174,62 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             revert InvalidNonce();
         }
 
-        uint256 vrfValue = rngList[0];
-        uint256 reward = determineReward(vrfValue);
+        uint256 randomness = rngList[0]; // Use full VRF range
+        (string memory rewardCategory, uint256 rewardAmount) = determineReward(randomness);
 
-        if (reward > 0) {
-            $.feathersGained[msg.sender] += reward;
-            $.dailyStreak[msg.sender] += 1;
-        } else {
-            $.dailyStreak[msg.sender] = 0;
+        // Apply reward logic
+        UserRewards storage userData = $.userRewards[user];
+
+        if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Jackpot"))) {
+            require(block.timestamp >= userData.lastJackpotClaim + 7 days, "Jackpot cooldown active");
+            require(
+                userData.streakCount >= (block.timestamp - $.startTimestamp) / 7 days + 2,
+                "Not enough streak for jackpot"
+            );
+
+            userData.jackpotWins++;
+            userData.lastJackpotClaim = block.timestamp;
+        } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Raffle Ticket"))) {
+            userData.raffleTickets += rewardAmount;
+        } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("XP"))) {
+            userData.xpGained += rewardAmount;
+        } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Plume Token"))) {
+            userData.plumeTokens += rewardAmount;
         }
 
-        emit SpinCompleted(msg.sender, reward);
+        emit SpinCompleted(user, rewardCategory, rewardAmount);
     }
 
     /**
-     * @notice Determines the reward based on the random number generated.
+     * @notice Determines the reward category based on the VRF random number.
      * @param randomness The random number generated by the Supra Router.
      */
     function determineReward(
         uint256 randomness
-    ) internal view returns (uint256) {
+    ) internal view returns (string memory, uint256) {
         SpinStorage storage $ = _getSpinStorage();
-        uint256 probability = randomness % 100; // Probabilities are 0-99
-        return $.probabilitiesToRewards[probability];
+        uint256 probability = randomness % 1_000_000; // Normalize VRF range to 1M
+
+        uint256 daysSinceStart = (block.timestamp - $.startTimestamp) / 1 days;
+        uint8 weekNumber = uint8(daysSinceStart / 7 + 1);
+        uint8 jackpotIndex = (weekNumber - 1) % 7; 
+        uint256 jackpotThreshold = (1_000_000 * $.jackpotProbabilities[jackpotIndex]) / 100;
+
+        if (probability < jackpotThreshold) {
+            return ("Jackpot", 1); // Jackpot win
+        }
+
+        uint256 rewardCategory = probability % 4;
+        if (rewardCategory == 0) {
+            return ("Raffle Ticket", $.baseRaffleMultiplier * $.userRewards[msg.sender].streakCount);
+        } else if (rewardCategory == 1) {
+            return ("XP", $.xpPerSpin);
+        } else if (rewardCategory == 2) {
+            uint256 plumeAmount = $.plumeAmounts[probability % 3];
+            return ("Plume Token", plumeAmount);
+        }
+
+        return ("Nothing", 0); // Default case
     }
 
     /// @dev Allows the admin to pause the contract, preventing certain actions.
@@ -208,14 +265,34 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     // View Functions
     /**
-     * @notice Gets the current streak and feathers for a wallet address.
+     * @notice Gets the awards for a user.
      * @param walletAddress The address of the wallet.
      */
-    function getStreakAndFeathers(
+    function getUserRewards(
         address walletAddress
-    ) external view returns (uint256 streak, uint256 feathers) {
+    )
+        external
+        view
+        returns (
+            uint256 dailyStreak,
+            uint256 jackpotWins,
+            uint256 raffleTickets,
+            uint256 xpGained,
+            uint256 smallPlumeTokens,
+            uint256 lastJackpotClaim
+        )
+    {
         SpinStorage storage $ = _getSpinStorage();
-        return ($.dailyStreak[walletAddress], $.feathersGained[walletAddress]);
+        UserRewards storage userData = $.userRewards[walletAddress];
+
+        return (
+            userData.streakCount,
+            userData.jackpotWins,
+            userData.raffleTickets,
+            userData.xpGained,
+            userData.plumeTokens,
+            userData.lastJackpotClaim
+        );
     }
 
     // UUPS Authorization
