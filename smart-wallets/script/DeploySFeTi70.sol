@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "./ArcToken.sol";
+import "../src/token/ArcToken.sol";
 
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
@@ -20,10 +20,7 @@ contract SFeTi70Deployer {
     // Financial metrics (all monetary values scaled by 1e18)
     uint256 public constant TOTAL_TOKEN_OFFERING = 100; // Total supply
     uint256 public constant TOKEN_ISSUE_PRICE = 4200 * 1e18; // $4,200.00
-    uint256 public constant TOKEN_REDEMPTION_PRICE = 4393.12 * 1e18; // $4,393.12
-    uint256 public constant DAILY_ACCRUAL_RATE = 547_950_000_000_000; // 0.054795%
-    uint256 public constant PROJECTED_REDEMPTION_PERIOD = 90; // 90 days
-    uint256 public constant IRR = 20 * 1e16; // 20%
+    uint256 public constant ACCRUAL_RATE_PER_SECOND = 6_342_013_888_889; // ~0.054795% daily
     uint256 public constant INITIAL_ASSET_VALUATION = 420_000 * 1e18; // $420,000.00
 
     /**
@@ -49,14 +46,11 @@ contract SFeTi70Deployer {
             TOKEN_SYMBOL,
             ASSET_NAME,
             INITIAL_ASSET_VALUATION,
-            TOTAL_TOKEN_OFFERING,
+            TOTAL_TOKEN_OFFERING, // Initial supply equals total offering
             yieldToken,
             TOKEN_ISSUE_PRICE,
-            TOKEN_REDEMPTION_PRICE,
-            DAILY_ACCRUAL_RATE,
-            PROJECTED_REDEMPTION_PERIOD,
-            TOTAL_TOKEN_OFFERING,
-            IRR
+            ACCRUAL_RATE_PER_SECOND,
+            TOTAL_TOKEN_OFFERING
         );
 
         // Set base URI for metadata
