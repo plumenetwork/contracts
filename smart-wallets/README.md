@@ -22,7 +22,7 @@ A comprehensive token system for representing company shares with built-in yield
 6. [Token Lifecycle](#token-lifecycle)
 7. [Token Creation Flow](#token-creation-flow)
 8. [Purchase Flow](#purchase-flow)
-9. [Error Scenarios](#comprehensive-error-scenarios)
+9. [Error Handling](#error-handling)
 10. [Gas Optimization Considerations](#gas-optimization-considerations)
 11. [Edge Cases and Recovery](#edge-cases-and-recovery)
 12. [Security Considerations](#security-considerations)
@@ -45,12 +45,13 @@ An ERC20 token representing company shares with advanced features:
 #### Key Features
 - Whitelist-controlled transfers
 - Configurable transfer restrictions
-- Yield distribution to token holders
+- Yield distribution to token holders with historical tracking
 - Asset valuation tracking
 - Minting/burning by issuer
 - Upgradeable design using EIP-7201 namespaced storage
 - Token metadata via URI system
 - Dynamic redemption price based on holding period
+- Custom error messages for improved gas efficiency
 
 #### Financial Metrics
 The token implements a time-based accrual system:
@@ -60,6 +61,40 @@ The token implements a time-based accrual system:
   - Base value (issue price)
   - Accrual rate per second
   - Actual holding period (in seconds)
+
+#### Yield Distribution System
+The token supports two yield distribution methods:
+
+1. **Direct Distribution**
+   - Yield is immediately transferred to holders
+   - Distribution based on token balance proportion
+   - No accumulation or claiming required
+   - Last holder receives remainder for complete distribution
+
+2. **Claimable Distribution**
+   - Yield is tracked using global accumulator
+   - Users can claim their share at any time
+   - Includes unclaimed yield tracking
+   - Complete distribution history maintained
+
+**Yield History Tracking**
+- All distributions recorded with timestamps
+- Accessible via `getYieldHistory()` function
+- Returns arrays of dates and amounts
+- Useful for auditing and analytics
+
+#### Custom Errors
+```solidity
+error AlreadyWhitelisted(address account)
+error NotWhitelisted(address account)
+error YieldTokenNotSet()
+error NoTokensInCirculation()
+error NoYieldToClaim()
+error InvalidYieldTokenAddress()
+error IssuePriceMustBePositive()
+error InvalidAddress()
+error TransferRestricted()
+```
 
 #### Functions
 
@@ -93,6 +128,14 @@ function getTokenMetrics(address holder) external view returns (
     uint256 currentRedemptionPrice,
     uint256 secondsHeld
 )
+```
+
+**Yield Management**
+```solidity
+function distributeYield(uint256 amount) external onlyOwner nonReentrant
+function claimYield() external nonReentrant
+function getYieldHistory() external view returns (uint256[] memory dates, uint256[] memory amounts)
+function getUnclaimedYield(address account) external view returns (uint256 unclaimedAmount)
 ```
 
 **Redemption Price Calculation**
@@ -502,138 +545,70 @@ sequenceDiagram
 
 ## Purchase Flow
 
-```mermaid
-sequenceDiagram
-    participant B as Buyer
-    participant P as Purchase Contract
-    participant T as Token
-    participant PT as Purchase Token
-    participant W as Whitelist
+The token purchase process includes several safeguards and tracking mechanisms:
 
-    Note over B,W: Purchase Process
-    B->>P: buy(tokenContract, amount)
-    activate P
-    
-    alt Not Whitelisted
-        P->>W: check whitelist
-        W-->>P: not whitelisted
-        P-->>B: revert "Not whitelisted"
-    else Insufficient Balance
-        P->>PT: check balance
-        PT-->>P: insufficient
-        P-->>B: revert "Insufficient balance"
-    else Success
-        P->>PT: transferFrom(buyer, price)
-        P->>T: transfer tokens
-        Note over P: Emit PurchaseMade
-    end
-    deactivate P
-```
+1. **Pre-Purchase Checks**
+   ```solidity
+   if (!$.transfersAllowed && (!$.isWhitelisted[from] || !$.isWhitelisted[to])) {
+       revert TransferRestricted();
+   }
+   ```
 
-## Comprehensive Error Scenarios
+2. **Purchase Timestamp Tracking**
+   ```solidity
+   if (from == owner() && to != address(0) && amount > 0) {
+       $.purchaseTimestamp[to] = block.timestamp;
+       emit TokenPurchased(to, amount, block.timestamp);
+   }
+   ```
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant T as Token
-    participant Y as Yield Token
-    participant W as Whitelist
-    participant P as Purchase
-    participant F as Factory
+3. **Redemption Price Calculation**
+   ```solidity
+   uint256 baseValue = $.tokenIssuePrice;
+   uint256 accrualValue = baseValue * $.accrualRatePerSecond * secondsHeld / 1e18;
+   currentRedemptionPrice = baseValue + accrualValue;
+   ```
 
-    rect rgb(255, 200, 200)
-        Note over U,W: Access Control Errors
-        U->>T: mint(to, amount)
-        T-->>U: revert "Only owner"
-        U->>W: addToWhitelist(account)
-        T-->>U: revert "Only owner"
-    end
+### Purchase Events
+- `TokenPurchased(address indexed buyer, uint256 amount, uint256 timestamp)`
+- `YieldClaimed(address indexed account, uint256 amount)`
+- `YieldDistributed(uint256 amount, bool direct)`
 
-    rect rgb(200, 255, 200)
-        Note over U,Y: Yield Token Errors
-        U->>T: distributeYield(amount)
-        T->>Y: transferFrom
-        Y-->>T: revert "ERC20: Insufficient allowance"
-        U->>T: claimYield()
-        T->>Y: transfer
-        Y-->>T: revert "ERC20: Transfer failed"
-    end
+## Error Handling
 
-    rect rgb(200, 200, 255)
-        Note over U,P: Purchase Errors
-        U->>P: buy(token, amount)
-        P->>T: checkWhitelist
-        T-->>P: revert "Not whitelisted"
-        U->>P: buy(token, amount)
-        P->>T: checkBalance
-        T-->>P: revert "Insufficient balance"
-    end
+The system uses custom errors for improved gas efficiency and better error reporting:
 
-    rect rgb(255, 255, 200)
-        Note over U,F: Factory Errors
-        U->>F: createToken(...)
-        F-->>U: revert "Implementation not whitelisted"
-        U->>F: createToken(...)
-        F-->>U: revert "Invalid parameters"
-    end
-```
+### Core Token Errors
+- `AlreadyWhitelisted(address)`: Account is already on the whitelist
+- `NotWhitelisted(address)`: Account is not on the whitelist
+- `TransferRestricted()`: Transfer not allowed due to restrictions
 
-## Enhanced Token Lifecycle
+### Yield Management Errors
+- `YieldTokenNotSet()`: Yield token address not configured
+- `NoTokensInCirculation()`: No tokens available for yield distribution
+- `NoYieldToClaim()`: No yield available to claim
+- `InvalidYieldTokenAddress()`: Invalid yield token address provided
 
-```mermaid
-stateDiagram-v2
-    classDef core fill:#f9f,stroke:#333,stroke-width:2px
-    classDef security fill:#bbf,stroke:#333,stroke-width:2px
-    classDef management fill:#bfb,stroke:#333,stroke-width:2px
-    classDef error fill:#fbb,stroke:#333,stroke-width:2px
+### Financial Management Errors
+- `IssuePriceMustBePositive()`: Issue price must be greater than zero
+- `InvalidAddress()`: Invalid address provided
 
-    [*] --> Uninitialized
-    Uninitialized --> Initialized: Factory Deployment
+### Error Prevention
+1. **Whitelist Management**
+   - Check whitelist status before transfers
+   - Validate addresses before adding to whitelist
+   - Prevent duplicate whitelist entries
 
-    state Initialized {
-        [*] --> BasicSetup
-        BasicSetup --> WhitelistConfig: Configure Whitelist
-        WhitelistConfig --> YieldConfig: Setup Yield
-        YieldConfig --> Ready: Complete Setup
-    }
+2. **Yield Distribution**
+   - Verify yield token is set
+   - Check for tokens in circulation
+   - Validate yield amounts
+   - Handle rounding correctly for last recipient
 
-    state Ready {
-        [*] --> Active
-        Active --> Restricted: Enable Restrictions
-        Restricted --> Active: Disable Restrictions
-        
-        state Active {
-            [*] --> NoYield
-            NoYield --> YieldConfigured: Set Yield Token
-            YieldConfigured --> DirectYield: Enable Direct
-            YieldConfigured --> ClaimableYield: Enable Claimable
-            DirectYield --> ClaimableYield: Toggle Mode
-            ClaimableYield --> DirectYield: Toggle Mode
-        }
-
-        Active --> ForSale: Enable Sales
-        ForSale --> Active: Disable Sales
-    }
-
-    Ready --> Paused: Emergency Pause
-    Paused --> Ready: Resume
-    Ready --> Upgraded: Owner Upgrade
-    Upgraded --> Ready: Complete Upgrade
-
-    state ErrorStates {
-        InvalidConfig
-        UnauthorizedAccess
-        FailedOperation
-    }
-
-    Ready --> InvalidConfig: Invalid Parameters
-    Ready --> UnauthorizedAccess: Access Control
-    Ready --> FailedOperation: Operation Error
-    
-    InvalidConfig --> Ready: Fix Config
-    UnauthorizedAccess --> Ready: Grant Access
-    FailedOperation --> Ready: Resolve Error
-```
+3. **Financial Updates**
+   - Validate price inputs
+   - Check for positive values
+   - Prevent zero amounts
 
 ## Gas Optimization Considerations
 
@@ -750,22 +725,4 @@ The metadata endpoint should return a JSON object following this structure:
 2. **setBaseURI(string)**
    - Sets the base URI for metadata
    - Only callable by owner
-   - Emits `BaseURIUpdated` event
-
-3. **setTokenURI(string)**
-   - Sets the token-specific URI component
-   - Only callable by owner
-   - Emits `TokenURIUpdated` event
-
-### Example Usage
-```solidity
-// Set base URI
-arcToken.setBaseURI("https://api.example.com/tokens/");
-
-// Set token URI
-arcToken.setTokenURI("arctoken1");
-
-// Get complete URI
-string memory completeUri = arcToken.uri();
-// Returns: "https://api.example.com/tokens/arctoken1"
-```
+   - Emits `BaseURIUpdated`
