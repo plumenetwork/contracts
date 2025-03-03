@@ -205,7 +205,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         address account
     ) external onlyOwner {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        if ($.isWhitelisted[account]) revert AlreadyWhitelisted(account);
+        if ($.isWhitelisted[account]) {
+            revert AlreadyWhitelisted(account);
+        }
         $.isWhitelisted[account] = true;
         emit WhitelistStatusChanged(account, true);
     }
@@ -235,7 +237,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         address account
     ) external onlyOwner {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        if (!$.isWhitelisted[account]) revert NotWhitelisted(account);
+        if (!$.isWhitelisted[account]) {
+            revert NotWhitelisted(account);
+        }
         $.isWhitelisted[account] = false;
         emit WhitelistStatusChanged(account, false);
     }
@@ -293,7 +297,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     function setYieldToken(
         address yieldTokenAddr
     ) external onlyOwner {
-        if (yieldTokenAddr == address(0)) revert InvalidYieldTokenAddress();
+        if (yieldTokenAddr == address(0)) {
+            revert InvalidYieldTokenAddress();
+        }
         _getArcTokenStorage().yieldToken = yieldTokenAddr;
         emit YieldTokenUpdated(yieldTokenAddr);
     }
@@ -331,8 +337,12 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         uint256 amount
     ) external view returns (address[] memory holders, uint256[] memory amounts) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        if ($.yieldToken == address(0)) revert YieldTokenNotSet();
-        if (totalSupply() == 0) revert NoTokensInCirculation();
+        if ($.yieldToken == address(0)) {
+            revert YieldTokenNotSet();
+        }
+        if (totalSupply() == 0) {
+            revert NoTokensInCirculation();
+        }
 
         uint256 holderCount = $.holders.length();
         holders = new address[](holderCount);
@@ -378,8 +388,12 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         uint256 amount
     ) external onlyOwner nonReentrant {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        if ($.yieldToken == address(0)) revert YieldTokenNotSet();
-        if (totalSupply() == 0) revert NoTokensInCirculation();
+        if ($.yieldToken == address(0)) {
+            revert YieldTokenNotSet();
+        }
+        if (totalSupply() == 0) {
+            revert NoTokensInCirculation();
+        }
         ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
 
         // Transfer yield tokens from issuer into this contract
@@ -437,7 +451,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      */
     function claimYield() external nonReentrant {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        if ($.yieldToken == address(0)) revert YieldTokenNotSet();
+        if ($.yieldToken == address(0)) {
+            revert YieldTokenNotSet();
+        }
         ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
         address account = msg.sender;
 
@@ -455,7 +471,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         }
         // Include any yield previously accrued (from past transfers or burns)
         accumulated += $.unclaimedYield[account];
-        if (accumulated == 0) revert NoYieldToClaim();
+        if (accumulated == 0) {
+            revert NoYieldToClaim();
+        }
 
         // Update state before transferring
         $.lastYieldPerToken[account] = globalYieldPerToken;
@@ -584,8 +602,10 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     function updateTokenPrice(
         uint256 newIssuePrice
     ) external onlyOwner {
-        if (newIssuePrice == 0) revert IssuePriceMustBePositive();
-        
+        if (newIssuePrice == 0) {
+            revert IssuePriceMustBePositive();
+        }
+
         ArcTokenStorage storage $ = _getArcTokenStorage();
         $.tokenIssuePrice = newIssuePrice;
 

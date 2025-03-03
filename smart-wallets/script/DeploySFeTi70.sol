@@ -14,7 +14,7 @@ contract SFeTi70Deployer {
 
     // Token configuration constants
     string public constant TOKEN_NAME = "SFeTi70";
-    string public constant TOKEN_SYMBOL = "SFeTi70";
+    string public constant TOKEN_SYMBOL = "FeTi70";
     string public constant ASSET_NAME = "Ferro Titanium Offtake Agreement";
 
     // Financial metrics (all monetary values scaled by 1e18)
@@ -54,7 +54,7 @@ contract SFeTi70Deployer {
         );
 
         // Set base URI for metadata
-        token.setBaseURI("https://api.ferrox.io/tokens/sfeti70/");
+        token.setBaseURI("https://arc.plumenetwork.xyz/tokens/sfeti70/");
 
         return address(tokenProxy);
     }
