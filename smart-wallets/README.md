@@ -325,3 +325,93 @@ forge test
 ```bash
 forge script scripts/deploy.s.sol:Deploy --rpc-url <your_rpc_url> --broadcast
 ```
+
+## System Architecture
+
+```mermaid
+graph TB
+    subgraph Factory
+        F[ArcTokenFactory]
+        I[Implementation Registry]
+    end
+
+    subgraph Token
+        T[ArcToken]
+        W[Whitelist]
+        Y[Yield Distribution]
+        V[Valuation Tracking]
+    end
+
+    subgraph Purchase
+        P[ArcTokenPurchase]
+        S[Storefront Config]
+        M[Sale Management]
+    end
+
+    F -->|creates| T
+    F -->|manages| I
+    T -->|controls| W
+    T -->|manages| Y
+    T -->|updates| V
+    P -->|configures| S
+    P -->|handles| M
+    T ---|interacts| P
+```
+
+## Yield Distribution Flow
+
+```mermaid
+sequenceDiagram
+    participant O as Owner
+    participant T as ArcToken
+    participant A as Alice
+    participant B as Bob
+    participant Y as Yield Token
+
+    Note over O,Y: Initial Setup
+    O->>T: setYieldToken(USDC)
+    O->>T: setYieldDistributionMethod(false)
+
+    Note over O,Y: First Distribution
+    O->>Y: approve(token, 100)
+    O->>T: distributeYield(100)
+    Note over T: yieldPerToken += 0.1e18
+
+    Note over A,B: Token Transfer
+    A->>T: transfer(Bob, 50)
+    Note over T: Preserve Alice's yield
+    Note over T: Update holder records
+
+    Note over O,Y: Second Distribution
+    O->>Y: approve(token, 200)
+    O->>T: distributeYield(200)
+    Note over T: yieldPerToken += 0.2e18
+
+    Note over A,B: Claiming Yield
+    A->>T: claimYield()
+    T->>A: transfer(20 USDC)
+    B->>T: claimYield()
+    T->>B: transfer(10 USDC)
+```
+
+## Direct Distribution Flow
+
+```mermaid
+sequenceDiagram
+    participant O as Owner
+    participant T as ArcToken
+    participant H as Holders
+    participant Y as Yield Token
+
+    Note over O,Y: Direct Distribution Setup
+    O->>T: setYieldDistributionMethod(true)
+    O->>Y: approve(token, amount)
+    
+    O->>T: distributeYield(amount)
+    activate T
+    T->>T: Calculate shares
+    loop For each holder
+        T->>Y: transfer(holder, share)
+    end
+    deactivate T
+```
