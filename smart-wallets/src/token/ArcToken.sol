@@ -21,6 +21,17 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     using SafeERC20 for ERC20Upgradeable;
     using EnumerableSet for EnumerableSet.AddressSet;
 
+    // -------------- Custom Errors --------------
+    error AlreadyWhitelisted(address account);
+    error NotWhitelisted(address account);
+    error YieldTokenNotSet();
+    error NoTokensInCirculation();
+    error NoYieldToClaim();
+    error InvalidYieldTokenAddress();
+    error IssuePriceMustBePositive();
+    error InvalidAddress();
+    error TransferRestricted();
+
     /// @custom:storage-location erc7201:asset.token.storage
     struct ArcTokenStorage {
         // Whitelist mapping (address => true if allowed to transfer/hold when restricted)
@@ -45,12 +56,10 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         // Token URI storage
         string baseURI;
         string tokenURI;
-        
         // Financial metrics
-        uint256 tokenIssuePrice;      // Price at which tokens are issued (scaled by 1e18)
+        uint256 tokenIssuePrice; // Price at which tokens are issued (scaled by 1e18)
         uint256 accrualRatePerSecond; // Accrual rate per second (scaled by 1e18)
-        uint256 totalTokenOffering;   // Total number of tokens available for sale
-        
+        uint256 totalTokenOffering; // Total number of tokens available for sale
         // Purchase tracking
         mapping(address => uint256) purchaseTimestamp; // When each holder purchased their tokens
     }
@@ -77,11 +86,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     event YieldDistributionMethodUpdated(bool isDirectDistribution);
     event BaseURIUpdated(string newBaseURI);
     event TokenURIUpdated(string newTokenURI);
-    event TokenMetricsUpdated(
-        uint256 tokenIssuePrice,
-        uint256 accrualRatePerSecond,
-        uint256 totalTokenOffering
-    );
+    event TokenMetricsUpdated(uint256 tokenIssuePrice, uint256 accrualRatePerSecond, uint256 totalTokenOffering);
     event TokenPurchased(address indexed buyer, uint256 amount, uint256 timestamp);
     event TokenPriceUpdated(uint256 newIssuePrice);
 
@@ -147,11 +152,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
             _mint(owner(), initialSupply_);
         }
 
-        emit TokenMetricsUpdated(
-            tokenIssuePrice_,
-            accrualRatePerSecond_,
-            totalTokenOffering_
-        );
+        emit TokenMetricsUpdated(tokenIssuePrice_, accrualRatePerSecond_, totalTokenOffering_);
     }
 
     // -------------- Asset Information --------------
@@ -204,7 +205,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         address account
     ) external onlyOwner {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        require(!$.isWhitelisted[account], "Already whitelisted");
+        if ($.isWhitelisted[account]) revert AlreadyWhitelisted(account);
         $.isWhitelisted[account] = true;
         emit WhitelistStatusChanged(account, true);
     }
@@ -234,7 +235,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         address account
     ) external onlyOwner {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        require($.isWhitelisted[account], "Not whitelisted");
+        if (!$.isWhitelisted[account]) revert NotWhitelisted(account);
         $.isWhitelisted[account] = false;
         emit WhitelistStatusChanged(account, false);
     }
@@ -292,7 +293,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     function setYieldToken(
         address yieldTokenAddr
     ) external onlyOwner {
-        require(yieldTokenAddr != address(0), "Invalid address");
+        if (yieldTokenAddr == address(0)) revert InvalidYieldTokenAddress();
         _getArcTokenStorage().yieldToken = yieldTokenAddr;
         emit YieldTokenUpdated(yieldTokenAddr);
     }
@@ -330,8 +331,8 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         uint256 amount
     ) external view returns (address[] memory holders, uint256[] memory amounts) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        require($.yieldToken != address(0), "Yield token not set");
-        require(totalSupply() > 0, "No tokens in circulation");
+        if ($.yieldToken == address(0)) revert YieldTokenNotSet();
+        if (totalSupply() == 0) revert NoTokensInCirculation();
 
         uint256 holderCount = $.holders.length();
         holders = new address[](holderCount);
@@ -377,8 +378,8 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         uint256 amount
     ) external onlyOwner nonReentrant {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        require($.yieldToken != address(0), "Yield token not set");
-        require(totalSupply() > 0, "No tokens in circulation");
+        if ($.yieldToken == address(0)) revert YieldTokenNotSet();
+        if (totalSupply() == 0) revert NoTokensInCirculation();
         ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
 
         // Transfer yield tokens from issuer into this contract
@@ -436,7 +437,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      */
     function claimYield() external nonReentrant {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        require($.yieldToken != address(0), "Yield token not set");
+        if ($.yieldToken == address(0)) revert YieldTokenNotSet();
         ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
         address account = msg.sender;
 
@@ -454,7 +455,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         }
         // Include any yield previously accrued (from past transfers or burns)
         accumulated += $.unclaimedYield[account];
-        require(accumulated > 0, "No yield to claim");
+        if (accumulated == 0) revert NoYieldToClaim();
 
         // Update state before transferring
         $.lastYieldPerToken[account] = globalYieldPerToken;
@@ -583,7 +584,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     function updateTokenPrice(
         uint256 newIssuePrice
     ) external onlyOwner {
-        require(newIssuePrice > 0, "Issue price must be positive");
+        if (newIssuePrice == 0) revert IssuePriceMustBePositive();
         
         ArcTokenStorage storage $ = _getArcTokenStorage();
         $.tokenIssuePrice = newIssuePrice;
@@ -605,51 +606,53 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         $.accrualRatePerSecond = accrualRatePerSecond_;
         $.totalTokenOffering = totalTokenOffering_;
 
-        emit TokenMetricsUpdated(
-            tokenIssuePrice_,
-            accrualRatePerSecond_,
-            totalTokenOffering_
-        );
+        emit TokenMetricsUpdated(tokenIssuePrice_, accrualRatePerSecond_, totalTokenOffering_);
     }
 
     /**
      * @dev Returns all financial metrics for the token and calculates current redemption price
      * based on the time elapsed since purchase
      */
-    function getTokenMetrics(address holder) external view returns (
-        uint256 tokenIssuePrice,
-        uint256 accrualRatePerSecond,
-        uint256 totalTokenOffering,
-        uint256 currentRedemptionPrice,
-        uint256 secondsHeld
-    ) {
+    function getTokenMetrics(
+        address holder
+    )
+        external
+        view
+        returns (
+            uint256 tokenIssuePrice,
+            uint256 accrualRatePerSecond,
+            uint256 totalTokenOffering,
+            uint256 currentRedemptionPrice,
+            uint256 secondsHeld
+        )
+    {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        
+
         // Calculate seconds held and current redemption price
         uint256 purchaseTime = $.purchaseTimestamp[holder];
         secondsHeld = purchaseTime > 0 ? block.timestamp - purchaseTime : 0;
-        
+
         // Calculate current redemption price based on actual holding period
         uint256 baseValue = $.tokenIssuePrice;
         uint256 accrualValue = baseValue * $.accrualRatePerSecond * secondsHeld / 1e18;
         currentRedemptionPrice = baseValue + accrualValue;
 
-        return (
-            $.tokenIssuePrice,
-            $.accrualRatePerSecond,
-            $.totalTokenOffering,
-            currentRedemptionPrice,
-            secondsHeld
-        );
+        return ($.tokenIssuePrice, $.accrualRatePerSecond, $.totalTokenOffering, currentRedemptionPrice, secondsHeld);
     }
 
-    // Override _update to track purchase timestamps
+    // Override _update to track purchase timestamps and enforce transfer restrictions
     function _update(address from, address to, uint256 amount) internal virtual override {
+        // Check transfer restrictions
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        if (!$.transfersAllowed && (!$.isWhitelisted[from] || !$.isWhitelisted[to])) {
+            revert TransferRestricted();
+        }
+
         super._update(from, to, amount);
-        
+
         // If this is a purchase (transfer from owner to buyer)
         if (from == owner() && to != address(0) && amount > 0) {
-            _getArcTokenStorage().purchaseTimestamp[to] = block.timestamp;
+            $.purchaseTimestamp[to] = block.timestamp;
             emit TokenPurchased(to, amount, block.timestamp);
         }
     }
