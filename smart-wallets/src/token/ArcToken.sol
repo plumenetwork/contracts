@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-// OpenZeppelin Imports
-
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
@@ -12,10 +10,10 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /**
  * @title ArcToken
- * @dev ERC20 token representing shares of a company, with whitelist control,
+ * @author Eugene Y. Q. Shen, Alp Guneysel
+ * @notice ERC20 token representing shares of a company, with whitelist control,
  *      configurable transfer restrictions, minting/burning by the issuer,
  *      yield distribution to token holders, and valuation tracking.
- * @notice This contract uses EIP-7201 namespaced storage for upgradeable design.
  */
 contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
@@ -41,6 +39,8 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         string assetName; // Name of the underlying asset (e.g., "Mineral Vault I")
         mapping(uint256 => uint256) yieldHistory; // Timestamp -> amount mapping for yield distribution history
         uint256[] yieldDates; // Array of timestamps when yield was distributed
+        // Flag to control yield distribution method (true = direct transfer, false = claimable)
+        bool directYieldDistribution;
     }
 
     // Calculate a unique storage slot for ArcTokenStorage (EIP-7201 standard).
@@ -62,6 +62,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     event YieldTokenUpdated(address indexed newYieldToken);
     event AssetValuationUpdated(uint256 newValuation);
     event AssetNameUpdated(string newAssetName);
+    event YieldDistributionMethodUpdated(bool isDirectDistribution);
 
     // -------------- Initializer --------------
     /**
@@ -91,6 +92,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
 
         // Set initial transfer restriction (false = restricted to whitelist)
         $.transfersAllowed = false;
+
+        // Set initial yield distribution method (default to claimable)
+        $.directYieldDistribution = false;
 
         // Set asset-specific information
         $.assetName = assetName_;
@@ -256,6 +260,27 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     }
 
     /**
+     * @dev Sets the yield distribution method between direct transfer and claimable.
+     * Only the owner can update this.
+     * @param isDirectDistribution If true, yields will be directly transferred to holders.
+     *                            If false, holders must claim their yield.
+     */
+    function setYieldDistributionMethod(
+        bool isDirectDistribution
+    ) external onlyOwner {
+        _getArcTokenStorage().directYieldDistribution = isDirectDistribution;
+        emit YieldDistributionMethodUpdated(isDirectDistribution);
+    }
+
+    /**
+     * @dev Returns the current yield distribution method
+     * @return true if yields are directly distributed, false if they must be claimed
+     */
+    function isDirectYieldDistribution() external view returns (bool) {
+        return _getArcTokenStorage().directYieldDistribution;
+    }
+
+    /**
      * @dev Get a preview of the yield distribution for token holders.
      * This allows the issuer to check how much each holder would receive before
      * actually distributing yiel$.
@@ -304,9 +329,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
 
     /**
      * @dev Distribute yield to token holders.
-     * If the number of holders is small, this will attempt direct distribution (transferring yield tokens to each
-     * holder).
-     * Otherwise, it will credit each holder with claimable yield (to be withdrawn via `claimYield`).
+     * Distribution method is determined by the directYieldDistribution flag:
+     * - If true: directly transfers yield tokens to each holder
+     * - If false: credits each holder with claimable yield
      * @param amount The amount of yield token to distribute.
      * NOTE: The issuer must have approved this contract to transfer `amount` of the yield token on their behalf.
      */
@@ -321,13 +346,12 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         // Transfer yield tokens from issuer into this contract
         yToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        bool direct = false;
-        uint256 holderCount = $.holders.length();
-        // Attempt direct distribution if holder count is manageable
-        if (holderCount > 0 && holderCount <= 100) {
-            direct = true;
+        bool direct = $.directYieldDistribution;
+        if (direct) {
             uint256 supply = totalSupply();
             uint256 distributedSum = 0;
+            uint256 holderCount = $.holders.length();
+
             // Distribute to all but last holder (to handle rounding remainders)
             for (uint256 i = 0; i < holderCount - 1; i++) {
                 address holder = $.holders.at(i);
@@ -341,15 +365,16 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
                     yToken.safeTransfer(holder, share);
                 }
             }
-            // Last holder gets the remaining amount to ensure full distribution
-            address lastHolder = $.holders.at(holderCount - 1);
-            uint256 lastShare = amount - distributedSum;
-            if (lastShare > 0) {
-                yToken.safeTransfer(lastHolder, lastShare);
-            }
-        }
 
-        if (!direct) {
+            // Last holder gets the remaining amount to ensure full distribution
+            if (holderCount > 0) {
+                address lastHolder = $.holders.at(holderCount - 1);
+                uint256 lastShare = amount - distributedSum;
+                if (lastShare > 0) {
+                    yToken.safeTransfer(lastHolder, lastShare);
+                }
+            }
+        } else {
             // Use claim-based distribution: add to global yield tracker
             // (Yield tokens remain in contract until claimed by holders)
             uint256 supply = totalSupply();

@@ -203,6 +203,62 @@ yieldToken.approve(address(arcToken), amount);
 arcToken.distributeYield(amount);
 ```
 
+## Example Scenario: Yield Distribution Mechanics
+
+Let's walk through a detailed example of how yield distribution and token transfers interact:
+
+### Initial State
+```
+Total Supply: 1000 tokens
+Alice has: 100 tokens (10%)
+Bob has: 0 tokens
+yieldPerToken = 0
+```
+
+### Step 1: First Yield Distribution (100 USDC)
+```
+Contract distributes 100 USDC yield
+yieldPerToken increases by: (100 * 1e18) / 1000 = 0.1e18
+
+Alice's entitlement: 10 USDC (10% of distribution)
+Bob's entitlement: 0 USDC (no tokens held)
+```
+
+### Step 2: Alice Transfers to Bob
+```
+Alice transfers 50 tokens to Bob
+
+Before transfer:
+- Alice's unclaimed yield: 10 USDC
+- Bob's unclaimed yield: 0 USDC
+
+After transfer:
+- Alice: 50 tokens, 10 USDC unclaimed (preserves previous yield)
+- Bob: 50 tokens, 0 USDC unclaimed (starts fresh)
+```
+
+### Step 3: Second Yield Distribution (200 USDC)
+```
+Contract distributes 200 USDC yield
+yieldPerToken increases by: (200 * 1e18) / 1000 = 0.2e18
+
+New yield entitlements:
+- Alice: 10 USDC (previous) + (50 tokens * 0.2e18) = 20 USDC
+- Bob: 0 USDC (previous) + (50 tokens * 0.2e18) = 10 USDC
+```
+
+### Key Points
+1. **Yield Preservation**: When tokens are transferred, the sender keeps their unclaimed yield
+2. **Fresh Start**: New token recipients start accumulating yield from their acquisition point
+3. **Proportional Distribution**: Yield is always distributed proportionally to token holdings
+4. **Precision**: All calculations use 1e18 scaling to handle fractional amounts accurately
+
+### Direct vs Claimable Distribution
+The above example uses claimable distribution. In direct distribution mode:
+- Yield tokens would be immediately transferred to holders
+- No need to track unclaimed amounts
+- Slightly higher gas costs for distribution but no separate claim step
+
 ## Security Considerations
 
 1. **Access Control**
