@@ -2,6 +2,33 @@
 
 A comprehensive token system for representing company shares with built-in yield distribution, whitelisting, and sales functionality.
 
+## Source Files
+- [`ArcToken.sol`](src/token/ArcToken.sol) - Core token implementation with yield distribution
+- [`ArcTokenFactory.sol`](src/token/ArcTokenFactory.sol) - Factory for deploying new token instances
+- [`ArcTokenPurchase.sol`](src/token/ArcTokenPurchase.sol) - Token sale and storefront management
+
+## Table of Contents
+1. [Overview](#overview)
+2. [Contracts](#contracts)
+   - [ArcToken](#arctoken)
+   - [ArcTokenFactory](#arctokenfactory)
+   - [ArcTokenPurchase](#arctokenpurchase)
+3. [Usage Examples](#usage-examples)
+   - [Deploying a New Token](#1-deploying-a-new-token)
+   - [Setting Up Token Sale](#2-setting-up-token-sale)
+   - [Distributing Yield](#3-distributing-yield)
+4. [Example Scenario: Yield Distribution Mechanics](#example-scenario-yield-distribution-mechanics)
+5. [System Architecture](#system-architecture)
+6. [Token Lifecycle](#token-lifecycle)
+7. [Token Creation Flow](#token-creation-flow)
+8. [Purchase Flow](#purchase-flow)
+9. [Error Scenarios](#comprehensive-error-scenarios)
+10. [Gas Optimization Considerations](#gas-optimization-considerations)
+11. [Edge Cases and Recovery](#edge-cases-and-recovery)
+12. [Security Considerations](#security-considerations)
+13. [Events](#events)
+14. [Development](#development)
+
 ## Overview
 
 The Arc Token System consists of three main contracts:
