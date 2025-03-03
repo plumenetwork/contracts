@@ -330,88 +330,306 @@ forge script scripts/deploy.s.sol:Deploy --rpc-url <your_rpc_url> --broadcast
 
 ```mermaid
 graph TB
-    subgraph Factory
-        F[ArcTokenFactory]
-        I[Implementation Registry]
+    classDef core fill:#f9f,stroke:#333,stroke-width:2px
+    classDef security fill:#bbf,stroke:#333,stroke-width:2px
+    classDef management fill:#bfb,stroke:#333,stroke-width:2px
+    classDef external fill:#fbb,stroke:#333,stroke-width:2px
+
+    subgraph Factory["Factory (Deployment Layer)"]
+        F[ArcTokenFactory]:::core
+        I[Implementation Registry]:::security
+        P[Proxy Management]:::security
     end
 
-    subgraph Token
-        T[ArcToken]
-        W[Whitelist]
-        Y[Yield Distribution]
-        V[Valuation Tracking]
+    subgraph Token["Token (Core Layer)"]
+        T[ArcToken]:::core
+        W[Whitelist]:::security
+        Y[Yield Distribution]:::core
+        V[Valuation Tracking]:::management
+        H[Holder Registry]:::management
     end
 
-    subgraph Purchase
-        P[ArcTokenPurchase]
-        S[Storefront Config]
-        M[Sale Management]
+    subgraph Purchase["Purchase (Interface Layer)"]
+        S[Sale Management]:::management
+        C[Storefront Config]:::management
+        PT[Purchase Token]:::external
     end
 
-    F -->|creates| T
+    F -->|deploys| T
     F -->|manages| I
+    F -->|creates| P
     T -->|controls| W
     T -->|manages| Y
     T -->|updates| V
-    P -->|configures| S
-    P -->|handles| M
-    T ---|interacts| P
+    T -->|tracks| H
+    S -->|configures| C
+    S -->|uses| PT
+    T ---|interacts| S
+
+    style Factory fill:#f5f5f5,stroke:#333,stroke-width:2px
+    style Token fill:#e8e8e8,stroke:#333,stroke-width:2px
+    style Purchase fill:#f0f0f0,stroke:#333,stroke-width:2px
 ```
 
-## Yield Distribution Flow
+## Token Lifecycle
 
 ```mermaid
-sequenceDiagram
-    participant O as Owner
-    participant T as ArcToken
-    participant A as Alice
-    participant B as Bob
-    participant Y as Yield Token
-
-    Note over O,Y: Initial Setup
-    O->>T: setYieldToken(USDC)
-    O->>T: setYieldDistributionMethod(false)
-
-    Note over O,Y: First Distribution
-    O->>Y: approve(token, 100)
-    O->>T: distributeYield(100)
-    Note over T: yieldPerToken += 0.1e18
-
-    Note over A,B: Token Transfer
-    A->>T: transfer(Bob, 50)
-    Note over T: Preserve Alice's yield
-    Note over T: Update holder records
-
-    Note over O,Y: Second Distribution
-    O->>Y: approve(token, 200)
-    O->>T: distributeYield(200)
-    Note over T: yieldPerToken += 0.2e18
-
-    Note over A,B: Claiming Yield
-    A->>T: claimYield()
-    T->>A: transfer(20 USDC)
-    B->>T: claimYield()
-    T->>B: transfer(10 USDC)
-```
-
-## Direct Distribution Flow
-
-```mermaid
-sequenceDiagram
-    participant O as Owner
-    participant T as ArcToken
-    participant H as Holders
-    participant Y as Yield Token
-
-    Note over O,Y: Direct Distribution Setup
-    O->>T: setYieldDistributionMethod(true)
-    O->>Y: approve(token, amount)
+stateDiagram-v2
+    [*] --> Initialized: Factory Creates Token
+    Initialized --> Active: Owner Setup
+    Active --> TransferRestricted: Enable Restrictions
+    Active --> TransferUnrestricted: Disable Restrictions
+    TransferRestricted --> TransferUnrestricted: setTransfersAllowed(true)
+    TransferUnrestricted --> TransferRestricted: setTransfersAllowed(false)
     
-    O->>T: distributeYield(amount)
-    activate T
-    T->>T: Calculate shares
-    loop For each holder
-        T->>Y: transfer(holder, share)
+    state Active {
+        [*] --> NoYield
+        NoYield --> YieldConfigured: Set Yield Token
+        YieldConfigured --> DirectDistribution: Set Direct
+        YieldConfigured --> ClaimableDistribution: Set Claimable
+        DirectDistribution --> ClaimableDistribution: Toggle
+        ClaimableDistribution --> DirectDistribution: Toggle
+    }
+
+    Active --> Paused: Owner Pause
+    Paused --> Active: Owner Unpause
+    Active --> [*]: Owner Shutdown
+```
+
+## Token Creation Flow
+
+```mermaid
+sequenceDiagram
+    participant A as Admin
+    participant F as Factory
+    participant P as Proxy
+    participant I as Implementation
+    participant T as Token Instance
+
+    Note over A,T: Deployment Process
+    A->>F: initialize(implementation)
+    activate F
+    F->>I: verify implementation
+    F->>F: whitelist implementation
+    deactivate F
+
+    A->>F: createToken(name, symbol, ...)
+    activate F
+    F->>F: verify parameters
+    F->>P: deploy new proxy
+    F->>T: initialize proxy
+    Note over T: Setup initial state
+    T->>T: whitelist owner
+    T->>T: mint initial supply
+    F-->>A: return token address
+    deactivate F
+```
+
+## Purchase Flow
+
+```mermaid
+sequenceDiagram
+    participant B as Buyer
+    participant P as Purchase Contract
+    participant T as Token
+    participant PT as Purchase Token
+    participant W as Whitelist
+
+    Note over B,W: Purchase Process
+    B->>P: buy(tokenContract, amount)
+    activate P
+    
+    alt Not Whitelisted
+        P->>W: check whitelist
+        W-->>P: not whitelisted
+        P-->>B: revert "Not whitelisted"
+    else Insufficient Balance
+        P->>PT: check balance
+        PT-->>P: insufficient
+        P-->>B: revert "Insufficient balance"
+    else Success
+        P->>PT: transferFrom(buyer, price)
+        P->>T: transfer tokens
+        Note over P: Emit PurchaseMade
     end
-    deactivate T
+    deactivate P
+```
+
+## Comprehensive Error Scenarios
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant T as Token
+    participant Y as Yield Token
+    participant W as Whitelist
+    participant P as Purchase
+    participant F as Factory
+
+    rect rgb(255, 200, 200)
+        Note over U,W: Access Control Errors
+        U->>T: mint(to, amount)
+        T-->>U: revert "Only owner"
+        U->>W: addToWhitelist(account)
+        T-->>U: revert "Only owner"
+    end
+
+    rect rgb(200, 255, 200)
+        Note over U,Y: Yield Token Errors
+        U->>T: distributeYield(amount)
+        T->>Y: transferFrom
+        Y-->>T: revert "ERC20: Insufficient allowance"
+        U->>T: claimYield()
+        T->>Y: transfer
+        Y-->>T: revert "ERC20: Transfer failed"
+    end
+
+    rect rgb(200, 200, 255)
+        Note over U,P: Purchase Errors
+        U->>P: buy(token, amount)
+        P->>T: checkWhitelist
+        T-->>P: revert "Not whitelisted"
+        U->>P: buy(token, amount)
+        P->>T: checkBalance
+        T-->>P: revert "Insufficient balance"
+    end
+
+    rect rgb(255, 255, 200)
+        Note over U,F: Factory Errors
+        U->>F: createToken(...)
+        F-->>U: revert "Implementation not whitelisted"
+        U->>F: createToken(...)
+        F-->>U: revert "Invalid parameters"
+    end
+```
+
+## Enhanced Token Lifecycle
+
+```mermaid
+stateDiagram-v2
+    classDef core fill:#f9f,stroke:#333,stroke-width:2px
+    classDef security fill:#bbf,stroke:#333,stroke-width:2px
+    classDef management fill:#bfb,stroke:#333,stroke-width:2px
+    classDef error fill:#fbb,stroke:#333,stroke-width:2px
+
+    [*] --> Uninitialized
+    Uninitialized --> Initialized: Factory Deployment
+
+    state Initialized {
+        [*] --> BasicSetup
+        BasicSetup --> WhitelistConfig: Configure Whitelist
+        WhitelistConfig --> YieldConfig: Setup Yield
+        YieldConfig --> Ready: Complete Setup
+    }
+
+    state Ready {
+        [*] --> Active
+        Active --> Restricted: Enable Restrictions
+        Restricted --> Active: Disable Restrictions
+        
+        state Active {
+            [*] --> NoYield
+            NoYield --> YieldConfigured: Set Yield Token
+            YieldConfigured --> DirectYield: Enable Direct
+            YieldConfigured --> ClaimableYield: Enable Claimable
+            DirectYield --> ClaimableYield: Toggle Mode
+            ClaimableYield --> DirectYield: Toggle Mode
+        }
+
+        Active --> ForSale: Enable Sales
+        ForSale --> Active: Disable Sales
+    }
+
+    Ready --> Paused: Emergency Pause
+    Paused --> Ready: Resume
+    Ready --> Upgraded: Owner Upgrade
+    Upgraded --> Ready: Complete Upgrade
+
+    state ErrorStates {
+        InvalidConfig
+        UnauthorizedAccess
+        FailedOperation
+    }
+
+    Ready --> InvalidConfig: Invalid Parameters
+    Ready --> UnauthorizedAccess: Access Control
+    Ready --> FailedOperation: Operation Error
+    
+    InvalidConfig --> Ready: Fix Config
+    UnauthorizedAccess --> Ready: Grant Access
+    FailedOperation --> Ready: Resolve Error
+```
+
+## Gas Optimization Considerations
+
+```mermaid
+graph TB
+    classDef high fill:#ff9999,stroke:#333,stroke-width:2px
+    classDef medium fill:#ffff99,stroke:#333,stroke-width:2px
+    classDef low fill:#99ff99,stroke:#333,stroke-width:2px
+
+    subgraph HighGas["High Gas Operations"]
+        D[Direct Distribution]:::high
+        M[Mass Whitelist]:::high
+        U[Contract Upgrade]:::high
+    end
+
+    subgraph MediumGas["Medium Gas Operations"]
+        Y[Yield Claim]:::medium
+        W[Whitelist Single]:::medium
+        T[Token Transfer]:::medium
+    end
+
+    subgraph LowGas["Low Gas Operations"]
+        C[Check Balance]:::low
+        V[View Functions]:::low
+        S[Status Checks]:::low
+    end
+
+    D -->|Optimization| DO[Batch Processing]
+    M -->|Optimization| MO[Merkle Tree]
+    Y -->|Optimization| YO[Accumulator Pattern]
+    T -->|Optimization| TO[Minimal Storage]
+
+    style HighGas fill:#ffefef,stroke:#333,stroke-width:2px
+    style MediumGas fill:#ffffef,stroke:#333,stroke-width:2px
+    style LowGas fill:#efffef,stroke:#333,stroke-width:2px
+```
+
+## Edge Cases and Recovery
+
+```mermaid
+sequenceDiagram
+    participant O as Owner
+    participant T as Token
+    participant H as Holder
+    participant Y as Yield
+
+    rect rgb(255, 220, 220)
+        Note over O,Y: Edge Case: Stuck Yield
+        O->>T: distributeYield
+        T->>Y: transferFrom
+        Y-->>T: transfer failed
+        Note over O: Recovery
+        O->>Y: rescue tokens
+        O->>T: retry distribution
+    end
+
+    rect rgb(220, 255, 220)
+        Note over H,T: Edge Case: Lost Access
+        H->>T: transfer
+        Note over H: Key Lost
+        Note over O: Recovery
+        O->>T: recover account
+        T->>H: restore access
+    end
+
+    rect rgb(220, 220, 255)
+        Note over T,Y: Edge Case: Decimal Mismatch
+        O->>T: setYieldToken
+        Note over T: Token decimals != Yield decimals
+        Note over O: Recovery
+        O->>T: adjust scaling
+        O->>T: update configuration
+    end
 ```
