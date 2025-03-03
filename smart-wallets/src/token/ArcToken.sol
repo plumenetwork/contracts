@@ -14,6 +14,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
  * @notice ERC20 token representing shares of a company, with whitelist control,
  *      configurable transfer restrictions, minting/burning by the issuer,
  *      yield distribution to token holders, and valuation tracking.
+ * @dev Implements ERC20Upgradeable which includes IERC20Metadata functionality
  */
 contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
@@ -483,18 +484,18 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      */
     function uri() public view returns (string memory) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        
+
         bytes memory baseURIBytes = bytes($.baseURI);
         bytes memory tokenURIBytes = bytes($.tokenURI);
-        
+
         if (baseURIBytes.length == 0 && tokenURIBytes.length == 0) {
             return "";
         }
-        
+
         if (tokenURIBytes.length == 0) {
             return $.baseURI;
         }
-        
+
         return string.concat($.baseURI, $.tokenURI);
     }
 
@@ -502,7 +503,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      * @dev Sets the base URI for computing the token URI. Only callable by owner.
      * @param newBaseURI The new base URI to set
      */
-    function setBaseURI(string memory newBaseURI) external onlyOwner {
+    function setBaseURI(
+        string memory newBaseURI
+    ) external onlyOwner {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         $.baseURI = newBaseURI;
         emit BaseURIUpdated(newBaseURI);
@@ -512,7 +515,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      * @dev Sets the token-specific URI component. Only callable by owner.
      * @param newTokenURI The new token URI component to set
      */
-    function setTokenURI(string memory newTokenURI) external onlyOwner {
+    function setTokenURI(
+        string memory newTokenURI
+    ) external onlyOwner {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         $.tokenURI = newTokenURI;
         emit TokenURIUpdated(newTokenURI);
@@ -586,6 +591,30 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
             // If `to` receives tokens and was not a holder before, add to holders set
             $.holders.add(to);
         }
+    }
+
+    /**
+     * @dev Returns the decimals places of the token.
+     * @return The number of decimals places (always returns 18 for this implementation)
+     */
+    function decimals() public pure override returns (uint8) {
+        return 18;
+    }
+
+    /**
+     * @dev Returns the name of the token.
+     * @return The token name
+     */
+    function name() public view override returns (string memory) {
+        return super.name();
+    }
+
+    /**
+     * @dev Returns the symbol of the token.
+     * @return The token symbol
+     */
+    function symbol() public view override returns (string memory) {
+        return super.symbol();
     }
 
 }
