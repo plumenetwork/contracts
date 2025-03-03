@@ -453,37 +453,48 @@ graph TB
     classDef management fill:#bfb,stroke:#333,stroke-width:2px
     classDef external fill:#fbb,stroke:#333,stroke-width:2px
 
-    subgraph Factory["Factory (Deployment Layer)"]
+    %% Factory Layer
+    subgraph Factory["Factory Layer"]
+        direction TB
         F[ArcTokenFactory]:::core
         I[Implementation Registry]:::security
         P[Proxy Management]:::security
+        
+        F --> I
+        F --> P
     end
 
-    subgraph Token["Token (Core Layer)"]
+    %% Token Layer
+    subgraph Token["Core Layer"]
+        direction TB
         T[ArcToken]:::core
         W[Whitelist]:::security
         Y[Yield Distribution]:::core
         V[Valuation Tracking]:::management
         H[Holder Registry]:::management
+        
+        T --> W
+        T --> Y
+        T --> V
+        T --> H
     end
 
-    subgraph Purchase["Purchase (Interface Layer)"]
+    %% Purchase Layer
+    subgraph Purchase["Interface Layer"]
+        direction TB
         S[Sale Management]:::management
         C[Storefront Config]:::management
         PT[Purchase Token]:::external
+        
+        S --> C
+        S --> PT
     end
 
+    %% Inter-layer connections
     F -->|deploys| T
-    F -->|manages| I
-    F -->|creates| P
-    T -->|controls| W
-    T -->|manages| Y
-    T -->|updates| V
-    T -->|tracks| H
-    S -->|configures| C
-    S -->|uses| PT
     T ---|interacts| S
 
+    %% Layer styling
     style Factory fill:#f5f5f5,stroke:#333,stroke-width:2px
     style Token fill:#e8e8e8,stroke:#333,stroke-width:2px
     style Purchase fill:#f0f0f0,stroke:#333,stroke-width:2px
