@@ -45,6 +45,14 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         // Token URI storage
         string baseURI;
         string tokenURI;
+        
+        // Financial metrics
+        uint256 tokenIssuePrice;      // Price at which tokens are issued (scaled by 1e18)
+        uint256 accrualRatePerSecond; // Accrual rate per second (scaled by 1e18)
+        uint256 totalTokenOffering;   // Total number of tokens available for sale
+        
+        // Purchase tracking
+        mapping(address => uint256) purchaseTimestamp; // When each holder purchased their tokens
     }
 
     // Calculate a unique storage slot for ArcTokenStorage (EIP-7201 standard).
@@ -69,6 +77,13 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     event YieldDistributionMethodUpdated(bool isDirectDistribution);
     event BaseURIUpdated(string newBaseURI);
     event TokenURIUpdated(string newTokenURI);
+    event TokenMetricsUpdated(
+        uint256 tokenIssuePrice,
+        uint256 accrualRatePerSecond,
+        uint256 totalTokenOffering
+    );
+    event TokenPurchased(address indexed buyer, uint256 amount, uint256 timestamp);
+    event TokenPriceUpdated(uint256 newIssuePrice);
 
     // -------------- Initializer --------------
     /**
@@ -81,6 +96,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      * @param initialSupply_ Initial token supply to mint to the owner
      * @param yieldToken_ Address of the ERC20 token for yield distribution (e.g., USDC).
      *                    Can be address(0) if setting later.
+     * @param tokenIssuePrice_ Price at which tokens are issued (scaled by 1e18)
+     * @param accrualRatePerSecond_ Accrual rate per second (scaled by 1e18)
+     * @param totalTokenOffering_ Total number of tokens available for sale
      */
     function initialize(
         string memory name_,
@@ -88,7 +106,10 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         string memory assetName_,
         uint256 assetValuation_,
         uint256 initialSupply_,
-        address yieldToken_
+        address yieldToken_,
+        uint256 tokenIssuePrice_,
+        uint256 accrualRatePerSecond_,
+        uint256 totalTokenOffering_
     ) public initializer {
         __ERC20_init(name_, symbol_);
         __Ownable_init(msg.sender);
@@ -106,6 +127,11 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         $.assetName = assetName_;
         $.assetValuation = assetValuation_;
 
+        // Set financial metrics
+        $.tokenIssuePrice = tokenIssuePrice_;
+        $.accrualRatePerSecond = accrualRatePerSecond_;
+        $.totalTokenOffering = totalTokenOffering_;
+
         // Set initial yield token if provided
         if (yieldToken_ != address(0)) {
             $.yieldToken = yieldToken_;
@@ -120,6 +146,12 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         if (initialSupply_ > 0) {
             _mint(owner(), initialSupply_);
         }
+
+        emit TokenMetricsUpdated(
+            tokenIssuePrice_,
+            accrualRatePerSecond_,
+            totalTokenOffering_
+        );
     }
 
     // -------------- Asset Information --------------
@@ -481,6 +513,25 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      * @dev Returns the URI for token metadata. This implementation returns the concatenation
      * of the `baseURI` and `tokenURI` if both are set. If `tokenURI` is empty, returns
      * just the `baseURI`. If both are empty, returns an empty string.
+     * @notice The URI should point to a JSON metadata object that follows the ERC-1155/OpenSea
+     * metadata standard format:
+     * {
+     *     "name": "Token Name",
+     *     "symbol": "SYMBOL",
+     *     "description": "Token description",
+     *     "image": "https://...", // URL to token image
+     *     "decimals": 18,
+     *     "properties": {
+     *         "assetName": "Asset Name",
+     *         "assetValuation": "1000000",
+     *         "tokenIssuePrice": "4200000000000000000000",
+     *         "tokenRedemptionPrice": "4393120000000000000000",
+     *         "dailyAccrualRate": "547950000000000",
+     *         "projectedRedemptionPeriod": 90,
+     *         "totalTokenOffering": "100",
+     *         "irr": "200000000000000000"
+     *     }
+     * }
      */
     function uri() public view returns (string memory) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
@@ -523,73 +574,83 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         emit TokenURIUpdated(newTokenURI);
     }
 
-    // -------------- Internal Hooks --------------
+    // -------------- Financial Metrics Management --------------
     /**
-     * @dev Internal function to handle token transfers, including whitelist restrictions
-     * and yield accrual. This overrides the _update function from ERC20Upgradeable.
+     * @dev Updates token issue price. Only callable by owner.
+     * Price value should be scaled by 1e18.
+     * @param newIssuePrice The new token issue price
      */
-    function _update(address from, address to, uint256 amount) internal virtual override {
+    function updateTokenPrice(
+        uint256 newIssuePrice
+    ) external onlyOwner {
+        require(newIssuePrice > 0, "Issue price must be positive");
+        
         ArcTokenStorage storage $ = _getArcTokenStorage();
+        $.tokenIssuePrice = newIssuePrice;
 
-        // Enforce whitelist if transfers are restricted
-        if (!$.transfersAllowed) {
-            if (from != address(0)) {
-                // not minting
-                require($.isWhitelisted[from], "Sender not whitelisted");
-            }
-            if (to != address(0)) {
-                // not burning
-                require($.isWhitelisted[to], "Recipient not whitelisted");
-            }
-        }
+        emit TokenPriceUpdated(newIssuePrice);
+    }
 
-        // Yield accrual logic: update unclaimed yield for sender and receiver
-        // (This ensures yield up to the current distribution is assigned to the correct holder)
-        if (amount > 0 && from != to) {
-            uint256 globalYieldPerToken = $.yieldPerToken;
-            if (from != address(0)) {
-                // Credit any pending yield to the sender (for the tokens they are about to transfer or burn)
-                uint256 senderBalance = balanceOf(from);
-                if (senderBalance > 0) {
-                    uint256 delta = globalYieldPerToken - $.lastYieldPerToken[from];
-                    if (delta > 0) {
-                        uint256 pendingYield = (senderBalance * delta) / 1e18;
-                        if (pendingYield > 0) {
-                            $.unclaimedYield[from] += pendingYield;
-                        }
-                    }
-                }
-                // Update sender's yield checkpoint to current
-                $.lastYieldPerToken[from] = globalYieldPerToken;
-            }
-            if (to != address(0)) {
-                // Credit any pending yield to the recipient (for tokens they already held before this transfer)
-                uint256 receiverBalance = balanceOf(to);
-                if (receiverBalance > 0) {
-                    uint256 delta2 = globalYieldPerToken - $.lastYieldPerToken[to];
-                    if (delta2 > 0) {
-                        uint256 pendingYieldTo = (receiverBalance * delta2) / 1e18;
-                        if (pendingYieldTo > 0) {
-                            $.unclaimedYield[to] += pendingYieldTo;
-                        }
-                    }
-                }
-                // Update recipient's yield checkpoint to current
-                $.lastYieldPerToken[to] = globalYieldPerToken;
-            }
-        }
+    /**
+     * @dev Updates the token's financial metrics. Only callable by owner.
+     * All price and rate values should be scaled by 1e18.
+     */
+    function updateTokenMetrics(
+        uint256 tokenIssuePrice_,
+        uint256 accrualRatePerSecond_,
+        uint256 totalTokenOffering_
+    ) external onlyOwner {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        $.tokenIssuePrice = tokenIssuePrice_;
+        $.accrualRatePerSecond = accrualRatePerSecond_;
+        $.totalTokenOffering = totalTokenOffering_;
 
-        // Call parent implementation
+        emit TokenMetricsUpdated(
+            tokenIssuePrice_,
+            accrualRatePerSecond_,
+            totalTokenOffering_
+        );
+    }
+
+    /**
+     * @dev Returns all financial metrics for the token and calculates current redemption price
+     * based on the time elapsed since purchase
+     */
+    function getTokenMetrics(address holder) external view returns (
+        uint256 tokenIssuePrice,
+        uint256 accrualRatePerSecond,
+        uint256 totalTokenOffering,
+        uint256 currentRedemptionPrice,
+        uint256 secondsHeld
+    ) {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        
+        // Calculate seconds held and current redemption price
+        uint256 purchaseTime = $.purchaseTimestamp[holder];
+        secondsHeld = purchaseTime > 0 ? block.timestamp - purchaseTime : 0;
+        
+        // Calculate current redemption price based on actual holding period
+        uint256 baseValue = $.tokenIssuePrice;
+        uint256 accrualValue = baseValue * $.accrualRatePerSecond * secondsHeld / 1e18;
+        currentRedemptionPrice = baseValue + accrualValue;
+
+        return (
+            $.tokenIssuePrice,
+            $.accrualRatePerSecond,
+            $.totalTokenOffering,
+            currentRedemptionPrice,
+            secondsHeld
+        );
+    }
+
+    // Override _update to track purchase timestamps
+    function _update(address from, address to, uint256 amount) internal virtual override {
         super._update(from, to, amount);
-
-        // Update holders set
-        if (from != address(0) && balanceOf(from) == 0) {
-            // If `from` has no more tokens, remove from holders set
-            $.holders.remove(from);
-        }
-        if (to != address(0) && amount > 0) {
-            // If `to` receives tokens and was not a holder before, add to holders set
-            $.holders.add(to);
+        
+        // If this is a purchase (transfer from owner to buyer)
+        if (from == owner() && to != address(0) && amount > 0) {
+            _getArcTokenStorage().purchaseTimestamp[to] = block.timestamp;
+            emit TokenPurchased(to, amount, block.timestamp);
         }
     }
 

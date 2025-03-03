@@ -50,11 +50,16 @@ An ERC20 token representing company shares with advanced features:
 - Minting/burning by issuer
 - Upgradeable design using EIP-7201 namespaced storage
 - Token metadata via URI system
+- Dynamic redemption price based on holding period
 
-#### Yield Distribution
-Supports two distribution methods:
-1. **Direct Distribution**: Immediately transfers yield tokens to holders
-2. **Claimable Distribution**: Holders must claim their yield
+#### Financial Metrics
+The token implements a time-based accrual system:
+- **Issue Price**: Fixed price at which tokens are issued
+- **Accrual Rate**: Per-second rate at which token value increases
+- **Redemption Price**: Dynamically calculated based on:
+  - Base value (issue price)
+  - Accrual rate per second
+  - Actual holding period (in seconds)
 
 #### Functions
 
@@ -66,9 +71,42 @@ function initialize(
     string memory assetName_,
     uint256 assetValuation_,
     uint256 initialSupply_,
-    address yieldToken_
+    address yieldToken_,
+    uint256 tokenIssuePrice_,
+    uint256 accrualRatePerSecond_,
+    uint256 totalTokenOffering_
 ) public initializer
 ```
+
+**Financial Metrics Management**
+```solidity
+function updateTokenPrice(uint256 newIssuePrice) external onlyOwner
+function updateTokenMetrics(
+    uint256 tokenIssuePrice_,
+    uint256 accrualRatePerSecond_,
+    uint256 totalTokenOffering_
+) external onlyOwner
+function getTokenMetrics(address holder) external view returns (
+    uint256 tokenIssuePrice,
+    uint256 accrualRatePerSecond,
+    uint256 totalTokenOffering,
+    uint256 currentRedemptionPrice,
+    uint256 secondsHeld
+)
+```
+
+**Redemption Price Calculation**
+The redemption price is calculated dynamically based on the actual holding period:
+```solidity
+redemptionPrice = issuePrice + (issuePrice * accrualRatePerSecond * secondsHeld / 1e18)
+```
+
+Where:
+- `issuePrice`: Base price at which tokens are issued
+- `accrualRatePerSecond`: Rate at which value accrues (scaled by 1e18)
+- `secondsHeld`: Time elapsed since purchase (in seconds)
+
+This provides a more precise and fair calculation of token value based on actual holding duration.
 
 **Whitelist Management**
 ```solidity
