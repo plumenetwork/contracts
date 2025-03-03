@@ -41,6 +41,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         uint256[] yieldDates; // Array of timestamps when yield was distributed
         // Flag to control yield distribution method (true = direct transfer, false = claimable)
         bool directYieldDistribution;
+        // Token URI storage
+        string baseURI;
+        string tokenURI;
     }
 
     // Calculate a unique storage slot for ArcTokenStorage (EIP-7201 standard).
@@ -63,6 +66,8 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     event AssetValuationUpdated(uint256 newValuation);
     event AssetNameUpdated(string newAssetName);
     event YieldDistributionMethodUpdated(bool isDirectDistribution);
+    event BaseURIUpdated(string newBaseURI);
+    event TokenURIUpdated(string newTokenURI);
 
     // -------------- Initializer --------------
     /**
@@ -468,6 +473,49 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         unclaimedAmount += $.unclaimedYield[account];
 
         return unclaimedAmount;
+    }
+
+    // -------------- URI Management --------------
+    /**
+     * @dev Returns the URI for token metadata. This implementation returns the concatenation
+     * of the `baseURI` and `tokenURI` if both are set. If `tokenURI` is empty, returns
+     * just the `baseURI`. If both are empty, returns an empty string.
+     */
+    function uri() public view returns (string memory) {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        
+        bytes memory baseURIBytes = bytes($.baseURI);
+        bytes memory tokenURIBytes = bytes($.tokenURI);
+        
+        if (baseURIBytes.length == 0 && tokenURIBytes.length == 0) {
+            return "";
+        }
+        
+        if (tokenURIBytes.length == 0) {
+            return $.baseURI;
+        }
+        
+        return string.concat($.baseURI, $.tokenURI);
+    }
+
+    /**
+     * @dev Sets the base URI for computing the token URI. Only callable by owner.
+     * @param newBaseURI The new base URI to set
+     */
+    function setBaseURI(string memory newBaseURI) external onlyOwner {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        $.baseURI = newBaseURI;
+        emit BaseURIUpdated(newBaseURI);
+    }
+
+    /**
+     * @dev Sets the token-specific URI component. Only callable by owner.
+     * @param newTokenURI The new token URI component to set
+     */
+    function setTokenURI(string memory newTokenURI) external onlyOwner {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        $.tokenURI = newTokenURI;
+        emit TokenURIUpdated(newTokenURI);
     }
 
     // -------------- Internal Hooks --------------

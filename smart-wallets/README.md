@@ -49,6 +49,7 @@ An ERC20 token representing company shares with advanced features:
 - Asset valuation tracking
 - Minting/burning by issuer
 - Upgradeable design using EIP-7201 namespaced storage
+- Token metadata via URI system
 
 #### Yield Distribution
 Supports two distribution methods:
@@ -95,6 +96,13 @@ function distributeYield(uint256 amount) external onlyOwner nonReentrant
 function claimYield() external nonReentrant
 function setYieldToken(address yieldTokenAddr) external onlyOwner
 function setYieldDistributionMethod(bool isDirectDistribution) external onlyOwner
+```
+
+**URI Management**
+```solidity
+function uri() public view returns (string memory)
+function setBaseURI(string memory newBaseURI) external onlyOwner
+function setTokenURI(string memory newTokenURI) external onlyOwner
 ```
 
 ### ArcTokenFactory
@@ -319,6 +327,8 @@ event YieldTokenUpdated(address indexed newYieldToken)
 event AssetValuationUpdated(uint256 newValuation)
 event AssetNameUpdated(string newAssetName)
 event YieldDistributionMethodUpdated(bool isDirectDistribution)
+event BaseURIUpdated(string newBaseURI)
+event TokenURIUpdated(string newTokenURI)
 ```
 
 ### Factory Events
@@ -659,4 +669,65 @@ sequenceDiagram
         O->>T: adjust scaling
         O->>T: update configuration
     end
+```
+
+## Token Metadata
+
+The ArcToken contract includes a flexible metadata system through URIs, allowing token information to be stored and retrieved from external sources.
+
+### URI Structure
+- `baseURI`: Base endpoint for metadata (e.g., "https://api.example.com/tokens/")
+- `tokenURI`: Token-specific identifier (e.g., "arctoken1")
+- Complete URI: Concatenation of base and token URIs
+
+### Metadata Format
+The metadata endpoint should return a JSON object following this structure:
+```json
+{
+    "name": "ArcToken",
+    "symbol": "ARC",
+    "decimals": 18,
+    "description": "Asset-backed token with yield distribution",
+    "assetName": "Mineral Vault I",
+    "assetValuation": "1000000",
+    "yieldToken": "0x...",
+    "image": "https://...",
+    "properties": {
+        "transfersAllowed": true,
+        "directYieldDistribution": true,
+        "totalSupply": "1000000000000000000000",
+        "holders": 50
+    }
+}
+```
+
+### URI Management Functions
+
+1. **uri()**
+   - Returns the complete metadata URI
+   - Concatenates baseURI and tokenURI if both are set
+   - Returns baseURI alone if tokenURI is empty
+   - Returns empty string if both are empty
+
+2. **setBaseURI(string)**
+   - Sets the base URI for metadata
+   - Only callable by owner
+   - Emits `BaseURIUpdated` event
+
+3. **setTokenURI(string)**
+   - Sets the token-specific URI component
+   - Only callable by owner
+   - Emits `TokenURIUpdated` event
+
+### Example Usage
+```solidity
+// Set base URI
+arcToken.setBaseURI("https://api.example.com/tokens/");
+
+// Set token URI
+arcToken.setTokenURI("arctoken1");
+
+// Get complete URI
+string memory completeUri = arcToken.uri();
+// Returns: "https://api.example.com/tokens/arctoken1"
 ```
