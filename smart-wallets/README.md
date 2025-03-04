@@ -28,6 +28,7 @@ A comprehensive token system for representing company shares with built-in yield
 12. [Security Considerations](#security-considerations)
 13. [Events](#events)
 14. [Development](#development)
+15. [Testing](#testing)
 
 ## Overview
 
@@ -737,3 +738,66 @@ The metadata endpoint should return a JSON object following this structure:
    - Sets the base URI for metadata
    - Only callable by owner
    - Emits `BaseURIUpdated`
+
+## Testing
+
+The test suite is organized into three main test files, each focusing on a specific contract:
+
+### Test Structure
+
+1. `ArcToken.t.sol`: Tests for the core token functionality
+   - Initialization tests
+   - Whitelist management
+   - Transfer restrictions
+   - Yield distribution
+   - Financial metrics
+   - Error cases
+
+2. `ArcTokenFactory.t.sol`: Tests for the token factory
+   - Implementation management
+   - Token creation
+   - Access control
+   - Error cases
+
+3. `ArcTokenPurchase.t.sol`: Tests for the token purchase functionality
+   - Sale management
+   - Purchase flow
+   - Storefront configuration
+   - Integration tests
+
+### Key Testing Patterns
+
+1. **Proper Initialization Order**
+   - Whitelist addresses before any transfers
+   - Mint tokens to owner first, then transfer
+   - Set up proper permissions before operations
+
+2. **Error Handling**
+   - Use `abi.encodeWithSignature()` for custom errors
+   - Proper error messages that match contract implementation
+   - Correct access control error formats
+
+3. **Event Testing**
+   - Verify event emissions with correct parameters
+   - Test both successful and failed scenarios
+
+4. **Integration Testing**
+   - Test complete workflows across contracts
+   - Verify state changes and balances
+   - Test multiple user interactions
+
+### Running Tests
+
+```bash
+forge test
+```
+
+For verbose output with traces:
+```bash
+forge test -vvv
+```
+
+For a specific test file:
+```bash
+forge test --match-path test/ArcToken.t.sol
+```
