@@ -801,3 +801,132 @@ For a specific test file:
 ```bash
 forge test --match-path test/ArcToken.t.sol
 ```
+
+## Contract Interface Reference
+
+### ArcToken
+
+#### View (Read) Functions
+```solidity
+// Token Information
+function name() external view returns (string memory)
+function symbol() external view returns (string memory)
+function decimals() external view returns (uint8)
+function totalSupply() external view returns (uint256)
+function balanceOf(address account) external view returns (uint256)
+function allowance(address owner, address spender) external view returns (uint256)
+
+// Whitelist & Transfer Controls
+function isWhitelisted(address account) external view returns (bool)
+function transfersAllowed() external view returns (bool)
+
+// Yield & Financial Metrics
+function getUnclaimedYield(address account) external view returns (uint256)
+function getYieldHistory() external view returns (uint256[] memory dates, uint256[] memory amounts)
+function getTokenMetrics(address holder) external view returns (
+    uint256 tokenIssuePrice,
+    uint256 accrualRatePerSecond,
+    uint256 totalTokenOffering,
+    uint256 currentRedemptionPrice,
+    uint256 secondsHeld
+)
+
+// URI & Metadata
+function uri() public view returns (string memory)
+```
+
+#### External (Write) Functions
+```solidity
+// Token Operations
+function transfer(address to, uint256 amount) external returns (bool)
+function transferFrom(address from, address to, uint256 amount) external returns (bool)
+function approve(address spender, uint256 amount) external returns (bool)
+function mint(address to, uint256 amount) external onlyOwner
+function burn(address from, uint256 amount) external onlyOwner
+
+// Whitelist Management
+function addToWhitelist(address account) external onlyOwner
+function batchAddToWhitelist(address[] calldata accounts) external onlyOwner
+function removeFromWhitelist(address account) external onlyOwner
+function setTransfersAllowed(bool allowed) external onlyOwner
+
+// Yield Management
+function distributeYield(uint256 amount) external onlyOwner nonReentrant
+function claimYield() external nonReentrant
+function setYieldToken(address yieldTokenAddr) external onlyOwner
+function setYieldDistributionMethod(bool isDirectDistribution) external onlyOwner
+
+// Configuration
+function updateTokenPrice(uint256 newIssuePrice) external onlyOwner
+function updateTokenMetrics(
+    uint256 tokenIssuePrice_,
+    uint256 accrualRatePerSecond_,
+    uint256 totalTokenOffering_
+) external onlyOwner
+function setBaseURI(string memory newBaseURI) external onlyOwner
+function setTokenURI(string memory newTokenURI) external onlyOwner
+```
+
+### ArcTokenFactory
+
+#### View (Read) Functions
+```solidity
+function isImplementationWhitelisted(address implementation) external view returns (bool)
+function hasRole(bytes32 role, address account) public view returns (bool)
+function getRoleAdmin(bytes32 role) public view returns (bytes32)
+```
+
+#### External (Write) Functions
+```solidity
+function createToken(
+    string memory name,
+    string memory symbol,
+    string memory assetName,
+    uint256 assetValuation,
+    uint256 initialSupply,
+    address yieldToken
+) external returns (address)
+
+function whitelistImplementation(address newImplementation) external onlyRole(DEFAULT_ADMIN_ROLE)
+function removeWhitelistedImplementation(address implementation) external onlyRole(DEFAULT_ADMIN_ROLE)
+function grantRole(bytes32 role, address account) public virtual override onlyRole(getRoleAdmin(role))
+function revokeRole(bytes32 role, address account) public virtual override onlyRole(getRoleAdmin(role))
+```
+
+### ArcTokenPurchase
+
+#### View (Read) Functions
+```solidity
+function purchaseToken() external view returns (address)
+function tokenInfo(address _tokenContract) external view returns (
+    bool isEnabled,
+    uint256 price,
+    uint256 tokensAvailable
+)
+function getStorefrontConfig(address _tokenContract) external view returns (StorefrontConfig memory)
+```
+
+#### External (Write) Functions
+```solidity
+function setPurchaseToken(address _purchaseToken) external onlyOwner
+function enableToken(
+    address _tokenContract,
+    uint256 _numberOfTokens,
+    uint256 _tokenPrice
+) external onlyTokenOwner(_tokenContract)
+
+function buy(address _tokenContract, uint256 _purchaseAmount) external
+function setStorefrontConfig(
+    address _tokenContract,
+    string memory _domain,
+    string memory _title,
+    string memory _description,
+    string memory _ogImageUrl,
+    string memory _accentColor,
+    string memory _backgroundColor,
+    string memory _companyLogoUrl,
+    bool _showPlumeBadge
+) external onlyTokenOwner(_tokenContract)
+```
+
+Each function includes its access modifiers (e.g., `onlyOwner`, `nonReentrant`) to clearly indicate who can call them and what protections are in place. The view functions can be called by anyone without gas costs, while external functions require a transaction and appropriate permissions.
