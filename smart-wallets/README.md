@@ -433,7 +433,7 @@ event PurchaseTokenUpdated(address indexed newPurchaseToken)
 ### Prerequisites
 - Solidity ^0.8.25
 - OpenZeppelin Contracts
-- Node.js and npm/yarn
+- npm/yarn
 
 ### Testing
 ```bash
