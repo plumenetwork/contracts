@@ -8,7 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "../interfaces/IDateTime.sol";
 import "../interfaces/ISupraRouterContract.sol";
-import {console} from "forge-std/console.sol";
+import { console } from "forge-std/console.sol";
 
 /// @custom:oz-upgrades-from Spin
 contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
@@ -49,6 +49,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         ISupraRouterContract supraRouter;
         /// @dev Reference to the DateTime contract
         IDateTime dateTime;
+        /// @dev Address of the Raffle contract
+        address raffleContract;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.Spin")) - 1)) & ~bytes32(uint256(0xff))
@@ -68,6 +70,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     event SpinRequested(uint256 indexed nonce, address indexed user);
     /// @notice Emitted when a spin is completed
     event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
+
+    event RaffleTicketsUpdated(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
 
     // Errors
     /// @notice Revert if the caller is not an admin
@@ -104,6 +108,12 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             revert AlreadySpunToday();
         }
 
+        _;
+    }
+
+    modifier onlyRaffleContract() {
+        SpinStorage storage $ = _getSpinStorage();
+        require(msg.sender == $.raffleContract, "Only Raffle contract can call this");
         _;
     }
 
@@ -154,7 +164,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             $.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, $.admin);
         $.lastSpinDate[msg.sender] = block.timestamp;
         $.userNonce[nonce] = msg.sender;
-        console.logUint(nonce);
 
         emit SpinRequested(nonce, msg.sender);
     }
@@ -192,17 +201,14 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
             userData.jackpotWins++;
             userData.lastJackpotClaim = block.timestamp;
-            console.log("Jackpot win");
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Raffle Ticket"))) {
             userData.raffleTickets += rewardAmount;
-            console.log("Raffle Ticket win");
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("XP"))) {
             userData.xpGained += rewardAmount;
-            console.log("XP win");
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Plume Token"))) {
             userData.plumeTokens += rewardAmount;
-            console.log("Plume Token win");
         }
+        userData.streakCount++;
 
         emit SpinCompleted(user, rewardCategory, rewardAmount);
     }
@@ -219,7 +225,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         uint256 daysSinceStart = (block.timestamp - $.startTimestamp) / 1 days;
         uint8 weekNumber = uint8(daysSinceStart / 7 + 1);
-        uint8 jackpotIndex = (weekNumber - 1) % 7; 
+        uint8 jackpotIndex = (weekNumber - 1) % 7;
         uint256 jackpotThreshold = (1_000_000 * $.jackpotProbabilities[jackpotIndex]) / 100;
         console.logUint(probability);
 
@@ -238,6 +244,15 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         }
 
         return ("Nothing", 0); // Default case
+    }
+
+    function updateRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
+        SpinStorage storage $ = _getSpinStorage();
+        require($.userRewards[user].raffleTickets >= ticketsUsed, "Not enough raffle tickets");
+
+        $.userRewards[user].raffleTickets -= ticketsUsed;
+
+        emit RaffleTicketsUpdated(user, ticketsUsed, $.userRewards[user].raffleTickets);
     }
 
     /// @dev Allows the admin to pause the contract, preventing certain actions.
@@ -301,6 +316,34 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             userData.plumeTokens,
             userData.lastJackpotClaim
         );
+    }
+
+    function setCoooldownPeriod(
+        uint256 _cooldownPeriod
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.cooldownPeriod = _cooldownPeriod;
+    }
+
+    function setBaseRaffleMultiplier(
+        uint256 _baseRaffleMultiplier
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.baseRaffleMultiplier = _baseRaffleMultiplier;
+    }
+
+    function setXPPerSpin(
+        uint256 _xpPerSpin
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.xpPerSpin = _xpPerSpin;
+    }
+
+    function setPlumeAmounts(
+        uint256[3] memory _plumeAmounts
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.plumeAmounts = _plumeAmounts;
     }
 
     // UUPS Authorization
