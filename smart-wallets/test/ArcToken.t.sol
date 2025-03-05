@@ -1,25 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import {Test} from "forge-std/Test.sol";
-import {console} from "forge-std/console.sol";
-import {ArcToken} from "../src/token/ArcToken.sol";
-import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import { ArcToken } from "../src/token/ArcToken.sol";
+import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import { Test } from "forge-std/Test.sol";
+import { console } from "forge-std/console.sol";
 
 contract ArcTokenTest is Test {
+
     ArcToken public token;
     ERC20Mock public yieldToken;
-    
+
     address public owner;
     address public alice;
     address public bob;
     address public charlie;
-    
+
     uint256 public constant INITIAL_SUPPLY = 1000e18;
-    uint256 public constant ASSET_VALUATION = 1000000e18;
+    uint256 public constant ASSET_VALUATION = 1_000_000e18;
     uint256 public constant TOKEN_ISSUE_PRICE = 100e18;
-    uint256 public constant ACCRUAL_RATE_PER_SECOND = 6342013888889; // ~0.054795% daily
-    uint256 public constant TOTAL_TOKEN_OFFERING = 10000e18;
+    uint256 public constant ACCRUAL_RATE_PER_SECOND = 6_342_013_888_889; // ~0.054795% daily
+    uint256 public constant TOTAL_TOKEN_OFFERING = 10_000e18;
     uint256 public constant YIELD_AMOUNT = 1000e18;
 
     event YieldDistributed(uint256 amount, bool direct);
@@ -34,7 +35,7 @@ contract ArcTokenTest is Test {
 
         // Deploy mock yield token
         yieldToken = new ERC20Mock();
-        yieldToken.mint(owner, 1000000e18);
+        yieldToken.mint(owner, 1_000_000e18);
 
         // Deploy ArcToken
         token = new ArcToken();
@@ -51,14 +52,14 @@ contract ArcTokenTest is Test {
         );
 
         // Setup initial state - whitelist addresses BEFORE any transfers
-        token.addToWhitelist(address(this));  // Whitelist owner first
+        token.addToWhitelist(address(this)); // Whitelist owner first
         token.addToWhitelist(alice);
         token.addToWhitelist(bob);
         token.addToWhitelist(charlie);
-        
+
         // Now mint tokens after whitelisting
-        token.mint(address(this), INITIAL_SUPPLY);  // Mint to owner first
-        token.transfer(alice, 100e18);  // Then transfer to alice
+        token.mint(address(this), INITIAL_SUPPLY); // Mint to owner first
+        token.transfer(alice, 100e18); // Then transfer to alice
     }
 
     // ============ Initialization Tests ============
@@ -109,15 +110,15 @@ contract ArcTokenTest is Test {
     function test_DirectYieldDistribution() public {
         // Setup direct distribution
         token.setYieldDistributionMethod(true);
-        
+
         // Approve and distribute yield
         yieldToken.approve(address(token), YIELD_AMOUNT);
-        
+
         vm.expectEmit(true, true, true, true);
         emit YieldDistributed(YIELD_AMOUNT, true);
-        
+
         token.distributeYield(YIELD_AMOUNT);
-        
+
         // Alice should receive all yield (as only holder)
         assertEq(yieldToken.balanceOf(alice), YIELD_AMOUNT);
     }
@@ -125,22 +126,22 @@ contract ArcTokenTest is Test {
     function test_ClaimableYieldDistribution() public {
         // Keep default claimable distribution
         yieldToken.approve(address(token), YIELD_AMOUNT);
-        
+
         vm.expectEmit(true, true, true, true);
         emit YieldDistributed(YIELD_AMOUNT, false);
-        
+
         token.distributeYield(YIELD_AMOUNT);
-        
+
         // Check unclaimed yield
         assertEq(token.getUnclaimedYield(alice), YIELD_AMOUNT);
-        
+
         // Claim yield
         vm.prank(alice);
         vm.expectEmit(true, true, true, true);
         emit YieldClaimed(alice, YIELD_AMOUNT);
-        
+
         token.claimYield();
-        
+
         assertEq(yieldToken.balanceOf(alice), YIELD_AMOUNT);
         assertEq(token.getUnclaimedYield(alice), 0);
     }
@@ -150,7 +151,7 @@ contract ArcTokenTest is Test {
     function test_RedemptionPriceCalculation() public {
         // Fast forward 1 day
         vm.warp(block.timestamp + 1 days);
-        
+
         (
             uint256 tokenIssuePrice,
             uint256 accrualRatePerSecond,
@@ -158,12 +159,12 @@ contract ArcTokenTest is Test {
             uint256 currentRedemptionPrice,
             uint256 secondsHeld
         ) = token.getTokenMetrics(alice);
-        
+
         assertEq(tokenIssuePrice, TOKEN_ISSUE_PRICE);
         assertEq(accrualRatePerSecond, ACCRUAL_RATE_PER_SECOND);
         assertEq(totalTokenOffering, TOTAL_TOKEN_OFFERING);
         assertEq(secondsHeld, 1 days);
-        
+
         // Verify redemption price includes accrual
         uint256 expectedAccrual = (TOKEN_ISSUE_PRICE * ACCRUAL_RATE_PER_SECOND * 1 days) / 1e18;
         assertEq(currentRedemptionPrice, TOKEN_ISSUE_PRICE + expectedAccrual);
@@ -173,16 +174,16 @@ contract ArcTokenTest is Test {
 
     function test_YieldHistory() public {
         yieldToken.approve(address(token), YIELD_AMOUNT * 2);
-        
+
         // First distribution
         token.distributeYield(YIELD_AMOUNT);
-        
+
         // Second distribution after some time
         vm.warp(block.timestamp + 1 days);
         token.distributeYield(YIELD_AMOUNT);
-        
+
         (uint256[] memory dates, uint256[] memory amounts) = token.getYieldHistory();
-        
+
         assertEq(dates.length, 2);
         assertEq(amounts.length, 2);
         assertEq(amounts[0], YIELD_AMOUNT);
@@ -212,4 +213,5 @@ contract ArcTokenTest is Test {
         vm.expectRevert("IssuePriceMustBePositive()");
         token.updateTokenPrice(0);
     }
-} 
+
+}
