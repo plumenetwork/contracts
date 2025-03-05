@@ -7,18 +7,17 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
-import { Plume } from "./Plume.sol";
+import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 
 /**
  * @title PlumeStaking
  * @author Eugene Y. Q. Shen, Alp Guneysel
- * @notice Staking contract for $PLUME
+ * @notice Staking contract for native PLUME token
  */
 contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
-    using SafeERC20 for Plume;
     using SafeERC20 for IERC20;
+    using Address for address payable;
 
     // Storage
 
@@ -42,209 +41,134 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /// @custom:storage-location erc7201:plume.storage.PlumeStaking
     struct PlumeStakingStorage {
-        /// @dev Address of the $PLUME token
-        Plume plume;
         /// @dev Address of the $pUSD token
         IERC20 pUSD;
         /// @notice Array of all staker addresses
         address[] stakers;
-        /// @dev Minimum amount of $PLUME that can be staked
-        uint256 minStakeAmount;
-        /// @dev Cooldown interval for unstaked assets to be unlocked and parked
-        uint256 cooldownInterval;
-        /// @dev List of reward tokens (ERC20) to be distributed as rewards
+        /// @notice Array of all reward token addresses
         address[] rewardTokens;
-        /// @dev Total amount of PLUME currently staked
-        uint256 totalStaked;
-        /// @dev Total amount of PLUME in cooling period
-        uint256 totalCooling;
-        /// @dev Total amount of PLUME that's withdrawable (parked)
-        uint256 totalWithdrawable;
-        /// @dev Detailed active stake info for each user
-        mapping(address user => StakeInfo info) stakeInfo;
-        /// @dev Total claimable rewards per token
-        mapping(address => uint256) totalClaimableByToken;
-        /// @dev Mapping from reward token address to its per-second reward rate (scaled by _BASE)
+        /// @notice Maps a token address to its reward rate in tokens per second per staked token
         mapping(address => uint256) rewardRates;
-        /// @dev Mapping from user to reward token to accumulated reward amount
-        mapping(address => mapping(address => uint256)) rewardAccrued;
-        /// @dev Mapping from reward token address to its maximum reward rate (scaled by _BASE)
-        mapping(address => uint256) maxRewardRates;
-        /// @notice Mapping to track if an address is already in stakers array
-        mapping(address => bool) isStaker;
+        /// @notice Maps a token address to the last time its reward was globally updated
+        mapping(address => uint256) lastUpdateTimes;
+        /// @notice Maps a token address to the reward per token accumulated so far
+        mapping(address => uint256) rewardPerTokenCumulative;
+        /// @notice Maps a token address to the amount of rewards still to be distributed
+        mapping(address => uint256) rewardsAvailable;
+        /// @notice Total $PLUME staked in the contract
+        uint256 totalStaked;
+        /// @notice Total $PLUME in cooling period
+        uint256 totalCooling;
+        /// @notice Total $PLUME that is withdrawable (parked)
+        uint256 totalWithdrawable;
+        /// @notice Minimum staking amount
+        uint256 minStakeAmount;
+        /// @notice Duration of the cooldown period
+        uint256 cooldownInterval;
+        /// @notice Maps an address to its staking info
+        mapping(address => StakeInfo) stakeInfo;
+        /// @notice Maps a (user, token) pair to the reward per token paid to that user for that token
+        mapping(address => mapping(address => uint256)) userRewardPerTokenPaid;
+        /// @notice Maps a (user, token) pair to the reward of that token for that user
+        mapping(address => mapping(address => uint256)) rewards;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("plume.storage.PlumeStaking")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant PLUME_STAKING_STORAGE_LOCATION =
-        0x40f2ca4cf3a525ed9b1b2649f0f850db77540accc558be58ba47f8638359e800;
-
-    function _getPlumeStakingStorage() internal pure returns (PlumeStakingStorage storage $) {
-        assembly {
-            $.slot := PLUME_STAKING_STORAGE_LOCATION
-        }
-    }
-
-    // Structs
-
-    /// @dev Detailed active stake information for each user
+    // Modified StakeInfo struct to reflect changes
     struct StakeInfo {
-        /// @dev Amount of $PLUME staked
-        uint256 staked;
-        /// @dev Amount of $PLUME deposited but not staked by the user
-        uint256 parked;
-        /// @dev Amount of $PLUME that are in cooldown, i.e. unstaked but not yet withdrawable
-        uint256 cooled;
-        /// @dev Timestamp at which the cooldown period ends for the stake
-        uint256 cooldownEnd;
-        /// @dev Accumulated rewards for the stake
-        uint256 accumulatedRewards;
-        /// @dev Timestamp at which the stake info was last updated
-        uint256 lastUpdateTimestamp;
+        uint256 staked; // Amount of PLUME staked
+        uint256 parked; // Amount of PLUME ready to be withdrawn
+        uint256 cooled; // Amount of PLUME in cooling period
+        uint256 cooldownEnd; // Timestamp when cooling period ends
     }
 
     // Constants
 
-    /// @notice Role for the admin of PlumeStaking
+    /// @notice Role for administrators of PlumeStaking
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    /// @notice Role for the upgrader of PlumeStaking
+    /// @notice Role for upgraders of PlumeStaking
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
-
-    /// @notice Scaling factor for reward rates
-    uint256 public constant _BASE = 1e18;
+    /// @notice Maximum reward rate: ~100% APY (3171 nanotoken per second per token)
+    uint256 public constant MAX_REWARD_RATE = 3171 * 1e9;
+    /// @notice Scaling factor for reward calculations
+    uint256 public constant REWARD_PRECISION = 1e18;
 
     // Events
 
     /**
-     * @notice Emitted when the minimum stake amount is set
-     * @param minStakeAmount Minimum amount of $PLUME that can be staked
-     */
-    event SetMinStakeAmount(uint256 minStakeAmount);
-
-    /**
-     * @notice Emitted when the cooldown interval is set
-     * @param cooldownInterval Cooldown interval for staked assets to be unlocked and parked
-     */
-    event SetCooldownInterval(uint256 cooldownInterval);
-
-    /**
-     * @notice Emitted when the rate of $pUSD rewarded per $PLUME staked per second is set
-     * @param token Address of the reward token
-     * @param rewardRate Rate of token rewarded per $PLUME staked per second, scaled by _BASE
-     */
-    event SetRewardRate(address indexed token, uint256 rewardRate);
-
-    /**
-     * @notice Emitted when a user parks $PLUME
-     * @param user Address of the user that parked $PLUME
-     * @param amount Amount of $PLUME parked
-     */
-    event Parked(address indexed user, uint256 amount);
-
-    /**
      * @notice Emitted when a user stakes PLUME
-     * @param user Address of the user that staked PLUME
-     * @param amount Amount of PLUME staked
-     * @param fromCooling Amount taken from cooling balance
-     * @param fromParked Amount taken from parked balance
+     * @param user Address of the user
+     * @param amount Amount of $PLUME staked
+     * @param fromCooling Amount taken from cooling
+     * @param fromParked Amount taken from parked
      * @param fromWallet Amount taken from wallet
      */
-    event Staked(address indexed user, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 fromWallet);
+    event Staked(
+        address indexed user, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 fromWallet
+    );
 
     /**
-     * @notice Emitted when a user unstakes $PLUME
-     * @param user Address of the user that unstaked $PLUME
-     * @param amount Amount of $PLUME unstaked
+     * @notice Emitted when a user unstakes PLUME
+     * @param user Address of the user
+     * @param amount Amount of PLUME unstaked
      */
     event Unstaked(address indexed user, uint256 amount);
 
     /**
-     * @notice Emitted when a user unparks $PLUME
-     * @param user Address of the user that unparked $PLUME
-     * @param amount Amount of $PLUME unparked
-     */
-    event Unparked(address indexed user, uint256 amount);
-
-    /**
-     * @notice Emitted when a user claims $pUSD
-     * @param user Address of the user that claimed $pUSD
-     * @param amount Amount of $pUSD claimed
-     */
-    event ClaimedRewards(address indexed user, address indexed token, uint256 amount);
-
-    /**
-     * @notice Emitted when the maximum reward rate is updated
-     * @param newMaxRewardRate The new maximum reward rate
-     */
-    event MaxRewardRateUpdated(uint256 newMaxRewardRate);
-
-    /**
-     * @notice Emitted when admin withdraws tokens from the contract
-     * @param token Address of the token withdrawn
-     * @param amount Amount of tokens withdrawn
-     * @param recipient Address that received the tokens
-     */
-    event AdminWithdraw(address indexed token, uint256 amount, address indexed recipient);
-
-    /**
-     * @notice Emitted when the maximum reward rate for a token is updated
-     * @param token The token whose max rate was updated
-     * @param newMaxRate The new maximum reward rate
-     */
-    event MaxRewardRateUpdated(address indexed token, uint256 newMaxRate);
-
-    /**
-     * @notice Emitted when a user withdraws $PLUME
-     * @param user Address of the user that withdrew $PLUME
-     * @param amount Amount of $PLUME withdrawn
+     * @notice Emitted when a user withdraws their cooled-down PLUME
+     * @param user Address of the user
+     * @param amount Amount of PLUME withdrawn
      */
     event Withdrawn(address indexed user, uint256 amount);
 
     /**
-     * @notice Emitted when admin manually adds a staker
-     * @param staker Address of the staker that was added
+     * @notice Emitted when a user claims a reward
+     * @param user Address of the user
+     * @param token Address of the reward token
+     * @param amount Amount of reward token claimed
      */
-    event StakerAdded(address indexed staker);
-    /**
-     * @notice Emitted when total amounts are updated by admin
-     * @param totalStaked New total staked amount
-     * @param totalCooling New total cooling amount
-     * @param totalWithdrawable New total withdrawable amount
-     */
-    event TotalAmountsUpdated(uint256 totalStaked, uint256 totalCooling, uint256 totalWithdrawable);
+    event RewardClaimed(address indexed user, address indexed token, uint256 amount);
 
     /**
-     * @notice Emitted when admin updates a user's stake info
-     * @param user Address of the user
-     * @param staked New staked amount
-     * @param cooled New cooling amount
-     * @param parked New parked amount
-     * @param cooldownEnd New cooldown end timestamp
-     * @param lastUpdateTimestamp New last update timestamp
+     * @notice Emitted when the minimum stake amount is set
+     * @param amount New minimum stake amount
      */
-    event StakeInfoUpdated(
-        address indexed user,
-        uint256 staked,
-        uint256 cooled,
-        uint256 parked,
-        uint256 cooldownEnd,
-        uint256 lastUpdateTimestamp
-    );
+    event MinStakeAmountSet(uint256 amount);
+
+    /**
+     * @notice Emitted when the cooldown interval is set
+     * @param interval New cooldown interval
+     */
+    event CooldownIntervalSet(uint256 interval);
+
+    /**
+     * @notice Emitted when reward rates are updated
+     * @param tokens Array of token addresses
+     * @param rates Array of reward rates
+     */
+    event RewardRatesSet(address[] tokens, uint256[] rates);
+
+    /**
+     * @notice Emitted when rewards are added to the rewards pool
+     * @param token Address of the token
+     * @param amount Amount of tokens added
+     */
+    event RewardsAdded(address indexed token, uint256 amount);
 
     // Errors
 
     /**
-     * @notice Indicates a failure because the amount is invalid
-     * @param amount Amount of $PLUME requested
-     * @param minStakeAmount Minimum amount of $PLUME allowed
+     * @notice Thrown for an invalid amount
+     * @param amount The amount that was provided
+     * @param minAmount The minimum amount required
      */
-    error InvalidAmount(uint256 amount, uint256 minStakeAmount);
+    error InvalidAmount(uint256 amount, uint256 minAmount);
 
     /**
-     * @notice Indicates a failure because the user has insufficient balance
-     * @param amount Amount of $PLUME requested
-     * @param balance Amount of $PLUME available
+     * @notice Thrown when a user with cooling tokens tries to stake again
+     * @dev TODO remove this restriction in the future
+     * @param amount Amount of tokens in cooling period
      */
-    error InsufficientBalance(uint256 amount, uint256 balance);
+    error TokensInCoolingPeriod(uint256 amount);
 
     /**
      * @notice Indicates a failure because the cooldown period has not ended
@@ -322,13 +246,12 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @dev Give all roles to the admin address passed into the constructor
      * @param owner Address of the owner of PlumeStaking
      */
-    function initialize(address owner, address plume_, address pUSD_) public initializer {
+    function initialize(address owner, address pUSD_) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        $.plume = Plume(plume_);
         $.pUSD = IERC20(pUSD_);
         $.minStakeAmount = 1e18;
         $.cooldownInterval = 7 days;
@@ -348,366 +271,35 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         address newImplementation
     ) internal override onlyRole(UPGRADER_ROLE) { }
 
-    // Internal Functions
+    // Storage Functions
 
-    /**
-     * @notice Helper function to add a new staker if not already tracked
-     * @param staker Address of the staker to add
-     */
-    function _addStakerIfNew(
-        address staker
-    ) internal {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if (!$.isStaker[staker]) {
-            $.stakers.push(staker);
-            $.isStaker[staker] = true;
+    /// @dev Returns the current storage struct
+    function _getPlumeStakingStorage() private pure returns (PlumeStakingStorage storage $) {
+        bytes32 position = keccak256("plume.storage.PlumeStaking");
+        assembly {
+            $.slot := position
         }
     }
 
+    // External Functions
+
+    // Modified to accept native tokens
     /**
-     * @notice Get the total number of stakers
-     * @return count Number of unique stakers
+     * @notice Stake PLUME into the contract
+     * @param amount Amount of PLUME to stake
      */
-    function getStakerCount() external view returns (uint256) {
-        return _getPlumeStakingStorage().stakers.length;
-    }
-
-    /**
-     * @notice Get staker address at specific index
-     * @param index Index in the stakers array
-     * @return staker Address of the staker
-     */
-    function getStakerAtIndex(
-        uint256 index
-    ) external view returns (address) {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        require(index < $.stakers.length, "Index out of bounds");
-        return $.stakers[index];
-    }
-
-    /**
-     * @notice Check if an address is a staker
-     * @param account Address to check
-     * @return bool True if the address is a staker
-     */
-    function isStaker(
-        address account
-    ) external view returns (bool) {
-        return _getPlumeStakingStorage().isStaker[account];
-    }
-
-    /**
-     * @notice Update the reward accumulated by the given user
-     * @param user Address of the user
-     */
-    function _updateRewards(
-        address user
-    ) internal {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[user];
-
-        /*
-        if (info.lastUpdateTimestamp == 0) {
-            info.lastUpdateTimestamp = block.timestamp;
-        }
-        */
-        uint256 delta = block.timestamp - info.lastUpdateTimestamp;
-        if (delta > 0 && info.staked > 0) {
-            for (uint256 i = 0; i < $.rewardTokens.length; i++) {
-                address token = $.rewardTokens[i];
-                uint256 rate = $.rewardRates[token];
-
-                uint256 newRewards = (info.staked * delta * rate) / _BASE;
-                $.rewardAccrued[user][token] += newRewards;
-                $.totalClaimableByToken[token] += newRewards;
-            }
-            info.lastUpdateTimestamp = block.timestamp;
-        }
-    }
-
-    // Admin Functions
-
-    /**
-     * @notice Admin function to set a user's stake info
-     * @param user Address of the user
-     * @param staked Amount staked
-     * @param cooled Amount in cooling
-     * @param parked Amount parked (withdrawable)
-     * @param cooldownEnd Timestamp when cooldown ends
-     * @param lastUpdateTimestamp Last reward update timestamp
-     */
-    function setStakeInfo(
-        address user,
-        uint256 staked,
-        uint256 cooled,
-        uint256 parked,
-        uint256 cooldownEnd,
-        uint256 lastUpdateTimestamp
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        if (user == address(0)) {
-            revert ZeroAddress("user");
-        }
-
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[user];
-
-        info.staked = staked;
-        info.cooled = cooled;
-        info.parked = parked;
-        info.cooldownEnd = cooldownEnd;
-        info.lastUpdateTimestamp = lastUpdateTimestamp;
-
-        // Add user to stakers list if they have any funds
-        if (staked > 0 || cooled > 0 || parked > 0) {
-            _addStakerIfNew(user);
-        }
-
-        emit StakeInfoUpdated(user, staked, cooled, parked, cooldownEnd, lastUpdateTimestamp);
-    }
-
-    /**
-     * @notice Admin function to manually add a staker to tracking
-     * @param staker Address of the staker to add
-     * @dev Will revert if address is zero or already a staker
-     */
-    function addStaker(
-        address staker
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        if (staker == address(0)) {
-            revert ZeroAddress("staker");
-        }
-
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        if ($.isStaker[staker]) {
-            revert("Already a staker");
-        }
-
-        $.stakers.push(staker);
-        $.isStaker[staker] = true;
-
-        emit StakerAdded(staker);
-    }
-
-    /**
-     * @notice Adds a new token to the list of reward tokens
-     * @dev Only callable by admin role
-     * @param token The address of the token to add as a reward
-     * @custom:reverts ZeroAddress if token address is zero
-     * @custom:reverts TokenAlreadyExists if token is already in rewards list
-     */
-    function addRewardToken(
-        address token
-    ) external onlyRole(ADMIN_ROLE) {
-        if (token == address(0)) {
-            revert ZeroAddress("token");
-        }
-        if (_rewardTokenExists(token)) {
-            revert TokenAlreadyExists(token);
-        }
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        $.rewardTokens.push(token);
-        emit RewardTokenAdded(token);
-    }
-
-    /**
-     * @notice Removes a token from the list of reward tokens
-     * @dev Only callable by admin role. Sets reward rate to 0 and removes token from list.
-     * @param token The address of the token to remove from rewards
-     * @custom:reverts TokenDoesNotExist if token is not in rewards list
-     */
-    function removeRewardToken(
-        address token
-    ) external onlyRole(ADMIN_ROLE) {
-        if (!_rewardTokenExists(token)) {
-            revert TokenDoesNotExist(token);
-        }
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        for (uint256 i = 0; i < $.rewardTokens.length; i++) {
-            if ($.rewardTokens[i] == token) {
-                $.rewardTokens[i] = $.rewardTokens[$.rewardTokens.length - 1];
-                $.rewardTokens.pop();
-                $.rewardRates[token] = 0;
-                emit RewardTokenRemoved(token);
-                break;
-            }
-        }
-    }
-
-    /**
-     * @notice Check if a token exists in the reward tokens array
-     * @param token Address of the token to check
-     * @return bool True if the token exists in the reward tokens array
-     */
-    function _rewardTokenExists(
-        address token
-    ) internal view returns (bool) {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        for (uint256 i = 0; i < $.rewardTokens.length; i++) {
-            if ($.rewardTokens[i] == token) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * @notice Set the minimum amount of $PLUME that can be staked
-     * @param minStakeAmount_ Minimum amount of $PLUME that can be staked
-     */
-    function setMinStakeAmount(
-        uint256 minStakeAmount_
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        _getPlumeStakingStorage().minStakeAmount = minStakeAmount_;
-        emit SetMinStakeAmount(minStakeAmount_);
-    }
-
-    /**
-     * @notice Set the cooldown interval for staked assets to be unlocked and parked
-     * @param cooldownInterval_ Cooldown interval for staked assets to be unlocked and parked
-     */
-    function setCooldownInterval(
-        uint256 cooldownInterval_
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        _getPlumeStakingStorage().cooldownInterval = cooldownInterval_;
-        emit SetCooldownInterval(cooldownInterval_);
-    }
-
-    /**
-     * @notice Set reward rates for one or multiple tokens
-     * @param tokens Array of reward token addresses
-     * @param rewardRates_ Array of reward rates for corresponding tokens
-     * @dev Arrays must be the same length
-     */
-    function setRewardRates(
-        address[] calldata tokens,
-        uint256[] calldata rewardRates_
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        if (tokens.length != rewardRates_.length) {
-            revert ArrayLengthMismatch();
-        }
-        if (tokens.length == 0) {
-            revert EmptyArray();
-        }
-
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-
-        for (uint256 i = 0; i < tokens.length; i++) {
-            address token = tokens[i];
-            uint256 rate = rewardRates_[i];
-
-            if (!_rewardTokenExists(token)) {
-                revert TokenDoesNotExist(token);
-            }
-
-            uint256 maxRate = $.maxRewardRates[token];
-            if (maxRate == 0) {
-                maxRate = 1e20; // Default max rate if not set
-            }
-            if (rate > maxRate) {
-                revert RewardRateExceedsMax(rate, maxRate);
-            }
-
-            $.rewardRates[token] = rate;
-            emit SetRewardRate(token, rate);
-        }
-    }
-
-    /**
-     * @notice Set the maximum reward rate for a specific token
-     * @param token The token to set the max rate for
-     * @param newMaxRate The new maximum reward rate
-     */
-    function setMaxRewardRate(address token, uint256 newMaxRate) external onlyRole(ADMIN_ROLE) nonReentrant {
-        if (!_rewardTokenExists(token)) {
-            revert TokenDoesNotExist(token);
-        }
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        $.maxRewardRates[token] = newMaxRate;
-        emit MaxRewardRateUpdated(token, newMaxRate);
-    }
-
-    /**
-     * @notice Admin function to recalculate and update total amounts
-     * @dev Updates totalStaked, totalCooling, totalWithdrawable, and individual cooling amounts
-     */
-    function updateTotalAmounts() external onlyRole(ADMIN_ROLE) {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        uint256 newTotalStaked = 0;
-        uint256 newTotalCooling = 0;
-        uint256 newTotalWithdrawable = 0;
-
-        // Iterate through all stakers and recalculate totals
-        for (uint256 i = 0; i < $.stakers.length; i++) {
-            address staker = $.stakers[i];
-            StakeInfo storage info = $.stakeInfo[staker];
-
-            // Add to staked total
-            newTotalStaked += info.staked;
-
-            // Check and update cooling amounts
-            if (info.cooled > 0) {
-                if (info.cooldownEnd != 0 && block.timestamp >= info.cooldownEnd) {
-                    // Cooldown period has ended, move to parked
-                    info.parked += info.cooled;
-                    info.cooled = 0;
-                    info.cooldownEnd = 0;
-                } else {
-                    // Still in cooling period
-                    newTotalCooling += info.cooled;
-                }
-            }
-
-            // Add to withdrawable total
-            newTotalWithdrawable += info.parked;
-        }
-
-        // Update storage with new totals
-        $.totalStaked = newTotalStaked;
-        $.totalCooling = newTotalCooling;
-        $.totalWithdrawable = newTotalWithdrawable;
-
-        emit TotalAmountsUpdated(newTotalStaked, newTotalCooling, newTotalWithdrawable);
-    }
-
-    /**
-     * @notice Allows admin to withdraw any token from the contract
-     * @param token Address of the token to withdraw
-     * @param amount Amount of tokens to withdraw
-     * @param recipient Address to receive the tokens
-     */
-    function adminWithdraw(
-        address token,
-        uint256 amount,
-        address recipient
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        if (token == address(0)) {
-            revert ZeroAddress("token");
-        }
-        if (recipient == address(0)) {
-            revert ZeroAddress("recipient");
-        }
-        if (amount == 0) {
-            revert InvalidAmount(0, 1);
-        }
-
-        if (token == address(_getPlumeStakingStorage().plume)) {
-            // For PLUME, ensure we don't withdraw staked or cooling tokens
-            uint256 totalLocked = this.totalAmountStaked() + this.totalAmountCooling();
-            uint256 balance = IERC20(token).balanceOf(address(this));
-            require(balance - amount >= totalLocked, "Cannot withdraw staked/cooling tokens");
-        }
-
-        IERC20(token).safeTransfer(recipient, amount);
-        emit AdminWithdraw(token, amount, recipient);
-    }
-
-    // User Functions
-
     function stake(
         uint256 amount
-    ) external nonReentrant {
+    ) external payable nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
+
+        // If amount is 0, use the full value sent
+        if (amount == 0) {
+            amount = msg.value;
+        } else if (amount != msg.value) {
+            revert InvalidAmount(msg.value, amount);
+        }
 
         if (amount < $.minStakeAmount) {
             revert InvalidAmount(amount, $.minStakeAmount);
@@ -743,10 +335,10 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             remainingToStake -= fromParked;
         }
 
-        // Last: Take remaining from wallet if needed
+        // Last: Take remaining from wallet (already received via msg.value)
         if (remainingToStake > 0) {
             fromWallet = remainingToStake;
-            $.plume.safeTransferFrom(msg.sender, address(this), fromWallet);
+            // No need to transfer - we already have the tokens via msg.value
         }
 
         // Update total staked amount
@@ -763,11 +355,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     /**
-     * @notice Unstake $PLUME from the contract
-     * @return amount Amount of $PLUME unstaked
-     * @dev TODO for current prototype, the implementation is limited because:
-     *   - you cannot set the amount that you unstake; it all unstakes at once
-     *   - you cannot stake again until after the cooldown period ends
+     * @notice Unstake PLUME from the contract
+     * @return amount Amount of PLUME unstaked
      */
     function unstake() external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
@@ -778,33 +367,25 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         amount = info.staked;
         info.staked = 0;
         $.totalStaked -= amount;
-        info.cooled += amount;
-        $.totalCooling += amount; // Added this
-        info.cooldownEnd = block.timestamp + $.cooldownInterval;
 
-        _updateRewards(msg.sender); // Update rewards after stake amount changes
+        // Send tokens to cooling period
+        info.cooled += amount;
+        $.totalCooling += amount;
+        info.cooldownEnd = block.timestamp + $.cooldownInterval;
 
         emit Unstaked(msg.sender, amount);
         return amount;
     }
 
     /**
-     * @notice Unpark $PLUME from the contract
-     * @param amount Amount of $PLUME to unpark
+     * @notice Withdraw PLUME that has completed the cooldown period
+     * @return amount Amount of PLUME withdrawn
      */
-    function withdraw(
-        uint256 amount
-    ) external nonReentrant {
-        if (amount == 0) {
-            revert InvalidAmount(0, 1);
-        }
-
+    function withdraw() external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
 
-        _updateRewards(msg.sender);
-
-        // If cooldown period has passed, move cooled funds to parked.
+        // Move cooled tokens to parked if cooldown has ended
         if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
             info.parked += info.cooled;
             $.totalWithdrawable += info.cooled;
@@ -812,300 +393,458 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             info.cooled = 0;
             info.cooldownEnd = 0;
         }
-        if (amount > info.parked) {
-            revert InsufficientBalance(amount, info.parked);
+
+        // Withdraw all parked tokens
+        amount = info.parked;
+        if (amount == 0) {
+            revert InvalidAmount(amount, 1);
         }
 
-        info.parked -= amount;
-        $.totalWithdrawable -= amount; // Update total withdrawable after deducting from parked
+        // Clear user's parked amount
+        info.parked = 0;
+        $.totalWithdrawable -= amount;
+
+        // Transfer native tokens to the user
+        payable(msg.sender).sendValue(amount);
+
+        emit Withdrawn(msg.sender, amount);
+        return amount;
+    }
+
+    /**
+     * @notice Claim all accumulated rewards from a single token
+     * @param token Address of the reward token to claim
+     * @return amount Amount of reward token claimed
+     */
+    function claim(address token) external nonReentrant returns (uint256 amount) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (!_isRewardToken(token)) {
+            revert TokenDoesNotExist(token);
+        }
+
         _updateRewards(msg.sender);
 
-        $.plume.safeTransfer(msg.sender, amount);
-        emit Withdrawn(msg.sender, amount); // Renamed event
-    }
+        amount = $.rewards[msg.sender][token];
+        if (amount > 0) {
+            $.rewards[msg.sender][token] = 0;
 
-    /// @notice Claim all $pUSD rewards from the contract
-    function claim() external {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[msg.sender];
-
-        // Cache all amounts first using getClaimableReward
-        uint256[] memory amounts = new uint256[]($.rewardTokens.length);
-        uint256 nonZeroRewards = 0;
-
-        for (uint256 i = 0; i < $.rewardTokens.length; i++) {
-            address token = $.rewardTokens[i];
-            amounts[i] = this.getClaimableReward(msg.sender, token);
-            if (amounts[i] > 0) {
-                nonZeroRewards++;
+            // Transfer ERC20 tokens
+            if (token != address(0)) {
+                IERC20(token).safeTransfer(msg.sender, amount);
+            } else {
+                // For native token rewards
+                payable(msg.sender).sendValue(amount);
             }
+
+            emit RewardClaimed(msg.sender, token, amount);
         }
 
-        if (nonZeroRewards > 0) {
-            _updateRewards(msg.sender);
+        return amount;
+    }
 
-            // Reset all accrued rewards and transfer tokens
-            for (uint256 i = 0; i < $.rewardTokens.length; i++) {
-                if (amounts[i] > 0) {
-                    address token = $.rewardTokens[i];
+    /**
+     * @notice Claim all accumulated rewards from all tokens
+     * @return amounts Array of amounts claimed for each token
+     */
+    function claimAll() external nonReentrant returns (uint256[] memory amounts) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        address[] memory tokens = $.rewardTokens;
+        amounts = new uint256[](tokens.length);
 
-                    // Emit debug info before transfer
-                    emit DebugClaim(
-                        token,
-                        amounts[i],
-                        IERC20(token).balanceOf(address(this)),
-                        $.rewardAccrued[msg.sender][token],
-                        info.staked,
-                        info.lastUpdateTimestamp
-                    );
+        _updateRewards(msg.sender);
 
-                    $.rewardAccrued[msg.sender][token] = 0;
+        for (uint256 i = 0; i < tokens.length; i++) {
+            address token = tokens[i];
+            uint256 amount = $.rewards[msg.sender][token];
 
-                    // Scale down the amount for 6 decimal token
-                    uint256 scaledAmount = amounts[i];
-                    if (token == address($.pUSD)) {
-                        scaledAmount = amounts[i] / 1e12; // Convert from 18 to 6 decimals
-                    }
+            if (amount > 0) {
+                $.rewards[msg.sender][token] = 0;
+                amounts[i] = amount;
 
-                    try IERC20(token).transfer(msg.sender, scaledAmount) returns (bool success) {
-                        require(success, "Transfer returned false");
-                        emit ClaimedRewards(msg.sender, token, scaledAmount);
-                    } catch Error(string memory reason) {
-                        revert(string.concat("Transfer failed: ", reason));
-                    } catch Panic(uint256 errorCode) {
-                        string memory panicReason;
-                        if (errorCode == 0x01) {
-                            panicReason = "assertion failed";
-                        } else if (errorCode == 0x11) {
-                            panicReason = "arithmetic overflow";
-                        } else if (errorCode == 0x12) {
-                            panicReason = "division by zero";
-                        } else {
-                            panicReason = "unknown panic";
-                        }
-                        revert(string.concat("Transfer panic: ", panicReason));
-                    } catch (bytes memory errorData) {
-                        revert(string.concat("Transfer failed with raw error: ", string(errorData)));
-                    }
+                // Transfer ERC20 tokens
+                if (token != address(0)) {
+                    IERC20(token).safeTransfer(msg.sender, amount);
+                } else {
+                    // For native token rewards
+                    payable(msg.sender).sendValue(amount);
                 }
+
+                emit RewardClaimed(msg.sender, token, amount);
             }
         }
-    }
 
-    // View Functions
-
-    /**
-     * @notice Returns the list of reward token addresses and their reward rates.
-     * @return tokens An array of reward token addresses.
-     * @return rates An array of reward rates corresponding to each token.
-     */
-    function getRewardTokens() external view returns (address[] memory tokens, uint256[] memory rates) {
-        PlumeStakingStorage storage s = _getPlumeStakingStorage();
-        uint256 length = s.rewardTokens.length;
-        tokens = new address[](length);
-        rates = new uint256[](length);
-        for (uint256 i = 0; i < length; i++) {
-            tokens[i] = s.rewardTokens[i];
-            rates[i] = s.rewardRates[s.rewardTokens[i]];
-        }
+        return amounts;
     }
 
     /**
-     * @notice Get the maximum reward rate for a specific token
-     * @param token The token to get the max rate for
-     * @return The maximum reward rate for the token
+     * @notice Claim all accumulated rewards from a single token and stake the reward
+     * @param token Address of the reward token to claim and stake
+     * @return amount Amount of reward token claimed and staked
+     * @dev This only works if the token is PLUME
      */
-    function getMaxRewardRate(
-        address token
-    ) external view returns (uint256) {
-        return _getPlumeStakingStorage().maxRewardRates[token];
-    }
-
-    /// @notice Address of the $PLUME token
-    function plume() external view returns (Plume) {
-        return _getPlumeStakingStorage().plume;
-    }
-
-    /// @notice Minimum amount of $PLUME that can be staked
-    function minStakeAmount() external view returns (uint256) {
-        return _getPlumeStakingStorage().minStakeAmount;
-    }
-
-    /// @notice Cooldown interval for staked assets to be unlocked and parked
-    function cooldownInterval() external view returns (uint256) {
-        return _getPlumeStakingStorage().cooldownInterval;
-    }
-
-    /**
-     * @notice Returns the timestamp when the cooldown period ends for the caller
-     * @return timestamp The Unix timestamp when the cooldown ends (0 if no active cooldown)
-     */
-    function cooldownEndDate() external view returns (uint256) {
-        return _getPlumeStakingStorage().stakeInfo[msg.sender].cooldownEnd;
-    }
-
-    /**
-     * @notice Returns the timestamp when the cooldown period ends for a specific user
-     * @param user The address of the user to check
-     * @return timestamp The Unix timestamp when the cooldown ends (0 if no active cooldown)
-     */
-    function cooldownEndDateOf(
-        address user
-    ) external view returns (uint256) {
-        return _getPlumeStakingStorage().stakeInfo[user].cooldownEnd;
-    }
-
-    /// @notice Rate of $pUSD rewarded per $PLUME staked per second, scaled by _BASE
-    function rewardRate(
-        address token
-    ) external view returns (uint256) {
-        return _getPlumeStakingStorage().rewardRates[token];
-    }
-
-    /**
-     * @notice Detailed active stake information for a user
-     * @param user Address of the user
-     * @return info Detailed active stake information for the user
-     */
-    function stakeInfo(
-        address user
-    ) external view returns (StakeInfo memory info) {
-        info = _getPlumeStakingStorage().stakeInfo[user];
-    }
-
-    /**
-     * @notice Withdrawable balance of a user
-     * @param user Address of the user
-     * @return amount Amount of $PLUME available to unpark
-     */
-    function withdrawableBalance(
-        address user
-    ) external view returns (uint256 amount) {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[user];
-        amount = info.parked;
-        if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
-            amount += info.cooled;
-        }
-    }
-
-    /**
-     * @notice Returns the claimable reward for a user for a given reward token.
-     * @param user Address of the user.
-     * @param token Address of the reward token.
-     * @return amount Claimable reward amount.
-     */
-    function getClaimableReward(address user, address token) external view returns (uint256 amount) {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[user];
-        uint256 pending = 0;
-        if (info.staked > 0 && block.timestamp > info.lastUpdateTimestamp) {
-            pending = (info.staked * (block.timestamp - info.lastUpdateTimestamp) * $.rewardRates[token]) / _BASE;
-        }
-        amount = $.rewardAccrued[user][token] + pending;
-    }
-
-    /**
-     * @notice Claimable $pUSD rewards of a user
-     * @param user Address of the user
-     * @return amount Amount of $pUSD available to claim
-     */
-    function claimableBalance(
-        address user
-    ) public view returns (uint256 amount) {
-        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[user];
-
-        uint256 pending = 0;
-        if (info.staked > 0 && block.timestamp > info.lastUpdateTimestamp) {
-            pending =
-                (info.staked * (block.timestamp - info.lastUpdateTimestamp) * $.rewardRates[address($.pUSD)]) / _BASE;
-        }
-        amount = $.rewardAccrued[user][address($.pUSD)] + pending;
-    }
-
-    /**
-     * @notice Returns the claimable amount for a specific token for the caller
-     * @param token Address of the reward token
-     * @return amount Claimable reward amount for the caller
-     */
-    function amountClaimable(
-        address token
-    ) external view returns (uint256 amount) {
-        return this.getClaimableReward(msg.sender, token);
-    }
-
-    /**
-     * @notice Returns the total claimable amount across all users for a specific token
-     * @param token Address of the reward token
-     * @return total Total claimable reward amount across all users
-     */
-    function totalAmountClaimable(
-        address token
-    ) external view returns (uint256 total) {
-        return _getPlumeStakingStorage().totalClaimableByToken[token];
-    }
-
-    /**
-     * @notice Returns the amount of PLUME currently in cooling period for the caller
-     * @return amount Amount of PLUME in cooling period, returns 0 if cooldown period has passed
-     */
-    function amountCooling() external view returns (uint256 amount) {
+    function claimAndStake(address token) external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
 
-        // If cooldown has ended, return 0
-        if (info.cooldownEnd != 0 && block.timestamp >= info.cooldownEnd) {
+        // If token is not address(0), it must not be a native token
+        if (token != address(0)) {
+            revert TokenDoesNotExist(token);
+        }
+
+        _updateRewards(msg.sender);
+
+        amount = $.rewards[msg.sender][token];
+        if (amount > 0) {
+            $.rewards[msg.sender][token] = 0;
+
+            // Update staking information
+            info.staked += amount;
+            $.totalStaked += amount;
+
+            _updateRewards(msg.sender);
+            _addStakerIfNew(msg.sender);
+
+            emit RewardClaimed(msg.sender, token, amount);
+            emit Staked(msg.sender, amount, 0, 0, 0);
+        }
+
+        return amount;
+    }
+
+    /**
+     * @notice Get information about the staking contract
+     * @return totalStaked Total PLUME staked
+     * @return totalCooling Total PLUME in cooling
+     * @return totalWithdrawable Total PLUME in withdrawable state
+     * @return minStakeAmount Minimum staking amount
+     * @return rewardTokens Array of all reward tokens
+     */
+    function stakingInfo() external view returns (
+        uint256 totalStaked,
+        uint256 totalCooling,
+        uint256 totalWithdrawable,
+        uint256 minStakeAmount,
+        address[] memory rewardTokens
+    ) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        return (
+            $.totalStaked,
+            $.totalCooling,
+            $.totalWithdrawable,
+            $.minStakeAmount,
+            $.rewardTokens
+        );
+    }
+
+    /**
+     * @notice Get staking information for a user
+     * @param user Address of the user
+     * @return stake The StakeInfo struct for the user
+     */
+    function stakeInfo(address user) external view returns (StakeInfo memory) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        return $.stakeInfo[user];
+    }
+
+    /**
+     * @notice Get token reward info
+     * @param token Address of the token
+     * @return rate Current reward rate
+     * @return available Total rewards available
+     */
+    function tokenRewardInfo(address token) external view returns (uint256 rate, uint256 available) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        return ($.rewardRates[token], $.rewardsAvailable[token]);
+    }
+
+    /**
+     * @notice Get all stakers
+     * @return Array of all staker addresses
+     */
+    function getAllStakers() external view returns (address[] memory) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        return $.stakers;
+    }
+
+    /**
+     * @notice Get all reward tokens
+     * @return Array of all reward token addresses
+     */
+    function getRewardTokens() external view returns (address[] memory) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        return $.rewardTokens;
+    }
+
+    /**
+     * @notice Get reward information for a user
+     * @param user Address of the user
+     * @param token Address of the token
+     * @return rewards Current pending rewards
+     */
+    function earned(address user, address token) external view returns (uint256 rewards) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (!_isRewardToken(token)) {
             return 0;
         }
 
-        return info.cooled;
+        return _earned(user, token, $.stakeInfo[user].staked);
     }
 
-    /**
-     * @notice Returns the total amount of PLUME in cooling period across all users
-     * @return total Total amount of PLUME in cooling period
-     */
-    function totalAmountCooling() external view returns (uint256 total) {
-        return _getPlumeStakingStorage().totalCooling;
-    }
+    // Admin Functions
 
     /**
-     * @notice Returns the amount of PLUME that is withdrawable for the caller
-     * @return amount Amount of PLUME available to withdraw
+     * @notice Set the minimum stake amount
+     * @param amount The new minimum stake amount
      */
-    function amountWithdrawable() external view returns (uint256 amount) {
+    function setMinStakeAmount(uint256 amount) external onlyRole(ADMIN_ROLE) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        StakeInfo storage info = $.stakeInfo[msg.sender];
+        $.minStakeAmount = amount;
+        emit MinStakeAmountSet(amount);
+    }
 
-        amount = info.parked;
-        if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
-            amount += info.cooled;
+    /**
+     * @notice Set the cooldown interval
+     * @param interval The new cooldown interval in seconds
+     */
+    function setCooldownInterval(uint256 interval) external onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        $.cooldownInterval = interval;
+        emit CooldownIntervalSet(interval);
+    }
+
+    /**
+     * @notice Add a token to the rewards list
+     * @param token Address of the token to add
+     */
+    function addRewardToken(address token) external onlyRole(ADMIN_ROLE) {
+        // Allow address(0) to represent native PLUME token
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (_isRewardToken(token)) {
+            revert TokenAlreadyExists(token);
+        }
+
+        $.rewardTokens.push(token);
+        $.lastUpdateTimes[token] = block.timestamp;
+        emit RewardTokenAdded(token);
+    }
+
+    /**
+     * @notice Remove a token from the rewards list
+     * @param token Address of the token to remove
+     */
+    function removeRewardToken(address token) external onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        uint256 tokenIndex = _getTokenIndex(token);
+
+        if (tokenIndex >= $.rewardTokens.length) {
+            revert TokenDoesNotExist(token);
+        }
+
+        // Capture any remaining rewards and zero the rate
+        _updateRewardPerToken(token);
+        $.rewardRates[token] = 0;
+
+        // Remove token from the rewards list (replace with last element and pop)
+        $.rewardTokens[tokenIndex] = $.rewardTokens[$.rewardTokens.length - 1];
+        $.rewardTokens.pop();
+
+        emit RewardTokenRemoved(token);
+    }
+
+    /**
+     * @notice Set the reward rates for tokens
+     * @param tokens Array of token addresses
+     * @param rewardRates_ Array of reward rates
+     */
+    function setRewardRates(
+        address[] calldata tokens,
+        uint256[] calldata rewardRates_
+    ) external onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (tokens.length == 0) {
+            revert EmptyArray();
+        }
+
+        if (tokens.length != rewardRates_.length) {
+            revert ArrayLengthMismatch();
+        }
+
+        for (uint256 i = 0; i < tokens.length; i++) {
+            address token = tokens[i];
+            uint256 rate = rewardRates_[i];
+
+            if (rate > MAX_REWARD_RATE) {
+                revert RewardRateExceedsMax(rate, MAX_REWARD_RATE);
+            }
+
+            if (!_isRewardToken(token)) {
+                // Add token to reward list if not already included
+                // Allow address(0) to represent native PLUME token
+                $.rewardTokens.push(token);
+                $.lastUpdateTimes[token] = block.timestamp;
+                emit RewardTokenAdded(token);
+            } else {
+                // Update existing token reward state
+                _updateRewardPerToken(token);
+            }
+
+            $.rewardRates[token] = rate;
+        }
+
+        emit RewardRatesSet(tokens, rewardRates_);
+    }
+
+    /**
+     * @notice Add rewards to the pool
+     * @param token Address of the token
+     * @param amount Amount to add
+     */
+    function addRewards(address token, uint256 amount) external payable onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (!_isRewardToken(token)) {
+            revert TokenDoesNotExist(token);
+        }
+
+        _updateRewardPerToken(token);
+
+        // For native token
+        if (token == address(0)) {
+            if (msg.value != amount) {
+                revert InvalidAmount(msg.value, amount);
+            }
+            // Native tokens already received in msg.value
+        } else {
+            // Transfer ERC20 tokens from sender to this contract
+            IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        }
+
+        $.rewardsAvailable[token] += amount;
+        emit RewardsAdded(token, amount);
+    }
+
+    // Internal Functions
+
+    /**
+     * @notice Add a staker to the list if they are not already in it
+     * @param staker Address of the staker
+     */
+    function _addStakerIfNew(address staker) internal {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        StakeInfo storage info = $.stakeInfo[staker];
+
+        if (info.staked > 0) {
+            address[] storage stakersList = $.stakers;
+            for (uint256 i = 0; i < stakersList.length; i++) {
+                if (stakersList[i] == staker) {
+                    return;
+                }
+            }
+            stakersList.push(staker);
         }
     }
 
     /**
-     * @notice Returns the total amount of PLUME that is withdrawable across all users
-     * @return total Total amount of PLUME available to withdraw
+     * @notice Update rewards for a user
+     * @param user The address of the user
      */
-    function totalAmountWithdrawable() external view returns (uint256 total) {
-        return _getPlumeStakingStorage().totalWithdrawable;
+    function _updateRewards(address user) internal {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        address[] memory rewardTokens = $.rewardTokens;
+
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            address token = rewardTokens[i];
+            _updateRewardPerToken(token);
+
+            if (user != address(0)) {
+                $.rewards[user][token] = _earned(user, token, $.stakeInfo[user].staked);
+                $.userRewardPerTokenPaid[user][token] = $.rewardPerTokenCumulative[token];
+            }
+        }
     }
 
     /**
-     * @notice Returns the amount of PLUME currently staked by the caller
-     * @return amount Amount of PLUME staked
+     * @notice Update the reward per token value
+     * @param token The address of the reward token
      */
-    function amountStaked() external view returns (uint256 amount) {
-        return _getPlumeStakingStorage().stakeInfo[msg.sender].staked;
+    function _updateRewardPerToken(address token) internal {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if ($.totalStaked > 0) {
+            uint256 timeDelta = block.timestamp - $.lastUpdateTimes[token];
+            if (timeDelta > 0 && $.rewardRates[token] > 0) {
+                uint256 reward = (timeDelta * $.rewardRates[token] * REWARD_PRECISION) / $.totalStaked;
+                $.rewardPerTokenCumulative[token] += reward;
+            }
+        }
+
+        $.lastUpdateTimes[token] = block.timestamp;
     }
 
     /**
-     * @notice Returns the total amount of PLUME staked across all users
-     * @return total Total amount of PLUME staked
+     * @notice Calculate the earned rewards for a user
+     * @param user The address of the user
+     * @param token The address of the token
+     * @param userStakedAmount The amount staked by the user
+     * @return rewards The earned rewards
      */
-    function totalAmountStaked() external view returns (uint256 total) {
-        return _getPlumeStakingStorage().totalStaked;
+    function _earned(
+        address user,
+        address token,
+        uint256 userStakedAmount
+    ) internal view returns (uint256 rewards) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        uint256 rewardPerToken = $.rewardPerTokenCumulative[token];
+
+        // If there are currently staked tokens, add the rewards that have accumulated since last update
+        if ($.totalStaked > 0) {
+            uint256 timeDelta = block.timestamp - $.lastUpdateTimes[token];
+            if (timeDelta > 0 && $.rewardRates[token] > 0) {
+                rewardPerToken += (timeDelta * $.rewardRates[token] * REWARD_PRECISION) / $.totalStaked;
+            }
+        }
+
+        return $.rewards[user][token] + (
+            (userStakedAmount * (rewardPerToken - $.userRewardPerTokenPaid[user][token])) / REWARD_PRECISION
+        );
     }
 
+    /**
+     * @notice Get the index of a token in the rewards list
+     * @param token The address of the token
+     * @return The index of the token
+     */
+    function _getTokenIndex(address token) internal view returns (uint256) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        address[] memory tokens = $.rewardTokens;
+
+        for (uint256 i = 0; i < tokens.length; i++) {
+            if (tokens[i] == token) {
+                return i;
+            }
+        }
+
+        return tokens.length;
+    }
+
+    /**
+     * @notice Check if a token is in the rewards list
+     * @param token The address of the token
+     * @return True if the token is in the rewards list, false otherwise
+     */
+    function _isRewardToken(address token) internal view returns (bool) {
+        return _getTokenIndex(token) < _getPlumeStakingStorage().rewardTokens.length;
+    }
+
+    /**
+     * @notice Receive function to allow contract to receive native tokens
+     */
+    receive() external payable {
+        // Allow the contract to receive native tokens
+    }
 }
