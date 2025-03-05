@@ -102,9 +102,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param fromParked Amount taken from parked
      * @param fromWallet Amount taken from wallet
      */
-    event Staked(
-        address indexed user, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 fromWallet
-    );
+    event Staked(address indexed user, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 fromWallet);
 
     /**
      * @notice Emitted when a user unstakes PLUME
@@ -286,20 +284,12 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     // Modified to accept native tokens
     /**
      * @notice Stake PLUME into the contract
-     * @param amount Amount of PLUME to stake
      */
-    function stake(
-        uint256 amount
-    ) external payable nonReentrant {
+    function stake() external payable nonReentrant {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
 
-        // If amount is 0, use the full value sent
-        if (amount == 0) {
-            amount = msg.value;
-        } else if (amount != msg.value) {
-            revert InvalidAmount(msg.value, amount);
-        }
+        uint256 amount = msg.value;
 
         if (amount < $.minStakeAmount) {
             revert InvalidAmount(amount, $.minStakeAmount);
@@ -416,7 +406,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param token Address of the reward token to claim
      * @return amount Amount of reward token claimed
      */
-    function claim(address token) external nonReentrant returns (uint256 amount) {
+    function claim(
+        address token
+    ) external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
 
         if (!_isRewardToken(token)) {
@@ -483,7 +475,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @return amount Amount of reward token claimed and staked
      * @dev This only works if the token is PLUME
      */
-    function claimAndStake(address token) external nonReentrant returns (uint256 amount) {
+    function claimAndStake(
+        address token
+    ) external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
 
@@ -520,21 +514,19 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @return minStakeAmount Minimum staking amount
      * @return rewardTokens Array of all reward tokens
      */
-    function stakingInfo() external view returns (
-        uint256 totalStaked,
-        uint256 totalCooling,
-        uint256 totalWithdrawable,
-        uint256 minStakeAmount,
-        address[] memory rewardTokens
-    ) {
+    function stakingInfo()
+        external
+        view
+        returns (
+            uint256 totalStaked,
+            uint256 totalCooling,
+            uint256 totalWithdrawable,
+            uint256 minStakeAmount,
+            address[] memory rewardTokens
+        )
+    {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
-        return (
-            $.totalStaked,
-            $.totalCooling,
-            $.totalWithdrawable,
-            $.minStakeAmount,
-            $.rewardTokens
-        );
+        return ($.totalStaked, $.totalCooling, $.totalWithdrawable, $.minStakeAmount, $.rewardTokens);
     }
 
     /**
@@ -542,7 +534,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param user Address of the user
      * @return stake The StakeInfo struct for the user
      */
-    function stakeInfo(address user) external view returns (StakeInfo memory) {
+    function stakeInfo(
+        address user
+    ) external view returns (StakeInfo memory) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         return $.stakeInfo[user];
     }
@@ -553,7 +547,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @return rate Current reward rate
      * @return available Total rewards available
      */
-    function tokenRewardInfo(address token) external view returns (uint256 rate, uint256 available) {
+    function tokenRewardInfo(
+        address token
+    ) external view returns (uint256 rate, uint256 available) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         return ($.rewardRates[token], $.rewardsAvailable[token]);
     }
@@ -598,7 +594,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @notice Set the minimum stake amount
      * @param amount The new minimum stake amount
      */
-    function setMinStakeAmount(uint256 amount) external onlyRole(ADMIN_ROLE) {
+    function setMinStakeAmount(
+        uint256 amount
+    ) external onlyRole(ADMIN_ROLE) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         $.minStakeAmount = amount;
         emit MinStakeAmountSet(amount);
@@ -608,7 +606,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @notice Set the cooldown interval
      * @param interval The new cooldown interval in seconds
      */
-    function setCooldownInterval(uint256 interval) external onlyRole(ADMIN_ROLE) {
+    function setCooldownInterval(
+        uint256 interval
+    ) external onlyRole(ADMIN_ROLE) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         $.cooldownInterval = interval;
         emit CooldownIntervalSet(interval);
@@ -618,7 +618,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @notice Add a token to the rewards list
      * @param token Address of the token to add
      */
-    function addRewardToken(address token) external onlyRole(ADMIN_ROLE) {
+    function addRewardToken(
+        address token
+    ) external onlyRole(ADMIN_ROLE) {
         // Allow address(0) to represent native PLUME token
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
 
@@ -635,7 +637,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @notice Remove a token from the rewards list
      * @param token Address of the token to remove
      */
-    function removeRewardToken(address token) external onlyRole(ADMIN_ROLE) {
+    function removeRewardToken(
+        address token
+    ) external onlyRole(ADMIN_ROLE) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         uint256 tokenIndex = _getTokenIndex(token);
 
@@ -659,10 +663,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param tokens Array of token addresses
      * @param rewardRates_ Array of reward rates
      */
-    function setRewardRates(
-        address[] calldata tokens,
-        uint256[] calldata rewardRates_
-    ) external onlyRole(ADMIN_ROLE) {
+    function setRewardRates(address[] calldata tokens, uint256[] calldata rewardRates_) external onlyRole(ADMIN_ROLE) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
 
         if (tokens.length == 0) {
@@ -733,7 +734,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @notice Add a staker to the list if they are not already in it
      * @param staker Address of the staker
      */
-    function _addStakerIfNew(address staker) internal {
+    function _addStakerIfNew(
+        address staker
+    ) internal {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[staker];
 
@@ -752,7 +755,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @notice Update rewards for a user
      * @param user The address of the user
      */
-    function _updateRewards(address user) internal {
+    function _updateRewards(
+        address user
+    ) internal {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         address[] memory rewardTokens = $.rewardTokens;
 
@@ -771,7 +776,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @notice Update the reward per token value
      * @param token The address of the reward token
      */
-    function _updateRewardPerToken(address token) internal {
+    function _updateRewardPerToken(
+        address token
+    ) internal {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
 
         if ($.totalStaked > 0) {
@@ -792,11 +799,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param userStakedAmount The amount staked by the user
      * @return rewards The earned rewards
      */
-    function _earned(
-        address user,
-        address token,
-        uint256 userStakedAmount
-    ) internal view returns (uint256 rewards) {
+    function _earned(address user, address token, uint256 userStakedAmount) internal view returns (uint256 rewards) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
 
         uint256 rewardPerToken = $.rewardPerTokenCumulative[token];
@@ -809,9 +812,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             }
         }
 
-        return $.rewards[user][token] + (
-            (userStakedAmount * (rewardPerToken - $.userRewardPerTokenPaid[user][token])) / REWARD_PRECISION
-        );
+        return $.rewards[user][token]
+            + ((userStakedAmount * (rewardPerToken - $.userRewardPerTokenPaid[user][token])) / REWARD_PRECISION);
     }
 
     /**
@@ -819,7 +821,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param token The address of the token
      * @return The index of the token
      */
-    function _getTokenIndex(address token) internal view returns (uint256) {
+    function _getTokenIndex(
+        address token
+    ) internal view returns (uint256) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         address[] memory tokens = $.rewardTokens;
 
@@ -837,7 +841,9 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @param token The address of the token
      * @return True if the token is in the rewards list, false otherwise
      */
-    function _isRewardToken(address token) internal view returns (bool) {
+    function _isRewardToken(
+        address token
+    ) internal view returns (bool) {
         return _getTokenIndex(token) < _getPlumeStakingStorage().rewardTokens.length;
     }
 
@@ -847,4 +853,5 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     receive() external payable {
         // Allow the contract to receive native tokens
     }
+
 }
