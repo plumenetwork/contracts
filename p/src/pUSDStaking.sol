@@ -23,6 +23,15 @@ contract pUSDStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
 
     // Storage
 
+    event DebugClaim(
+        address token,
+        uint256 amount,
+        uint256 contractBalance,
+        uint256 userAccruedReward,
+        uint256 userStaked,
+        uint256 lastUpdateTime
+    );
+
     /// @custom:storage-location erc7201:plume.storage.PlumeStaking
     struct PlumeStakingStorage {
         /// @dev Address of the $PLUME token
