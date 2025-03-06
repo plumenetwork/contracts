@@ -490,35 +490,56 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     /**
-     * @notice Claim all accumulated rewards from a single token and stake the reward
-     * @param token Address of the reward token to claim and stake
-     * @return amount Amount of reward token claimed and staked
-     * @dev This only works if the token is PLUME
+     * @notice Claim all accumulated PLUME rewards and stake them, also process any cooled tokens that have completed
+     * their cooldown
+     * @return amount Total amount of PLUME claimed and staked (including both rewards and cooled tokens)
      */
-    function claimAndStake(
-        address token
-    ) external nonReentrant returns (uint256 amount) {
+    function restake() external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
 
-        // If token is not address(0), it must not be a native token
-        if (token != address(0)) {
-            revert TokenDoesNotExist(token);
-        }
+        // PLUME is represented by address(0)
+        address token = address(0);
 
         _updateRewards(msg.sender);
 
-        amount = $.rewards[msg.sender][token];
-        if (amount > 0) {
+        // Track sources of staked tokens
+        uint256 fromRewards = 0;
+        uint256 fromCooling = 0;
+
+        // First: Process rewards
+        fromRewards = $.rewards[msg.sender][token];
+        if (fromRewards > 0) {
             $.rewards[msg.sender][token] = 0;
 
             // Update total claimable
-            if ($.totalClaimableByToken[token] >= amount) {
-                $.totalClaimableByToken[token] -= amount;
+            if ($.totalClaimableByToken[token] >= fromRewards) {
+                $.totalClaimableByToken[token] -= fromRewards;
             } else {
                 $.totalClaimableByToken[token] = 0;
             }
 
+            // Will be added to total staked amount later
+            amount += fromRewards;
+
+            emit RewardClaimed(msg.sender, token, fromRewards);
+        }
+
+        // Second: Check for cooled tokens that have completed cooldown
+        if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
+            fromCooling = info.cooled;
+            info.cooled = 0;
+            info.cooldownEnd = 0;
+
+            // Update global cooling total
+            $.totalCooling -= fromCooling;
+
+            // Add to amount being staked
+            amount += fromCooling;
+        }
+
+        // Only update staking information if there's something to stake
+        if (amount > 0) {
             // Update staking information
             info.staked += amount;
             $.totalStaked += amount;
@@ -526,8 +547,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             _updateRewards(msg.sender);
             _addStakerIfNew(msg.sender);
 
-            emit RewardClaimed(msg.sender, token, amount);
-            emit Staked(msg.sender, amount, 0, 0, 0);
+            // Emit staking event with source breakdown
+            emit Staked(msg.sender, amount, fromCooling, 0, fromRewards);
         }
 
         return amount;
