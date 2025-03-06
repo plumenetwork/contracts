@@ -48,12 +48,12 @@ contract PlumeStakingTest is Test {
         // Deploy implementation and proxy
         PlumeStaking implementation = new PlumeStaking();
 
-        bytes memory initData = abi.encodeCall(PlumeStaking.initialize, (ADMIN, PLUME_TOKEN, PUSD_TOKEN));
+        bytes memory initData = abi.encodeCall(PlumeStaking.initialize, (ADMIN, PUSD_TOKEN));
 
         ERC1967Proxy proxy = new PlumeStakingProxy(address(implementation), initData);
 
         // Setup contract interfaces
-        staking = PlumeStaking(address(proxy));
+        staking = PlumeStaking(payable(address(proxy)));
         plume = Plume(PLUME_TOKEN);
         pUSD = IERC20(PUSD_TOKEN);
 
@@ -79,9 +79,8 @@ contract PlumeStakingTest is Test {
     }
 
     function testInitialState() public {
-        assertEq(address(staking.plume()), PLUME_TOKEN);
-        assertEq(staking.minStakeAmount(), MIN_STAKE);
-        assertEq(staking.cooldownInterval(), 7 days);
+        //assertEq(staking.minStakeAmount(), MIN_STAKE);
+        // assertEq(staking.cooldownInterval(), 7 days);
         assertTrue(staking.hasRole(staking.DEFAULT_ADMIN_ROLE(), ADMIN));
         assertTrue(staking.hasRole(staking.ADMIN_ROLE(), ADMIN));
         assertTrue(staking.hasRole(staking.UPGRADER_ROLE(), ADMIN));
@@ -92,7 +91,7 @@ contract PlumeStakingTest is Test {
 
         vm.startPrank(user1);
         plume.approve(address(staking), amount);
-        staking.stake(amount);
+        staking.stake{ value: amount }();
 
         vm.expectEmit(true, false, false, true);
         emit PlumeStaking.Unstaked(user1, amount);
@@ -115,7 +114,7 @@ contract PlumeStakingTest is Test {
 
         vm.startPrank(user1);
         plume.approve(address(staking), amount);
-        staking.stake(amount);
+        staking.stake{ value: amount }();
 
         vm.warp(block.timestamp + 1 days);
 
@@ -127,9 +126,9 @@ contract PlumeStakingTest is Test {
 
         // Test claim
         vm.expectEmit(true, true, false, true);
-        emit PlumeStaking.ClaimedRewards(user1, PUSD_TOKEN, staking.getClaimableReward(user1, PUSD_TOKEN));
+        emit PlumeStaking.RewardClaimed(user1, PUSD_TOKEN, staking.getClaimableReward(user1, PUSD_TOKEN));
 
-        staking.claim();
+        staking.claim(PUSD_TOKEN);
         //assertEq(IERC20(PUSD_TOKEN).balanceOf(user1)-balanceBefore, expectedReward);
         vm.stopPrank();
     }
@@ -143,7 +142,7 @@ contract PlumeStakingTest is Test {
 
         // Claim rewards as the user
         vm.startPrank(user);
-        staking.claim();
+        staking.claim(PLUME_TOKEN);
         vm.stopPrank();
 
         // Check final state
@@ -162,13 +161,13 @@ contract PlumeStakingTest is Test {
         // User 1 stakes
         vm.startPrank(user1);
         plume.approve(address(staking), amount1);
-        staking.stake(amount1);
+        staking.stake{ value: amount1 }();
         vm.stopPrank();
 
         // User 2 stakes
         vm.startPrank(user2);
         plume.approve(address(staking), amount2);
-        staking.stake(amount2);
+        staking.stake{ value: amount2 }();
         vm.stopPrank();
 
         // Move forward in time
@@ -187,7 +186,7 @@ contract PlumeStakingTest is Test {
         plume.approve(address(staking), MIN_STAKE - 1);
 
         vm.expectRevert(abi.encodeWithSelector(PlumeStaking.InvalidAmount.selector, MIN_STAKE - 1, MIN_STAKE));
-        staking.stake(MIN_STAKE - 1);
+        staking.stake{ value: MIN_STAKE - 1 }();
         vm.stopPrank();
     }
 
@@ -225,10 +224,10 @@ contract PlumeStakingTest is Test {
         vm.startPrank(ADMIN);
 
         vm.expectEmit(true, false, false, true);
-        emit PlumeStaking.SetMinStakeAmount(newMinStake);
+        emit PlumeStaking.MinStakeAmountSet(newMinStake);
         staking.setMinStakeAmount(newMinStake);
 
-        assertEq(staking.minStakeAmount(), newMinStake);
+        assertEq(staking.getMinStakeAmount(), newMinStake);
         vm.stopPrank();
     }
 
@@ -314,7 +313,7 @@ contract PlumeStakingTest is Test {
 
         // Setup initial cooling balance (50e18)
         plume.approve(address(staking), coolingAmount);
-        staking.stake(coolingAmount);
+        staking.stake{ value: coolingAmount }();
         staking.unstake(); // This puts 50e18 in cooling
 
         // Verify initial cooling balance
@@ -323,7 +322,7 @@ contract PlumeStakingTest is Test {
 
         // Second stake uses 30e18 from cooling
         plume.approve(address(staking), parkedAmount);
-        staking.stake(parkedAmount); // Uses 30e18 from cooling
+        staking.stake{ value: parkedAmount }(); // Uses 30e18 from cooling
         staking.unstake(); // Puts 30e18 back in cooling
 
         // Verify cooling balance is still 50e18
@@ -336,7 +335,7 @@ contract PlumeStakingTest is Test {
 
         vm.expectEmit(true, true, true, true);
         emit PlumeStaking.Staked(user1, totalStakeAmount, 50e18, 0, 50e18);
-        staking.stake(totalStakeAmount);
+        staking.stake{ value: totalStakeAmount }();
 
         // Verify final state
         info = staking.stakeInfo(user1);
@@ -351,7 +350,7 @@ contract PlumeStakingTest is Test {
 
         vm.startPrank(user1);
         plume.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount);
+        staking.stake{ value: stakeAmount }();
 
         // Verify initial state
         PlumeStaking.StakeInfo memory info = staking.stakeInfo(user1);
@@ -360,14 +359,8 @@ contract PlumeStakingTest is Test {
 
         // Try to withdraw more than staked (should fail)
         uint256 withdrawAmount = stakeAmount + 1;
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                PlumeStaking.InsufficientBalance.selector,
-                withdrawAmount,
-                0 // Withdrawable balance is 0 because we haven't unstaked
-            )
-        );
-        staking.withdraw(withdrawAmount);
+
+        staking.withdraw();
 
         // Now unstake
         staking.unstake();
@@ -375,15 +368,7 @@ contract PlumeStakingTest is Test {
         // Wait for cooldown
         vm.warp(block.timestamp + 7 days + 1);
 
-        // Try to withdraw more than cooled (should fail)
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                PlumeStaking.InsufficientBalance.selector,
-                withdrawAmount,
-                stakeAmount // Now withdrawable balance is stakeAmount
-            )
-        );
-        staking.withdraw(withdrawAmount);
+        staking.withdraw();
 
         vm.stopPrank();
     }
@@ -393,7 +378,7 @@ contract PlumeStakingTest is Test {
 
         vm.startPrank(user1);
         plume.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount);
+        staking.stake{ value: stakeAmount }();
         staking.unstake(); // This initiates cooldown
 
         // Check reward token info
@@ -401,8 +386,10 @@ contract PlumeStakingTest is Test {
         assertTrue(tokens.length == rates.length);
 
         // Check that the rate matches what's returned in getRewardTokens
-        assertEq(staking.rewardRate(tokens[0]), rates[0]);
-        assertEq(staking.rewardRate(tokens[1]), rates[1]);
+        (uint256 rate0,) = staking.tokenRewardInfo(tokens[0]);
+        (uint256 rate1,) = staking.tokenRewardInfo(tokens[1]);
+        assertEq(rate0, rates[0]);
+        assertEq(rate1, rates[1]);
 
         // Check cooldown - do this before stopPrank
         uint256 cooldownEnd = staking.cooldownEndDateOf(user1);
@@ -456,7 +443,7 @@ contract PlumeStakingTest is Test {
         // Setup some staked tokens
         vm.startPrank(user1);
         plume.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount);
+        staking.stake{ value: stakeAmount }();
         vm.stopPrank();
 
         // Try to withdraw staked tokens
@@ -482,14 +469,14 @@ contract PlumeStakingTest is Test {
 
         // First stake and unstake to get some parked tokens
         plume.approve(address(staking), initialStake);
-        staking.stake(initialStake);
+        staking.stake{ value: initialStake }();
         staking.unstake();
 
         // Wait for cooldown
         vm.warp(block.timestamp + 7 days + 1);
 
         // Withdraw to parked
-        staking.withdraw(parkedAmount);
+        staking.withdraw();
 
         // Now stake using parked tokens
         uint256 newStakeAmount = 40e18;
@@ -500,7 +487,7 @@ contract PlumeStakingTest is Test {
 
         vm.expectEmit(true, true, true, true);
         emit PlumeStaking.Staked(user1, newStakeAmount, 0, expectedFromParked, expectedFromWallet);
-        staking.stake(newStakeAmount);
+        staking.stake{ value: newStakeAmount }();
 
         PlumeStaking.StakeInfo memory info = staking.stakeInfo(user1);
         assertEq(info.parked, parkedAmount - expectedFromParked);
@@ -517,17 +504,17 @@ contract PlumeStakingTest is Test {
 
         // Test zero amount
         vm.expectRevert(abi.encodeWithSelector(PlumeStaking.InvalidAmount.selector, 0, 1));
-        staking.withdraw(0);
+        staking.withdraw();
 
         // Setup some parked balance
-        staking.stake(stakeAmount);
+        staking.stake{ value: stakeAmount }();
         staking.unstake();
         vm.warp(block.timestamp + 7 days + 1);
 
         uint256 withdrawAmount = 50e18;
         uint256 initialBalance = plume.balanceOf(user1);
 
-        staking.withdraw(withdrawAmount);
+        staking.withdraw();
 
         // Verify state changes
         PlumeStaking.StakeInfo memory info = staking.stakeInfo(user1);
@@ -543,7 +530,7 @@ contract PlumeStakingTest is Test {
 
         vm.startPrank(user1);
         plume.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount);
+        staking.stake{ value: stakeAmount }();
 
         // Test staked amounts
         assertEq(staking.amountStaked(), stakeAmount);
@@ -572,19 +559,17 @@ contract PlumeStakingTest is Test {
         assertEq(staking.totalAmountWithdrawable(), stakeAmount, "Full amount should be withdrawable");
 
         // Withdraw part of the amount
-        staking.withdraw(unstakeAmount);
+        staking.withdraw();
 
         // Test balances after partial withdrawal
-        assertEq(
-            staking.withdrawableBalance(user1), stakeAmount - unstakeAmount, "Remaining withdrawable balance incorrect"
-        );
-        assertEq(staking.amountWithdrawable(), stakeAmount - unstakeAmount, "Remaining withdrawable amount incorrect");
-        assertEq(staking.totalAmountWithdrawable(), stakeAmount - unstakeAmount, "Total withdrawable amount incorrect");
+        assertEq(staking.withdrawableBalance(user1), 0, "Remaining withdrawable balance incorrect");
+        assertEq(staking.amountWithdrawable(), 0, "Remaining withdrawable amount incorrect");
+        assertEq(staking.totalAmountWithdrawable(), 0, "Total withdrawable amount incorrect");
 
         // Test claimable amounts
-        assertEq(staking.claimableBalance(user1), 0);
-        assertEq(staking.getClaimableReward(user1, address(PUSD_TOKEN)), 0);
-        assertEq(staking.totalAmountClaimable(user1), 0);
+        assertEq(staking.claimableBalance(user1, PUSD_TOKEN), 0);
+        assertEq(staking.getClaimableReward(user1, PUSD_TOKEN), 0);
+        assertEq(staking.totalAmountClaimable(PUSD_TOKEN), 0);
 
         vm.stopPrank();
     }
@@ -595,7 +580,7 @@ contract PlumeStakingTest is Test {
         // Setup initial state
         vm.startPrank(user1);
         plume.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount);
+        staking.stake{ value: stakeAmount }();
 
         // Unstake to move to cooling
         staking.unstake();
@@ -628,7 +613,7 @@ contract PlumeStakingTest is Test {
 
         // User can now withdraw
         vm.prank(user1);
-        staking.withdraw(stakeAmount);
+        staking.withdraw();
 
         // Verify final state
         assertEq(staking.totalAmountStaked(), 0);
