@@ -11,7 +11,7 @@ import "../interfaces/ISupraRouterContract.sol";
 import { console } from "forge-std/console.sol";
 
 /// @custom:oz-upgrades-from Spin
-contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
+contract SpinV1 is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
 
     // Storage
     struct UserRewards {
@@ -51,8 +51,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         IDateTime dateTime;
         /// @dev Address of the Raffle contract
         address raffleContract;
-        /// @dev Timestamp of campaign start
-        uint256 campaignStartDate;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.Spin")) - 1)) & ~bytes32(uint256(0xff))
@@ -105,10 +103,10 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         (uint16 currentYear, uint8 currentMonth, uint8 currentDay) =
             (dateTime.getYear(block.timestamp), dateTime.getMonth(block.timestamp), dateTime.getDay(block.timestamp));
 
-        // Ensure the user hasn't already spun today
-        // if (isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
-        //     revert AlreadySpunToday();
-        // }
+        //  Ensure the user hasn't already spun today
+        if (isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
+            revert AlreadySpunToday();
+        }
 
         _;
     }
@@ -197,7 +195,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Jackpot"))) {
             require(block.timestamp >= userData.lastJackpotClaim + 7 days, "Jackpot cooldown active");
             require(
-                userData.streakCount >= (block.timestamp - $.campaignStartDate) / 7 days + 2,
+                userData.streakCount >= (block.timestamp - $.startTimestamp) / 7 days + 2,
                 "Not enough streak for jackpot"
             );
 
@@ -225,19 +223,16 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         SpinStorage storage $ = _getSpinStorage();
         uint256 probability = randomness % 1_000_000; // Normalize VRF range to 1M
 
-        // Determine the current week in the 12-week campaign
-        uint256 daysSinceStart = (block.timestamp - $.campaignStartDate) / 1 days;
-        uint8 weekNumber = uint8(daysSinceStart / 7);
-        if (weekNumber > 11) {
-            weekNumber = 11; // Cap at last prize if campaign is extended
-        }
-
-        uint256 jackpotThreshold = (1_000_000 * $.jackpotProbabilities[weekNumber]) / 100;
+        uint256 daysSinceStart = (block.timestamp - $.startTimestamp) / 1 days;
+        uint8 weekNumber = uint8(daysSinceStart / 7 + 1);
+        uint8 jackpotIndex = (weekNumber - 1) % 7;
+        uint256 jackpotThreshold = (1_000_000 * $.jackpotProbabilities[jackpotIndex]) / 100;
         console.logUint(probability);
 
         if (probability < jackpotThreshold) {
-            return ("Jackpot", $.jackpotPrizes[weekNumber]); // Correctly return the weekly jackpot amount
+            return ("Jackpot", 1); // Jackpot win
         }
+
         uint256 rewardCategory = probability % 4;
         if (rewardCategory == 0) {
             return ("Raffle Ticket", $.baseRaffleMultiplier * $.userRewards[msg.sender].streakCount);
@@ -321,13 +316,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             userData.plumeTokens,
             userData.lastJackpotClaim
         );
-    }
-
-    function setCampaignStartDate(
-        uint256 _campaignStartDate
-    ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.campaignStartDate = _campaignStartDate;
     }
 
     function setCoooldownPeriod(

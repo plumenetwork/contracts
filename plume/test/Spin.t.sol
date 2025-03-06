@@ -129,13 +129,12 @@ contract SpinTest is Test {
 
         vm.prank(address(9));
         spin.startSpin();
-    uint256 testNonce = 9; // Ensure it's an actual sent nonce
-    uint256[] memory testRNG = new uint256[](1);
-    testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
+        uint256 testNonce = 9; // Ensure it's an actual sent nonce
+        uint256[] memory testRNG = new uint256[](1);
+        testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
 
-    vm.prank(SUPRA_ORACLE); // Simulate Supra calling
-    spin.handleRandomness(testNonce, testRNG);
-}
-
+        vm.prank(SUPRA_ORACLE); // Simulate Supra calling
+        spin.handleRandomness(testNonce, testRNG);
+    }
 
 }
