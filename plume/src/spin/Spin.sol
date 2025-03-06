@@ -229,7 +229,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 daysSinceStart = (block.timestamp - $.campaignStartDate) / 1 days;
         uint8 weekNumber = uint8(daysSinceStart / 7);
         if (weekNumber > 11) {
-            weekNumber = 11; // Cap at last prize if campaign is extended
+            return ("Nothing", 0); // Default case
         }
 
         uint256 jackpotThreshold = (1_000_000 * $.jackpotProbabilities[weekNumber]) / 100;
