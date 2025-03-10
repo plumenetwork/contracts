@@ -18,7 +18,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 raffleTickets;
         uint256 xpGained;
         uint256 plumeTokens;
-        uint256 lastJackpotClaim;
         uint256 streakCount;
     }
 
@@ -26,8 +25,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     struct SpinStorage {
         /// @dev Address of the admin managing the Spin contract
         address admin;
-        /// @dev Cooldown period between spins (in seconds)
-        uint256 cooldownPeriod;
+        /// @dev Last Jackpot claim timestamp
+        uint256 lastJackpotClaim;
         /// @dev Mapping of wallet address to rewards
         mapping(address => UserRewards) userRewards;
         /// @dev Timestamp of start time of Spin Game
@@ -122,12 +121,10 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
      * @notice Initializes the Spin contract.
      * @param supraRouterAddress The address of the Supra Router contract.
      * @param dateTimeAddress The address of the DateTime contract.
-     * @param _cooldownPeriod The cooldown period between spins in seconds.
      */
     function initialize(
         address supraRouterAddress,
-        address dateTimeAddress,
-        uint256 _cooldownPeriod
+        address dateTimeAddress
     ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
@@ -140,7 +137,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         SpinStorage storage $ = _getSpinStorage();
         $.supraRouter = ISupraRouterContract(supraRouterAddress);
         $.dateTime = IDateTime(dateTimeAddress);
-        $.cooldownPeriod = _cooldownPeriod;
         $.admin = msg.sender;
         $.startTimestamp = block.timestamp;
 
@@ -201,14 +197,15 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         UserRewards storage userData = $.userRewards[user];
 
         if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Jackpot"))) {
-            require(block.timestamp >= userData.lastJackpotClaim + 7 days, "Jackpot cooldown active");
+            require(block.timestamp >= $.lastJackpotClaim + 7 days, "Jackpot cooldown active");
+            //TODO: Add case for ot enough streak count  
             require(
                 userData.streakCount >= (block.timestamp - $.campaignStartDate) / 7 days + 2,
                 "Not enough streak for jackpot"
             );
 
             userData.jackpotWins++;
-            userData.lastJackpotClaim = block.timestamp;
+            $.lastJackpotClaim = block.timestamp;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Raffle Ticket"))) {
             userData.raffleTickets += rewardAmount;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("XP"))) {
@@ -241,7 +238,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         }
 
         uint256 jackpotThreshold = (1_000_000 * $.jackpotProbabilities[weekNumber]) / 100;
-        console.logUint(probability);
 
         if (probability < jackpotThreshold) {
             return ("Jackpot", $.jackpotPrizes[weekNumber]);
@@ -314,8 +310,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             uint256 jackpotWins,
             uint256 raffleTickets,
             uint256 xpGained,
-            uint256 smallPlumeTokens,
-            uint256 lastJackpotClaim
+            uint256 smallPlumeTokens
         )
     {
         SpinStorage storage $ = _getSpinStorage();
@@ -326,8 +321,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             userData.jackpotWins,
             userData.raffleTickets,
             userData.xpGained,
-            userData.plumeTokens,
-            userData.lastJackpotClaim
+            userData.plumeTokens
         );
     }
 
@@ -351,13 +345,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     ) external onlyRole(ADMIN_ROLE) {
         SpinStorage storage $ = _getSpinStorage();
         $.campaignStartDate = _campaignStartDate;
-    }
-
-    function setCoooldownPeriod(
-        uint256 _cooldownPeriod
-    ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.cooldownPeriod = _cooldownPeriod;
     }
 
     function setBaseRaffleMultiplier(
