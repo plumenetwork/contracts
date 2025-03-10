@@ -89,7 +89,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         require(ticketCost > 0, "Invalid prize ID");
 
         // Check if the user has enough raffle tickets in Spin contract
-        (,, uint256 userRaffleTickets,,) = spinContract.getUserRewards(msg.sender);
+        (,, uint256 userRaffleTickets,,) = spinContract.getUserData(msg.sender);
         require(userRaffleTickets >= ticketCost, "Not enough raffle tickets");
 
         // Deduct tickets in Spin contract
