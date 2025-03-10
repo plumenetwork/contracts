@@ -36,7 +36,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         /// @dev Mapping of wallet address to the last spin date (timestamp)
         mapping(address => uint256) lastSpinDate;
         /// @dev Mapping of Week daya to Jackpot probabilities
-        mapping(uint8 => uint256) jackpotProbabilities;
+        uint8[7] jackpotProbabilities;
         /// @dev Raffle Multiplier
         uint256 baseRaffleMultiplier;
         /// @dev XP gained per spin
@@ -53,11 +53,12 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         address raffleContract;
         /// @dev Timestamp of campaign start
         uint256 campaignStartDate;
+        /// @dev Mapping of Week to Jackpot Prizes
+        mapping(uint8 => uint256) jackpotPrizes;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.Spin")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant SPIN_STORAGE_LOCATION = 0x35fc247836aa7388208f5bf12c548be42b83fa7b653b6690498b1d90754d0b00;
-
     function _getSpinStorage() internal pure returns (SpinStorage storage $) {
         assembly {
             $.slot := SPIN_STORAGE_LOCATION
@@ -106,9 +107,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             (dateTime.getYear(block.timestamp), dateTime.getMonth(block.timestamp), dateTime.getDay(block.timestamp));
 
         // Ensure the user hasn't already spun today
-        // if (isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
-        //     revert AlreadySpunToday();
-        // }
+        if (isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
+            revert AlreadySpunToday();
+        }
 
         _;
     }
@@ -144,13 +145,23 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         $.admin = msg.sender;
         $.startTimestamp = block.timestamp;
 
-        $.jackpotProbabilities[1] = 5;
-        $.jackpotProbabilities[2] = 10;
-        $.jackpotProbabilities[3] = 15;
-        $.jackpotProbabilities[4] = 25;
-        $.jackpotProbabilities[5] = 35;
-        $.jackpotProbabilities[6] = 50;
-        $.jackpotProbabilities[7] = 65;
+        $.jackpotProbabilities = [5, 10, 15, 25, 35, 50, 65];
+        $.jackpotPrizes[1] = 5000;
+        $.jackpotPrizes[2] = 5000;
+        $.jackpotPrizes[3] = 10000;
+        $.jackpotPrizes[4] = 10000;
+        $.jackpotPrizes[5] = 20000;
+        $.jackpotPrizes[6] = 20000;
+        $.jackpotPrizes[7] = 30000;
+        $.jackpotPrizes[8] = 30000;
+        $.jackpotPrizes[9] = 40000;
+        $.jackpotPrizes[10] = 40000;
+        $.jackpotPrizes[11] = 50000;
+        $.jackpotPrizes[12] = 100000;
+
+        $.baseRaffleMultiplier = 100;
+        $.xpPerSpin = 100;
+        $.plumeAmounts = [2, 5, 10];
     }
 
     /// @notice Starts the spin process by generating a random number and recording the spin date.
@@ -229,14 +240,15 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 daysSinceStart = (block.timestamp - $.campaignStartDate) / 1 days;
         uint8 weekNumber = uint8(daysSinceStart / 7);
         if (weekNumber > 11) {
-            return ("Nothing", 0); // Default case
+            // TODO: Handle Default case
+            return ("Nothing", 0);
         }
 
         uint256 jackpotThreshold = (1_000_000 * $.jackpotProbabilities[weekNumber]) / 100;
         console.logUint(probability);
 
         if (probability < jackpotThreshold) {
-            return ("Jackpot", $.jackpotPrizes[weekNumber]); // Correctly return the weekly jackpot amount
+            return ("Jackpot", $.jackpotPrizes[weekNumber]);
         }
         uint256 rewardCategory = probability % 4;
         if (rewardCategory == 0) {
@@ -321,6 +333,21 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             userData.plumeTokens,
             userData.lastJackpotClaim
         );
+    }
+
+    function setJackpotProbabilities(
+        uint8[7] memory _jackpotProbabilities
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.jackpotProbabilities = _jackpotProbabilities;
+    }
+
+    function setJackpotPrizes(
+        uint8 week,
+        uint256 prize
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.jackpotPrizes[week] = prize;
     }
 
     function setCampaignStartDate(
