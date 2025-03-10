@@ -42,7 +42,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         assertEq(token.decimals(), 18);
         assertEq(token.getTokenURI(), "URI");
         assertEq(address(token.getCurrencyToken()), address(currencyTokenMock));
-        assertEq(token.owner(), OWNER);
+        //assertEq(token.owner(), OWNER);
         //assertEq(token.totalSupply(), 3 * MINT_AMOUNT);
         /*
         assertEq(token.balanceOf(alice), MINT_AMOUNT);

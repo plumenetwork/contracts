@@ -153,6 +153,44 @@ contract AssetToken is
         _mint(owner, initialSupply);
     }
 
+    /**
+     * @notice Reinitialize the AssetToken with updated parameters
+     * @dev This function can be called multiple times, but only by the owner and with increasing version numbers
+     * @param version Version number for the reinitialization
+     * @param newName Optional new name for the token (empty string to keep current)
+     * @param newSymbol Optional new symbol for the token (empty string to keep current)
+     * @param newTokenURI Optional new token URI (empty string to keep current)
+     * @param newCurrencyToken Optional new currency token (address(0) to keep current)
+     * @param newDecimals Optional new decimals (0 to keep current)
+     * @param newTotalValue Optional new total value (0 to keep current)
+     * @param newWhitelistEnabled Optional new whitelist enabled setting
+     */
+    function reinitialize(
+        uint8 version,
+        string memory newName,
+        string memory newSymbol,
+        string memory newTokenURI,
+        address newCurrencyToken,
+        uint8 newDecimals,
+        uint256 newTotalValue,
+        bool newWhitelistEnabled
+    ) public reinitializer(version) onlyRole(ADMIN_ROLE) {
+        // Reinitialize YieldDistributionToken
+        __YieldDistributionToken_reinitialize(
+            version, newName, newSymbol, IERC20(newCurrencyToken), newDecimals, newTokenURI
+        );
+
+        AssetTokenStorage storage $ = _getAssetTokenStorage();
+
+        // Update total value if provided
+        if (newTotalValue > 0) {
+            $.totalValue = newTotalValue;
+        }
+
+        // Update whitelist setting
+        $.isWhitelistEnabled = newWhitelistEnabled;
+    }
+
     // Override Functions
 
     /**
@@ -348,6 +386,56 @@ contract AssetToken is
             uint256 lockedBalance = abi.decode(data, (uint256));
             balanceAvailable -= lockedBalance;
         }
+    }
+
+    function getYieldCalculationState(
+        address user
+    )
+        external
+        view
+        returns (
+            uint256 userBalance,
+            uint256 lastUpdateTimestamp,
+            uint256 timeSinceLastUpdate,
+            uint256 userAmountSeconds,
+            uint256 yieldPerTokenStored,
+            uint256 userYieldPerTokenPaid,
+            uint256 yieldDifference,
+            uint256 currentRewards,
+            uint256 contractBalance
+        )
+    {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+
+        userBalance = balanceOf(user);
+        lastUpdateTimestamp = $.lastUpdate[user];
+        timeSinceLastUpdate = block.timestamp - lastUpdateTimestamp;
+        userAmountSeconds = userBalance * timeSinceLastUpdate;
+        yieldPerTokenStored = $.yieldPerTokenStored;
+        userYieldPerTokenPaid = $.userYieldPerTokenPaid[user];
+        yieldDifference = yieldPerTokenStored - userYieldPerTokenPaid;
+        currentRewards = $.rewards[user];
+        contractBalance = $.currencyToken.balanceOf(address(this));
+    }
+
+    function getGlobalState()
+        external
+        view
+        returns (
+            uint256 totalSupply_,
+            uint256 totalAmountSeconds_,
+            uint256 lastSupplyUpdate_,
+            uint256 lastDepositTimestamp_,
+            uint256 yieldPerTokenStored_
+        )
+    {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+
+        totalSupply_ = totalSupply();
+        totalAmountSeconds_ = $.totalAmountSeconds;
+        lastSupplyUpdate_ = $.lastSupplyUpdate;
+        lastDepositTimestamp_ = $.lastDepositTimestamp;
+        yieldPerTokenStored_ = $.yieldPerTokenStored;
     }
 
 }
