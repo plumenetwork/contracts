@@ -8,7 +8,6 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "../interfaces/IDateTime.sol";
 import "../interfaces/ISupraRouterContract.sol";
-import { console } from "forge-std/console.sol";
 
 /// @custom:oz-upgrades-from Spin
 contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
@@ -67,6 +66,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     // Roles
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant SUPRA_ROLE = keccak256("SUPRA_ROLE");
 
     // Events
     /// @notice Emitted when a spin is requested
@@ -81,8 +81,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     error NotAdmin();
     /// @notice Revert if the user has already spun today
     error AlreadySpunToday();
-    /// @notice Revert if the callback is unauthorized
-    error UnauthorizedCallback();
     /// @notice Revert if the nonce is invalid
     error InvalidNonce();
 
@@ -137,6 +135,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
+        _grantRole(SUPRA_ROLE, supraRouterAddress);
 
         SpinStorage storage $ = _getSpinStorage();
         $.supraRouter = ISupraRouterContract(supraRouterAddress);
@@ -187,13 +186,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
      * @param nonce The nonce associated with the spin request.
      * @param rngList The list of random numbers generated.
      */
-    function handleRandomness(uint256 nonce, uint256[] memory rngList) external {
-        console.log("handleRandomness CALLED");
+    function handleRandomness(uint256 nonce, uint256[] memory rngList) external onlyRole(SUPRA_ROLE) {
         SpinStorage storage $ = _getSpinStorage();
-        if (msg.sender != address($.supraRouter)) {
-            revert UnauthorizedCallback();
-        }
-
+       
         address user = $.userNonce[nonce];
         if (user == address(0)) {
             revert InvalidNonce();
