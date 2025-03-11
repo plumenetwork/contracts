@@ -97,6 +97,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     uint256 public constant MAX_REWARD_RATE = 3171 * 1e9;
     /// @notice Scaling factor for reward calculations
     uint256 public constant REWARD_PRECISION = 1e18;
+    /// @notice Address constant used to represent the native PLUME token
+    address public constant PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     // Events
 
@@ -303,51 +305,15 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
         _updateRewards(msg.sender);
 
-        // Check if any cooling funds should be moved to parked
-        if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
-            info.parked += info.cooled;
-            $.totalWithdrawable += info.cooled;
-            $.totalCooling -= info.cooled;
-            info.cooled = 0;
-            info.cooldownEnd = 0;
-        }
-
-        uint256 remainingToStake = amount;
-        uint256 fromCooling;
-        uint256 fromParked;
-        uint256 fromWallet;
-
-        // First: Use cooling tokens if available
-        if (info.cooled > 0) {
-            fromCooling = remainingToStake > info.cooled ? info.cooled : remainingToStake;
-            info.cooled -= fromCooling;
-            remainingToStake -= fromCooling;
-        }
-
-        // Second: Use parked (withdrawable) tokens if needed
-        if (remainingToStake > 0 && info.parked > 0) {
-            fromParked = remainingToStake > info.parked ? info.parked : remainingToStake;
-            info.parked -= fromParked;
-            remainingToStake -= fromParked;
-        }
-
-        // Last: Take remaining from wallet (already received via msg.value)
-        if (remainingToStake > 0) {
-            fromWallet = remainingToStake;
-            // No need to transfer - we already have the tokens via msg.value
-        }
-
-        // Update total staked amount
+        // Update total staked amount - simple direct stake
         info.staked += amount;
         $.totalStaked += amount;
-        $.totalCooling -= fromCooling;
-        $.totalWithdrawable -= fromParked;
 
         _updateRewards(msg.sender);
         _addStakerIfNew(msg.sender);
 
-        // Single event with all source information
-        emit Staked(msg.sender, amount, fromCooling, fromParked, fromWallet);
+        // Only from wallet - no other sources
+        emit Staked(msg.sender, amount, 0, 0, amount);
     }
 
     /**
@@ -435,7 +401,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             }
 
             // Transfer ERC20 tokens
-            if (token != address(0)) {
+            if (token != PLUME) {
                 IERC20(token).safeTransfer(msg.sender, amount);
             } else {
                 // For native token rewards
@@ -446,6 +412,54 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         }
 
         return amount;
+    }
+
+    /**
+     * @notice Stakes native token (PLUME) rewards without withdrawing them first
+     * @return stakedAmount Amount of PLUME rewards that were staked
+     */
+    function restakeRewards() external nonReentrant returns (uint256 stakedAmount) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        StakeInfo storage info = $.stakeInfo[msg.sender];
+
+        // Native token is represented by PLUME constant
+        address token = PLUME;
+
+        if (!_isRewardToken(token)) {
+            revert TokenDoesNotExist(token);
+        }
+
+        // Update rewards to get the latest amount
+        _updateRewards(msg.sender);
+
+        // Get the current reward amount for native token
+        stakedAmount = $.rewards[msg.sender][token];
+
+        if (stakedAmount > 0) {
+            // Reset rewards to 0 as if they were claimed
+            $.rewards[msg.sender][token] = 0;
+
+            // Update total claimable
+            if ($.totalClaimableByToken[token] >= stakedAmount) {
+                $.totalClaimableByToken[token] -= stakedAmount;
+            } else {
+                $.totalClaimableByToken[token] = 0;
+            }
+
+            // Add to user's staked amount
+            info.staked += stakedAmount;
+            $.totalStaked += stakedAmount;
+
+            // Update rewards again with new stake amount
+            _updateRewards(msg.sender);
+            _addStakerIfNew(msg.sender);
+
+            // Emit both claimed and staked events
+            emit RewardClaimed(msg.sender, token, stakedAmount);
+            emit Staked(msg.sender, stakedAmount, 0, 0, 0);
+        }
+
+        return stakedAmount;
     }
 
     /**
@@ -475,7 +489,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
                 }
 
                 // Transfer ERC20 tokens
-                if (token != address(0)) {
+                if (token != PLUME) {
                     IERC20(token).safeTransfer(msg.sender, amount);
                 } else {
                     // For native token rewards
@@ -490,68 +504,92 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     /**
-     * @notice Claim all accumulated PLUME rewards and stake them, also process any cooled tokens that have completed
-     * their cooldown
-     * @return amount Total amount of PLUME claimed and staked (including both rewards and cooled tokens)
+     * @notice Move funds from withdrawable or cooling balances into staking
+     * @param amount Amount of PLUME to move from withdrawable/cooling to staking
+     * @return stakedAmount Total amount successfully moved to staking
      */
-    function restake() external nonReentrant returns (uint256 amount) {
+    function restake(
+        uint256 amount
+    ) external nonReentrant returns (uint256 stakedAmount) {
+        if (amount == 0) {
+            revert InvalidAmount(amount, 1);
+        }
+
         PlumeStakingStorage storage $ = _getPlumeStakingStorage();
         StakeInfo storage info = $.stakeInfo[msg.sender];
-
-        // PLUME is represented by address(0)
-        address token = address(0);
 
         _updateRewards(msg.sender);
 
         // Track sources of staked tokens
-        uint256 fromRewards = 0;
+        uint256 fromParked = 0;
         uint256 fromCooling = 0;
+        uint256 remainingToStake = amount;
 
-        // First: Process rewards
-        fromRewards = $.rewards[msg.sender][token];
-        if (fromRewards > 0) {
-            $.rewards[msg.sender][token] = 0;
+        // First: Check withdrawable (parked) tokens
+        if (remainingToStake > 0 && info.parked > 0) {
+            fromParked = remainingToStake > info.parked ? info.parked : remainingToStake;
+            info.parked -= fromParked;
+            remainingToStake -= fromParked;
 
-            // Update total claimable
-            if ($.totalClaimableByToken[token] >= fromRewards) {
-                $.totalClaimableByToken[token] -= fromRewards;
-            } else {
-                $.totalClaimableByToken[token] = 0;
-            }
+            // Update global withdrawable total
+            $.totalWithdrawable -= fromParked;
 
-            // Will be added to total staked amount later
-            amount += fromRewards;
-
-            emit RewardClaimed(msg.sender, token, fromRewards);
+            // Add to amount being staked
+            stakedAmount += fromParked;
         }
 
-        // Second: Check for cooled tokens that have completed cooldown
-        if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
-            fromCooling = info.cooled;
-            info.cooled = 0;
-            info.cooldownEnd = 0;
+        // Second: Check for cooled tokens - can use even if cooldown period is still active
+        if (remainingToStake > 0 && info.cooled > 0) {
+            fromCooling = remainingToStake > info.cooled ? info.cooled : remainingToStake;
+            info.cooled -= fromCooling;
+
+            // Clear cooldown if no more cooling tokens
+            if (info.cooled == 0) {
+                info.cooldownEnd = 0;
+            }
 
             // Update global cooling total
             $.totalCooling -= fromCooling;
 
             // Add to amount being staked
-            amount += fromCooling;
+            stakedAmount += fromCooling;
         }
 
-        // Only update staking information if there's something to stake
-        if (amount > 0) {
-            // Update staking information
-            info.staked += amount;
-            $.totalStaked += amount;
-
-            _updateRewards(msg.sender);
-            _addStakerIfNew(msg.sender);
-
-            // Emit staking event with source breakdown
-            emit Staked(msg.sender, amount, fromCooling, 0, fromRewards);
+        // Check if we were able to restake the requested amount
+        if (stakedAmount < amount) {
+            revert InvalidAmount(stakedAmount, amount);
         }
 
-        return amount;
+        // Update staking information
+        info.staked += stakedAmount;
+        $.totalStaked += stakedAmount;
+
+        // After processing the requested amount, check if any remaining cooling tokens
+        // have completed their cooldown period and move them to withdrawable
+        if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
+            // Move cooled tokens to parked (withdrawable)
+            info.parked += info.cooled;
+            $.totalWithdrawable += info.cooled;
+            $.totalCooling -= info.cooled;
+
+            // Log how much was moved for event emission
+            uint256 movedToWithdrawable = info.cooled;
+
+            // Clear cooling info
+            info.cooled = 0;
+            info.cooldownEnd = 0;
+
+            // Emit event about moving tokens from cooling to withdrawable
+            emit CoolingCompleted(msg.sender, movedToWithdrawable);
+        }
+
+        _updateRewards(msg.sender);
+        _addStakerIfNew(msg.sender);
+
+        // Emit staking event with source breakdown
+        emit Staked(msg.sender, stakedAmount, fromCooling, fromParked, 0);
+
+        return stakedAmount;
     }
 
     /**
@@ -745,7 +783,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         _updateRewardPerToken(token);
 
         // For native token
-        if (token == address(0)) {
+        if (token == PLUME) {
             if (msg.value != amount) {
                 revert InvalidAmount(msg.value, amount);
             }
@@ -1117,7 +1155,7 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /**
      * @notice Allows admin to withdraw any token from the contract
-     * @param token Address of the token to withdraw (use address(0) for native tokens)
+     * @param token Address of the token to withdraw (use PLUME for native tokens)
      * @param amount Amount of tokens to withdraw
      * @param recipient Address to receive the tokens
      */
@@ -1133,8 +1171,8 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             revert InvalidAmount(0, 1);
         }
 
-        // For native token (address(0))
-        if (token == address(0)) {
+        // For native token (PLUME)
+        if (token == PLUME) {
             uint256 totalLocked = this.totalAmountStaked() + this.totalAmountCooling();
             uint256 balance = address(this).balance;
             require(balance - amount >= totalLocked, "Cannot withdraw staked/cooling tokens");
@@ -1275,6 +1313,24 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     /**
+     * @notice Returns the amount of PLUME currently in cooling period for the caller
+     * @return amount Amount of PLUME in cooling period, returns 0 if cooldown period has passed
+     */
+    function amountCoolingOf(
+        address user
+    ) external view returns (uint256 amount) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        StakeInfo storage info = $.stakeInfo[user];
+
+        // If cooldown has ended, return 0
+        if (info.cooldownEnd != 0 && block.timestamp >= info.cooldownEnd) {
+            return 0;
+        }
+
+        return info.cooled;
+    }
+
+    /**
      * @notice Returns the amount of PLUME that is withdrawable for the caller
      * @return amount Amount of PLUME available to withdraw
      */
@@ -1338,5 +1394,12 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     ) external view returns (uint256 rate) {
         return _getPlumeStakingStorage().rewardRates[token];
     }
+
+    /**
+     * @notice Emitted when tokens complete cooldown and are moved to withdrawable state
+     * @param user Address of the user
+     * @param amount Amount of PLUME moved from cooling to withdrawable
+     */
+    event CoolingCompleted(address indexed user, uint256 amount);
 
 }
