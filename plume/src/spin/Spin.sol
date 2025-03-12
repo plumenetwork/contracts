@@ -288,7 +288,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     function updateRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
         SpinStorage storage $ = _getSpinStorage();
-        require($.userData[user].raffleTickets >= ticketsUsed, "Not enough raffle tickets");
 
         $.userData[user].raffleTickets -= ticketsUsed;
 
