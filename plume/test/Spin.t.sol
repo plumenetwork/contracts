@@ -58,7 +58,7 @@ contract SpinTest is Test {
         spin = new Spin();
 
         vm.prank(ADMIN);
-        spin.initialize(SUPRA_ORACLE, address(dateTime), COOLDOWN_PERIOD);
+        spin.initialize(SUPRA_ORACLE, address(dateTime));
 
         vm.prank(SUPRA_OWNER);
         IDepositContract(DEPOSIT_CONTRACT).addClientToWhitelist(ADMIN, true);
