@@ -286,6 +286,32 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         return streakCount;
     }
 
+    function readCountStreak(
+        address user
+    ) internal view returns (uint256) {
+        SpinStorage storage $ = _getSpinStorage();
+        IDateTime dateTime = $.dateTime;
+
+        UserData storage userData = $.userData[user];
+        uint256 streakCount = userData.streakCount;
+        uint256 currentTimestamp = block.timestamp;
+        uint256 lastTimeStamp = userData.lastSpinTimestamp;
+
+        (uint16 currentYear, uint8 currentMonth, uint8 currentDay) =
+            (dateTime.getYear(currentTimestamp), dateTime.getMonth(currentTimestamp), dateTime.getDay(currentTimestamp));
+
+        (uint16 lastSpinYear, uint8 lastSpinMonth, uint8 lastSpinDay) =
+            (dateTime.getYear(lastTimeStamp), dateTime.getMonth(lastTimeStamp), dateTime.getDay(lastTimeStamp));
+
+        if (isNextDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay, dateTime)) {
+            return streakCount;
+        } else if (isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
+            return streakCount;
+        }
+
+        return 0;
+    }
+
     function updateRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
         SpinStorage storage $ = _getSpinStorage();
 
@@ -365,6 +391,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         view
         returns (
             uint256 dailyStreak,
+            uint256 lastSpinTimestamp,
             uint256 jackpotWins,
             uint256 raffleTickets,
             uint256 xpGained,
@@ -374,8 +401,14 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         SpinStorage storage $ = _getSpinStorage();
         UserData storage userData = $.userData[user];
 
-        return
-            (countStreak(user), userData.jackpotWins, userData.raffleTickets, userData.xpGained, userData.plumeTokens);
+        return (
+            readCountStreak(user),
+            lastSpinTimestamp,
+            userData.jackpotWins,
+            userData.raffleTickets,
+            userData.xpGained,
+            userData.plumeTokens
+        );
     }
 
     function setJackpotProbabilities(

@@ -246,10 +246,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     /**
      * @notice Gets the user's entry details for a prize.
      */
-    function getUserEntry(
-        uint256 prizeId,
-        address user
-    ) external view returns (uint256 ticketsSpent, bool claimed) {
+    function getUserEntry(uint256 prizeId, address user) external view returns (uint256 ticketsSpent, bool claimed) {
         RaffleStorage storage $ = _getRaffleStorage();
         UserEntry storage entry = $.userEntries[prizeId][user];
         return (entry.ticketsSpent, entry.claimed);
