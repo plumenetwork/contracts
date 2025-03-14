@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "../interfaces/IDateTime.sol";
 import "../interfaces/ISupraRouterContract.sol";
+import { console } from "forge-std/console.sol";
 
 /// @custom:oz-upgrades-from Spin
 contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
@@ -52,6 +53,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 campaignStartDate;
         /// @dev Mapping of Week to Jackpot Prizes
         mapping(uint8 => uint256) jackpotPrizes;
+        mapping(address => bool) whitelists;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.Spin")) - 1)) & ~bytes32(uint256(0xff))
@@ -91,6 +93,13 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     ///      the current date using the `isSameDay` function, and reverts if the user has already spun today.
     modifier canSpin() {
         SpinStorage storage $ = _getSpinStorage();
+
+        // Early return if the user is whitelisted
+        if ($.whitelists[msg.sender]) {
+            _;
+            return;
+        }
+
         IDateTime dateTime = $.dateTime;
         UserData storage userData = $.userData[msg.sender];
         uint256 _lastSpinTimestamp = userData.lastSpinTimestamp;
@@ -161,7 +170,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     /// @notice Starts the spin process by generating a random number and recording the spin date.
     /// @dev This function is called by the user to initiate a spin.
-    function startSpin() external whenNotPaused canSpin {
+    function startSpin() external whenNotPaused canSpin returns (uint256) {
         SpinStorage storage $ = _getSpinStorage();
         string memory callbackSignature = "handleRandomness(uint256,uint256[])";
         uint8 rngCount = 1;
@@ -172,7 +181,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             $.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, $.admin);
         $.userNonce[nonce] = msg.sender;
 
+        console.log("Nonce:", nonce);
         emit SpinRequested(nonce, msg.sender);
+        return nonce;
     }
 
     /**
@@ -403,7 +414,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         return (
             readCountStreak(user),
-            lastSpinTimestamp,
+            userData.lastSpinTimestamp,
             userData.jackpotWins,
             userData.raffleTickets,
             userData.xpGained,
@@ -454,6 +465,13 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     ) external onlyRole(ADMIN_ROLE) {
         SpinStorage storage $ = _getSpinStorage();
         $.plumeAmounts = _plumeAmounts;
+    }
+
+    function whitelist(
+        address user
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.whitelists[user] = true;
     }
 
     // UUPS Authorization
