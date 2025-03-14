@@ -20,10 +20,9 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256 totalUsers;
     }
 
-    struct Participant {
+    struct Index {
         uint256 startIndex; // First ticket index
         uint256 ticketCount; // Number of tickets
-        uint256[] winnings;
     }
 
     /// @custom:storage-location erc7201:plume.storage.Raffle
@@ -36,10 +35,10 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         ISupraRouterContract supraRouter;
         // Mapping of prize ID to prize details
         mapping(uint256 => Prize) prizes; // prizeId => Prize
-        // Mapping of prize ID to user entries
-        mapping(uint256 => address[]) prizeParticipants; // prizeId => array of participants
         // Mapping of ticket index to user address (for drawing winner)
-        mapping(uint256 => mapping(address => Participant)) tickets; // prizeId -> user -> ticket range
+        mapping(uint256 => mapping(address => Index[])) tickets; // prizeId -> user -> ticket range
+        // Mapping of user address to prize IDs won
+        mapping(address => uint256[]) winnings; // user -> prizeId[]
         // Mapping of VRF request ID to prize ID
         mapping(uint256 => uint256) pendingVRFRequests;
     }
@@ -148,17 +147,19 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         $.spinContract.updateRaffleTickets(msg.sender, ticketAmount);
 
         Prize storage prize = $.prizes[prizeId];
-        Participant storage user = $.tickets[prizeId][msg.sender];
+        Index[] storage userEntries = $.tickets[prizeId][msg.sender];
 
-        if (user.ticketCount == 0) {
-            // New participant, add to participant list
-            $.prizeParticipants[prizeId].push(msg.sender);
-            user.startIndex = prize.totalTickets + 1; // Assign the start index
+        bool isNewUser = (userEntries.length == 0); // Check if it's a new user entry
+
+        userEntries.push(Index({ startIndex: prize.totalTickets + 1, ticketCount: ticketAmount }));
+
+        // Update total tickets in prize pool
+        prize.totalTickets += ticketAmount;
+
+        // Increment unique user count only if this is the user's first ticket entry
+        if (isNewUser) {
             $.prizes[prizeId].totalUsers++;
         }
-
-        user.ticketCount += ticketAmount;
-        prize.totalTickets += ticketAmount;
 
         emit SpentRaffle(msg.sender, prizeId, ticketAmount);
     }
@@ -222,17 +223,26 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             revert WinnerNotDrawn();
         }
 
-        Participant storage user = $.tickets[prizeId][msg.sender];
+        Index[] storage userEntries = $.tickets[prizeId][msg.sender];
 
-        if (winnerIndex >= user.startIndex && winnerIndex < (user.startIndex + user.ticketCount)) {
-            $.prizes[prizeId].winner = msg.sender;
-            $.prizes[prizeId].isActive = false;
-            $.tickets[prizeId][msg.sender].winnings.push(prizeId);
+        // Verify if the user owns the winning ticket
+        for (uint256 i = 0; i < userEntries.length; i++) {
+            if (
+                winnerIndex >= userEntries[i].startIndex
+                    && winnerIndex < (userEntries[i].startIndex + userEntries[i].ticketCount)
+            ) {
+                $.prizes[prizeId].winner = msg.sender;
+                $.prizes[prizeId].isActive = false;
 
-            emit PrizeClaimed(msg.sender, prizeId);
-        } else {
-            revert NotAWinner();
+                // Add prize to user's winnings
+                $.winnings[msg.sender].push(prizeId);
+
+                emit PrizeClaimed(msg.sender, prizeId);
+                return;
+            }
         }
+
+        revert NotAWinner();
     }
 
     /**
@@ -260,13 +270,9 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     /**
      * @notice Gets the user's entry details for a prize.
      */
-    function getParticipantDetails(
-        uint256 prizeId,
-        address user
-    ) external view returns (uint256 startIndex, uint256 ticketCount, uint256[] memory winnings) {
+    function getUserEntries(uint256 prizeId, address user) external view returns (Index[] memory, uint256[] memory) {
         RaffleStorage storage $ = _getRaffleStorage();
-        Participant storage entry = $.tickets[prizeId][user];
-        return (entry.startIndex, entry.ticketCount, entry.winnings);
+        return ($.tickets[prizeId][user], $.winnings[user]);
     }
 
     // UUPS Authorization
