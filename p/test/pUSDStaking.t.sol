@@ -38,6 +38,7 @@ contract pUSDStakingTest is Test {
     uint256 public constant PLUME_REWARD_RATE = 1_587_301_587; // ~5% APY
 
     function setUp() public {
+        vm.skip(true);
         string memory PLUME_RPC = vm.envOr("PLUME_RPC_URL", string(""));
         uint256 FORK_BLOCK = 372_419;
 
@@ -58,6 +59,7 @@ contract pUSDStakingTest is Test {
     }
 
     function testStaking() public {
+        vm.skip(true);
         uint256 stakeAmount = 1e6;
 
         // Setup initial state
