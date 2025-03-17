@@ -109,25 +109,29 @@ contract MockPUSDTest is Test {
         assertEq(token.balanceOf(owner), INITIAL_SUPPLY);
     }
 
-    function testFail_MintUnauthorized() public {
+    function test_RevertWhen_MintUnauthorized() public {
         vm.prank(user1);
+        vm.expectRevert();
         token.mint(user1, 100 * 10 ** 6);
     }
 
-    function testFail_BurnUnauthorized() public {
+    function test_RevertWhen_BurnUnauthorized() public {
         vm.prank(user1);
+        vm.expectRevert();
         token.burn(owner, 100 * 10 ** 6);
     }
 
-    function testFail_UpgradeUnauthorized() public {
+    function test_RevertWhen_UpgradeUnauthorized() public {
         MockPUSD newImplementation = new MockPUSD();
 
         vm.prank(user1);
+        vm.expectRevert();
         token.upgradeToAndCall(address(newImplementation), "");
     }
 
-    function testFail_TransferInsufficientBalance() public {
+    function test_RevertWhen_TransferInsufficientBalance() public {
         vm.prank(user1);
+        vm.expectRevert();
         token.transfer(user2, 100 * 10 ** 6); // user1 has no tokens
     }
 
