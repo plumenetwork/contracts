@@ -16,7 +16,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     // Storage
     struct UserData {
         uint256 jackpotWins;
-        uint256 raffleTickets;
+        uint256 raffleTicketsGained;
+        uint256 raffleTicketsBalance;
         uint256 xpGained;
         uint256 plumeTokens;
         uint256 streakCount;
@@ -217,7 +218,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             _userData.jackpotWins++;
             $.lastJackpotClaim = block.timestamp;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Raffle Ticket"))) {
-            _userData.raffleTickets += rewardAmount;
+            _userData.raffleTicketsGained += rewardAmount;
+            _userData.raffleTicketsBalance += rewardAmount;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("XP"))) {
             _userData.xpGained += rewardAmount;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Plume Token"))) {
@@ -251,8 +253,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 jackpotThreshold = (1_000_000 * $.jackpotProbabilities[dayOfWeek]) / 100;
 
         if (probability < jackpotThreshold) {
-            return ("Jackpot", $.jackpotPrizes[weekNumber]);
+            return ("Jackpot", $.jackpotPrizes[1]);
         }
+
         uint256 rewardCategory = probability % 4;
         if (rewardCategory == 0) {
             return ("Raffle Ticket", $.baseRaffleMultiplier * $.userData[user].streakCount);
@@ -326,9 +329,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function updateRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
         SpinStorage storage $ = _getSpinStorage();
 
-        $.userData[user].raffleTickets -= ticketsUsed;
+        $.userData[user].raffleTicketsBalance -= ticketsUsed;
 
-        emit RaffleTicketsUpdated(user, ticketsUsed, $.userData[user].raffleTickets);
+        emit RaffleTicketsUpdated(user, ticketsUsed, $.userData[user].raffleTicketsBalance);
     }
 
     /// @dev Allows the admin to pause the contract, preventing certain actions.
@@ -404,7 +407,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             uint256 dailyStreak,
             uint256 lastSpinTimestamp,
             uint256 jackpotWins,
-            uint256 raffleTickets,
+            uint256 raffleTicketsGained,
+            uint256 raffleTicketsBalance,
             uint256 xpGained,
             uint256 smallPlumeTokens
         )
@@ -416,7 +420,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             readCountStreak(user),
             userData.lastSpinTimestamp,
             userData.jackpotWins,
-            userData.raffleTickets,
+            userData.raffleTicketsGained,
+            userData.raffleTicketsBalance,
             userData.xpGained,
             userData.plumeTokens
         );

@@ -35,6 +35,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         ISupraRouterContract supraRouter;
         // Mapping of prize ID to prize details
         mapping(uint256 => Prize) prizes; // prizeId => Prize
+        // List of prize IDs
+        uint256[] prizeIds;
         // Mapping of ticket index to user address (for drawing winner)
         mapping(uint256 => mapping(address => Index[])) tickets; // prizeId -> user -> ticket range
         // Mapping of user address to prize IDs won
@@ -114,6 +116,9 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             revert PrizeAlreadyExists();
         }
 
+        // Add prize to the list
+        $.prizeIds.push(prizeId);
+
         $.prizes[prizeId] =
             Prize({ name: name, totalTickets: 0, isActive: true, winner: address(0), winnerIndex: 0, totalUsers: 0 });
 
@@ -138,7 +143,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         RaffleStorage storage $ = _getRaffleStorage();
         require(ticketAmount > 0, "Must spend at least 1 ticket");
 
-        (,, uint256 userRaffleTickets,,) = $.spinContract.getUserData(msg.sender);
+        (,,,, uint256 userRaffleTickets,,) = $.spinContract.getUserData(msg.sender);
 
         if (userRaffleTickets < ticketAmount) {
             revert InsufficientTickets();
@@ -267,12 +272,52 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         return (prize.name, prize.totalTickets, prize.isActive, prize.winner, prize.winnerIndex, prize.totalUsers);
     }
 
+    function getPrizeDetails() external view returns (Prize[] memory) {
+        RaffleStorage storage $ = _getRaffleStorage();
+        Prize[] memory prizes;
+        uint256 prizeCount = $.prizeIds.length;
+        for (uint256 i = 0; i < prizeCount; i++) {
+            prizes[i] = $.prizes[$.prizeIds[i]];
+        }
+        return prizes;
+    }
+
     /**
      * @notice Gets the user's entry details for a prize.
      */
-    function getUserEntries(uint256 prizeId, address user) external view returns (Index[] memory, uint256[] memory) {
+    function getUserEntries(uint256 prizeId, address user) external view returns (uint256, uint256[] memory) {
         RaffleStorage storage $ = _getRaffleStorage();
-        return ($.tickets[prizeId][user], $.winnings[user]);
+        Index[] storage entries = $.tickets[prizeId][user];
+
+        uint256 ticketCounts = 0;
+
+        for (uint256 i = 0; i < entries.length; i++) {
+            ticketCounts += entries[i].ticketCount;
+        }
+
+        return (ticketCounts, $.winnings[user]);
+    }
+
+    function getUserEntries(
+        address user
+    ) external view returns (uint256[] memory, uint256[] memory) {
+        RaffleStorage storage $ = _getRaffleStorage();
+        uint256 prizeCount = $.prizeIds.length;
+
+        uint256[] memory ticketCounts = new uint256[](prizeCount);
+
+        for (uint256 i = 0; i < prizeCount; i++) {
+            Index[] storage entries = $.tickets[$.prizeIds[i]][user];
+            uint256 _ticketCounts = 0;
+
+            for (uint256 j = 0; j < entries.length; j++) {
+                _ticketCounts += entries[j].ticketCount;
+            }
+
+            ticketCounts[i] = _ticketCounts;
+        }
+
+        return (ticketCounts, $.winnings[user]);
     }
 
     // UUPS Authorization
