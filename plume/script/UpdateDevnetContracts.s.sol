@@ -15,8 +15,8 @@ contract UpdateDevnetContracts is Script {
 
     // Constants
     address private constant ADMIN_ADDRESS = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
-    address private constant FAUCET_PROXY_ADDRESS = 0x81A7A4Ece4D161e720ec602Ad152a7026B82448b;
-    address private constant ETH_ADDRESS = address(1);
+    address private constant FAUCET_PROXY_ADDRESS = 0xEBa7Ee4c64a91B5dDb4631a66E541299f978fdd0;
+    address private constant PLUME_ADDRESS = address(1);
 
     function run() external {
         vm.startBroadcast(ADMIN_ADDRESS);
