@@ -64,12 +64,10 @@ fi
 
 echo "- Message hash: $MESSAGE"
 
-# Step 2: Create Ethereum signed message hash
-# To create a proper eth_sign compatible message, we need to follow this format:
-# "\x19Ethereum Signed Message:\n32" + messageHash
-PREFIXED_MSG="\x19Ethereum Signed Message:\n32$MESSAGE"
-ETH_SIGNED_MESSAGE=$(cast keccak $PREFIXED_MSG)
-echo "- Ethereum signed message: $ETH_SIGNED_MESSAGE"
+# Step 2: Instead of trying to create the Ethereum signed message by hand,
+# we'll use cast's personal_sign hash function which correctly implements EIP-191
+# cast wallet sign already includes the eth prefix internally
+echo "- Using wallet sign which automatically adds the Ethereum prefix"
 
 # Step 3: Sign the message with the owner's private key
 SIGNATURE=$(cast wallet sign --private-key $OWNER_PRIVATE_KEY $MESSAGE)
@@ -107,7 +105,7 @@ fi
 # Step 6: Call the getToken function
 echo -e "\nCalling getToken function..."
 echo "Command:"
-echo "cast send --rpc-url $RPC_URL --private-key <PRIVATE_KEY> $FAUCET_ADDRESS \"getToken(string,uint256,bytes32,bytes)\" \"$TOKEN_NAME\" \"$FLIGHT_CLASS\" \"$SALT\" \"$SIGNATURE\" --from $RECIPIENT_ADDRESS"
+echo "cast send --rpc-url $RPC_URL $FAUCET_ADDRESS \"getToken(string,uint256,bytes32,bytes)\" \"$TOKEN_NAME\" \"$FLIGHT_CLASS\" \"$SALT\" \"$SIGNATURE\" --from $RECIPIENT_ADDRESS --private-key <PRIVATE_KEY>"
 
-echo -e "\nTo execute this transaction for real, copy the command, replace $PRIVATE_KEY with the private key for the recipient address, and run it."
+echo -e "\nTo execute this transaction for real, copy the command, replace <PRIVATE_KEY> with the private key for the recipient address, and run it."
 
