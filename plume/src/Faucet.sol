@@ -162,7 +162,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
         FaucetStorage storage $ = _getFaucetStorage();
         $.owner = owner;
 
-        bytes32 ethHash = keccak256(abi.encodePacked("ETH"));
+        bytes32 ethHash = keccak256(abi.encodePacked("PLUME"));
         uint256 length = tokens.length;
         for (uint256 i = 0; i < length; ++i) {
             if (keccak256(bytes(tokens[i])) == ethHash) {
@@ -276,9 +276,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
     function _calculateDripAmount(uint256 baseAmount, uint256 flightClass) internal pure returns (uint256) {
         uint256 multiplier;
         if (flightClass == 1) {
-            multiplier = 1; // 1x
+            multiplier = 100; // 1x
         } else if (flightClass == 2) {
-            multiplier = 11; // 1.1x (scaled by 10)
+            multiplier = 110; // 1.1x (scaled by 10)
         } else if (flightClass == 3) {
             multiplier = 125; // 1.25x (scaled by 100)
         } else if (flightClass == 4) {
