@@ -13,3 +13,4 @@ contract pUSD is ERC20 {
         return 6;
     }
 }
+
