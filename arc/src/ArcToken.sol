@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
@@ -16,17 +16,22 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
  *      yield distribution to token holders, and valuation tracking.
  * @dev Implements ERC20Upgradeable which includes IERC20Metadata functionality
  */
-contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
+contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
 
     using SafeERC20 for ERC20Upgradeable;
     using EnumerableSet for EnumerableSet.AddressSet;
+
+    // -------------- Role Definitions --------------
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
+    bytes32 public constant YIELD_MANAGER_ROLE = keccak256("YIELD_MANAGER_ROLE");
+    bytes32 public constant YIELD_DISTRIBUTOR_ROLE = keccak256("YIELD_DISTRIBUTOR_ROLE");
 
     // -------------- Custom Errors --------------
     error AlreadyWhitelisted(address account);
     error NotWhitelisted(address account);
     error YieldTokenNotSet();
     error NoTokensInCirculation();
-    error NoYieldToClaim();
     error InvalidYieldTokenAddress();
     error IssuePriceMustBePositive();
     error InvalidAddress();
@@ -40,19 +45,11 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         bool transfersAllowed;
         // Address of the ERC20 token used for yield distribution (e.g., USDC)
         address yieldToken;
-        // Yield distribution accounting
-        uint256 yieldPerToken; // accumulated yield per token (scaled by 1e18)
-        mapping(address => uint256) lastYieldPerToken; // last yield-per-token value seen by each holder
-        mapping(address => uint256) unclaimedYield; // yield amount pending withdrawal for each holder
         // Set of all current token holders (for distribution purposes)
         EnumerableSet.AddressSet holders;
         // Added for asset valuation tracking
         uint256 assetValuation; // Total valuation of the company in the same unit as yieldToken (e.g., USD)
         string assetName; // Name of the underlying asset (e.g., "Mineral Vault I")
-        mapping(uint256 => uint256) yieldHistory; // Timestamp -> amount mapping for yield distribution history
-        uint256[] yieldDates; // Array of timestamps when yield was distributed
-        // Flag to control yield distribution method (true = direct transfer, false = claimable)
-        bool directYieldDistribution;
         // Token URI storage
         string baseURI;
         string tokenURI;
@@ -78,12 +75,10 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     // -------------- Events --------------
     event WhitelistStatusChanged(address indexed account, bool isWhitelisted);
     event TransfersRestrictionToggled(bool transfersAllowed);
-    event YieldDistributed(uint256 amount, bool directDistribution);
-    event YieldClaimed(address indexed account, uint256 amount);
+    event YieldDistributed(uint256 amount);
     event YieldTokenUpdated(address indexed newYieldToken);
     event AssetValuationUpdated(uint256 newValuation);
     event AssetNameUpdated(string newAssetName);
-    event YieldDistributionMethodUpdated(bool isDirectDistribution);
     event BaseURIUpdated(string newBaseURI);
     event TokenURIUpdated(string newTokenURI);
     event TokenMetricsUpdated(uint256 tokenIssuePrice, uint256 accrualRatePerSecond, uint256 totalTokenOffering);
@@ -93,48 +88,50 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     // -------------- Initializer --------------
     /**
      * @dev Initialize the token with name, symbol, asset name, valuation, and supply.
-     *      The deployer becomes the owner (issuer). Transfers are restricted to whitelisted accounts by default.
+     *      The deployer becomes the default admin. Transfers are unrestricted by default.
      * @param name_ Token name (e.g., "aMNRL")
      * @param symbol_ Token symbol (e.g., "aMNRL")
      * @param assetName_ Name of the underlying asset (e.g., "Mineral Vault I")
-     * @param assetValuation_ Initial valuation of the entire company in yield token units
-     * @param initialSupply_ Initial token supply to mint to the owner
+     * @param initialSupply_ Initial token supply to mint to the admin
      * @param yieldToken_ Address of the ERC20 token for yield distribution (e.g., USDC).
      *                    Can be address(0) if setting later.
      * @param tokenIssuePrice_ Price at which tokens are issued (scaled by 1e18)
-     * @param accrualRatePerSecond_ Accrual rate per second (scaled by 1e18)
      * @param totalTokenOffering_ Total number of tokens available for sale
      */
     function initialize(
         string memory name_,
         string memory symbol_,
         string memory assetName_,
-        uint256 assetValuation_,
         uint256 initialSupply_,
         address yieldToken_,
         uint256 tokenIssuePrice_,
-        uint256 accrualRatePerSecond_,
         uint256 totalTokenOffering_
     ) public initializer {
         __ERC20_init(name_, symbol_);
-        __Ownable_init(msg.sender);
+        __AccessControl_init();
         __ReentrancyGuard_init();
 
         ArcTokenStorage storage $ = _getArcTokenStorage();
 
-        // Set initial transfer restriction (false = restricted to whitelist)
-        $.transfersAllowed = false;
+        // Set up roles
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
+        _grantRole(MANAGER_ROLE, msg.sender);
+        _grantRole(YIELD_MANAGER_ROLE, msg.sender);
+        _grantRole(YIELD_DISTRIBUTOR_ROLE, msg.sender);
 
-        // Set initial yield distribution method (default to claimable)
-        $.directYieldDistribution = false;
+        // Set initial transfer restriction (true = unrestricted transfers)
+        $.transfersAllowed = true;
 
         // Set asset-specific information
         $.assetName = assetName_;
-        $.assetValuation = assetValuation_;
+        // Calculate asset valuation from token issue price and total offering
+        $.assetValuation = tokenIssuePrice_ * totalTokenOffering_ / 1e18;
 
         // Set financial metrics
         $.tokenIssuePrice = tokenIssuePrice_;
-        $.accrualRatePerSecond = accrualRatePerSecond_;
+        // Remove accrualRatePerSecond - it's no longer used
+        $.accrualRatePerSecond = 0;
         $.totalTokenOffering = totalTokenOffering_;
 
         // Set initial yield token if provided
@@ -142,38 +139,38 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
             $.yieldToken = yieldToken_;
         }
 
-        // By default, whitelist the owner/issuer so they can receive and transfer tokens
-        $.isWhitelisted[owner()] = true;
-        $.holders.add(owner());
-        emit WhitelistStatusChanged(owner(), true);
+        // By default, whitelist the admin so they can receive and transfer tokens
+        $.isWhitelisted[msg.sender] = true;
+        $.holders.add(msg.sender);
+        emit WhitelistStatusChanged(msg.sender, true);
 
-        // Mint initial supply to the owner
+        // Mint initial supply to the admin
         if (initialSupply_ > 0) {
-            _mint(owner(), initialSupply_);
+            _mint(msg.sender, initialSupply_);
         }
 
-        emit TokenMetricsUpdated(tokenIssuePrice_, accrualRatePerSecond_, totalTokenOffering_);
+        emit TokenMetricsUpdated(tokenIssuePrice_, 0, totalTokenOffering_);
     }
 
     // -------------- Asset Information --------------
     /**
-     * @dev Update the asset valuation. Only the owner (issuer) can update this.
+     * @dev Update the asset valuation. Only accounts with MANAGER_ROLE can update this.
      * @param newValuation The new valuation of the company in yield token units
      */
     function updateAssetValuation(
         uint256 newValuation
-    ) external onlyOwner {
+    ) external onlyRole(MANAGER_ROLE) {
         _getArcTokenStorage().assetValuation = newValuation;
         emit AssetValuationUpdated(newValuation);
     }
 
     /**
-     * @dev Update the asset name. Only the owner (issuer) can update this.
+     * @dev Update the asset name. Only accounts with MANAGER_ROLE can update this.
      * @param newAssetName The new name of the underlying asset
      */
     function updateAssetName(
         string memory newAssetName
-    ) external onlyOwner {
+    ) external onlyRole(MANAGER_ROLE) {
         _getArcTokenStorage().assetName = newAssetName;
         emit AssetNameUpdated(newAssetName);
     }
@@ -203,7 +200,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      */
     function addToWhitelist(
         address account
-    ) external onlyOwner {
+    ) external onlyRole(MANAGER_ROLE) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         if ($.isWhitelisted[account]) {
             revert AlreadyWhitelisted(account);
@@ -218,7 +215,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      */
     function batchAddToWhitelist(
         address[] calldata accounts
-    ) external onlyOwner {
+    ) external onlyRole(MANAGER_ROLE) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         for (uint256 i = 0; i < accounts.length; i++) {
             address account = accounts[i];
@@ -235,7 +232,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      */
     function removeFromWhitelist(
         address account
-    ) external onlyOwner {
+    ) external onlyRole(MANAGER_ROLE) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         if (!$.isWhitelisted[account]) {
             revert NotWhitelisted(account);
@@ -260,7 +257,7 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      */
     function setTransfersAllowed(
         bool allowed
-    ) external onlyOwner {
+    ) external onlyRole(ADMIN_ROLE) {
         _getArcTokenStorage().transfersAllowed = allowed;
         emit TransfersRestrictionToggled(allowed);
     }
@@ -274,29 +271,28 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
 
     // -------------- Minting and Burning --------------
     /**
-     * @dev Mints new tokens to an account. Only the issuer (owner) can call this.
+     * @dev Mints new tokens to an account. Only accounts with MANAGER_ROLE can call this.
      * The recipient must be whitelisted if transfers are restricted.
      */
-    function mint(address to, uint256 amount) external onlyOwner {
+    function mint(address to, uint256 amount) external onlyRole(MANAGER_ROLE) {
         _mint(to, amount);
     }
 
     /**
-     * @dev Burns tokens from an account, reducing the total supply. Only the issuer (owner) can call this.
-     * The owner can burn tokens from any account (for example, to redeem or reduce supply).
+     * @dev Burns tokens from an account, reducing the total supply. Only accounts with MANAGER_ROLE can call this.
      */
-    function burn(address from, uint256 amount) external onlyOwner {
+    function burn(address from, uint256 amount) external onlyRole(MANAGER_ROLE) {
         _burn(from, amount);
     }
 
     // -------------- Yield Distribution --------------
     /**
      * @dev Sets or updates the ERC20 token to use for yield distribution (e.g., USDC).
-     * Only the issuer can update this.
+     * Only accounts with YIELD_MANAGER_ROLE can update this.
      */
     function setYieldToken(
         address yieldTokenAddr
-    ) external onlyOwner {
+    ) external onlyRole(YIELD_MANAGER_ROLE) {
         if (yieldTokenAddr == address(0)) {
             revert InvalidYieldTokenAddress();
         }
@@ -305,30 +301,9 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     }
 
     /**
-     * @dev Sets the yield distribution method between direct transfer and claimable.
-     * Only the owner can update this.
-     * @param isDirectDistribution If true, yields will be directly transferred to holders.
-     *                            If false, holders must claim their yield.
-     */
-    function setYieldDistributionMethod(
-        bool isDirectDistribution
-    ) external onlyOwner {
-        _getArcTokenStorage().directYieldDistribution = isDirectDistribution;
-        emit YieldDistributionMethodUpdated(isDirectDistribution);
-    }
-
-    /**
-     * @dev Returns the current yield distribution method
-     * @return true if yields are directly distributed, false if they must be claimed
-     */
-    function isDirectYieldDistribution() external view returns (bool) {
-        return _getArcTokenStorage().directYieldDistribution;
-    }
-
-    /**
      * @dev Get a preview of the yield distribution for token holders.
-     * This allows the issuer to check how much each holder would receive before
-     * actually distributing yiel$.
+     * This allows the yield distributor to check how much each holder would receive before
+     * actually distributing yield.
      * @param amount The amount of yield token to preview distribution for
      * @return holders Array of token holder addresses
      * @return amounts Array of amounts each holder would receive
@@ -377,16 +352,14 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     }
 
     /**
-     * @dev Distribute yield to token holders.
-     * Distribution method is determined by the directYieldDistribution flag:
-     * - If true: directly transfers yield tokens to each holder
-     * - If false: credits each holder with claimable yield
+     * @dev Distribute yield to token holders directly.
+     * Each holder receives a portion of the yield proportional to their token balance.
      * @param amount The amount of yield token to distribute.
-     * NOTE: The issuer must have approved this contract to transfer `amount` of the yield token on their behalf.
+     * NOTE: The caller must have approved this contract to transfer `amount` of the yield token on their behalf.
      */
     function distributeYield(
         uint256 amount
-    ) external onlyOwner nonReentrant {
+    ) external onlyRole(YIELD_DISTRIBUTOR_ROLE) nonReentrant {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         if ($.yieldToken == address(0)) {
             revert YieldTokenNotSet();
@@ -396,135 +369,37 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
         }
         ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
 
-        // Transfer yield tokens from issuer into this contract
+        // Transfer yield tokens from caller into this contract
         yToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        bool direct = $.directYieldDistribution;
-        if (direct) {
-            uint256 supply = totalSupply();
-            uint256 distributedSum = 0;
-            uint256 holderCount = $.holders.length();
+        uint256 supply = totalSupply();
+        uint256 distributedSum = 0;
+        uint256 holderCount = $.holders.length();
 
-            // Distribute to all but last holder (to handle rounding remainders)
-            for (uint256 i = 0; i < holderCount - 1; i++) {
-                address holder = $.holders.at(i);
-                uint256 holderBalance = balanceOf(holder);
-                if (holderBalance == 0) {
-                    continue;
-                }
-                uint256 share = (amount * holderBalance) / supply;
-                distributedSum += share;
-                if (share > 0) {
-                    yToken.safeTransfer(holder, share);
-                }
+        // Distribute to all but last holder (to handle rounding remainders)
+        for (uint256 i = 0; i < holderCount - 1; i++) {
+            address holder = $.holders.at(i);
+            uint256 holderBalance = balanceOf(holder);
+            if (holderBalance == 0) {
+                continue;
             }
-
-            // Last holder gets the remaining amount to ensure full distribution
-            if (holderCount > 0) {
-                address lastHolder = $.holders.at(holderCount - 1);
-                uint256 lastShare = amount - distributedSum;
-                if (lastShare > 0) {
-                    yToken.safeTransfer(lastHolder, lastShare);
-                }
+            uint256 share = (amount * holderBalance) / supply;
+            distributedSum += share;
+            if (share > 0) {
+                yToken.safeTransfer(holder, share);
             }
-        } else {
-            // Use claim-based distribution: add to global yield tracker
-            // (Yield tokens remain in contract until claimed by holders)
-            uint256 supply = totalSupply();
-            // Update the global yield-per-token accumulator
-            // (scaled by 1e18 to handle fractional division)
-            $.yieldPerToken += (amount * 1e18) / supply;
         }
 
-        // Record the yield distribution in history
-        uint256 timestamp = block.timestamp;
-        $.yieldHistory[timestamp] = amount;
-        $.yieldDates.push(timestamp);
-
-        emit YieldDistributed(amount, direct);
-    }
-
-    /**
-     * @dev Allows a token holder to claim any accumulated yield (in the configured yield token)
-     * that has been allocated to them. Yield is accrued whenever `distributeYield` is called
-     * (if distributed via the claim mechanism).
-     */
-    function claimYield() external nonReentrant {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        if ($.yieldToken == address(0)) {
-            revert YieldTokenNotSet();
-        }
-        ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
-        address account = msg.sender;
-
-        // Calculate the claimable yield for `account`:
-        // Unclaimed yield = (current balance * (global yieldPerToken - lastYieldPerToken[account]) / 1e18) + any stored
-        // unclaimedYield.
-        uint256 accountBalance = balanceOf(account);
-        uint256 globalYieldPerToken = $.yieldPerToken;
-        uint256 lastClaimedYieldPerToken = $.lastYieldPerToken[account];
-        uint256 accumulated = 0;
-        if (globalYieldPerToken > lastClaimedYieldPerToken) {
-            // Yield from the last checkpoint to now
-            uint256 delta = globalYieldPerToken - lastClaimedYieldPerToken;
-            accumulated = (accountBalance * delta) / 1e18;
-        }
-        // Include any yield previously accrued (from past transfers or burns)
-        accumulated += $.unclaimedYield[account];
-        if (accumulated == 0) {
-            revert NoYieldToClaim();
+        // Last holder gets the remaining amount to ensure full distribution
+        if (holderCount > 0) {
+            address lastHolder = $.holders.at(holderCount - 1);
+            uint256 lastShare = amount - distributedSum;
+            if (lastShare > 0) {
+                yToken.safeTransfer(lastHolder, lastShare);
+            }
         }
 
-        // Update state before transferring
-        $.lastYieldPerToken[account] = globalYieldPerToken;
-        $.unclaimedYield[account] = 0;
-
-        // Transfer the yield tokens to the account
-        yToken.safeTransfer(account, accumulated);
-        emit YieldClaimed(account, accumulated);
-    }
-
-    /**
-     * @dev Get the yield distribution history
-     * @return dates Array of timestamps when yield was distributed
-     * @return amounts Array of amounts distributed at each timestamp
-     */
-    function getYieldHistory() external view returns (uint256[] memory dates, uint256[] memory amounts) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        dates = $.yieldDates;
-        amounts = new uint256[](dates.length);
-
-        for (uint256 i = 0; i < dates.length; i++) {
-            amounts[i] = $.yieldHistory[dates[i]];
-        }
-
-        return (dates, amounts);
-    }
-
-    /**
-     * @dev Get the unclaimed yield amount for an account
-     * @param account The address to check
-     * @return unclaimedAmount The amount of yield tokens claimable by the account
-     */
-    function getUnclaimedYield(
-        address account
-    ) external view returns (uint256 unclaimedAmount) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-
-        uint256 accountBalance = balanceOf(account);
-        uint256 globalYieldPerToken = $.yieldPerToken;
-        uint256 lastClaimedYieldPerToken = $.lastYieldPerToken[account];
-
-        // Calculate accrued but not yet claimed yield
-        if (globalYieldPerToken > lastClaimedYieldPerToken) {
-            uint256 delta = globalYieldPerToken - lastClaimedYieldPerToken;
-            unclaimedAmount = (accountBalance * delta) / 1e18;
-        }
-
-        // Add any previously stored unclaimed yield
-        unclaimedAmount += $.unclaimedYield[account];
-
-        return unclaimedAmount;
+        emit YieldDistributed(amount);
     }
 
     // -------------- URI Management --------------
@@ -570,24 +445,24 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     }
 
     /**
-     * @dev Sets the base URI for computing the token URI. Only callable by owner.
+     * @dev Sets the base URI for computing the token URI. Only callable by MANAGER_ROLE.
      * @param newBaseURI The new base URI to set
      */
     function setBaseURI(
         string memory newBaseURI
-    ) external onlyOwner {
+    ) external onlyRole(MANAGER_ROLE) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         $.baseURI = newBaseURI;
         emit BaseURIUpdated(newBaseURI);
     }
 
     /**
-     * @dev Sets the token-specific URI component. Only callable by owner.
+     * @dev Sets the token-specific URI component. Only callable by MANAGER_ROLE.
      * @param newTokenURI The new token URI component to set
      */
     function setTokenURI(
         string memory newTokenURI
-    ) external onlyOwner {
+    ) external onlyRole(MANAGER_ROLE) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         $.tokenURI = newTokenURI;
         emit TokenURIUpdated(newTokenURI);
@@ -595,13 +470,13 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
 
     // -------------- Financial Metrics Management --------------
     /**
-     * @dev Updates token issue price. Only callable by owner.
+     * @dev Updates token issue price. Only callable by MANAGER_ROLE.
      * Price value should be scaled by 1e18.
      * @param newIssuePrice The new token issue price
      */
     function updateTokenPrice(
         uint256 newIssuePrice
-    ) external onlyOwner {
+    ) external onlyRole(MANAGER_ROLE) {
         if (newIssuePrice == 0) {
             revert IssuePriceMustBePositive();
         }
@@ -613,51 +488,40 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
     }
 
     /**
-     * @dev Updates the token's financial metrics. Only callable by owner.
-     * All price and rate values should be scaled by 1e18.
+     * @dev Updates the token's financial metrics. Only callable by MANAGER_ROLE.
+     * All price values should be scaled by 1e18.
      */
     function updateTokenMetrics(
         uint256 tokenIssuePrice_,
-        uint256 accrualRatePerSecond_,
         uint256 totalTokenOffering_
-    ) external onlyOwner {
+    ) external onlyRole(MANAGER_ROLE) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         $.tokenIssuePrice = tokenIssuePrice_;
-        $.accrualRatePerSecond = accrualRatePerSecond_;
         $.totalTokenOffering = totalTokenOffering_;
 
-        emit TokenMetricsUpdated(tokenIssuePrice_, accrualRatePerSecond_, totalTokenOffering_);
+        // Update asset valuation based on new metrics
+        $.assetValuation = tokenIssuePrice_ * totalTokenOffering_ / 1e18;
+
+        emit TokenMetricsUpdated(tokenIssuePrice_, 0, totalTokenOffering_);
     }
 
     /**
-     * @dev Returns all financial metrics for the token and calculates current redemption price
-     * based on the time elapsed since purchase
+     * @dev Returns all financial metrics for the token and the purchase timestamp
      */
     function getTokenMetrics(
         address holder
     )
         external
         view
-        returns (
-            uint256 tokenIssuePrice,
-            uint256 accrualRatePerSecond,
-            uint256 totalTokenOffering,
-            uint256 currentRedemptionPrice,
-            uint256 secondsHeld
-        )
+        returns (uint256 tokenIssuePrice, uint256 totalTokenOffering, uint256 assetValuation, uint256 secondsHeld)
     {
         ArcTokenStorage storage $ = _getArcTokenStorage();
 
-        // Calculate seconds held and current redemption price
+        // Calculate seconds held
         uint256 purchaseTime = $.purchaseTimestamp[holder];
         secondsHeld = purchaseTime > 0 ? block.timestamp - purchaseTime : 0;
 
-        // Calculate current redemption price based on actual holding period
-        uint256 baseValue = $.tokenIssuePrice;
-        uint256 accrualValue = baseValue * $.accrualRatePerSecond * secondsHeld / 1e18;
-        currentRedemptionPrice = baseValue + accrualValue;
-
-        return ($.tokenIssuePrice, $.accrualRatePerSecond, $.totalTokenOffering, currentRedemptionPrice, secondsHeld);
+        return ($.tokenIssuePrice, $.totalTokenOffering, $.assetValuation, secondsHeld);
     }
 
     // Override _update to track purchase timestamps and enforce transfer restrictions
@@ -670,8 +534,8 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
 
         super._update(from, to, amount);
 
-        // If this is a purchase (transfer from owner to buyer)
-        if (from == owner() && to != address(0) && amount > 0) {
+        // If this is a purchase (transfer from admin to buyer)
+        if (hasRole(ADMIN_ROLE, from) && to != address(0) && amount > 0) {
             $.purchaseTimestamp[to] = block.timestamp;
             emit TokenPurchased(to, amount, block.timestamp);
         }
@@ -699,6 +563,15 @@ contract ArcToken is ERC20Upgradeable, OwnableUpgradeable, ReentrancyGuardUpgrad
      */
     function symbol() public view override returns (string memory) {
         return super.symbol();
+    }
+
+    /**
+     * @dev See {IERC165-supportsInterface}.
+     */
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(AccessControlUpgradeable) returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 
 }

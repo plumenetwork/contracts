@@ -11,15 +11,34 @@ import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
  * @title ArcTokenFactory
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Factory contract for creating new ArcToken instances with proper initialization
- * @dev Uses ERC1967 proxy pattern for upgradeable tokens
+ * @dev Uses ERC1967 proxy pattern for upgradeable tokens, deploying a fresh implementation for each token
  */
 contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 
     /// @custom:storage-location erc7201:arc.factory.storage
     struct FactoryStorage {
-        address initialImplementation;
+        // Maps token proxies to their implementations
+        mapping(address => address) tokenToImplementation;
+        // Track allowed implementation contracts (for future upgrades)
         mapping(bytes32 => bool) allowedImplementations;
     }
+
+    // Custom errors
+    error ImplementationNotWhitelisted();
+    error TokenNotCreatedByFactory();
+
+    // Events
+    event TokenCreated(
+        address indexed tokenAddress,
+        address indexed owner,
+        address indexed implementation,
+        string name,
+        string symbol,
+        string assetName
+    );
+    event ImplementationWhitelisted(address indexed implementation);
+    event ImplementationRemoved(address indexed implementation);
+    event TokenUpgraded(address indexed token, address indexed newImplementation);
 
     // Calculate unique storage slot
     bytes32 private constant FACTORY_STORAGE_LOCATION = keccak256("arc.factory.storage");
@@ -31,67 +50,117 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         }
     }
 
-    // Events
-    event TokenCreated(
-        address indexed tokenAddress, address indexed owner, string name, string symbol, string assetName
-    );
-    event ImplementationWhitelisted(address indexed implementation);
-    event ImplementationRemoved(address indexed implementation);
-
     /**
-     * @dev Initialize the factory with the initial token implementation
-     * @param _initialImplementation Address of the initial ArcToken implementation
+     * @dev Initialize the factory
      */
-    function initialize(
-        address _initialImplementation
-    ) public initializer {
+    function initialize() public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
 
-        FactoryStorage storage fs = _getFactoryStorage();
-        fs.initialImplementation = _initialImplementation;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-
-        // Whitelist the initial implementation
-        bytes32 codeHash;
-        assembly {
-            codeHash := extcodehash(_initialImplementation)
-        }
-        fs.allowedImplementations[codeHash] = true;
-        emit ImplementationWhitelisted(_initialImplementation);
     }
 
     /**
-     * @dev Creates a new ArcToken instance
+     * @dev Creates a new ArcToken instance with its own implementation
      * @param name Token name
      * @param symbol Token symbol
      * @param assetName Name of the underlying asset
-     * @param assetValuation Initial valuation in yield token units
      * @param initialSupply Initial token supply
      * @param yieldToken Address of the yield token (e.g., USDC)
+     * @param tokenIssuePrice Price at which tokens are issued (scaled by 1e18)
+     * @param totalTokenOffering Total number of tokens available for sale
      * @return Address of the newly created token
      */
     function createToken(
         string memory name,
         string memory symbol,
         string memory assetName,
-        uint256 assetValuation,
         uint256 initialSupply,
-        address yieldToken
+        address yieldToken,
+        uint256 tokenIssuePrice,
+        uint256 totalTokenOffering
     ) external returns (address) {
         FactoryStorage storage fs = _getFactoryStorage();
 
+        // Deploy a fresh implementation for this token
+        ArcToken implementation = new ArcToken();
+
+        // Add the implementation to the whitelist for future upgrades
+        bytes32 codeHash = _getCodeHash(address(implementation));
+        fs.allowedImplementations[codeHash] = true;
+
         // Create initialization data
         bytes memory initData = abi.encodeWithSelector(
-            ArcToken.initialize.selector, name, symbol, assetName, assetValuation, initialSupply, yieldToken
+            ArcToken.initialize.selector,
+            name,
+            symbol,
+            assetName,
+            initialSupply,
+            yieldToken,
+            tokenIssuePrice,
+            totalTokenOffering
         );
 
-        // Deploy proxy
-        ERC1967Proxy proxy = new ERC1967Proxy(fs.initialImplementation, initData);
+        // Deploy proxy with the fresh implementation
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
 
-        emit TokenCreated(address(proxy), msg.sender, name, symbol, assetName);
+        // Store the mapping between token and its implementation
+        fs.tokenToImplementation[address(proxy)] = address(implementation);
+
+        emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, assetName);
+        emit ImplementationWhitelisted(address(implementation));
 
         return address(proxy);
+    }
+
+    /**
+     * @dev Helper function to get code hash of an address
+     */
+    function _getCodeHash(
+        address addr
+    ) internal view returns (bytes32 codeHash) {
+        assembly {
+            codeHash := extcodehash(addr)
+        }
+    }
+
+    /**
+     * @dev Get the implementation address for a specific token
+     * @param token Address of the token
+     * @return The implementation address for this token
+     */
+    function getTokenImplementation(
+        address token
+    ) external view returns (address) {
+        return _getFactoryStorage().tokenToImplementation[token];
+    }
+
+    /**
+     * @dev Upgrades a token to a new implementation
+     * @param token Token address to upgrade
+     * @param newImplementation Address of the new implementation
+     */
+    function upgradeToken(address token, address newImplementation) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        FactoryStorage storage fs = _getFactoryStorage();
+
+        // Ensure the token was created by this factory
+        if (fs.tokenToImplementation[token] == address(0)) {
+            revert TokenNotCreatedByFactory();
+        }
+
+        // Ensure the new implementation is whitelisted
+        bytes32 codeHash = _getCodeHash(newImplementation);
+        if (!fs.allowedImplementations[codeHash]) {
+            revert ImplementationNotWhitelisted();
+        }
+
+        // Perform the upgrade (this assumes the token implements UUPSUpgradeable)
+        UUPSUpgradeable(token).upgradeToAndCall(newImplementation, "");
+
+        // Update the implementation mapping
+        fs.tokenToImplementation[token] = newImplementation;
+
+        emit TokenUpgraded(token, newImplementation);
     }
 
     /**
@@ -102,10 +171,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address newImplementation
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         FactoryStorage storage fs = _getFactoryStorage();
-        bytes32 codeHash;
-        assembly {
-            codeHash := extcodehash(newImplementation)
-        }
+        bytes32 codeHash = _getCodeHash(newImplementation);
         fs.allowedImplementations[codeHash] = true;
         emit ImplementationWhitelisted(newImplementation);
     }
@@ -118,10 +184,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address implementation
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         FactoryStorage storage fs = _getFactoryStorage();
-        bytes32 codeHash;
-        assembly {
-            codeHash := extcodehash(implementation)
-        }
+        bytes32 codeHash = _getCodeHash(implementation);
         fs.allowedImplementations[codeHash] = false;
         emit ImplementationRemoved(implementation);
     }
@@ -135,10 +198,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address implementation
     ) external view returns (bool) {
         FactoryStorage storage fs = _getFactoryStorage();
-        bytes32 codeHash;
-        assembly {
-            codeHash := extcodehash(implementation)
-        }
+        bytes32 codeHash = _getCodeHash(implementation);
         return fs.allowedImplementations[codeHash];
     }
 

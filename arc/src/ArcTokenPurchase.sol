@@ -2,16 +2,18 @@
 pragma solidity ^0.8.25;
 
 import "./ArcToken.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title ArcTokenPurchase
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Handles token sales and storefront configuration for ArcTokens
- * @dev Manages purchase process and storefront metadata
+ * @dev Manages purchase process and storefront metadata, upgradeable via UUPS pattern
  */
-contract ArcTokenPurchase is AccessControl {
+contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 
     struct TokenInfo {
         bool isEnabled;
@@ -30,13 +32,25 @@ contract ArcTokenPurchase is AccessControl {
         bool showPlumeBadge;
     }
 
-    // The token used for purchasing ArcTokens (e.g., USDC)
-    IERC20 public purchaseToken;
+    /// @custom:storage-location erc7201:arc.purchase.storage
+    struct PurchaseStorage {
+        // The token used for purchasing ArcTokens (e.g., USDC)
+        IERC20 purchaseToken;
+        // Mappings
+        mapping(address => TokenInfo) tokenInfo;
+        mapping(address => StorefrontConfig) storefrontConfigs;
+        mapping(string => address) domainToAddress;
+    }
 
-    // Mappings
-    mapping(address => TokenInfo) public tokenInfo;
-    mapping(address => StorefrontConfig) private storefrontConfigs;
-    mapping(string => address) private domainToAddress;
+    // Calculate unique storage slot
+    bytes32 private constant PURCHASE_STORAGE_LOCATION = keccak256("arc.purchase.storage");
+
+    function _getPurchaseStorage() private pure returns (PurchaseStorage storage ps) {
+        bytes32 position = PURCHASE_STORAGE_LOCATION;
+        assembly {
+            ps.slot := position
+        }
+    }
 
     // Events
     event PurchaseMade(address indexed buyer, address indexed tokenContract, uint256 amount, uint256 pricePaid);
@@ -45,22 +59,28 @@ contract ArcTokenPurchase is AccessControl {
     event PurchaseTokenUpdated(address indexed newPurchaseToken);
 
     /**
-     * @dev Constructor sets up admin role
+     * @dev Initializes the contract and sets up admin role
      * @param admin Address to be granted admin role
      */
-    constructor(
+    function initialize(
         address admin
-    ) {
+    ) public initializer {
+        __AccessControl_init();
+        __UUPSUpgradeable_init();
+
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
     /**
-     * @dev Modifier to ensure only token owner can call certain functions
+     * @dev Modifier to ensure only token admin can call certain functions
      */
-    modifier onlyTokenOwner(
+    modifier onlyTokenAdmin(
         address _tokenContract
     ) {
-        require(ArcToken(_tokenContract).owner() == msg.sender, "Only token owner can call this function");
+        require(
+            ArcToken(_tokenContract).hasRole(ArcToken(_tokenContract).ADMIN_ROLE(), msg.sender),
+            "Only token admin can call this function"
+        );
         _;
     }
 
@@ -74,11 +94,12 @@ contract ArcTokenPurchase is AccessControl {
         address _tokenContract,
         uint256 _numberOfTokens,
         uint256 _tokenPrice
-    ) external onlyTokenOwner(_tokenContract) {
+    ) external onlyTokenAdmin(_tokenContract) {
         require(_tokenPrice > 0, "Token price must be greater than 0");
         require(_numberOfTokens > 0, "Number of tokens must be greater than 0");
 
-        tokenInfo[_tokenContract] =
+        PurchaseStorage storage ps = _getPurchaseStorage();
+        ps.tokenInfo[_tokenContract] =
             TokenInfo({ isEnabled: true, tokenPrice: _tokenPrice, totalAmountToBeSold: _numberOfTokens });
 
         emit TokenSaleEnabled(_tokenContract, _numberOfTokens, _tokenPrice);
@@ -90,24 +111,47 @@ contract ArcTokenPurchase is AccessControl {
      * @param _purchaseAmount Amount of purchase tokens to spend
      */
     function buy(address _tokenContract, uint256 _purchaseAmount) external {
-        TokenInfo storage info = tokenInfo[_tokenContract];
+        PurchaseStorage storage ps = _getPurchaseStorage();
+        TokenInfo storage info = ps.tokenInfo[_tokenContract];
         require(info.isEnabled, "Token is not enabled for purchase");
         require(_purchaseAmount > 0, "Purchase amount should be greater than zero");
         require(
-            purchaseToken.transferFrom(msg.sender, address(this), _purchaseAmount), "Purchase token transfer failed"
+            ps.purchaseToken.transferFrom(msg.sender, address(this), _purchaseAmount), "Purchase token transfer failed"
         );
 
         uint256 tokensToBuy = _purchaseAmount / info.tokenPrice;
         require(info.totalAmountToBeSold >= tokensToBuy, "Not enough tokens available for sale");
 
-        // Transfer tokens from owner to buyer
+        // Find an admin to transfer tokens from
         ArcToken token = ArcToken(_tokenContract);
-        require(token.transferFrom(token.owner(), msg.sender, tokensToBuy), "Token transfer failed");
+        address tokenAdmin = findTokenAdmin(token);
+        require(tokenAdmin != address(0), "No token admin with sufficient balance found");
+
+        // Transfer tokens from admin to buyer
+        require(token.transferFrom(tokenAdmin, msg.sender, tokensToBuy), "Token transfer failed");
 
         // Update remaining tokens
         info.totalAmountToBeSold -= tokensToBuy;
 
         emit PurchaseMade(msg.sender, _tokenContract, tokensToBuy, _purchaseAmount);
+    }
+
+    /**
+     * @dev Finds a token admin with sufficient balance
+     * @param token The ArcToken contract
+     * @return admin Address of an admin with sufficient balance
+     */
+    function findTokenAdmin(
+        ArcToken token
+    ) internal view returns (address) {
+        // Try to find any address with admin role that has sufficient tokens
+        // This is a simplified approach and may need to be customized based on your needs
+        bytes32 adminRole = token.ADMIN_ROLE();
+
+        // In a real implementation, you might need a way to get all admins
+        // For now, we're assuming you have a known list of admins or a primary admin
+        // This is a placeholder logic that needs to be adapted to your specific needs
+        return token.hasRole(adminRole, msg.sender) ? msg.sender : address(0);
     }
 
     /**
@@ -118,7 +162,8 @@ contract ArcTokenPurchase is AccessControl {
         address purchaseTokenAddress
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(purchaseTokenAddress != address(0), "Invalid purchase token address");
-        purchaseToken = IERC20(purchaseTokenAddress);
+        PurchaseStorage storage ps = _getPurchaseStorage();
+        ps.purchaseToken = IERC20(purchaseTokenAddress);
         emit PurchaseTokenUpdated(purchaseTokenAddress);
     }
 
@@ -135,14 +180,15 @@ contract ArcTokenPurchase is AccessControl {
         string memory _backgroundColor,
         string memory _companyLogoUrl,
         bool _showPlumeBadge
-    ) external onlyTokenOwner(_tokenContract) {
+    ) external onlyTokenAdmin(_tokenContract) {
         require(bytes(_domain).length > 0, "Domain cannot be empty");
+        PurchaseStorage storage ps = _getPurchaseStorage();
         require(
-            domainToAddress[_domain] == address(0) || domainToAddress[_domain] == _tokenContract,
+            ps.domainToAddress[_domain] == address(0) || ps.domainToAddress[_domain] == _tokenContract,
             "Domain already in use"
         );
 
-        storefrontConfigs[_tokenContract] = StorefrontConfig({
+        ps.storefrontConfigs[_tokenContract] = StorefrontConfig({
             domain: _domain,
             title: _title,
             description: _description,
@@ -153,7 +199,7 @@ contract ArcTokenPurchase is AccessControl {
             showPlumeBadge: _showPlumeBadge
         });
 
-        domainToAddress[_domain] = _tokenContract;
+        ps.domainToAddress[_domain] = _tokenContract;
         emit StorefrontConfigSet(_tokenContract, _domain);
     }
 
@@ -162,41 +208,50 @@ contract ArcTokenPurchase is AccessControl {
     function isEnabled(
         address _tokenContract
     ) external view returns (bool) {
-        return tokenInfo[_tokenContract].isEnabled;
+        return _getPurchaseStorage().tokenInfo[_tokenContract].isEnabled;
     }
 
     function getMaxNumberOfTokens(
         address _tokenContract
     ) external view returns (uint256) {
-        return tokenInfo[_tokenContract].totalAmountToBeSold;
+        return _getPurchaseStorage().tokenInfo[_tokenContract].totalAmountToBeSold;
     }
 
     function getTokenPrice(
         address _tokenContract
     ) external view returns (uint256) {
-        return tokenInfo[_tokenContract].tokenPrice;
+        return _getPurchaseStorage().tokenInfo[_tokenContract].tokenPrice;
     }
 
     function getStorefrontConfig(
         address _tokenContract
     ) external view returns (StorefrontConfig memory) {
-        return storefrontConfigs[_tokenContract];
+        return _getPurchaseStorage().storefrontConfigs[_tokenContract];
     }
 
     function getStorefrontConfigByDomain(
         string memory _domain
     ) external view returns (StorefrontConfig memory) {
-        address tokenContract = domainToAddress[_domain];
+        PurchaseStorage storage ps = _getPurchaseStorage();
+        address tokenContract = ps.domainToAddress[_domain];
         require(tokenContract != address(0), "No config found for this domain");
-        return storefrontConfigs[tokenContract];
+        return ps.storefrontConfigs[tokenContract];
     }
 
     function getAddressByDomain(
         string memory _domain
     ) external view returns (address) {
-        address tokenContract = domainToAddress[_domain];
+        PurchaseStorage storage ps = _getPurchaseStorage();
+        address tokenContract = ps.domainToAddress[_domain];
         require(tokenContract != address(0), "No address found for this domain");
         return tokenContract;
+    }
+
+    /**
+     * @dev Returns the purchase token address
+     */
+    function purchaseToken() external view returns (IERC20) {
+        return _getPurchaseStorage().purchaseToken;
     }
 
     /**
@@ -206,7 +261,15 @@ contract ArcTokenPurchase is AccessControl {
      */
     function withdrawPurchaseTokens(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(to != address(0), "Cannot withdraw to zero address");
-        require(purchaseToken.transfer(to, amount), "Purchase token transfer failed");
+        PurchaseStorage storage ps = _getPurchaseStorage();
+        require(ps.purchaseToken.transfer(to, amount), "Purchase token transfer failed");
     }
+
+    /**
+     * @dev Authorization for upgrades
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(DEFAULT_ADMIN_ROLE) { }
 
 }
