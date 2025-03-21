@@ -22,7 +22,7 @@ contract DeployMineralVault is Script, Test {
     // Token configuration constants
     string public constant TOKEN_NAME = "Mineral Vault I Security Token";
     string public constant TOKEN_SYMBOL = "aMNRL";
-    string public constant ASSET_NAME = "Mineral Vault I";
+    // Note: assetName parameter is deprecated but kept in the initialize function for compatibility
 
     // Financial metrics (all monetary values scaled by 1e18)
     uint256 public constant TOTAL_TOKEN_OFFERING = 1_000_000; // 1,000,000 tokens
@@ -66,11 +66,12 @@ contract DeployMineralVault is Script, Test {
                 (
                     TOKEN_NAME,
                     TOKEN_SYMBOL,
-                    ASSET_NAME,
+                    "", // Empty string for assetName (parameter deprecated but kept for compatibility)
                     TOTAL_TOKEN_OFFERING, // Initial supply equals total offering
                     YIELD_TOKEN_ADDRESS,
                     TOKEN_ISSUE_PRICE,
-                    TOTAL_TOKEN_OFFERING
+                    TOTAL_TOKEN_OFFERING,
+                    ADMIN_ADDRESS // The admin address will receive the initial token supply
                 )
             )
         );

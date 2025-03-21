@@ -97,6 +97,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      *                    Can be address(0) if setting later.
      * @param tokenIssuePrice_ Price at which tokens are issued (scaled by 1e18)
      * @param totalTokenOffering_ Total number of tokens available for sale
+     * @param initialTokenHolder_ Address that will receive the initial token supply
      */
     function initialize(
         string memory name_,
@@ -105,7 +106,8 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         uint256 initialSupply_,
         address yieldToken_,
         uint256 tokenIssuePrice_,
-        uint256 totalTokenOffering_
+        uint256 totalTokenOffering_,
+        address initialTokenHolder_
     ) public initializer {
         __ERC20_init(name_, symbol_);
         __AccessControl_init();
@@ -144,9 +146,17 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         $.holders.add(msg.sender);
         emit WhitelistStatusChanged(msg.sender, true);
 
-        // Mint initial supply to the admin
+        // Also whitelist the initial token holder if it's not the admin
+        if (initialTokenHolder_ != msg.sender && initialTokenHolder_ != address(0)) {
+            $.isWhitelisted[initialTokenHolder_] = true;
+            $.holders.add(initialTokenHolder_);
+            emit WhitelistStatusChanged(initialTokenHolder_, true);
+        }
+
+        // Mint initial supply to the initial token holder if specified, otherwise to the admin
         if (initialSupply_ > 0) {
-            _mint(msg.sender, initialSupply_);
+            address recipient = initialTokenHolder_ != address(0) ? initialTokenHolder_ : msg.sender;
+            _mint(recipient, initialSupply_);
         }
 
         emit TokenMetricsUpdated(tokenIssuePrice_, 0, totalTokenOffering_);

@@ -34,7 +34,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address indexed implementation,
         string name,
         string symbol,
-        string assetName
+        string tokenUri
     );
     event ImplementationWhitelisted(address indexed implementation);
     event ImplementationRemoved(address indexed implementation);
@@ -64,21 +64,24 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
      * @dev Creates a new ArcToken instance with its own implementation
      * @param name Token name
      * @param symbol Token symbol
-     * @param assetName Name of the underlying asset
      * @param initialSupply Initial token supply
      * @param yieldToken Address of the yield token (e.g., USDC)
      * @param tokenIssuePrice Price at which tokens are issued (scaled by 1e18)
      * @param totalTokenOffering Total number of tokens available for sale
+     * @param tokenUri URI for the token metadata
+     * @param initialTokenHolder Address that will receive the initial token supply (if address(0), defaults to
+     * msg.sender)
      * @return Address of the newly created token
      */
     function createToken(
         string memory name,
         string memory symbol,
-        string memory assetName,
         uint256 initialSupply,
         address yieldToken,
         uint256 tokenIssuePrice,
-        uint256 totalTokenOffering
+        uint256 totalTokenOffering,
+        string memory tokenUri,
+        address initialTokenHolder
     ) external returns (address) {
         FactoryStorage storage fs = _getFactoryStorage();
 
@@ -89,16 +92,20 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         bytes32 codeHash = _getCodeHash(address(implementation));
         fs.allowedImplementations[codeHash] = true;
 
+        // Use caller as token holder if not specified
+        address tokenHolder = initialTokenHolder == address(0) ? msg.sender : initialTokenHolder;
+
         // Create initialization data
         bytes memory initData = abi.encodeWithSelector(
             ArcToken.initialize.selector,
             name,
             symbol,
-            assetName,
+            "", // Empty string for assetName since it's not used
             initialSupply,
             yieldToken,
             tokenIssuePrice,
-            totalTokenOffering
+            totalTokenOffering,
+            tokenHolder
         );
 
         // Deploy proxy with the fresh implementation
@@ -107,7 +114,11 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         // Store the mapping between token and its implementation
         fs.tokenToImplementation[address(proxy)] = address(implementation);
 
-        emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, assetName);
+        // Set the token URI
+        ArcToken token = ArcToken(address(proxy));
+        token.setTokenURI(tokenUri);
+
+        emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri);
         emit ImplementationWhitelisted(address(implementation));
 
         return address(proxy);
