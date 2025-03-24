@@ -81,9 +81,7 @@ contract DeployArcServices is Script, Test {
         // Log usage instructions
         console2.log("\n---------- USAGE INSTRUCTIONS ----------");
         console2.log("1. To create a new token, call the factory's createToken function:");
-        console2.log(
-            "   factory.createToken(name, symbol, initialSupply, yieldToken, tokenIssuePrice, totalTokenOffering, tokenUri, initialTokenHolder)"
-        );
+        console2.log("   factory.createToken(name, symbol, initialSupply, yieldToken, tokenUri, initialTokenHolder)");
         console2.log("");
         console2.log("2. To enable token sales, call the purchase contract's enableToken function:");
         console2.log("   purchase.enableToken(tokenAddress, numberOfTokensForSale, tokenPrice)");

@@ -2,9 +2,10 @@
 pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
@@ -17,7 +18,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
  *      yield distribution to token holders, and valuation tracking.
  * @dev Implements ERC20Upgradeable which includes IERC20Metadata functionality
  */
-contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable,UUPSUpgradeable  {
+contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
 
     using SafeERC20 for ERC20Upgradeable;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -48,16 +49,18 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         address yieldToken;
         // Set of all current token holders (for distribution purposes)
         EnumerableSet.AddressSet holders;
-        // Added for asset name tracking
-        string assetName; // Name of the underlying asset (e.g., "Mineral Vault I")
         // Token URI
         string tokenURI;
         // Purchase tracking
         mapping(address => uint256) purchaseTimestamp; // When each holder purchased their tokens
+        // For symbol updating
+        string updatedSymbol;
+        // For name updating
+        string updatedName;
     }
 
     // Calculate a unique storage slot for ArcTokenStorage (EIP-7201 standard).
-    // keccak256(abi.encode(uint256(keccak256("asset.token.storage")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("arc.token.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ARC_TOKEN_STORAGE_LOCATION =
         0xf52c08b2e4132efdd78c079b339999bf65bd68aae758ed08b1bb84dc8f47c000;
 
@@ -72,9 +75,10 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     event TransfersRestrictionToggled(bool transfersAllowed);
     event YieldDistributed(uint256 amount);
     event YieldTokenUpdated(address indexed newYieldToken);
-    event AssetNameUpdated(string newAssetName);
+    event TokenNameUpdated(string oldName, string newName);
     event TokenURIUpdated(string newTokenURI);
     event TokenPurchased(address indexed buyer, uint256 amount, uint256 timestamp);
+    event SymbolUpdated(string oldSymbol, string newSymbol);
 
     // -------------- Initializer --------------
     /**
@@ -137,30 +141,28 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
 
     // -------------- Asset Information --------------
     /**
-     * @dev Update the asset name. Only accounts with MANAGER_ROLE can update this.
-     * @param newAssetName The new name of the underlying asset
+     * @dev Update the token name. Only accounts with MANAGER_ROLE can update this.
+     * @param newName The new name for the token
      */
-    function updateAssetName(
-        string memory newAssetName
+    function updateTokenName(
+        string memory newName
     ) external onlyRole(MANAGER_ROLE) {
-        _getArcTokenStorage().assetName = newAssetName;
-        emit AssetNameUpdated(newAssetName);
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        string memory oldName = name();
+        $.updatedName = newName;
+        emit TokenNameUpdated(oldName, newName);
     }
 
     /**
-     * @dev Get current asset information
-     * @return assetName The name of the underlying asset
-     * @return pricePerToken The calculated price per token based on total supply
+     * @dev Get current token information
+     * @return assetName The name of the token
+     * @return pricePerToken The calculated price per token based on total supply (currently 0)
      */
-    function getAssetInfo()
-        external
-        view
-        returns (string memory assetName, uint256 pricePerToken)
-    {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        assetName = $.assetName;
+    function getAssetInfo() external view returns (string memory assetName, uint256 pricePerToken) {
+        // Maintain compatibility with existing interface
+        // But now asset name is the same as token name
+        assetName = name();
 
-        uint256 supply = totalSupply();
         // Since we don't track asset valuation anymore, price per token can't be calculated
         // Returning 0 as a placeholder
         pricePerToken = 0;
@@ -408,6 +410,20 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         emit TokenURIUpdated(newTokenURI);
     }
 
+    // -------------- Token Metadata Management --------------
+    /**
+     * @dev Updates the token symbol. Only accounts with MANAGER_ROLE can update this.
+     * @param newSymbol The new symbol for the token
+     */
+    function updateSymbol(
+        string memory newSymbol
+    ) external onlyRole(MANAGER_ROLE) {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        string memory oldSymbol = symbol();
+        $.updatedSymbol = newSymbol;
+        emit SymbolUpdated(oldSymbol, newSymbol);
+    }
+
     // Override _update to track purchase timestamps and enforce transfer restrictions
     function _update(address from, address to, uint256 amount) internal virtual override {
         // Check transfer restrictions
@@ -438,6 +454,10 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      * @return The token name
      */
     function name() public view override returns (string memory) {
+        string memory updatedName = _getArcTokenStorage().updatedName;
+        if (bytes(updatedName).length > 0) {
+            return updatedName;
+        }
         return super.name();
     }
 
@@ -446,6 +466,10 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      * @return The token symbol
      */
     function symbol() public view override returns (string memory) {
+        string memory updatedSymbol = _getArcTokenStorage().updatedSymbol;
+        if (bytes(updatedSymbol).length > 0) {
+            return updatedSymbol;
+        }
         return super.symbol();
     }
 
@@ -460,6 +484,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     /**
      * @dev Authorization for upgrades
      */
+
     function _authorizeUpgrade(
         address newImplementation
     ) internal override onlyRole(DEFAULT_ADMIN_ROLE) { }
@@ -470,11 +495,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      */
     function getTokenMetrics(
         address holder
-    )
-        external
-        view
-        returns (uint256 secondsHeld)
-    {
+    ) external view returns (uint256 secondsHeld) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
 
         // Calculate seconds held
@@ -483,4 +504,5 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
 
         return secondsHeld;
     }
+
 }

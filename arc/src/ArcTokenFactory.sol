@@ -8,7 +8,6 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 //import "@openzeppelin/contracts/proxy/ERC1967/ArcTokenProxy.sol";
 
-
 /**
  * @title ArcTokenFactory
  * @author Eugene Y. Q. Shen, Alp Guneysel
@@ -94,14 +93,8 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address tokenHolder = initialTokenHolder == address(0) ? msg.sender : initialTokenHolder;
 
         // Create initialization data
-        bytes memory initData = abi.encodeWithSelector(
-            ArcToken.initialize.selector,
-            name,
-            symbol,
-            initialSupply,
-            yieldToken,
-            tokenHolder
-        );
+        bytes memory initData =
+            abi.encodeWithSelector(ArcToken.initialize.selector, name, symbol, initialSupply, yieldToken, tokenHolder);
 
         // Deploy proxy with the fresh implementation
         ArcTokenProxy proxy = new ArcTokenProxy(address(implementation), initData);

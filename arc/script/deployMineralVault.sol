@@ -22,13 +22,9 @@ contract DeployMineralVault is Script, Test {
     // Token configuration constants
     string public constant TOKEN_NAME = "Mineral Vault I Security Token";
     string public constant TOKEN_SYMBOL = "aMNRL";
-    // Note: assetName parameter is deprecated but kept in the initialize function for compatibility
 
     // Financial metrics (all monetary values scaled by 1e18)
-    uint256 public constant TOTAL_TOKEN_OFFERING = 1_000_000; // 1,000,000 tokens
-    uint256 public constant INITIAL_ASSET_VALUATION = 10_000_000 * 1e18; // $10,000,000.00
-    uint256 public constant TOKEN_ISSUE_PRICE = 10 * 1e18; // $10.00 per token
-    uint256 public constant ACCRUAL_RATE_PER_SECOND = 0; // Can be set to non-zero if needed
+    uint256 public constant INITIAL_SUPPLY = 1_000_000 * 1e18; // 1,000,000 tokens with 18 decimals
 
     // IMPORTANT: Update this address with your deployed MockUSDC address before running
     address private constant YIELD_TOKEN_ADDRESS = 0x41b199a4138BFA31b32f58Adb167F6981d5A99Dd;
@@ -66,11 +62,8 @@ contract DeployMineralVault is Script, Test {
                 (
                     TOKEN_NAME,
                     TOKEN_SYMBOL,
-                    "", // Empty string for assetName (parameter deprecated but kept for compatibility)
-                    TOTAL_TOKEN_OFFERING, // Initial supply equals total offering
-                    YIELD_TOKEN_ADDRESS,
-                    TOKEN_ISSUE_PRICE,
-                    TOTAL_TOKEN_OFFERING,
+                    INITIAL_SUPPLY, // Initial token supply
+                    YIELD_TOKEN_ADDRESS, // Yield token address
                     ADMIN_ADDRESS // The admin address will receive the initial token supply
                 )
             )
@@ -79,15 +72,15 @@ contract DeployMineralVault is Script, Test {
         // Get ArcToken interface of proxy
         ArcToken token = ArcToken(address(arcTokenProxy));
 
-        // Set the base URI for metadata
-        token.setBaseURI(string.concat("https://arc.plumenetwork.xyz/tokens/", METADATA_URI_PATH));
+        // Set the full token URI
+        token.setTokenURI(string.concat("https://arc.plumenetwork.xyz/tokens/", METADATA_URI_PATH));
 
         // Ensure transfers are unrestricted (no whitelist requirement)
         token.setTransfersAllowed(true);
 
         console2.log("Mineral Vault I Security Token deployed to:", address(arcTokenProxy));
         console2.log("Using yield token at address:", YIELD_TOKEN_ADDRESS);
-        console2.log("Initial supply of", TOTAL_TOKEN_OFFERING, "tokens minted to admin:", ADMIN_ADDRESS);
+        console2.log("Initial supply of", INITIAL_SUPPLY / 1e18, "tokens minted to admin:", ADMIN_ADDRESS);
         console2.log("IMPORTANT: Contract deployed with unrestricted transfers (whitelist disabled)");
         console2.log("The deploying address has been granted all roles for initial setup");
 

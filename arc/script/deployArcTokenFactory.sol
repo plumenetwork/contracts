@@ -61,16 +61,12 @@ contract DeployArcTokenFactory is Script, Test {
         string memory testTokenUri = "https://example.com/token/metadata";
         uint256 initialSupply = 1_000_000 * 1e18;
         address yieldToken = address(0); // Just for testing
-        uint256 tokenIssuePrice = 1e18;
-        uint256 totalTokenOffering = 10_000_000 * 1e18;
 
         try factory.createToken(
             testTokenName,
             testTokenSymbol,
             initialSupply,
             yieldToken,
-            tokenIssuePrice,
-            totalTokenOffering,
             testTokenUri,
             ADMIN_ADDRESS // Specify admin as the token recipient
         ) returns (address tokenAddress) {
@@ -102,8 +98,6 @@ contract DeployArcTokenFactory is Script, Test {
         console2.log("  \"SYMBOL\",              // token symbol");
         console2.log("  initialSupply,           // initial token supply");
         console2.log("  yieldTokenAddress,       // yield token address (e.g., USDC)");
-        console2.log("  tokenIssuePrice,         // price at which tokens are issued (scaled by 1e18)");
-        console2.log("  totalTokenOffering,      // total number of tokens available for sale");
         console2.log("  \"https://example.com/token/metadata\",  // token URI for metadata");
         console2.log(
             "  initialTokenHolder       // address that will receive the initial token supply (0x0 for msg.sender)"

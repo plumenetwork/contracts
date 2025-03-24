@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import "../src/ArcToken.sol";
 import "../src/proxy/ArcTokenProxy.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
 import { Script } from "forge-std/Script.sol";
 import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
@@ -19,7 +20,7 @@ contract UpgradeMineralVault is Script, Test {
 
     // The address of the deployed ArcToken proxy to upgrade
     // IMPORTANT: Update this with your deployed Mineral Vault token address
-    address private constant TOKEN_PROXY_ADDRESS = 0x09814A253358051C3C3c52d01CFa54E302bD8d7f;
+    address private constant TOKEN_PROXY_ADDRESS = 0xa3Bc080265ac5dce0e95Bfcb2Aea07802801C892;
 
     function test() public { }
 
@@ -48,14 +49,13 @@ contract UpgradeMineralVault is Script, Test {
             console2.log("Current token name:", tokenName);
 
             // Perform the upgrade through the UUPSUpgradeable pattern
-            UUPSUpgradeable upgradeableToken = UUPSUpgradeable(payable(TOKEN_PROXY_ADDRESS));
+            ArcToken upgradeableToken = ArcToken(payable(TOKEN_PROXY_ADDRESS));
             upgradeableToken.upgradeToAndCall(address(newImplementation), "");
             console2.log("Token proxy upgraded to new implementation");
 
             // Fetch metrics for verification after upgrade
-            try token.getAssetInfo() returns (string memory assetName, uint256 assetValuation, uint256 pricePerToken) {
+            try token.getAssetInfo() returns (string memory assetName, uint256 pricePerToken) {
                 console2.log("Asset name:", assetName);
-                console2.log("Asset valuation:", assetValuation);
                 console2.log("Price per token:", pricePerToken);
             } catch {
                 console2.log("Could not retrieve asset info after upgrade. Manual verification needed.");
@@ -74,14 +74,9 @@ contract UpgradeMineralVault is Script, Test {
         console2.log("\n---------- VERIFICATION STEPS ----------");
         console2.log("1. Call getTokenMetrics to verify new parameter structure:");
         console2.log("   token.getTokenMetrics(address holder) should return:");
-        console2.log("   - tokenIssuePrice");
-        console2.log("   - totalTokenOffering");
-        console2.log("   - assetValuation");
         console2.log("   - secondsHeld");
-        console2.log("\n2. Call updateTokenMetrics with the new parameter list:");
-        console2.log("   token.updateTokenMetrics(tokenIssuePrice, totalTokenOffering)");
-        console2.log("\nNOTE: accrualRatePerSecond parameter has been removed, and assetValuation is");
-        console2.log("      now calculated from tokenIssuePrice * totalTokenOffering / 1e18");
+        console2.log("\n2. AssetValuation parameter has been removed from the token.");
+        console2.log("   The getAssetInfo function now only returns the asset name and price per token (0).");
 
         vm.stopBroadcast();
     }
