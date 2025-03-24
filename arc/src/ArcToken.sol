@@ -28,6 +28,8 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant YIELD_MANAGER_ROLE = keccak256("YIELD_MANAGER_ROLE");
     bytes32 public constant YIELD_DISTRIBUTOR_ROLE = keccak256("YIELD_DISTRIBUTOR_ROLE");
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
 
     // -------------- Custom Errors --------------
     error AlreadyWhitelisted(address account);
@@ -84,7 +86,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     /**
      * @dev Initialize the token with name, symbol, and supply.
      *      The deployer becomes the default admin. Transfers are unrestricted by default.
-     * @param name_ Token name (e.g., "aMNRL")
+     * @param name_ Token name (e.g., "Mineral Vault Fund I)")
      * @param symbol_ Token symbol (e.g., "aMNRL")
      * @param initialSupply_ Initial token supply to mint to the admin
      * @param yieldToken_ Address of the ERC20 token for yield distribution (e.g., USDC).
@@ -115,10 +117,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         // Set initial transfer restriction (true = unrestricted transfers)
         $.transfersAllowed = true;
 
-        // Set initial yield token if provided
-        if (yieldToken_ != address(0)) {
-            $.yieldToken = yieldToken_;
-        }
+   
 
         // By default, whitelist the admin so they can receive and transfer tokens
         $.isWhitelisted[msg.sender] = true;
@@ -248,14 +247,14 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      * @dev Mints new tokens to an account. Only accounts with MANAGER_ROLE can call this.
      * The recipient must be whitelisted if transfers are restricted.
      */
-    function mint(address to, uint256 amount) external onlyRole(MANAGER_ROLE) {
+    function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) {
         _mint(to, amount);
     }
 
     /**
      * @dev Burns tokens from an account, reducing the total supply. Only accounts with MANAGER_ROLE can call this.
      */
-    function burn(address from, uint256 amount) external onlyRole(MANAGER_ROLE) {
+    function burn(address from, uint256 amount) external onlyRole(BURNER_ROLE) {
         _burn(from, amount);
     }
 
@@ -415,7 +414,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      * @dev Updates the token symbol. Only accounts with MANAGER_ROLE can update this.
      * @param newSymbol The new symbol for the token
      */
-    function updateSymbol(
+    function updateTokenSymbol(
         string memory newSymbol
     ) external onlyRole(MANAGER_ROLE) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
