@@ -2,10 +2,12 @@
 pragma solidity ^0.8.25;
 
 import "./ArcToken.sol";
+import "./proxy/ArcTokenProxy.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+//import "@openzeppelin/contracts/proxy/ERC1967/ArcTokenProxy.sol";
+
 
 /**
  * @title ArcTokenFactory
@@ -66,8 +68,6 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
      * @param symbol Token symbol
      * @param initialSupply Initial token supply
      * @param yieldToken Address of the yield token (e.g., USDC)
-     * @param tokenIssuePrice Price at which tokens are issued (scaled by 1e18)
-     * @param totalTokenOffering Total number of tokens available for sale
      * @param tokenUri URI for the token metadata
      * @param initialTokenHolder Address that will receive the initial token supply (if address(0), defaults to
      * msg.sender)
@@ -78,8 +78,6 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         string memory symbol,
         uint256 initialSupply,
         address yieldToken,
-        uint256 tokenIssuePrice,
-        uint256 totalTokenOffering,
         string memory tokenUri,
         address initialTokenHolder
     ) external returns (address) {
@@ -100,16 +98,13 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
             ArcToken.initialize.selector,
             name,
             symbol,
-            "", // Empty string for assetName since it's not used
             initialSupply,
             yieldToken,
-            tokenIssuePrice,
-            totalTokenOffering,
             tokenHolder
         );
 
         // Deploy proxy with the fresh implementation
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        ArcTokenProxy proxy = new ArcTokenProxy(address(implementation), initData);
 
         // Store the mapping between token and its implementation
         fs.tokenToImplementation[address(proxy)] = address(implementation);

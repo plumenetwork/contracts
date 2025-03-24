@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
@@ -16,7 +17,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
  *      yield distribution to token holders, and valuation tracking.
  * @dev Implements ERC20Upgradeable which includes IERC20Metadata functionality
  */
-contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
+contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable,UUPSUpgradeable  {
 
     using SafeERC20 for ERC20Upgradeable;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -47,16 +48,10 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         address yieldToken;
         // Set of all current token holders (for distribution purposes)
         EnumerableSet.AddressSet holders;
-        // Added for asset valuation tracking
-        uint256 assetValuation; // Total valuation of the company in the same unit as yieldToken (e.g., USD)
+        // Added for asset name tracking
         string assetName; // Name of the underlying asset (e.g., "Mineral Vault I")
-        // Token URI storage
-        string baseURI;
+        // Token URI
         string tokenURI;
-        // Financial metrics
-        uint256 tokenIssuePrice; // Price at which tokens are issued (scaled by 1e18)
-        uint256 accrualRatePerSecond; // Accrual rate per second (scaled by 1e18)
-        uint256 totalTokenOffering; // Total number of tokens available for sale
         // Purchase tracking
         mapping(address => uint256) purchaseTimestamp; // When each holder purchased their tokens
     }
@@ -77,40 +72,31 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     event TransfersRestrictionToggled(bool transfersAllowed);
     event YieldDistributed(uint256 amount);
     event YieldTokenUpdated(address indexed newYieldToken);
-    event AssetValuationUpdated(uint256 newValuation);
     event AssetNameUpdated(string newAssetName);
-    event BaseURIUpdated(string newBaseURI);
     event TokenURIUpdated(string newTokenURI);
-    event TokenMetricsUpdated(uint256 tokenIssuePrice, uint256 accrualRatePerSecond, uint256 totalTokenOffering);
     event TokenPurchased(address indexed buyer, uint256 amount, uint256 timestamp);
-    event TokenPriceUpdated(uint256 newIssuePrice);
 
     // -------------- Initializer --------------
     /**
-     * @dev Initialize the token with name, symbol, asset name, valuation, and supply.
+     * @dev Initialize the token with name, symbol, and supply.
      *      The deployer becomes the default admin. Transfers are unrestricted by default.
      * @param name_ Token name (e.g., "aMNRL")
      * @param symbol_ Token symbol (e.g., "aMNRL")
-     * @param assetName_ Name of the underlying asset (e.g., "Mineral Vault I")
      * @param initialSupply_ Initial token supply to mint to the admin
      * @param yieldToken_ Address of the ERC20 token for yield distribution (e.g., USDC).
      *                    Can be address(0) if setting later.
-     * @param tokenIssuePrice_ Price at which tokens are issued (scaled by 1e18)
-     * @param totalTokenOffering_ Total number of tokens available for sale
      * @param initialTokenHolder_ Address that will receive the initial token supply
      */
     function initialize(
         string memory name_,
         string memory symbol_,
-        string memory assetName_,
         uint256 initialSupply_,
         address yieldToken_,
-        uint256 tokenIssuePrice_,
-        uint256 totalTokenOffering_,
         address initialTokenHolder_
     ) public initializer {
         __ERC20_init(name_, symbol_);
         __AccessControl_init();
+        __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
         ArcTokenStorage storage $ = _getArcTokenStorage();
@@ -124,17 +110,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
 
         // Set initial transfer restriction (true = unrestricted transfers)
         $.transfersAllowed = true;
-
-        // Set asset-specific information
-        $.assetName = assetName_;
-        // Calculate asset valuation from token issue price and total offering
-        $.assetValuation = tokenIssuePrice_ * totalTokenOffering_ / 1e18;
-
-        // Set financial metrics
-        $.tokenIssuePrice = tokenIssuePrice_;
-        // Remove accrualRatePerSecond - it's no longer used
-        $.accrualRatePerSecond = 0;
-        $.totalTokenOffering = totalTokenOffering_;
 
         // Set initial yield token if provided
         if (yieldToken_ != address(0)) {
@@ -158,22 +133,9 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             address recipient = initialTokenHolder_ != address(0) ? initialTokenHolder_ : msg.sender;
             _mint(recipient, initialSupply_);
         }
-
-        emit TokenMetricsUpdated(tokenIssuePrice_, 0, totalTokenOffering_);
     }
 
     // -------------- Asset Information --------------
-    /**
-     * @dev Update the asset valuation. Only accounts with MANAGER_ROLE can update this.
-     * @param newValuation The new valuation of the company in yield token units
-     */
-    function updateAssetValuation(
-        uint256 newValuation
-    ) external onlyRole(MANAGER_ROLE) {
-        _getArcTokenStorage().assetValuation = newValuation;
-        emit AssetValuationUpdated(newValuation);
-    }
-
     /**
      * @dev Update the asset name. Only accounts with MANAGER_ROLE can update this.
      * @param newAssetName The new name of the underlying asset
@@ -188,20 +150,20 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     /**
      * @dev Get current asset information
      * @return assetName The name of the underlying asset
-     * @return assetValuation The current valuation of the company
-     * @return pricePerToken The calculated price per token based on total supply and valuation
+     * @return pricePerToken The calculated price per token based on total supply
      */
     function getAssetInfo()
         external
         view
-        returns (string memory assetName, uint256 assetValuation, uint256 pricePerToken)
+        returns (string memory assetName, uint256 pricePerToken)
     {
         ArcTokenStorage storage $ = _getArcTokenStorage();
         assetName = $.assetName;
-        assetValuation = $.assetValuation;
 
         uint256 supply = totalSupply();
-        pricePerToken = supply > 0 ? assetValuation / supply : 0;
+        // Since we don't track asset valuation anymore, price per token can't be calculated
+        // Returning 0 as a placeholder
+        pricePerToken = 0;
     }
 
     // -------------- Whitelist Control --------------
@@ -414,9 +376,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
 
     // -------------- URI Management --------------
     /**
-     * @dev Returns the URI for token metadata. This implementation returns the concatenation
-     * of the `baseURI` and `tokenURI` if both are set. If `tokenURI` is empty, returns
-     * just the `baseURI`. If both are empty, returns an empty string.
+     * @dev Returns the URI for token metadata.
      * @notice The URI should point to a JSON metadata object that follows the ERC-1155/OpenSea
      * metadata standard format:
      * {
@@ -428,47 +388,17 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      *     "properties": {
      *         "assetName": "Asset Name",
      *         "assetValuation": "1000000",
-     *         "tokenIssuePrice": "4200000000000000000000",
-     *         "tokenRedemptionPrice": "4393120000000000000000",
-     *         "dailyAccrualRate": "547950000000000",
-     *         "projectedRedemptionPeriod": 90,
-     *         "totalTokenOffering": "100",
-     *         "irr": "200000000000000000"
+     *         // other properties as needed
      *     }
      * }
      */
     function uri() public view returns (string memory) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-
-        bytes memory baseURIBytes = bytes($.baseURI);
-        bytes memory tokenURIBytes = bytes($.tokenURI);
-
-        if (baseURIBytes.length == 0 && tokenURIBytes.length == 0) {
-            return "";
-        }
-
-        if (tokenURIBytes.length == 0) {
-            return $.baseURI;
-        }
-
-        return string.concat($.baseURI, $.tokenURI);
+        return _getArcTokenStorage().tokenURI;
     }
 
     /**
-     * @dev Sets the base URI for computing the token URI. Only callable by MANAGER_ROLE.
-     * @param newBaseURI The new base URI to set
-     */
-    function setBaseURI(
-        string memory newBaseURI
-    ) external onlyRole(MANAGER_ROLE) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        $.baseURI = newBaseURI;
-        emit BaseURIUpdated(newBaseURI);
-    }
-
-    /**
-     * @dev Sets the token-specific URI component. Only callable by MANAGER_ROLE.
-     * @param newTokenURI The new token URI component to set
+     * @dev Sets the complete token URI. Only callable by MANAGER_ROLE.
+     * @param newTokenURI The full URI including domain (e.g., "https://arc.plumenetwork.xyz/tokens/metadata.json")
      */
     function setTokenURI(
         string memory newTokenURI
@@ -476,62 +406,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         ArcTokenStorage storage $ = _getArcTokenStorage();
         $.tokenURI = newTokenURI;
         emit TokenURIUpdated(newTokenURI);
-    }
-
-    // -------------- Financial Metrics Management --------------
-    /**
-     * @dev Updates token issue price. Only callable by MANAGER_ROLE.
-     * Price value should be scaled by 1e18.
-     * @param newIssuePrice The new token issue price
-     */
-    function updateTokenPrice(
-        uint256 newIssuePrice
-    ) external onlyRole(MANAGER_ROLE) {
-        if (newIssuePrice == 0) {
-            revert IssuePriceMustBePositive();
-        }
-
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        $.tokenIssuePrice = newIssuePrice;
-
-        emit TokenPriceUpdated(newIssuePrice);
-    }
-
-    /**
-     * @dev Updates the token's financial metrics. Only callable by MANAGER_ROLE.
-     * All price values should be scaled by 1e18.
-     */
-    function updateTokenMetrics(
-        uint256 tokenIssuePrice_,
-        uint256 totalTokenOffering_
-    ) external onlyRole(MANAGER_ROLE) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        $.tokenIssuePrice = tokenIssuePrice_;
-        $.totalTokenOffering = totalTokenOffering_;
-
-        // Update asset valuation based on new metrics
-        $.assetValuation = tokenIssuePrice_ * totalTokenOffering_ / 1e18;
-
-        emit TokenMetricsUpdated(tokenIssuePrice_, 0, totalTokenOffering_);
-    }
-
-    /**
-     * @dev Returns all financial metrics for the token and the purchase timestamp
-     */
-    function getTokenMetrics(
-        address holder
-    )
-        external
-        view
-        returns (uint256 tokenIssuePrice, uint256 totalTokenOffering, uint256 assetValuation, uint256 secondsHeld)
-    {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-
-        // Calculate seconds held
-        uint256 purchaseTime = $.purchaseTimestamp[holder];
-        secondsHeld = purchaseTime > 0 ? block.timestamp - purchaseTime : 0;
-
-        return ($.tokenIssuePrice, $.totalTokenOffering, $.assetValuation, secondsHeld);
     }
 
     // Override _update to track purchase timestamps and enforce transfer restrictions
@@ -583,5 +457,30 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     ) public view override(AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
+    /**
+     * @dev Authorization for upgrades
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(DEFAULT_ADMIN_ROLE) { }
 
+    // -------------- Financial Metrics Management --------------
+    /**
+     * @dev Returns holder purchase timestamp information
+     */
+    function getTokenMetrics(
+        address holder
+    )
+        external
+        view
+        returns (uint256 secondsHeld)
+    {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+
+        // Calculate seconds held
+        uint256 purchaseTime = $.purchaseTimestamp[holder];
+        secondsHeld = purchaseTime > 0 ? block.timestamp - purchaseTime : 0;
+
+        return secondsHeld;
+    }
 }
