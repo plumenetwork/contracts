@@ -30,6 +30,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     bytes32 public constant YIELD_DISTRIBUTOR_ROLE = keccak256("YIELD_DISTRIBUTOR_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     // -------------- Custom Errors --------------
     error AlreadyWhitelisted(address account);
@@ -53,8 +54,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         EnumerableSet.AddressSet holders;
         // Token URI
         string tokenURI;
-        // Purchase tracking
-        mapping(address => uint256) purchaseTimestamp; // When each holder purchased their tokens
         // For symbol updating
         string updatedSymbol;
         // For name updating
@@ -75,11 +74,10 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     // -------------- Events --------------
     event WhitelistStatusChanged(address indexed account, bool isWhitelisted);
     event TransfersRestrictionToggled(bool transfersAllowed);
-    event YieldDistributed(uint256 amount);
+    event YieldDistributed(uint256 amount, address indexed token);
     event YieldTokenUpdated(address indexed newYieldToken);
     event TokenNameUpdated(string oldName, string newName);
     event TokenURIUpdated(string newTokenURI);
-    event TokenPurchased(address indexed buyer, uint256 amount, uint256 timestamp);
     event SymbolUpdated(string oldSymbol, string newSymbol);
 
     // -------------- Initializer --------------
@@ -116,8 +114,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
 
         // Set initial transfer restriction (true = unrestricted transfers)
         $.transfersAllowed = true;
-
-   
 
         // By default, whitelist the admin so they can receive and transfer tokens
         $.isWhitelisted[msg.sender] = true;
@@ -327,8 +323,8 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     /**
      * @dev Distribute yield to token holders directly.
      * Each holder receives a portion of the yield proportional to their token balance.
+     * The caller must have approved this contract to transfer `amount` of the yield token on their behalf.
      * @param amount The amount of yield token to distribute.
-     * NOTE: The caller must have approved this contract to transfer `amount` of the yield token on their behalf.
      */
     function distributeYield(
         uint256 amount
@@ -372,7 +368,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             }
         }
 
-        emit YieldDistributed(amount);
+        emit YieldDistributed(amount, $.yieldToken);
     }
 
     // -------------- URI Management --------------
@@ -405,7 +401,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         string memory newTokenURI
     ) external onlyRole(MANAGER_ROLE) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        $.tokenURI = newTokenURI;
+        _getArcTokenStorage().tokenURI = newTokenURI;
         emit TokenURIUpdated(newTokenURI);
     }
 
@@ -432,12 +428,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         }
 
         super._update(from, to, amount);
-
-        // If this is a purchase (transfer from admin to buyer)
-        if (hasRole(ADMIN_ROLE, from) && to != address(0) && amount > 0) {
-            $.purchaseTimestamp[to] = block.timestamp;
-            emit TokenPurchased(to, amount, block.timestamp);
-        }
     }
 
     /**
@@ -486,22 +476,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
 
     function _authorizeUpgrade(
         address newImplementation
-    ) internal override onlyRole(DEFAULT_ADMIN_ROLE) { }
-
-    // -------------- Financial Metrics Management --------------
-    /**
-     * @dev Returns holder purchase timestamp information
-     */
-    function getTokenMetrics(
-        address holder
-    ) external view returns (uint256 secondsHeld) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-
-        // Calculate seconds held
-        uint256 purchaseTime = $.purchaseTimestamp[holder];
-        secondsHeld = purchaseTime > 0 ? block.timestamp - purchaseTime : 0;
-
-        return secondsHeld;
-    }
+    ) internal override onlyRole(UPGRADER_ROLE) { }
 
 }
