@@ -10,12 +10,13 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
+import "./restrictions/ITransferRestrictions.sol";
+
 /**
  * @title ArcToken
  * @author Eugene Y. Q. Shen, Alp Guneysel
- * @notice ERC20 token representing shares of a company, with whitelist control,
- *      configurable transfer restrictions, minting/burning by the issuer,
- *      yield distribution to token holders, and valuation tracking.
+ * @notice ERC20 token representing shares of a company, with modular transfer restrictions,
+ *      minting/burning by the issuer, yield distribution to token holders, and valuation tracking.
  * @dev Implements ERC20Upgradeable which includes IERC20Metadata functionality
  */
 contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
@@ -33,8 +34,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     // -------------- Custom Errors --------------
-    error AlreadyWhitelisted(address account);
-    error NotWhitelisted(address account);
     error YieldTokenNotSet();
     error NoTokensInCirculation();
     error InvalidYieldTokenAddress();
@@ -42,13 +41,10 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     error InvalidAddress();
     error TransferRestricted();
     error ZeroAmount();
+    error RestrictionsModuleNotSet();
 
     /// @custom:storage-location erc7201:asset.token.storage
     struct ArcTokenStorage {
-        // Whitelist mapping (address => true if allowed to transfer/hold when restricted)
-        mapping(address => bool) isWhitelisted;
-        // Flag to control if transfers are unrestricted (true) or only whitelisted (false)
-        bool transfersAllowed;
         // Address of the ERC20 token used for yield distribution (e.g., USDC)
         address yieldToken;
         // Set of all current token holders (for distribution purposes)
@@ -61,6 +57,8 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         string updatedName;
         // Configurable decimal places for the token
         uint8 tokenDecimals;
+        // Address of the restrictions module
+        address restrictionsModule;
     }
 
     // Calculate a unique storage slot for ArcTokenStorage (EIP-7201 standard).
@@ -75,18 +73,17 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     }
 
     // -------------- Events --------------
-    event WhitelistStatusChanged(address indexed account, bool isWhitelisted);
-    event TransfersRestrictionToggled(bool transfersAllowed);
     event YieldDistributed(uint256 amount, address indexed token);
     event YieldTokenUpdated(address indexed newYieldToken);
     event TokenNameUpdated(string oldName, string newName);
     event TokenURIUpdated(string newTokenURI);
     event SymbolUpdated(string oldSymbol, string newSymbol);
+    event RestrictionsModuleUpdated(address indexed oldModule, address indexed newModule);
 
     // -------------- Initializer --------------
     /**
      * @dev Initialize the token with name, symbol, and supply.
-     *      The deployer becomes the default admin. Transfers are unrestricted by default.
+     *      The deployer becomes the default admin.
      * @param name_ Token name (e.g., "Mineral Vault Fund I)")
      * @param symbol_ Token symbol (e.g., "aMNRL")
      * @param initialSupply_ Initial token supply to mint to the admin
@@ -120,19 +117,12 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         _grantRole(YIELD_MANAGER_ROLE, msg.sender);
         _grantRole(YIELD_DISTRIBUTOR_ROLE, msg.sender);
 
-        // Set initial transfer restriction (true = unrestricted transfers)
-        $.transfersAllowed = true;
-
-        // By default, whitelist the admin so they can receive and transfer tokens
-        $.isWhitelisted[msg.sender] = true;
+        // Add admin to holders set
         $.holders.add(msg.sender);
-        emit WhitelistStatusChanged(msg.sender, true);
 
-        // Also whitelist the initial token holder if it's not the admin
+        // Also add the initial token holder if it's not the admin
         if (initialTokenHolder_ != msg.sender && initialTokenHolder_ != address(0)) {
-            $.isWhitelisted[initialTokenHolder_] = true;
             $.holders.add(initialTokenHolder_);
-            emit WhitelistStatusChanged(initialTokenHolder_, true);
         }
 
         // Set the yield token if provided
@@ -159,6 +149,30 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         initialize(name_, symbol_, initialSupply_, yieldToken_, initialTokenHolder_, 18);
     }
 
+    // -------------- Restrictions Module Management --------------
+    /**
+     * @dev Sets or updates the restrictions module to use for transfer restrictions
+     * @param newModule Address of the ITransferRestrictions implementation
+     */
+    function setRestrictionsModule(address newModule) external onlyRole(ADMIN_ROLE) {
+        if (newModule == address(0)) {
+            revert InvalidAddress();
+        }
+        
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        address oldModule = $.restrictionsModule;
+        $.restrictionsModule = newModule;
+        
+        emit RestrictionsModuleUpdated(oldModule, newModule);
+    }
+    
+    /**
+     * @dev Returns the current restrictions module address
+     */
+    function getRestrictionsModule() external view returns (address) {
+        return _getArcTokenStorage().restrictionsModule;
+    }
+
     // -------------- Asset Information --------------
     /**
      * @dev Update the token name. Only accounts with MANAGER_ROLE can update this.
@@ -173,92 +187,16 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         emit TokenNameUpdated(oldName, newName);
     }
 
-    // -------------- Whitelist Control --------------
-    /**
-     * @dev Adds an account to the whitelist, allowing it to hold and transfer tokens when transfers are restricted.
-     */
-    function addToWhitelist(
-        address account
-    ) external onlyRole(MANAGER_ROLE) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        if ($.isWhitelisted[account]) {
-            revert AlreadyWhitelisted(account);
-        }
-        $.isWhitelisted[account] = true;
-        emit WhitelistStatusChanged(account, true);
-    }
-
-    /**
-     * @dev Adds multiple accounts to the whitelist in a single transaction.
-     * @param accounts Array of addresses to add to the whitelist
-     */
-    function batchAddToWhitelist(
-        address[] calldata accounts
-    ) external onlyRole(MANAGER_ROLE) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        for (uint256 i = 0; i < accounts.length; i++) {
-            address account = accounts[i];
-            if (!$.isWhitelisted[account]) {
-                $.isWhitelisted[account] = true;
-                emit WhitelistStatusChanged(account, true);
-            }
-        }
-    }
-
-    /**
-     * @dev Removes an account from the whitelist, preventing transfers when restrictions are enabled.
-     * Accounts not whitelisted cannot send or receive tokens while transfers are restricted.
-     */
-    function removeFromWhitelist(
-        address account
-    ) external onlyRole(MANAGER_ROLE) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        if (!$.isWhitelisted[account]) {
-            revert NotWhitelisted(account);
-        }
-        $.isWhitelisted[account] = false;
-        emit WhitelistStatusChanged(account, false);
-    }
-
-    /**
-     * @dev Checks if an account is whitelisted.
-     */
-    function isWhitelisted(
-        address account
-    ) external view returns (bool) {
-        return _getArcTokenStorage().isWhitelisted[account];
-    }
-
-    // -------------- Transfer Restrictions Toggle --------------
-    /**
-     * @dev Toggles transfer restrictions. When `transfersAllowed` is true, anyone can transfer tokens.
-     * When false, only whitelisted addresses can send/receive tokens.
-     */
-    function setTransfersAllowed(
-        bool allowed
-    ) external onlyRole(ADMIN_ROLE) {
-        _getArcTokenStorage().transfersAllowed = allowed;
-        emit TransfersRestrictionToggled(allowed);
-    }
-
-    /**
-     * @dev Returns true if token transfers are currently unrestricted (open to all).
-     */
-    function transfersAllowed() external view returns (bool) {
-        return _getArcTokenStorage().transfersAllowed;
-    }
-
     // -------------- Minting and Burning --------------
     /**
-     * @dev Mints new tokens to an account. Only accounts with MANAGER_ROLE can call this.
-     * The recipient must be whitelisted if transfers are restricted.
+     * @dev Mints new tokens to an account. Only accounts with MINTER_ROLE can call this.
      */
     function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) {
         _mint(to, amount);
     }
 
     /**
-     * @dev Burns tokens from an account, reducing the total supply. Only accounts with MANAGER_ROLE can call this.
+     * @dev Burns tokens from an account, reducing the total supply. Only accounts with BURNER_ROLE can call this.
      */
     function burn(address from, uint256 amount) external onlyRole(BURNER_ROLE) {
         _burn(from, amount);
@@ -330,7 +268,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         uint256 lastIndex = holderCount - 1;
         address lastHolder = $.holders.at(lastIndex);
         holders[lastIndex] = lastHolder;
-
+        
         // Last holder gets the remainder
         amounts[lastIndex] = amount - totalPreviewAmount;
 
@@ -628,12 +566,21 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         emit SymbolUpdated(oldSymbol, newSymbol);
     }
 
-    // Override _update to track holders and enforce transfer restrictions
+    // Override _update to track holders and enforce transfer restrictions using the module
     function _update(address from, address to, uint256 amount) internal virtual override {
-        // Check transfer restrictions
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        if (!$.transfersAllowed && (!$.isWhitelisted[from] || !$.isWhitelisted[to])) {
-            revert TransferRestricted();
+        
+        // Check transfer restrictions using the module if set
+        address restrictionsModule = $.restrictionsModule;
+        if (restrictionsModule != address(0)) {
+            // Check if transfer is allowed via restrictions module
+            bool isAllowed = ITransferRestrictions(restrictionsModule).isTransferAllowed(from, to, amount);
+            if (!isAllowed) {
+                revert TransferRestricted();
+            }
+            
+            // Call beforeTransfer hook
+            ITransferRestrictions(restrictionsModule).beforeTransfer(from, to, amount);
         }
 
         // Check sender balance before transfer to determine if they'll have a zero balance after
@@ -653,6 +600,11 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         if (to != address(0) && balanceOf(to) > 0) {
             // Skip for burning
             $.holders.add(to);
+        }
+        
+        // Call afterTransfer hook if module is set
+        if (restrictionsModule != address(0)) {
+            ITransferRestrictions(restrictionsModule).afterTransfer(from, to, amount);
         }
     }
 

@@ -3,6 +3,8 @@ pragma solidity ^0.8.25;
 
 import "./ArcToken.sol";
 import "./proxy/ArcTokenProxy.sol";
+import "./restrictions/WhitelistRestrictions.sol";
+import "./restrictions/ITransferRestrictions.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -20,6 +22,8 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
     struct FactoryStorage {
         // Maps token proxies to their implementations
         mapping(address => address) tokenToImplementation;
+        // Maps tokens to their restriction modules
+        mapping(address => address) tokenToRestrictions;
         // Track allowed implementation contracts (for future upgrades)
         mapping(bytes32 => bool) allowedImplementations;
     }
@@ -27,6 +31,8 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
     // Custom errors
     error ImplementationNotWhitelisted();
     error TokenNotCreatedByFactory();
+    error FailedToCreateRestrictionsModule();
+    error FailedToSetRestrictions();
 
     // Events
     event TokenCreated(
@@ -37,6 +43,10 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         string symbol,
         string tokenUri,
         uint8 decimals
+    );
+    event RestrictionsModuleCreated(
+        address indexed tokenAddress, 
+        address indexed restrictionsModule
     );
     event ImplementationWhitelisted(address indexed implementation);
     event ImplementationRemoved(address indexed implementation);
@@ -60,6 +70,30 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    }
+
+    /**
+     * @dev Internal function to create a WhitelistRestrictions module for a token
+     * @param admin Address that will have admin privileges on the restrictions module
+     * @return Address of the newly created restrictions module
+     */
+    function _createRestrictionsModule(address admin) internal returns (address) {
+        // Deploy a fresh whitelist restrictions implementation
+        WhitelistRestrictions restrictionsImpl = new WhitelistRestrictions();
+        
+        // Create initialization data
+        bytes memory initData = abi.encodeWithSelector(
+            WhitelistRestrictions.initialize.selector, admin
+        );
+        
+        // Deploy the restrictions module (directly use implementation for now)
+        // Note: In a production environment, you would deploy a proxy here
+        // For now, we'll initialize the implementation directly
+        try restrictionsImpl.initialize(admin) {
+            return address(restrictionsImpl);
+        } catch {
+            revert FailedToCreateRestrictionsModule();
+        }
     }
 
     /**
@@ -117,10 +151,23 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         token.grantRole(token.BURNER_ROLE(), msg.sender);
         token.grantRole(token.UPGRADER_ROLE(), msg.sender);
 
-        // Make sure the owner is whitelisted
-        try token.addToWhitelist(msg.sender) { }
-        catch (bytes memory) {
-            // Owner might already be whitelisted from initialization
+        // Create and link a WhitelistRestrictions module for this token
+        address restrictionsModule = _createRestrictionsModule(msg.sender);
+        
+        // Store the mapping between token and its restrictions module
+        fs.tokenToRestrictions[address(proxy)] = restrictionsModule;
+        
+        // Set the restrictions module on the token
+        try token.setRestrictionsModule(restrictionsModule) {
+            emit RestrictionsModuleCreated(address(proxy), restrictionsModule);
+        } catch {
+            revert FailedToSetRestrictions();
+        }
+
+        // Add the token holder to the whitelist in the restrictions module
+        if (tokenHolder != msg.sender) {
+            try WhitelistRestrictions(restrictionsModule).addToWhitelist(tokenHolder) { } 
+            catch { /* Ignore if already whitelisted */ }
         }
 
         emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri, 18);
@@ -187,10 +234,23 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         token.grantRole(token.BURNER_ROLE(), msg.sender);
         token.grantRole(token.UPGRADER_ROLE(), msg.sender);
 
-        // Make sure the owner is whitelisted
-        try token.addToWhitelist(msg.sender) { }
-        catch (bytes memory) {
-            // Owner might already be whitelisted from initialization, so ignore errors
+        // Create and link a WhitelistRestrictions module for this token
+        address restrictionsModule = _createRestrictionsModule(msg.sender);
+        
+        // Store the mapping between token and its restrictions module
+        fs.tokenToRestrictions[address(proxy)] = restrictionsModule;
+        
+        // Set the restrictions module on the token
+        try token.setRestrictionsModule(restrictionsModule) {
+            emit RestrictionsModuleCreated(address(proxy), restrictionsModule);
+        } catch {
+            revert FailedToSetRestrictions();
+        }
+
+        // Add the token holder to the whitelist in the restrictions module
+        if (tokenHolder != msg.sender) {
+            try WhitelistRestrictions(restrictionsModule).addToWhitelist(tokenHolder) { } 
+            catch { /* Ignore if already whitelisted */ }
         }
 
         emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri, decimals);
@@ -219,6 +279,17 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address token
     ) external view returns (address) {
         return _getFactoryStorage().tokenToImplementation[token];
+    }
+
+    /**
+     * @dev Get the restrictions module address for a specific token
+     * @param token Address of the token
+     * @return The restrictions module address for this token
+     */
+    function getTokenRestrictions(
+        address token
+    ) external view returns (address) {
+        return _getFactoryStorage().tokenToRestrictions[token];
     }
 
     /**
