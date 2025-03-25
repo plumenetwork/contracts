@@ -296,34 +296,43 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             revert ZeroAmount();
         }
 
-        if (totalSupply() == 0) {
+        uint256 supply = totalSupply();
+        if (supply == 0) {
             revert NoTokensInCirculation();
         }
 
         uint256 holderCount = $.holders.length();
+        if (holderCount == 0) {
+            return (new address[](0), new uint256[](0));
+        }
+
         holders = new address[](holderCount);
         amounts = new uint256[](holderCount);
 
-        uint256 supply = totalSupply();
         uint256 totalPreviewAmount = 0;
 
-        // Calculate distribution for all but last holder
-        for (uint256 i = 0; i < holderCount; i++) {
+        // Process all but last holder
+        for (uint256 i = 0; i < holderCount - 1; i++) {
             address holder = $.holders.at(i);
             holders[i] = holder;
 
             uint256 holderBalance = balanceOf(holder);
-
-            uint256 share = (amount * holderBalance) / supply;
-
-            // For the last holder, give them the remainder to ensure full distribution
-            if (i == holderCount - 1) {
-                amounts[i] = amount - totalPreviewAmount;
-            } else {
+            if (holderBalance > 0) {
+                uint256 share = (amount * holderBalance) / supply;
                 amounts[i] = share;
                 totalPreviewAmount += share;
+            } else {
+                amounts[i] = 0;
             }
         }
+
+        // Handle last holder separately to ensure full distribution
+        uint256 lastIndex = holderCount - 1;
+        address lastHolder = $.holders.at(lastIndex);
+        holders[lastIndex] = lastHolder;
+
+        // Last holder gets the remainder
+        amounts[lastIndex] = amount - totalPreviewAmount;
 
         return (holders, amounts);
     }
@@ -354,11 +363,15 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             revert ZeroAmount();
         }
 
-        if (totalSupply() == 0) {
+        uint256 supply = totalSupply();
+        if (supply == 0) {
             revert NoTokensInCirculation();
         }
 
         totalHolders = $.holders.length();
+        if (totalHolders == 0) {
+            return (new address[](0), new uint256[](0), 0, 0);
+        }
 
         // If startIndex exceeds holder count, reset to 0
         if (startIndex >= totalHolders) {
@@ -373,23 +386,27 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
 
         // Calculate actual number of holders in this batch
         uint256 batchSize = endIndex - startIndex;
+        if (batchSize == 0) {
+            return (new address[](0), new uint256[](0), 0, totalHolders);
+        }
 
         // Create result arrays
         holders = new address[](batchSize);
         amounts = new uint256[](batchSize);
 
-        uint256 supply = totalSupply();
-
-        // Process the specified batch of holders
+        // Process all holders in the batch
         for (uint256 i = 0; i < batchSize; i++) {
             uint256 holderIndex = startIndex + i;
             address holder = $.holders.at(holderIndex);
             holders[i] = holder;
 
             uint256 holderBalance = balanceOf(holder);
-
-            // Calculate this holder's share
-            amounts[i] = (amount * holderBalance) / supply;
+            if (holderBalance > 0) {
+                // Calculate this holder's share
+                amounts[i] = (amount * holderBalance) / supply;
+            } else {
+                amounts[i] = 0;
+            }
         }
 
         // Set the index for the next batch
@@ -413,38 +430,50 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             revert ZeroAmount();
         }
 
-        if (totalSupply() == 0) {
+        uint256 supply = totalSupply();
+        if (supply == 0) {
             revert NoTokensInCirculation();
         }
-        ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
+
+        address yieldTokenAddr = $.yieldToken;
+        if (yieldTokenAddr == address(0)) {
+            revert YieldTokenNotSet();
+        }
+
+        ERC20Upgradeable yToken = ERC20Upgradeable(yieldTokenAddr);
 
         // Transfer yield tokens from caller into this contract
         yToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        uint256 supply = totalSupply();
         uint256 distributedSum = 0;
         uint256 holderCount = $.holders.length();
+        if (holderCount == 0) {
+            return;
+        }
 
-        // Distribute to all but last holder (to handle rounding remainders)
+        // Distribute to all but last holder
         for (uint256 i = 0; i < holderCount - 1; i++) {
             address holder = $.holders.at(i);
             uint256 holderBalance = balanceOf(holder);
 
-            uint256 share = (amount * holderBalance) / supply;
-            distributedSum += share;
-            if (share > 0) {
-                yToken.safeTransfer(holder, share);
+            if (holderBalance > 0) {
+                uint256 share = (amount * holderBalance) / supply;
+                if (share > 0) {
+                    yToken.safeTransfer(holder, share);
+                    distributedSum += share;
+                }
             }
         }
 
         // Last holder gets the remaining amount to ensure full distribution
-        if (holderCount > 0) {
-            address lastHolder = $.holders.at(holderCount - 1);
-            uint256 lastShare = amount - distributedSum;
+        address lastHolder = $.holders.at(holderCount - 1);
+        uint256 lastShare = amount - distributedSum;
+
+        if (lastShare > 0) {
             yToken.safeTransfer(lastHolder, lastShare);
         }
 
-        emit YieldDistributed(amount, $.yieldToken);
+        emit YieldDistributed(amount, yieldTokenAddr);
     }
 
     /**
@@ -469,7 +498,9 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         returns (uint256 nextIndex, uint256 totalHolders, uint256 amountDistributed)
     {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        if ($.yieldToken == address(0)) {
+
+        address yieldTokenAddr = $.yieldToken;
+        if (yieldTokenAddr == address(0)) {
             revert YieldTokenNotSet();
         }
 
@@ -477,11 +508,15 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             revert ZeroAmount();
         }
 
-        if (totalSupply() == 0) {
+        uint256 supply = totalSupply();
+        if (supply == 0) {
             revert NoTokensInCirculation();
         }
 
         totalHolders = $.holders.length();
+        if (totalHolders == 0) {
+            return (0, 0, 0);
+        }
 
         // If startIndex exceeds holder count, reset to 0
         if (startIndex >= totalHolders) {
@@ -500,8 +535,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             return (0, totalHolders, 0);
         }
 
-        ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
-        uint256 supply = totalSupply();
+        ERC20Upgradeable yToken = ERC20Upgradeable(yieldTokenAddr);
         amountDistributed = 0;
 
         // For the first batch, transfer the yield tokens into this contract
@@ -513,18 +547,16 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         for (uint256 i = 0; i < batchSize; i++) {
             uint256 holderIndex = startIndex + i;
             address holder = $.holders.at(holderIndex);
-
             uint256 holderBalance = balanceOf(holder);
-            if (holderBalance == 0) {
-                continue;
-            }
 
-            // Calculate this holder's share
-            uint256 share = (totalAmount * holderBalance) / supply;
-            amountDistributed += share;
+            if (holderBalance > 0) {
+                // Calculate this holder's share
+                uint256 share = (totalAmount * holderBalance) / supply;
 
-            if (share > 0) {
-                yToken.safeTransfer(holder, share);
+                if (share > 0) {
+                    yToken.safeTransfer(holder, share);
+                    amountDistributed += share;
+                }
             }
         }
 
@@ -542,7 +574,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             }
 
             // Emit the event for the full distribution only after completing all batches
-            emit YieldDistributed(totalAmount, $.yieldToken);
+            emit YieldDistributed(totalAmount, yieldTokenAddr);
         }
 
         return (nextIndex, totalHolders, amountDistributed);
