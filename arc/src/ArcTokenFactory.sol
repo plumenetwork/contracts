@@ -35,7 +35,8 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address indexed implementation,
         string name,
         string symbol,
-        string tokenUri
+        string tokenUri,
+        uint8 decimals
     );
     event ImplementationWhitelisted(address indexed implementation);
     event ImplementationRemoved(address indexed implementation);
@@ -62,7 +63,8 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
     }
 
     /**
-     * @dev Creates a new ArcToken instance with its own implementation
+     * @dev Creates a new ArcToken instance with its own implementation (with default 18 decimals)
+     * This overload provides backward compatibility with existing integration code
      * @param name Token name
      * @param symbol Token symbol
      * @param initialSupply Initial token supply
@@ -80,6 +82,74 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         string memory tokenUri,
         address initialTokenHolder
     ) external returns (address) {
+        // Deploy a fresh implementation for this token
+        ArcToken implementation = new ArcToken();
+
+        // Add the implementation to the whitelist
+        FactoryStorage storage fs = _getFactoryStorage();
+        bytes32 codeHash = _getCodeHash(address(implementation));
+        fs.allowedImplementations[codeHash] = true;
+
+        // Use caller as token holder if not specified
+        address tokenHolder = initialTokenHolder == address(0) ? msg.sender : initialTokenHolder;
+
+        // Create initialization data
+        bytes memory initData = abi.encodeWithSelector(
+            ArcToken.initializeWithDefaultDecimals.selector, name, symbol, initialSupply, yieldToken, tokenHolder
+        );
+
+        // Deploy proxy with the fresh implementation
+        ArcTokenProxy proxy = new ArcTokenProxy(address(implementation), initData);
+
+        // Store the mapping between token and its implementation
+        fs.tokenToImplementation[address(proxy)] = address(implementation);
+
+        // Set the token URI
+        ArcToken token = ArcToken(address(proxy));
+        token.setTokenURI(tokenUri);
+
+        // Grant all necessary roles to the owner
+        token.grantRole(token.ADMIN_ROLE(), msg.sender);
+        token.grantRole(token.MANAGER_ROLE(), msg.sender);
+        token.grantRole(token.YIELD_MANAGER_ROLE(), msg.sender);
+        token.grantRole(token.YIELD_DISTRIBUTOR_ROLE(), msg.sender);
+        token.grantRole(token.MINTER_ROLE(), msg.sender);
+        token.grantRole(token.BURNER_ROLE(), msg.sender);
+        token.grantRole(token.UPGRADER_ROLE(), msg.sender);
+
+        // Make sure the owner is whitelisted
+        try token.addToWhitelist(msg.sender) { }
+        catch (bytes memory) {
+            // Owner might already be whitelisted from initialization
+        }
+
+        emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri, 18);
+        emit ImplementationWhitelisted(address(implementation));
+
+        return address(proxy);
+    }
+
+    /**
+     * @dev Creates a new ArcToken instance with its own implementation
+     * @param name Token name
+     * @param symbol Token symbol
+     * @param initialSupply Initial token supply
+     * @param yieldToken Address of the yield token (e.g., USDC)
+     * @param tokenUri URI for the token metadata
+     * @param initialTokenHolder Address that will receive the initial token supply (if address(0), defaults to
+     * msg.sender)
+     * @param decimals Number of decimal places for the token (default is 18 if 0 is provided)
+     * @return Address of the newly created token
+     */
+    function createToken(
+        string memory name,
+        string memory symbol,
+        uint256 initialSupply,
+        address yieldToken,
+        string memory tokenUri,
+        address initialTokenHolder,
+        uint8 decimals
+    ) external returns (address) {
         FactoryStorage storage fs = _getFactoryStorage();
 
         // Deploy a fresh implementation for this token
@@ -92,9 +162,10 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         // Use caller as token holder if not specified
         address tokenHolder = initialTokenHolder == address(0) ? msg.sender : initialTokenHolder;
 
-        // Create initialization data
-        bytes memory initData =
-            abi.encodeWithSelector(ArcToken.initialize.selector, name, symbol, initialSupply, yieldToken, tokenHolder);
+        // Create initialization data with specified decimals
+        bytes memory initData = abi.encodeWithSelector(
+            ArcToken.initialize.selector, name, symbol, initialSupply, yieldToken, tokenHolder, decimals
+        );
 
         // Deploy proxy with the fresh implementation
         ArcTokenProxy proxy = new ArcTokenProxy(address(implementation), initData);
@@ -106,7 +177,23 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         ArcToken token = ArcToken(address(proxy));
         token.setTokenURI(tokenUri);
 
-        emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri);
+        // Grant all necessary roles to the owner
+        // Note: DEFAULT_ADMIN_ROLE is already granted during initialization
+        token.grantRole(token.ADMIN_ROLE(), msg.sender);
+        token.grantRole(token.MANAGER_ROLE(), msg.sender);
+        token.grantRole(token.YIELD_MANAGER_ROLE(), msg.sender);
+        token.grantRole(token.YIELD_DISTRIBUTOR_ROLE(), msg.sender);
+        token.grantRole(token.MINTER_ROLE(), msg.sender);
+        token.grantRole(token.BURNER_ROLE(), msg.sender);
+        token.grantRole(token.UPGRADER_ROLE(), msg.sender);
+
+        // Make sure the owner is whitelisted
+        try token.addToWhitelist(msg.sender) { }
+        catch (bytes memory) {
+            // Owner might already be whitelisted from initialization, so ignore errors
+        }
+
+        emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri, decimals);
         emit ImplementationWhitelisted(address(implementation));
 
         return address(proxy);

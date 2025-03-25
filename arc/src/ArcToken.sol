@@ -41,6 +41,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     error IssuePriceMustBePositive();
     error InvalidAddress();
     error TransferRestricted();
+    error ZeroAmount();
 
     /// @custom:storage-location erc7201:asset.token.storage
     struct ArcTokenStorage {
@@ -58,6 +59,8 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         string updatedSymbol;
         // For name updating
         string updatedName;
+        // Configurable decimal places for the token
+        uint8 tokenDecimals;
     }
 
     // Calculate a unique storage slot for ArcTokenStorage (EIP-7201 standard).
@@ -90,13 +93,15 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      * @param yieldToken_ Address of the ERC20 token for yield distribution (e.g., USDC).
      *                    Can be address(0) if setting later.
      * @param initialTokenHolder_ Address that will receive the initial token supply
+     * @param decimals_ Number of decimal places for the token (default is 18 if 0 is provided)
      */
     function initialize(
         string memory name_,
         string memory symbol_,
         uint256 initialSupply_,
         address yieldToken_,
-        address initialTokenHolder_
+        address initialTokenHolder_,
+        uint8 decimals_
     ) public initializer {
         __ERC20_init(name_, symbol_);
         __AccessControl_init();
@@ -104,6 +109,9 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         __ReentrancyGuard_init();
 
         ArcTokenStorage storage $ = _getArcTokenStorage();
+
+        // Set token decimals (use 18 as default if 0 is provided)
+        $.tokenDecimals = decimals_ == 0 ? 18 : decimals_;
 
         // Set up roles
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -127,11 +135,28 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             emit WhitelistStatusChanged(initialTokenHolder_, true);
         }
 
+        // Set the yield token if provided
+        if (yieldToken_ != address(0)) {
+            $.yieldToken = yieldToken_;
+            emit YieldTokenUpdated(yieldToken_);
+        }
+
         // Mint initial supply to the initial token holder if specified, otherwise to the admin
         if (initialSupply_ > 0) {
             address recipient = initialTokenHolder_ != address(0) ? initialTokenHolder_ : msg.sender;
             _mint(recipient, initialSupply_);
         }
+    }
+
+    // Backward compatibility for older deployment scripts
+    function initializeWithDefaultDecimals(
+        string memory name_,
+        string memory symbol_,
+        uint256 initialSupply_,
+        address yieldToken_,
+        address initialTokenHolder_
+    ) public initializer {
+        initialize(name_, symbol_, initialSupply_, yieldToken_, initialTokenHolder_, 18);
     }
 
     // -------------- Asset Information --------------
@@ -146,21 +171,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         string memory oldName = name();
         $.updatedName = newName;
         emit TokenNameUpdated(oldName, newName);
-    }
-
-    /**
-     * @dev Get current token information
-     * @return assetName The name of the token
-     * @return pricePerToken The calculated price per token based on total supply (currently 0)
-     */
-    function getAssetInfo() external view returns (string memory assetName, uint256 pricePerToken) {
-        // Maintain compatibility with existing interface
-        // But now asset name is the same as token name
-        assetName = name();
-
-        // Since we don't track asset valuation anymore, price per token can't be calculated
-        // Returning 0 as a placeholder
-        pricePerToken = 0;
     }
 
     // -------------- Whitelist Control --------------
@@ -281,9 +291,11 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         uint256 amount
     ) external view returns (address[] memory holders, uint256[] memory amounts) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        if ($.yieldToken == address(0)) {
-            revert YieldTokenNotSet();
+
+        if (amount == 0) {
+            revert ZeroAmount();
         }
+
         if (totalSupply() == 0) {
             revert NoTokensInCirculation();
         }
@@ -301,10 +313,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             holders[i] = holder;
 
             uint256 holderBalance = balanceOf(holder);
-            if (holderBalance == 0) {
-                amounts[i] = 0;
-                continue;
-            }
 
             uint256 share = (amount * holderBalance) / supply;
 
@@ -321,6 +329,76 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     }
 
     /**
+     * @dev Get a preview of the yield distribution for a limited number of token holders.
+     * Processes holders in batches to avoid excessive gas consumption.
+     * @param amount The amount of yield token to preview distribution for
+     * @param startIndex The index to start processing holders from
+     * @param maxHolders The maximum number of holders to process (limited by gas constraints)
+     * @return holders Array of token holder addresses (up to maxHolders)
+     * @return amounts Array of amounts each holder would receive
+     * @return nextIndex The index to use for the next batch (0 if all holders were processed)
+     * @return totalHolders The total number of holders in the system
+     */
+    function previewYieldDistributionWithLimit(
+        uint256 amount,
+        uint256 startIndex,
+        uint256 maxHolders
+    )
+        external
+        view
+        returns (address[] memory holders, uint256[] memory amounts, uint256 nextIndex, uint256 totalHolders)
+    {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+
+        if (totalSupply() == 0) {
+            revert NoTokensInCirculation();
+        }
+
+        totalHolders = $.holders.length();
+
+        // If startIndex exceeds holder count, reset to 0
+        if (startIndex >= totalHolders) {
+            startIndex = 0;
+        }
+
+        // Calculate end index (exclusive)
+        uint256 endIndex = startIndex + maxHolders;
+        if (endIndex > totalHolders) {
+            endIndex = totalHolders;
+        }
+
+        // Calculate actual number of holders in this batch
+        uint256 batchSize = endIndex - startIndex;
+
+        // Create result arrays
+        holders = new address[](batchSize);
+        amounts = new uint256[](batchSize);
+
+        uint256 supply = totalSupply();
+
+        // Process the specified batch of holders
+        for (uint256 i = 0; i < batchSize; i++) {
+            uint256 holderIndex = startIndex + i;
+            address holder = $.holders.at(holderIndex);
+            holders[i] = holder;
+
+            uint256 holderBalance = balanceOf(holder);
+
+            // Calculate this holder's share
+            amounts[i] = (amount * holderBalance) / supply;
+        }
+
+        // Set the index for the next batch
+        nextIndex = endIndex < totalHolders ? endIndex : 0;
+
+        return (holders, amounts, nextIndex, totalHolders);
+    }
+
+    /**
      * @dev Distribute yield to token holders directly.
      * Each holder receives a portion of the yield proportional to their token balance.
      * The caller must have approved this contract to transfer `amount` of the yield token on their behalf.
@@ -330,9 +408,11 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         uint256 amount
     ) external onlyRole(YIELD_DISTRIBUTOR_ROLE) nonReentrant {
         ArcTokenStorage storage $ = _getArcTokenStorage();
-        if ($.yieldToken == address(0)) {
-            revert YieldTokenNotSet();
+
+        if (amount == 0) {
+            revert ZeroAmount();
         }
+
         if (totalSupply() == 0) {
             revert NoTokensInCirculation();
         }
@@ -349,9 +429,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         for (uint256 i = 0; i < holderCount - 1; i++) {
             address holder = $.holders.at(i);
             uint256 holderBalance = balanceOf(holder);
-            if (holderBalance == 0) {
-                continue;
-            }
+
             uint256 share = (amount * holderBalance) / supply;
             distributedSum += share;
             if (share > 0) {
@@ -363,12 +441,111 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         if (holderCount > 0) {
             address lastHolder = $.holders.at(holderCount - 1);
             uint256 lastShare = amount - distributedSum;
-            if (lastShare > 0) {
-                yToken.safeTransfer(lastHolder, lastShare);
-            }
+            yToken.safeTransfer(lastHolder, lastShare);
         }
 
         emit YieldDistributed(amount, $.yieldToken);
+    }
+
+    /**
+     * @dev Distribute yield to a limited number of token holders.
+     * Processes holders in batches to avoid excessive gas consumption.
+     * The caller must have approved this contract to transfer `totalAmount` of the yield token on their behalf.
+     * @param totalAmount The total amount of yield token to distribute across all batches
+     * @param startIndex The index to start processing holders from
+     * @param maxHolders The maximum number of holders to process in this batch
+     * @return nextIndex The index to use for the next batch (0 if all holders were processed)
+     * @return totalHolders The total number of holders in the system
+     * @return amountDistributed The amount of yield distributed in this batch
+     */
+    function distributeYieldWithLimit(
+        uint256 totalAmount,
+        uint256 startIndex,
+        uint256 maxHolders
+    )
+        external
+        onlyRole(YIELD_DISTRIBUTOR_ROLE)
+        nonReentrant
+        returns (uint256 nextIndex, uint256 totalHolders, uint256 amountDistributed)
+    {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        if ($.yieldToken == address(0)) {
+            revert YieldTokenNotSet();
+        }
+
+        if (totalAmount == 0) {
+            revert ZeroAmount();
+        }
+
+        if (totalSupply() == 0) {
+            revert NoTokensInCirculation();
+        }
+
+        totalHolders = $.holders.length();
+
+        // If startIndex exceeds holder count, reset to 0
+        if (startIndex >= totalHolders) {
+            startIndex = 0;
+        }
+
+        // Calculate end index (exclusive)
+        uint256 endIndex = startIndex + maxHolders;
+        if (endIndex > totalHolders) {
+            endIndex = totalHolders;
+        }
+
+        // Calculate actual number of holders in this batch
+        uint256 batchSize = endIndex - startIndex;
+        if (batchSize == 0) {
+            return (0, totalHolders, 0);
+        }
+
+        ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
+        uint256 supply = totalSupply();
+        amountDistributed = 0;
+
+        // For the first batch, transfer the yield tokens into this contract
+        if (startIndex == 0) {
+            yToken.safeTransferFrom(msg.sender, address(this), totalAmount);
+        }
+
+        // Process the specified batch of holders
+        for (uint256 i = 0; i < batchSize; i++) {
+            uint256 holderIndex = startIndex + i;
+            address holder = $.holders.at(holderIndex);
+
+            uint256 holderBalance = balanceOf(holder);
+            if (holderBalance == 0) {
+                continue;
+            }
+
+            // Calculate this holder's share
+            uint256 share = (totalAmount * holderBalance) / supply;
+            amountDistributed += share;
+
+            if (share > 0) {
+                yToken.safeTransfer(holder, share);
+            }
+        }
+
+        // Set the index for the next batch
+        nextIndex = endIndex < totalHolders ? endIndex : 0;
+
+        // If this is the last batch, distribute any remaining amount to the last holder
+        if (nextIndex == 0 && amountDistributed < totalAmount) {
+            address lastHolder = $.holders.at(totalHolders - 1);
+            uint256 remainingAmount = totalAmount - amountDistributed;
+
+            if (remainingAmount > 0) {
+                yToken.safeTransfer(lastHolder, remainingAmount);
+                amountDistributed += remainingAmount;
+            }
+
+            // Emit the event for the full distribution only after completing all batches
+            emit YieldDistributed(totalAmount, $.yieldToken);
+        }
+
+        return (nextIndex, totalHolders, amountDistributed);
     }
 
     // -------------- URI Management --------------
@@ -419,7 +596,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         emit SymbolUpdated(oldSymbol, newSymbol);
     }
 
-    // Override _update to track purchase timestamps and enforce transfer restrictions
+    // Override _update to track holders and enforce transfer restrictions
     function _update(address from, address to, uint256 amount) internal virtual override {
         // Check transfer restrictions
         ArcTokenStorage storage $ = _getArcTokenStorage();
@@ -427,15 +604,32 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             revert TransferRestricted();
         }
 
+        // Check sender balance before transfer to determine if they'll have a zero balance after
+        if (from != address(0)) {
+            // Skip for minting
+            uint256 fromBalanceBefore = balanceOf(from);
+            if (fromBalanceBefore == amount) {
+                // Will have zero balance after transfer, remove from holders
+                $.holders.remove(from);
+            }
+        }
+
+        // Call parent implementation to perform the transfer
         super._update(from, to, amount);
+
+        // Add recipient to holders if they're receiving tokens and not burning
+        if (to != address(0) && balanceOf(to) > 0) {
+            // Skip for burning
+            $.holders.add(to);
+        }
     }
 
     /**
      * @dev Returns the decimals places of the token.
-     * @return The number of decimals places (always returns 18 for this implementation)
+     * @return The number of decimals places configured for this token
      */
-    function decimals() public pure override returns (uint8) {
-        return 18;
+    function decimals() public view override returns (uint8) {
+        return _getArcTokenStorage().tokenDecimals;
     }
 
     /**

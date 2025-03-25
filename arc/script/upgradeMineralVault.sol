@@ -53,14 +53,6 @@ contract UpgradeMineralVault is Script, Test {
             upgradeableToken.upgradeToAndCall(address(newImplementation), "");
             console2.log("Token proxy upgraded to new implementation");
 
-            // Fetch metrics for verification after upgrade
-            try token.getAssetInfo() returns (string memory assetName, uint256 pricePerToken) {
-                console2.log("Asset name:", assetName);
-                console2.log("Price per token:", pricePerToken);
-            } catch {
-                console2.log("Could not retrieve asset info after upgrade. Manual verification needed.");
-            }
-
             // Log success information
             console2.log("\n---------- UPGRADE SUMMARY ----------");
             console2.log("Token Proxy:", TOKEN_PROXY_ADDRESS);
