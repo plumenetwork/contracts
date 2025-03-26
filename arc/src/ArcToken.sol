@@ -23,7 +23,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     using SafeERC20 for ERC20Upgradeable;
     using EnumerableSet for EnumerableSet.AddressSet;
 
-    // -------------- Role Definitions --------------
+    // Role Definitions
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant YIELD_MANAGER_ROLE = keccak256("YIELD_MANAGER_ROLE");
@@ -32,7 +32,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
-    // -------------- Custom Errors --------------
+    //  Custom Errors
     error AlreadyWhitelisted(address account);
     error NotWhitelisted(address account);
     error YieldTokenNotSet();
@@ -43,7 +43,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     error TransferRestricted();
     error ZeroAmount();
 
-    /// @custom:storage-location erc7201:asset.token.storage
+    /// @custom:storage-location erc7201:arc.token.storage
     struct ArcTokenStorage {
         // Whitelist mapping (address => true if allowed to transfer/hold when restricted)
         mapping(address => bool) isWhitelisted;
@@ -63,6 +63,8 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         uint8 tokenDecimals;
     }
 
+    // Constants
+
     // Calculate a unique storage slot for ArcTokenStorage (EIP-7201 standard).
     // keccak256(abi.encode(uint256(keccak256("arc.token.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ARC_TOKEN_STORAGE_LOCATION =
@@ -74,7 +76,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         }
     }
 
-    // -------------- Events --------------
+    // Events
     event WhitelistStatusChanged(address indexed account, bool isWhitelisted);
     event TransfersRestrictionToggled(bool transfersAllowed);
     event YieldDistributed(uint256 amount, address indexed token);
@@ -159,7 +161,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         initialize(name_, symbol_, initialSupply_, yieldToken_, initialTokenHolder_, 18);
     }
 
-    // -------------- Asset Information --------------
+    // Manager Functions
     /**
      * @dev Update the token name. Only accounts with MANAGER_ROLE can update this.
      * @param newName The new name for the token
@@ -221,6 +223,33 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     }
 
     /**
+     * @dev Sets the complete token URI. Only callable by MANAGER_ROLE.
+     * @param newTokenURI The full URI including domain (e.g., "https://arc.plumenetwork.xyz/tokens/metadata.json")
+     */
+    function setTokenURI(
+        string memory newTokenURI
+    ) external onlyRole(MANAGER_ROLE) {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        _getArcTokenStorage().tokenURI = newTokenURI;
+        emit TokenURIUpdated(newTokenURI);
+    }
+
+    // -------------- Token Metadata Management --------------
+    /**
+     * @dev Updates the token symbol. Only accounts with MANAGER_ROLE can update this.
+     * @param newSymbol The new symbol for the token
+     */
+    function updateTokenSymbol(
+        string memory newSymbol
+    ) external onlyRole(MANAGER_ROLE) {
+        ArcTokenStorage storage $ = _getArcTokenStorage();
+        string memory oldSymbol = symbol();
+        $.updatedSymbol = newSymbol;
+        emit SymbolUpdated(oldSymbol, newSymbol);
+    }
+
+    // Getter View Functions
+    /**
      * @dev Checks if an account is whitelisted.
      */
     function isWhitelisted(
@@ -229,23 +258,32 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         return _getArcTokenStorage().isWhitelisted[account];
     }
 
-    // -------------- Transfer Restrictions Toggle --------------
-    /**
-     * @dev Toggles transfer restrictions. When `transfersAllowed` is true, anyone can transfer tokens.
-     * When false, only whitelisted addresses can send/receive tokens.
-     */
-    function setTransfersAllowed(
-        bool allowed
-    ) external onlyRole(ADMIN_ROLE) {
-        _getArcTokenStorage().transfersAllowed = allowed;
-        emit TransfersRestrictionToggled(allowed);
-    }
-
     /**
      * @dev Returns true if token transfers are currently unrestricted (open to all).
      */
     function transfersAllowed() external view returns (bool) {
         return _getArcTokenStorage().transfersAllowed;
+    }
+
+    /**
+     * @dev Returns the URI for token metadata.
+     * @notice The URI should point to a JSON metadata object that follows the ERC-1155/OpenSea
+     * metadata standard format:
+     * {
+     *     "name": "Token Name",
+     *     "symbol": "SYMBOL",
+     *     "description": "Token description",
+     *     "image": "https://...", // URL to token image
+     *     "decimals": 18,
+     *     "properties": {
+     *         "assetName": "Asset Name",
+     *         "assetValuation": "1000000",
+     *         // other properties as needed
+     *     }
+     * }
+     */
+    function uri() public view returns (string memory) {
+        return _getArcTokenStorage().tokenURI;
     }
 
     // -------------- Minting and Burning --------------
@@ -264,7 +302,19 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         _burn(from, amount);
     }
 
-    // -------------- Yield Distribution --------------
+    // -------------- Transfer Restrictions Toggle --------------
+    /**
+     * @dev Toggles transfer restrictions. When `transfersAllowed` is true, anyone can transfer tokens.
+     * When false, only whitelisted addresses can send/receive tokens.
+     */
+    function setTransfersAllowed(
+        bool allowed
+    ) external onlyRole(ADMIN_ROLE) {
+        _getArcTokenStorage().transfersAllowed = allowed;
+        emit TransfersRestrictionToggled(allowed);
+    }
+
+    //  Yield Distribution
     /**
      * @dev Sets or updates the ERC20 token to use for yield distribution (e.g., USDC).
      * Only accounts with YIELD_MANAGER_ROLE can update this.
@@ -580,55 +630,8 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         return (nextIndex, totalHolders, amountDistributed);
     }
 
-    // -------------- URI Management --------------
-    /**
-     * @dev Returns the URI for token metadata.
-     * @notice The URI should point to a JSON metadata object that follows the ERC-1155/OpenSea
-     * metadata standard format:
-     * {
-     *     "name": "Token Name",
-     *     "symbol": "SYMBOL",
-     *     "description": "Token description",
-     *     "image": "https://...", // URL to token image
-     *     "decimals": 18,
-     *     "properties": {
-     *         "assetName": "Asset Name",
-     *         "assetValuation": "1000000",
-     *         // other properties as needed
-     *     }
-     * }
-     */
-    function uri() public view returns (string memory) {
-        return _getArcTokenStorage().tokenURI;
-    }
+    // Override functions
 
-    /**
-     * @dev Sets the complete token URI. Only callable by MANAGER_ROLE.
-     * @param newTokenURI The full URI including domain (e.g., "https://arc.plumenetwork.xyz/tokens/metadata.json")
-     */
-    function setTokenURI(
-        string memory newTokenURI
-    ) external onlyRole(MANAGER_ROLE) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        _getArcTokenStorage().tokenURI = newTokenURI;
-        emit TokenURIUpdated(newTokenURI);
-    }
-
-    // -------------- Token Metadata Management --------------
-    /**
-     * @dev Updates the token symbol. Only accounts with MANAGER_ROLE can update this.
-     * @param newSymbol The new symbol for the token
-     */
-    function updateTokenSymbol(
-        string memory newSymbol
-    ) external onlyRole(MANAGER_ROLE) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
-        string memory oldSymbol = symbol();
-        $.updatedSymbol = newSymbol;
-        emit SymbolUpdated(oldSymbol, newSymbol);
-    }
-
-    // Override _update to track holders and enforce transfer restrictions
     function _update(address from, address to, uint256 amount) internal virtual override {
         // Check transfer restrictions
         ArcTokenStorage storage $ = _getArcTokenStorage();
