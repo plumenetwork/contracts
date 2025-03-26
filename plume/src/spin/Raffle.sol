@@ -13,11 +13,14 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 
     struct Prize {
         string name;
+        string description;
+        uint256 value;
         uint256 totalTickets;
         bool isActive;
         address winner;
         uint256 winnerIndex;
         uint256 totalUsers;
+        uint256 endTimestamp;
     }
 
     struct Index {
@@ -110,7 +113,12 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     /**
      * @notice Adds a new prize with an initial total ticket pool of 0.
      */
-    function addPrize(uint256 prizeId, string memory name) external onlyRole(ADMIN_ROLE) {
+    function addPrize(
+        uint256 prizeId,
+        string memory name,
+        string memory description,
+        uint256 value
+    ) external onlyRole(ADMIN_ROLE) {
         RaffleStorage storage $ = _getRaffleStorage();
         if ($.prizes[prizeId].isActive) {
             revert PrizeAlreadyExists();
@@ -119,8 +127,17 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         // Add prize to the list
         $.prizeIds.push(prizeId);
 
-        $.prizes[prizeId] =
-            Prize({ name: name, totalTickets: 0, isActive: true, winner: address(0), winnerIndex: 0, totalUsers: 0 });
+        $.prizes[prizeId] = Prize({
+            name: name,
+            description: description,
+            value: value,
+            totalTickets: 0,
+            isActive: true,
+            winner: address(0),
+            winnerIndex: 0,
+            totalUsers: 0,
+            endTimestamp: 0
+        });
 
         emit PrizeAdded(prizeId, name);
     }
@@ -215,6 +232,11 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit WinnerSelected(prizeId, winnerIndex);
     }
 
+    function getWinner(
+        uint256 prizeId,
+        uint256 winnerIndex
+    ) external view onlyRole(ADMIN_ROLE) returns (address winner) { }
+
     /**
      * @notice Allows the winner to claim their prize
      */
@@ -260,6 +282,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         view
         returns (
             string memory name,
+            string memory description,
             uint256 ticketCost,
             bool isActive,
             address winner,
@@ -269,13 +292,21 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     {
         RaffleStorage storage $ = _getRaffleStorage();
         Prize storage prize = $.prizes[prizeId];
-        return (prize.name, prize.totalTickets, prize.isActive, prize.winner, prize.winnerIndex, prize.totalUsers);
+        return (
+            prize.name,
+            prize.description,
+            prize.totalTickets,
+            prize.isActive,
+            prize.winner,
+            prize.winnerIndex,
+            prize.totalUsers
+        );
     }
 
     function getPrizeDetails() external view returns (Prize[] memory) {
         RaffleStorage storage $ = _getRaffleStorage();
-        Prize[] memory prizes;
         uint256 prizeCount = $.prizeIds.length;
+        Prize[] memory prizes = new Prize[](prizeCount);
         for (uint256 i = 0; i < prizeCount; i++) {
             prizes[i] = $.prizes[$.prizeIds[i]];
         }
@@ -300,7 +331,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 
     function getUserEntries(
         address user
-    ) external view returns (uint256[] memory, uint256[] memory) {
+    ) external view returns (uint256[] memory, uint256[] memory, uint256[] memory) {
         RaffleStorage storage $ = _getRaffleStorage();
         uint256 prizeCount = $.prizeIds.length;
 
@@ -317,7 +348,17 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             ticketCounts[i] = _ticketCounts;
         }
 
-        return (ticketCounts, $.winnings[user]);
+        return ($.prizeIds, ticketCounts, $.winnings[user]);
+    }
+
+    function updatePrizeEndTimestamp(
+        uint256 prizeId,
+        uint256 endtimestamp
+    ) external onlyRole(ADMIN_ROLE) onlyValidPrize(prizeId) {
+        RaffleStorage storage $ = _getRaffleStorage();
+        Prize storage prize = $.prizes[prizeId];
+
+        prize.endTimestamp = endtimestamp;
     }
 
     // UUPS Authorization

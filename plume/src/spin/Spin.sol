@@ -479,6 +479,35 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         $.whitelists[user] = true;
     }
 
+    function setRaffleContract(
+        address raffleContract
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.raffleContract = raffleContract;
+    }
+
+    /**
+     * @notice Returns the current week's jackpot prize and required streak count
+     */
+    function getWeeklyJackpot()
+        external
+        view
+        returns (uint256 weekNumber, uint256 jackpotPrize, uint256 requiredStreak)
+    {
+        SpinStorage storage $ = _getSpinStorage();
+        require($.campaignStartDate > 0, "Campaign not started");
+
+        uint256 daysSinceStart = (block.timestamp - $.campaignStartDate) / 1 days;
+        weekNumber = daysSinceStart / 7;
+
+        if (weekNumber > 11) {
+            return (weekNumber, 0, 0);
+        }
+
+        jackpotPrize = $.jackpotPrizes[uint8(weekNumber)];
+        requiredStreak = weekNumber + 2;
+    }
+
     // UUPS Authorization
     /**
      * @notice Authorizes the upgrade of the contract.
