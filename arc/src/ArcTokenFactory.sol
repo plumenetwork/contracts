@@ -82,20 +82,21 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         string memory tokenUri,
         address initialTokenHolder
     ) external returns (address) {
+        FactoryStorage storage fs = _getFactoryStorage();
+
         // Deploy a fresh implementation for this token
         ArcToken implementation = new ArcToken();
 
         // Add the implementation to the whitelist
-        FactoryStorage storage fs = _getFactoryStorage();
         bytes32 codeHash = _getCodeHash(address(implementation));
         fs.allowedImplementations[codeHash] = true;
 
         // Use caller as token holder if not specified
         address tokenHolder = initialTokenHolder == address(0) ? msg.sender : initialTokenHolder;
 
-        // Create initialization data
+        // Create initialization data with default decimals (18)
         bytes memory initData = abi.encodeWithSelector(
-            ArcToken.initializeWithDefaultDecimals.selector, name, symbol, initialSupply, yieldToken, tokenHolder
+            ArcToken.initialize.selector, name, symbol, initialSupply, yieldToken, tokenHolder, 18
         );
 
         // Deploy proxy with the fresh implementation

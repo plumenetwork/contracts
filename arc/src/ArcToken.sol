@@ -148,17 +148,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         }
     }
 
-    // Backward compatibility for older deployment scripts
-    function initializeWithDefaultDecimals(
-        string memory name_,
-        string memory symbol_,
-        uint256 initialSupply_,
-        address yieldToken_,
-        address initialTokenHolder_
-    ) public initializer {
-        initialize(name_, symbol_, initialSupply_, yieldToken_, initialTokenHolder_, 18);
-    }
-
     // Manager Functions
     /**
      * @dev Update the token name. Only accounts with MANAGER_ROLE can update this.
@@ -261,6 +250,14 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      */
     function transfersAllowed() external view returns (bool) {
         return _getArcTokenStorage().transfersAllowed;
+    }
+
+    /**
+     * @dev Returns the address of the current yield token.
+     * @return The address of the ERC20 token used for yield distribution
+     */
+    function getYieldToken() external view returns (address) {
+        return _getArcTokenStorage().yieldToken;
     }
 
     /**
@@ -513,12 +510,35 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             }
         }
 
-        // Last holder gets the remaining amount to ensure full distribution
+        // Handle the last holder - make sure they have a positive balance
         address lastHolder = $.holders.at(holderCount - 1);
+        uint256 lastHolderBalance = balanceOf(lastHolder);
         uint256 lastShare = amount - distributedSum;
 
         if (lastShare > 0) {
-            yToken.safeTransfer(lastHolder, lastShare);
+            // Only distribute to the last holder if they have tokens
+            if (lastHolderBalance > 0) {
+                yToken.safeTransfer(lastHolder, lastShare);
+            } else {
+                // Last holder has no tokens, find another holder with tokens
+                bool foundValidHolder = false;
+                for (uint256 i = holderCount - 2; i < holderCount; i--) {
+                    // Edge case: We've reached the beginning of the array
+                    if (i >= holderCount) {
+                        break;
+                    }
+
+                    address alternateHolder = $.holders.at(i);
+                    if (balanceOf(alternateHolder) > 0) {
+                        yToken.safeTransfer(alternateHolder, lastShare);
+                        foundValidHolder = true;
+                        break;
+                    }
+                }
+
+                // If no valid holder was found, the remaining tokens stay in the contract
+                // This is a rare edge case and ensures tokens are not lost
+            }
         }
 
         emit YieldDistributed(amount, yieldTokenAddr);
@@ -611,14 +631,38 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         // Set the index for the next batch
         nextIndex = endIndex < totalHolders ? endIndex : 0;
 
-        // If this is the last batch, distribute any remaining amount to the last holder
+        // If this is the last batch, distribute any remaining amount to a valid holder
         if (nextIndex == 0 && amountDistributed < totalAmount) {
             address lastHolder = $.holders.at(totalHolders - 1);
+            uint256 lastHolderBalance = balanceOf(lastHolder);
             uint256 remainingAmount = totalAmount - amountDistributed;
 
             if (remainingAmount > 0) {
-                yToken.safeTransfer(lastHolder, remainingAmount);
-                amountDistributed += remainingAmount;
+                // Only distribute to the last holder if they have tokens
+                if (lastHolderBalance > 0) {
+                    yToken.safeTransfer(lastHolder, remainingAmount);
+                    amountDistributed += remainingAmount;
+                } else {
+                    // Last holder has no tokens, find another holder with tokens
+                    bool foundValidHolder = false;
+                    for (uint256 i = totalHolders - 2; i < totalHolders; i--) {
+                        // Edge case: We've reached the beginning of the array
+                        if (i >= totalHolders) {
+                            break;
+                        }
+
+                        address alternateHolder = $.holders.at(i);
+                        if (balanceOf(alternateHolder) > 0) {
+                            yToken.safeTransfer(alternateHolder, remainingAmount);
+                            amountDistributed += remainingAmount;
+                            foundValidHolder = true;
+                            break;
+                        }
+                    }
+
+                    // If no valid holder was found, the remaining tokens stay in the contract
+                    // This is a rare edge case and ensures tokens are not lost
+                }
             }
 
             // Emit the event for the full distribution only after completing all batches
@@ -637,18 +681,24 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             revert TransferRestricted();
         }
 
-        // Check sender balance before transfer to determine if they'll have a zero balance after
+        // Store sender's balance before transfer to determine if they'll have a zero balance after
+        uint256 fromBalanceBefore = 0;
         if (from != address(0)) {
             // Skip for minting
-            uint256 fromBalanceBefore = balanceOf(from);
-            if (fromBalanceBefore == amount) {
-                // Will have zero balance after transfer, remove from holders
-                $.holders.remove(from);
-            }
+            fromBalanceBefore = balanceOf(from);
         }
 
         // Call parent implementation to perform the transfer
         super._update(from, to, amount);
+
+        // Update the holders list after the transfer
+        if (from != address(0)) {
+            // Skip for minting
+            if (fromBalanceBefore == amount && balanceOf(from) == 0) {
+                // Remove from holders if balance is now zero
+                $.holders.remove(from);
+            }
+        }
 
         // Add recipient to holders if they're receiving tokens and not burning
         if (to != address(0) && balanceOf(to) > 0) {
