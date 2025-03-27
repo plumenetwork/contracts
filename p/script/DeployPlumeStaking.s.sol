@@ -16,16 +16,18 @@ contract DeployPlumeStaking is Script {
     address private constant ADMIN_ADDRESS = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
     address private constant PLUME_TOKEN_ADDRESS = 0x17F085f1437C54498f0085102AB33e7217C067C8;
     address private constant PUSD_TOKEN_ADDRESS = 0x81A7A4Ece4D161e720ec602Ad152a7026B82448b;
-    //https://phoenix-explorer.plumenetwork.xyz/address/0x81a7a4ece4d161e720ec602ad152a7026b82448b?tab=contract
+    address private constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
     // Initial staking parameters
     uint256 private constant MIN_STAKE_AMOUNT = 1e18; // 1 PLUME
     uint256 private constant COOLDOWN_INTERVAL = 7 days;
+    uint256 private constant REWARD_PRECISION = 1e18;
 
-    // Initial reward rates (scaled by 1e18)
-    // Current setting: 6e15 (this value can be updated by admin)
-    // Calculated as: (BASE * 0.05 ) / (31536000)
-    uint256 private constant PLUME_REWARD_RATE = 1_587_301_587; // ~0% APY
-    uint256 private constant PUSD_REWARD_RATE = 0; // ~5% APY
+    // Initial reward rates (scaled by REWARD_PRECISION)
+    // Current setting: ~5% APY
+    // Calculated as: (REWARD_PRECISION * 0.05) / (365 * 24 * 60 * 60)
+    uint256 private constant PLUME_REWARD_RATE = 1_587_301_587;
+    uint256 private constant PUSD_REWARD_RATE = 1_587_301_587;
 
     function run() external {
         vm.startBroadcast(ADMIN_ADDRESS);
@@ -49,19 +51,24 @@ contract DeployPlumeStaking is Script {
 
         PlumeStaking plumeStaking = PlumeStaking(payable(address(proxy)));
 
+        // 4. Add reward tokens
         plumeStaking.addRewardToken(PUSD_TOKEN_ADDRESS);
-        plumeStaking.addRewardToken(address(0)); // Add native PLUME token as reward
+        plumeStaking.addRewardToken(PLUME_NATIVE); // Use PLUME_NATIVE constant for native token
 
         // 5. Set reward rates using arrays
         address[] memory tokens = new address[](2);
         uint256[] memory rates = new uint256[](2);
 
         tokens[0] = PUSD_TOKEN_ADDRESS;
-        tokens[1] = address(0); // Use address(0) for native PLUME token
+        tokens[1] = PLUME_NATIVE;
         rates[0] = PUSD_REWARD_RATE;
         rates[1] = PLUME_REWARD_RATE;
 
         plumeStaking.setRewardRates(tokens, rates);
+
+        // 6. Set initial parameters
+        plumeStaking.setMinStakeAmount(MIN_STAKE_AMOUNT);
+        plumeStaking.setCooldownInterval(COOLDOWN_INTERVAL);
 
         // Log deployment information
         console2.log("\nDeployment Configuration:");
@@ -70,7 +77,12 @@ contract DeployPlumeStaking is Script {
         console2.log("Proxy:", address(proxy));
         console2.log("Admin:", ADMIN_ADDRESS);
         console2.log("PLUME Token:", PLUME_TOKEN_ADDRESS);
+        console2.log("PLUME Native:", PLUME_NATIVE);
         console2.log("pUSD Token:", PUSD_TOKEN_ADDRESS);
+        console2.log("Min Stake Amount:", MIN_STAKE_AMOUNT);
+        console2.log("Cooldown Interval:", COOLDOWN_INTERVAL);
+        console2.log("PLUME Reward Rate:", PLUME_REWARD_RATE);
+        console2.log("pUSD Reward Rate:", PUSD_REWARD_RATE);
 
         vm.stopBroadcast();
     }
