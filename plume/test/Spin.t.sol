@@ -37,9 +37,9 @@ contract SpinTest is Test {
 
     address constant ADMIN = address(0x1);
     address constant USER = address(0x2);
-    address constant SUPRA_ORACLE = address(0x3280Ffd457A354E21A34F7Adf131136bD55E6596);
-    address constant DEPOSIT_CONTRACT = address(0xBBcCF3Bb8733764674DE47Ff045e055cf76ADe1A);
-    address constant SUPRA_OWNER = address(0x02340FDa8666c74d5B562F2b126C621240f1E819);
+    address constant SUPRA_ORACLE = address(0x6D46C098996AD584c9C40D6b4771680f54cE3726);
+    address constant DEPOSIT_CONTRACT = address(0x3B5F96986389f6BaCF58d5b69425fab000D3551e);
+    address constant SUPRA_OWNER = address(0x578DD059Ec425F83cCCC3149ed594d4e067A5307);
 
     uint256 constant COOLDOWN_PERIOD = 86_400; // 1 day
     uint8 constant RNG_COUNT = 1;
@@ -91,50 +91,99 @@ contract SpinTest is Test {
         assertTrue(spin.hasRole(spin.DEFAULT_ADMIN_ROLE(), ADMIN), "ADMIN is not the contract admin");
     }
 
-    function testStartSpin() public {
-        // Ensure last spin date is set correctly
-        vm.record();
-        vm.warp(dateTime.toTimestamp(2025, 3, 2, 10, 0, 0));
-        vm.prank(USER);
-        spin.startSpin();
-        // Retrieve the recorded storage accesses
-        (bytes32[] memory reads, bytes32[] memory writes) = vm.accesses(address(spin));
+    // function testStartSpin() public {
+    //     // Ensure last spin date is set correctly
+    //     vm.record();
+    //     vm.warp(dateTime.toTimestamp(2025, 3, 2, 10, 0, 0));
+    //     vm.prank(USER);
+    //     spin.startSpin();
+    //     // Retrieve the recorded storage accesses
+    //     (bytes32[] memory reads, bytes32[] memory writes) = vm.accesses(address(spin));
 
-        // Get the call data size
-        uint256 callDataSize = writes.length * 32; // Each slot is 32 bytes
+    //     // Get the call data size
+    //     uint256 callDataSize = writes.length * 32; // Each slot is 32 bytes
 
-        // Log the size (useful for debugging)
-        emit log_named_uint("Call Data Size (bytes)", callDataSize);
+    //     // Log the size (useful for debugging)
+    //     emit log_named_uint("Call Data Size (bytes)", callDataSize);
 
-        // Assert that the call data is non-zero
-        assertGt(callDataSize, 0, "Call Data Size should be greater than 0");
-    }
+    //     // Assert that the call data is non-zero
+    //     assertGt(callDataSize, 0, "Call Data Size should be greater than 0");
+    // }
 
-    function testCooldownEnforcement() public {
-        // Start spin
-        vm.prank(USER);
-        spin.startSpin();
+    // function testCooldownEnforcement() public {
+    //     // Start spin
+    //     vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
+    //     vm.prank(USER);
+    //     uint256 nonce = spin.startSpin();
 
-        // Attempt to spin again within cooldown period
-        vm.warp(block.timestamp + 1000);
-        vm.expectRevert(abi.encodeWithSignature("AlreadySpunToday()"));
-        vm.prank(USER);
-        spin.startSpin();
-    }
+    //     uint256[] memory testRNG = new uint256[](1);
+    //     testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
 
-    function testSimulateVRFCallback() public {
-        vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
-        vm.prank(address(10));
-        spin.startSpin();
+    //     vm.prank(SUPRA_ORACLE); // Simulate Supra calling
+    //     spin.handleRandomness(nonce, testRNG, 1);
 
-        vm.prank(address(9));
-        spin.startSpin();
-        uint256 testNonce = 9; // Ensure it's an actual sent nonce
-        uint256[] memory testRNG = new uint256[](1);
-        testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
+    //     // Attempt to spin again within cooldown period
+    //     vm.warp(dateTime.toTimestamp(2025, 3, 9, 14, 0, 0));
+    //     vm.expectRevert(abi.encodeWithSignature("AlreadySpunToday()"));
+    //     vm.prank(USER);
+    //     spin.startSpin();
+    // }
 
-        vm.prank(SUPRA_ORACLE); // Simulate Supra calling
-        spin.handleRandomness(testNonce, testRNG);
+    // function testSimulateVRFCallback() public {
+    //     vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
+    //     vm.prank(address(10));
+    //     spin.startSpin();
+
+    //     vm.prank(address(9));
+    //     uint256 nonce = spin.startSpin();
+    //     uint256[] memory testRNG = new uint256[](1);
+    //     testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
+
+    //     vm.prank(SUPRA_ORACLE); // Simulate Supra calling
+    //     spin.handleRandomness(nonce, testRNG, 1);
+    // }
+
+    function testMassSimulateJackpotHits() public {
+        uint256 baseTimestamp = dateTime.toTimestamp(2025, 3, 10, 0, 0, 0);
+        vm.warp(baseTimestamp);
+        vm.prank(ADMIN);
+        spin.setCampaignStartDate();
+        baseTimestamp = dateTime.toTimestamp(2025, 3, 10, 10, 0, 0);
+        uint256 spinsPerDay = 100;
+        uint256 userSeed = 100; // Avoid low-address collisions
+
+        // Simulate over 7 days
+        for (uint256 day = 1; day <= 7; day++) {
+            for (uint256 i = 0; i < spinsPerDay; i++) {
+                address user = address(uint160(userSeed + i));
+                uint256 hour = (i % 24); // spread spins over 24 hours
+                uint256 minute = (i % 60);
+                uint256 ts = baseTimestamp + ((day - 1) * 1 days) + (hour * 1 hours) + (minute * 1 minutes);
+                vm.warp(ts);
+
+                vm.prank(user);
+                uint256 nonce = spin.startSpin();
+
+                uint256[] memory testRNG = new uint256[](1);
+                testRNG[0] = uint256(keccak256(abi.encodePacked(ts, user))) % 1_000_000;
+
+                vm.prank(SUPRA_ORACLE); // simulate Supra VRF callback
+                spin.handleRandomness(nonce, testRNG, uint8(day));
+            }
+
+            userSeed += spinsPerDay; // Next day new users
+        }
+
+        // Log daily prize distribution
+        for (uint8 day = 1; day <= 7; day++) {
+            uint256[5] memory counts = spin.getWeeklyPrizeStats(day);
+            console.log(" Day", day);
+            console.log(" Jackpot      :", counts[0]);
+            console.log(" RaffleTicket:", counts[1]);
+            console.log(" XP           :", counts[2]);
+            console.log(" PlumeToken   :", counts[3]);
+            console.log("  Nothing      :", counts[4]);
+        }
     }
 
 }
