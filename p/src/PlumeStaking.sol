@@ -21,15 +21,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     // Storage
 
-    /// @dev Source of stake
-    enum StakeSource {
-        WALLET, // Direct stake from wallet
-        PARKED, // Stake from parked balance
-        COOLING, // Stake from cooling balance
-        CLAIM // Claim rewards and stake them
-
-    }
-
     event DebugClaim(
         address token,
         uint256 amount,
@@ -77,6 +68,57 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         mapping(address => mapping(address => uint256)) rewards;
         /// @notice Mapping to track if an address is already in stakers array
         mapping(address => bool) isStaker;
+        // Validator related storage
+        /// @notice Information about each validator
+        mapping(uint16 => ValidatorInfo) validators;
+        /// @notice Array of all validator IDs
+        uint16[] validatorIds;
+        /// @notice Mapping to check if a validator exists
+        mapping(uint16 => bool) validatorExists;
+        /// @notice Maps a (user, validator) pair to the user's stake info for that validator
+        mapping(address => mapping(uint16 => StakeInfo)) userValidatorStakes;
+        /// @notice Maps a user to all validators they have staked with
+        mapping(address => uint16[]) userValidators;
+        /// @notice Maps a (user, validator) pair to indicate if user has staked with that validator
+        mapping(address => mapping(uint16 => bool)) userHasStakedWithValidator;
+        /// @notice Maps a validator to all stakers who have staked with it
+        mapping(uint16 => address[]) validatorStakers;
+        /// @notice Maps a (validator, staker) pair to indicate if staker has staked with that validator
+        mapping(uint16 => mapping(address => bool)) isStakerForValidator;
+        /// @notice Maps a validator to its total staked amount
+        mapping(uint16 => uint256) validatorTotalStaked;
+        /// @notice Maps a validator to its total cooling amount
+        mapping(uint16 => uint256) validatorTotalCooling;
+        /// @notice Maps a validator to its total withdrawable amount
+        mapping(uint16 => uint256) validatorTotalWithdrawable;
+        /// @notice Maps a (validator, token) pair to the last time rewards were updated
+        mapping(uint16 => mapping(address => uint256)) validatorLastUpdateTimes;
+        /// @notice Maps a (validator, token) pair to the reward per token accumulated
+        mapping(uint16 => mapping(address => uint256)) validatorRewardPerTokenCumulative;
+        /// @notice Maps a (user, validator, token) triple to the reward per token paid
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userRewardPerTokenPaid;
+        /// @notice Maps a (user, validator, token) triple to the rewards earned
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userRewards;
+        /// @notice Maps a (validator, token) pair to the commission accumulated
+        mapping(uint16 => mapping(address => uint256)) validatorAccruedCommission;
+        /// @notice Flag to indicate if epochs are being used
+        bool usingEpochs;
+        /// @notice Current epoch number
+        uint256 currentEpochNumber;
+        /// @notice Maps epoch number to validator amounts for each validator
+        mapping(uint256 => mapping(uint16 => uint256)) epochValidatorAmounts;
+    }
+
+    // Validator info struct to store validator details
+    struct ValidatorInfo {
+        uint16 validatorId; // Fixed UUID for the validator
+        uint256 commission; // Commission rate (BASE = 1e18, so 5% = 5e16)
+        uint256 delegatedAmount; // Total amount delegated to this validator
+        address l2AdminAddress; // Admin address (multisig)
+        address l2WithdrawAddress; // Address for validator rewards
+        string l1ValidatorAddress; // L1 validator address (for reference)
+        string l1AccountAddress; // L1 account address (for reference)
+        bool active; // Whether the validator is active
     }
 
     // Modified StakeInfo struct to reflect changes
@@ -160,6 +202,99 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      */
     event RewardsAdded(address indexed token, uint256 amount);
 
+    /**
+     * @notice Emitted when a user stakes PLUME to a validator
+     * @param user Address of the user
+     * @param validatorId ID of the validator
+     * @param amount Total amount staked
+     * @param fromCooling Amount taken from cooling
+     * @param fromParked Amount taken from parked
+     * @param fromWallet Amount taken from wallet
+     */
+    event StakedToValidator(
+        address indexed user,
+        uint16 indexed validatorId,
+        uint256 amount,
+        uint256 fromCooling,
+        uint256 fromParked,
+        uint256 fromWallet
+    );
+
+    /**
+     * @notice Emitted when a user unstakes PLUME from a validator
+     * @param user Address of the user
+     * @param validatorId ID of the validator
+     * @param amount Amount unstaked
+     */
+    event UnstakedFromValidator(address indexed user, uint16 indexed validatorId, uint256 amount);
+
+    /**
+     * @notice Emitted when a user claims rewards from a validator
+     * @param user Address of the user
+     * @param token Address of the reward token
+     * @param validatorId ID of the validator
+     * @param amount Amount claimed
+     */
+    event RewardClaimedFromValidator(
+        address indexed user, address indexed token, uint16 indexed validatorId, uint256 amount
+    );
+
+    /**
+     * @notice Emitted when validator commission is claimed
+     * @param validatorId ID of the validator
+     * @param token Address of the token
+     * @param amount Amount of commission claimed
+     */
+    event ValidatorCommissionClaimed(uint16 indexed validatorId, address indexed token, uint256 amount);
+
+    /**
+     * @notice Emitted when a validator is added
+     * @param validatorId ID of the validator
+     * @param commission Commission rate
+     * @param l2AdminAddress Admin address
+     * @param l2WithdrawAddress Withdrawal address
+     * @param l1ValidatorAddress L1 validator address
+     * @param l1AccountAddress L1 account address
+     */
+    event ValidatorAdded(
+        uint16 indexed validatorId,
+        uint256 commission,
+        address l2AdminAddress,
+        address l2WithdrawAddress,
+        string l1ValidatorAddress,
+        string l1AccountAddress
+    );
+
+    /**
+     * @notice Emitted when a validator is updated
+     * @param validatorId ID of the validator
+     * @param commission New commission rate
+     * @param l2AdminAddress New admin address
+     * @param l2WithdrawAddress New withdrawal address
+     * @param l1ValidatorAddress New L1 validator address
+     * @param l1AccountAddress New L1 account address
+     */
+    event ValidatorUpdated(
+        uint16 indexed validatorId,
+        uint256 commission,
+        address l2AdminAddress,
+        address l2WithdrawAddress,
+        string l1ValidatorAddress,
+        string l1AccountAddress
+    );
+
+    /**
+     * @notice Emitted when a validator is deactivated
+     * @param validatorId ID of the validator
+     */
+    event ValidatorDeactivated(uint16 indexed validatorId);
+
+    /**
+     * @notice Emitted when a validator is activated
+     * @param validatorId ID of the validator
+     */
+    event ValidatorActivated(uint16 indexed validatorId);
+
     // Errors
 
     /**
@@ -217,6 +352,38 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
      * @dev This error occurs in setRewardRates when tokens.length == 0
      */
     error EmptyArray();
+
+    /**
+     * @notice Thrown when trying to interact with a validator that doesn't exist
+     * @param validatorId ID of the non-existent validator
+     */
+    error ValidatorDoesNotExist(uint16 validatorId);
+
+    /**
+     * @notice Thrown when trying to add a validator that already exists
+     * @param validatorId ID of the already existing validator
+     */
+    error ValidatorAlreadyExists(uint16 validatorId);
+
+    /**
+     * @notice Thrown when commission is set too high
+     * @param commission Specified commission rate
+     * @param maxCommission Maximum allowed commission rate
+     */
+    error CommissionTooHigh(uint256 commission, uint256 maxCommission);
+
+    /**
+     * @notice Thrown when a non-admin tries to perform an admin action for a validator
+     * @param caller Address that tried to perform the action
+     * @param validatorId ID of the validator
+     */
+    error NotValidatorAdmin(address caller, uint16 validatorId);
+
+    /**
+     * @notice Thrown when trying to interact with an inactive validator
+     * @param validatorId ID of the inactive validator
+     */
+    error ValidatorInactive(uint16 validatorId);
 
     /**
      * @notice Thrown when attempting to set a reward rate higher than the maximum allowed
@@ -289,7 +456,6 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     // External Functions
 
-    // Modified to accept native tokens
     /**
      * @notice Stake PLUME into the contract
      */
@@ -317,6 +483,55 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     /**
+     * @notice Stake PLUME to a specific validator
+     * @param validatorId ID of the validator to stake to
+     */
+    function stakeToValidator(
+        uint16 validatorId
+    ) external payable nonReentrant {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        // Verify validator exists and is active
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        ValidatorInfo storage validator = $.validators[validatorId];
+        if (!validator.active) {
+            revert ValidatorInactive(validatorId);
+        }
+
+        uint256 amount = msg.value;
+        if (amount < $.minStakeAmount) {
+            revert InvalidAmount(amount, $.minStakeAmount);
+        }
+
+        // Get user's stake info for this validator
+        StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
+
+        // Update rewards before changing stake amount
+        _updateRewardsForValidator(msg.sender, validatorId);
+
+        // Update user's staked amount for this validator
+        info.staked += amount;
+
+        // Update validator's delegated amount
+        validator.delegatedAmount += amount;
+
+        // Update total staked amounts
+        $.validatorTotalStaked[validatorId] += amount;
+        $.totalStaked += amount;
+
+        // Track user-validator relationship
+        _addStakerToValidator(msg.sender, validatorId);
+
+        // Update rewards again with new stake amount
+        _updateRewardsForValidator(msg.sender, validatorId);
+
+        emit StakedToValidator(msg.sender, validatorId, amount, 0, 0, amount);
+    }
+
+    /**
      * @notice Unstake PLUME from the contract
      * @return amount Amount of PLUME unstaked
      */
@@ -336,6 +551,56 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         info.cooldownEnd = block.timestamp + $.cooldownInterval;
 
         emit Unstaked(msg.sender, amount);
+        return amount;
+    }
+
+    /**
+     * @notice Unstake PLUME from a specific validator
+     * @param validatorId ID of the validator to unstake from
+     * @return amount Amount of PLUME unstaked
+     */
+    function unstakeFromValidator(
+        uint16 validatorId
+    ) external nonReentrant returns (uint256 amount) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        // Verify validator exists
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        // Get user's stake info for this validator
+        StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
+
+        if (info.staked == 0) {
+            revert NoActiveStake();
+        }
+
+        // Update rewards before changing stake amount
+        _updateRewardsForValidator(msg.sender, validatorId);
+
+        // Get unstaked amount
+        amount = info.staked;
+
+        // Update user's staked amount for this validator
+        info.staked = 0;
+
+        // Update validator's delegated amount
+        $.validators[validatorId].delegatedAmount -= amount;
+
+        // Update total staked amounts
+        $.validatorTotalStaked[validatorId] -= amount;
+        $.totalStaked -= amount;
+
+        // Move tokens to cooling period
+        info.cooled += amount;
+        info.cooldownEnd = block.timestamp + $.cooldownInterval;
+
+        // Update cooling totals
+        $.validatorTotalCooling[validatorId] += amount;
+        $.totalCooling += amount;
+
+        emit UnstakedFromValidator(msg.sender, validatorId, amount);
         return amount;
     }
 
@@ -409,6 +674,128 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             }
 
             emit RewardClaimed(msg.sender, token, amount);
+        }
+
+        return amount;
+    }
+
+    /**
+     * @notice Claim all accumulated rewards from a single token and validator
+     * @param token Address of the reward token to claim
+     * @param validatorId ID of the validator to claim from
+     * @return amount Amount of reward token claimed
+     */
+    function claimFromValidator(address token, uint16 validatorId) external nonReentrant returns (uint256 amount) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (!_isRewardToken(token)) {
+            revert TokenDoesNotExist(token);
+        }
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        _updateRewardsForValidator(msg.sender, validatorId);
+
+        amount = $.userRewards[msg.sender][validatorId][token];
+        if (amount > 0) {
+            $.userRewards[msg.sender][validatorId][token] = 0;
+
+            // Transfer tokens - either ERC20 or native PLUME
+            if (token != PLUME) {
+                IERC20(token).safeTransfer(msg.sender, amount);
+            } else {
+                payable(msg.sender).sendValue(amount);
+            }
+
+            emit RewardClaimedFromValidator(msg.sender, token, validatorId, amount);
+        }
+
+        return amount;
+    }
+
+    /**
+     * @notice Claim all accumulated rewards from a single token across all validators
+     * @param token Address of the reward token to claim
+     * @return totalAmount Total amount of reward token claimed
+     */
+    function claimFromAllValidators(
+        address token
+    ) external nonReentrant returns (uint256 totalAmount) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (!_isRewardToken(token)) {
+            revert TokenDoesNotExist(token);
+        }
+
+        uint16[] memory userValidators = $.userValidators[msg.sender];
+        totalAmount = 0;
+
+        for (uint256 i = 0; i < userValidators.length; i++) {
+            uint16 validatorId = userValidators[i];
+
+            _updateRewardsForValidator(msg.sender, validatorId);
+
+            uint256 amount = $.userRewards[msg.sender][validatorId][token];
+            if (amount > 0) {
+                $.userRewards[msg.sender][validatorId][token] = 0;
+                totalAmount += amount;
+
+                emit RewardClaimedFromValidator(msg.sender, token, validatorId, amount);
+            }
+        }
+
+        if (totalAmount > 0) {
+            // Transfer tokens - either ERC20 or native PLUME
+            if (token != PLUME) {
+                IERC20(token).safeTransfer(msg.sender, totalAmount);
+            } else {
+                payable(msg.sender).sendValue(totalAmount);
+            }
+        }
+
+        return totalAmount;
+    }
+
+    /**
+     * @notice Claim validator commission rewards
+     * @param validatorId ID of the validator
+     * @param token Address of the reward token to claim
+     * @return amount Amount of commission claimed
+     */
+    function claimValidatorCommission(
+        uint16 validatorId,
+        address token
+    ) external nonReentrant returns (uint256 amount) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        ValidatorInfo storage validator = $.validators[validatorId];
+
+        // Only validator admin can claim commission
+        if (msg.sender != validator.l2AdminAddress) {
+            revert NotValidatorAdmin(msg.sender, validatorId);
+        }
+
+        // Update all rewards to ensure commission is current
+        _updateRewardsForAllValidatorStakers(validatorId);
+
+        amount = $.validatorAccruedCommission[validatorId][token];
+        if (amount > 0) {
+            $.validatorAccruedCommission[validatorId][token] = 0;
+
+            // Transfer to validator's withdraw address
+            if (token != PLUME) {
+                IERC20(token).safeTransfer(validator.l2WithdrawAddress, amount);
+            } else {
+                payable(validator.l2WithdrawAddress).sendValue(amount);
+            }
+
+            emit ValidatorCommissionClaimed(validatorId, token, amount);
         }
 
         return amount;
@@ -797,6 +1184,155 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         emit RewardsAdded(token, amount);
     }
 
+    /**
+     * @notice Add a new validator
+     * @param validatorId Fixed UUID for the validator
+     * @param commission Commission rate (as fraction of REWARD_PRECISION)
+     * @param l2AdminAddress Admin address for the validator
+     * @param l2WithdrawAddress Withdrawal address for validator rewards
+     * @param l1ValidatorAddress Address of validator on L1 (informational)
+     * @param l1AccountAddress Address of account on L1 (informational)
+     */
+    function addValidator(
+        uint16 validatorId,
+        uint256 commission,
+        address l2AdminAddress,
+        address l2WithdrawAddress,
+        string calldata l1ValidatorAddress,
+        string calldata l1AccountAddress
+    ) external onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if ($.validatorExists[validatorId]) {
+            revert ValidatorAlreadyExists(validatorId);
+        }
+
+        if (l2AdminAddress == address(0)) {
+            revert ZeroAddress("l2AdminAddress");
+        }
+
+        if (l2WithdrawAddress == address(0)) {
+            revert ZeroAddress("l2WithdrawAddress");
+        }
+
+        if (commission > REWARD_PRECISION) {
+            revert CommissionTooHigh(commission, REWARD_PRECISION);
+        }
+
+        // Create new validator
+        ValidatorInfo storage validator = $.validators[validatorId];
+        validator.validatorId = validatorId;
+        validator.commission = commission;
+        validator.delegatedAmount = 0;
+        validator.l2AdminAddress = l2AdminAddress;
+        validator.l2WithdrawAddress = l2WithdrawAddress;
+        validator.l1ValidatorAddress = l1ValidatorAddress;
+        validator.l1AccountAddress = l1AccountAddress;
+        validator.active = true;
+
+        // Add to validator registry
+        $.validatorIds.push(validatorId);
+        $.validatorExists[validatorId] = true;
+
+        // Initialize epoch data if using epochs
+        if ($.usingEpochs) {
+            $.epochValidatorAmounts[$.currentEpochNumber][validatorId] = 0;
+        }
+
+        emit ValidatorAdded(
+            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress
+        );
+    }
+
+    /**
+     * @notice Update an existing validator
+     * @param validatorId ID of the validator to update
+     * @param commission New commission rate
+     * @param l2AdminAddress New admin address
+     * @param l2WithdrawAddress New withdrawal address
+     * @param l1ValidatorAddress New L1 validator address
+     * @param l1AccountAddress New L1 account address
+     */
+    function updateValidator(
+        uint16 validatorId,
+        uint256 commission,
+        address l2AdminAddress,
+        address l2WithdrawAddress,
+        string calldata l1ValidatorAddress,
+        string calldata l1AccountAddress
+    ) external onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        if (l2AdminAddress == address(0)) {
+            revert ZeroAddress("l2AdminAddress");
+        }
+
+        if (l2WithdrawAddress == address(0)) {
+            revert ZeroAddress("l2WithdrawAddress");
+        }
+
+        if (commission > REWARD_PRECISION) {
+            revert CommissionTooHigh(commission, REWARD_PRECISION);
+        }
+
+        ValidatorInfo storage validator = $.validators[validatorId];
+
+        // Update reward state before changing commission
+        _updateRewardsForAllValidatorStakers(validatorId);
+
+        validator.commission = commission;
+        validator.l2AdminAddress = l2AdminAddress;
+        validator.l2WithdrawAddress = l2WithdrawAddress;
+        validator.l1ValidatorAddress = l1ValidatorAddress;
+        validator.l1AccountAddress = l1AccountAddress;
+
+        emit ValidatorUpdated(
+            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress
+        );
+    }
+
+    /**
+     * @notice Deactivate a validator
+     * @param validatorId ID of the validator to deactivate
+     */
+    function deactivateValidator(
+        uint16 validatorId
+    ) external onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        ValidatorInfo storage validator = $.validators[validatorId];
+        validator.active = false;
+
+        emit ValidatorDeactivated(validatorId);
+    }
+
+    /**
+     * @notice Activate a validator
+     * @param validatorId ID of the validator to activate
+     */
+    function activateValidator(
+        uint16 validatorId
+    ) external onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        ValidatorInfo storage validator = $.validators[validatorId];
+        validator.active = true;
+
+        emit ValidatorActivated(validatorId);
+    }
+
     // Internal Functions
 
     /**
@@ -924,6 +1460,140 @@ contract PlumeStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         address token
     ) internal view returns (bool) {
         return _getTokenIndex(token) < _getPlumeStakingStorage().rewardTokens.length;
+    }
+
+    /**
+     * @notice Add a staker to a validator's staker list
+     * @param staker Address of the staker
+     * @param validatorId ID of the validator
+     */
+    function _addStakerToValidator(address staker, uint16 validatorId) internal {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        // Add validator to user's validator list if not already there
+        if (!$.userHasStakedWithValidator[staker][validatorId]) {
+            $.userValidators[staker].push(validatorId);
+            $.userHasStakedWithValidator[staker][validatorId] = true;
+        }
+
+        // Add user to validator's staker list if not already there
+        if (!$.isStakerForValidator[validatorId][staker]) {
+            $.validatorStakers[validatorId].push(staker);
+            $.isStakerForValidator[validatorId][staker] = true;
+        }
+
+        // Also add to global stakers list if not already there
+        _addStakerIfNew(staker);
+    }
+
+    /**
+     * @notice Update rewards for a user on a specific validator
+     * @param user Address of the user
+     * @param validatorId ID of the validator
+     */
+    function _updateRewardsForValidator(address user, uint16 validatorId) internal {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        address[] memory rewardTokens = $.rewardTokens;
+
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            address token = rewardTokens[i];
+
+            // Update reward per token for this validator
+            _updateRewardPerTokenForValidator(token, validatorId);
+
+            if (user != address(0)) {
+                // Calculate user's earned rewards from this validator
+                uint256 oldReward = $.userRewards[user][validatorId][token];
+                uint256 newReward =
+                    _earnedFromValidator(user, token, validatorId, $.userValidatorStakes[user][validatorId].staked);
+
+                // Update user's reward for this token and validator
+                $.userRewards[user][validatorId][token] = newReward;
+                $.userRewardPerTokenPaid[user][validatorId][token] =
+                    $.validatorRewardPerTokenCumulative[validatorId][token];
+
+                // Calculate validator commission
+                ValidatorInfo storage validator = $.validators[validatorId];
+                if (newReward > oldReward && validator.commission > 0) {
+                    uint256 rewardDelta = newReward - oldReward;
+                    uint256 commissionAmount = (rewardDelta * validator.commission) / REWARD_PRECISION;
+                    $.validatorAccruedCommission[validatorId][token] += commissionAmount;
+                }
+            }
+        }
+    }
+
+    /**
+     * @notice Update the reward per token value for a specific validator
+     * @param token The address of the reward token
+     * @param validatorId The ID of the validator
+     */
+    function _updateRewardPerTokenForValidator(address token, uint16 validatorId) internal {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        if ($.validatorTotalStaked[validatorId] > 0) {
+            uint256 timeDelta = block.timestamp - $.validatorLastUpdateTimes[validatorId][token];
+            if (timeDelta > 0 && $.rewardRates[token] > 0) {
+                uint256 reward =
+                    (timeDelta * $.rewardRates[token] * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
+                $.validatorRewardPerTokenCumulative[validatorId][token] += reward;
+            }
+        }
+
+        $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
+    }
+
+    /**
+     * @notice Calculate the earned rewards for a user from a specific validator
+     * @param user The address of the user
+     * @param token The address of the token
+     * @param validatorId The ID of the validator
+     * @param userStakedAmount The amount staked by the user to this validator
+     * @return rewards The earned rewards
+     */
+    function _earnedFromValidator(
+        address user,
+        address token,
+        uint16 validatorId,
+        uint256 userStakedAmount
+    ) internal view returns (uint256 rewards) {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+
+        uint256 rewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
+
+        // If there are currently staked tokens, add the rewards since last update
+        if ($.validatorTotalStaked[validatorId] > 0) {
+            uint256 timeDelta = block.timestamp - $.validatorLastUpdateTimes[validatorId][token];
+            if (timeDelta > 0 && $.rewardRates[token] > 0) {
+                rewardPerToken +=
+                    (timeDelta * $.rewardRates[token] * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
+            }
+        }
+
+        // Get validator commission as a decimal (divide by REWARD_PRECISION)
+        uint256 validatorCommission = $.validators[validatorId].commission;
+
+        // Calculate reward with commission deducted
+        uint256 fullReward = (userStakedAmount * (rewardPerToken - $.userRewardPerTokenPaid[user][validatorId][token]))
+            / REWARD_PRECISION;
+        uint256 commission = (fullReward * validatorCommission) / REWARD_PRECISION;
+
+        return $.userRewards[user][validatorId][token] + (fullReward - commission);
+    }
+
+    /**
+     * @notice Update rewards for all stakers of a validator
+     * @param validatorId ID of the validator
+     */
+    function _updateRewardsForAllValidatorStakers(
+        uint16 validatorId
+    ) internal {
+        PlumeStakingStorage storage $ = _getPlumeStakingStorage();
+        address[] memory stakers = $.validatorStakers[validatorId];
+
+        for (uint256 i = 0; i < stakers.length; i++) {
+            _updateRewardsForValidator(stakers[i], validatorId);
+        }
     }
 
     /**
