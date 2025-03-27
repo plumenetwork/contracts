@@ -91,57 +91,57 @@ contract SpinTest is Test {
         assertTrue(spin.hasRole(spin.DEFAULT_ADMIN_ROLE(), ADMIN), "ADMIN is not the contract admin");
     }
 
-    // function testStartSpin() public {
-    //     // Ensure last spin date is set correctly
-    //     vm.record();
-    //     vm.warp(dateTime.toTimestamp(2025, 3, 2, 10, 0, 0));
-    //     vm.prank(USER);
-    //     spin.startSpin();
-    //     // Retrieve the recorded storage accesses
-    //     (bytes32[] memory reads, bytes32[] memory writes) = vm.accesses(address(spin));
+    function testStartSpin() public {
+        // Ensure last spin date is set correctly
+        vm.record();
+        vm.warp(dateTime.toTimestamp(2025, 3, 2, 10, 0, 0));
+        vm.prank(USER);
+        spin.startSpin();
+        // Retrieve the recorded storage accesses
+        (bytes32[] memory reads, bytes32[] memory writes) = vm.accesses(address(spin));
 
-    //     // Get the call data size
-    //     uint256 callDataSize = writes.length * 32; // Each slot is 32 bytes
+        // Get the call data size
+        uint256 callDataSize = writes.length * 32; // Each slot is 32 bytes
 
-    //     // Log the size (useful for debugging)
-    //     emit log_named_uint("Call Data Size (bytes)", callDataSize);
+        // Log the size (useful for debugging)
+        emit log_named_uint("Call Data Size (bytes)", callDataSize);
 
-    //     // Assert that the call data is non-zero
-    //     assertGt(callDataSize, 0, "Call Data Size should be greater than 0");
-    // }
+        // Assert that the call data is non-zero
+        assertGt(callDataSize, 0, "Call Data Size should be greater than 0");
+    }
 
-    // function testCooldownEnforcement() public {
-    //     // Start spin
-    //     vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
-    //     vm.prank(USER);
-    //     uint256 nonce = spin.startSpin();
+    function testCooldownEnforcement() public {
+        // Start spin
+        vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
+        vm.prank(USER);
+        uint256 nonce = spin.startSpin();
 
-    //     uint256[] memory testRNG = new uint256[](1);
-    //     testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
+        uint256[] memory testRNG = new uint256[](1);
+        testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
 
-    //     vm.prank(SUPRA_ORACLE); // Simulate Supra calling
-    //     spin.handleRandomness(nonce, testRNG, 1);
+        vm.prank(SUPRA_ORACLE); // Simulate Supra calling
+        spin.handleRandomness(nonce, testRNG, 1);
 
-    //     // Attempt to spin again within cooldown period
-    //     vm.warp(dateTime.toTimestamp(2025, 3, 9, 14, 0, 0));
-    //     vm.expectRevert(abi.encodeWithSignature("AlreadySpunToday()"));
-    //     vm.prank(USER);
-    //     spin.startSpin();
-    // }
+        // Attempt to spin again within cooldown period
+        vm.warp(dateTime.toTimestamp(2025, 3, 9, 14, 0, 0));
+        vm.expectRevert(abi.encodeWithSignature("AlreadySpunToday()"));
+        vm.prank(USER);
+        spin.startSpin();
+    }
 
-    // function testSimulateVRFCallback() public {
-    //     vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
-    //     vm.prank(address(10));
-    //     spin.startSpin();
+    function testSimulateVRFCallback() public {
+        vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
+        vm.prank(address(10));
+        spin.startSpin();
 
-    //     vm.prank(address(9));
-    //     uint256 nonce = spin.startSpin();
-    //     uint256[] memory testRNG = new uint256[](1);
-    //     testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
+        vm.prank(address(9));
+        uint256 nonce = spin.startSpin();
+        uint256[] memory testRNG = new uint256[](1);
+        testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
 
-    //     vm.prank(SUPRA_ORACLE); // Simulate Supra calling
-    //     spin.handleRandomness(nonce, testRNG, 1);
-    // }
+        vm.prank(SUPRA_ORACLE); // Simulate Supra calling
+        spin.handleRandomness(nonce, testRNG, 1);
+    }
 
     function testMassSimulateJackpotHits() public {
         uint256 baseTimestamp = dateTime.toTimestamp(2025, 3, 10, 0, 0, 0);
