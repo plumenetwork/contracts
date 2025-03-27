@@ -463,7 +463,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     /**
      * @dev Distribute yield to token holders directly.
      * Each holder receives a portion of the yield proportional to their token balance.
-     * The caller must have approved this contract to transfer `amount` of the yield token on their behalf.
+     * The yield tokens must already be in the contract's balance before calling this function.
      * @param amount The amount of yield token to distribute.
      */
     function distributeYield(
@@ -487,8 +487,11 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
 
         ERC20Upgradeable yToken = ERC20Upgradeable(yieldTokenAddr);
 
-        // Transfer yield tokens from caller into this contract
-        yToken.safeTransferFrom(msg.sender, address(this), amount);
+        // Check that the contract has enough yield tokens to distribute
+        uint256 contractBalance = yToken.balanceOf(address(this));
+        if (contractBalance < amount) {
+            revert("Insufficient yield token balance");
+        }
 
         uint256 distributedSum = 0;
         uint256 holderCount = $.holders.length();
@@ -547,7 +550,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     /**
      * @dev Distribute yield to a limited number of token holders.
      * Processes holders in batches to avoid excessive gas consumption.
-     * The caller must have approved this contract to transfer `totalAmount` of the yield token on their behalf.
+     * The yield tokens must already be in the contract's balance before calling this function.
      * @param totalAmount The total amount of yield token to distribute across all batches
      * @param startIndex The index to start processing holders from
      * @param maxHolders The maximum number of holders to process in this batch
@@ -606,9 +609,13 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         ERC20Upgradeable yToken = ERC20Upgradeable(yieldTokenAddr);
         amountDistributed = 0;
 
-        // For the first batch, transfer the yield tokens into this contract
+        // For the first batch, check if the contract has enough balance
         if (startIndex == 0) {
-            yToken.safeTransferFrom(msg.sender, address(this), totalAmount);
+            // Check that the contract has enough yield tokens to distribute
+            uint256 contractBalance = yToken.balanceOf(address(this));
+            if (contractBalance < totalAmount) {
+                revert("Insufficient yield token balance");
+            }
         }
 
         // Process the specified batch of holders

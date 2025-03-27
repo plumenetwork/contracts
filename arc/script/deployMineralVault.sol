@@ -64,7 +64,8 @@ contract DeployMineralVault is Script, Test {
                     TOKEN_SYMBOL,
                     INITIAL_SUPPLY, // Initial token supply
                     YIELD_TOKEN_ADDRESS, // Yield token address
-                    ADMIN_ADDRESS // The admin address will receive the initial token supply
+                    ADMIN_ADDRESS, // The admin address will receive the initial token supply
+                    18 // Token decimals
                 )
             )
         );
