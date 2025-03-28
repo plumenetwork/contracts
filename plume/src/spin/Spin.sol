@@ -8,7 +8,6 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import "../interfaces/IDateTime.sol";
 import "../interfaces/ISupraRouterContract.sol";
-import { console } from "forge-std/console.sol";
 
 /// @custom:oz-upgrades-from Spin
 contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
