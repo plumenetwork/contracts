@@ -6,6 +6,7 @@ import { IPlumeStaking } from "../interfaces/IPlumeStaking.sol";
 import {
     CooldownPeriodNotEnded,
     InvalidAmount,
+    NativeTransferFailed,
     NoActiveStake,
     TokenDoesNotExist,
     TokensInCoolingPeriod
@@ -87,7 +88,7 @@ abstract contract PlumeStakingBase is
         uint256 amount = msg.value;
 
         if (amount < $.minStakeAmount) {
-            revert InvalidAmount(amount, $.minStakeAmount);
+            revert InvalidAmount(amount);
         }
 
         _updateRewards(msg.sender);
@@ -154,7 +155,7 @@ abstract contract PlumeStakingBase is
         // Withdraw all parked tokens
         amount = info.parked;
         if (amount == 0) {
-            revert InvalidAmount(amount, 1);
+            revert InvalidAmount(amount);
         }
 
         // Clear user's parked amount
@@ -163,7 +164,9 @@ abstract contract PlumeStakingBase is
 
         // Transfer native tokens to the user
         (bool success,) = payable(msg.sender).call{ value: amount }("");
-        require(success, "Native token transfer failed");
+        if (!success) {
+            revert NativeTransferFailed();
+        }
 
         emit Withdrawn(msg.sender, amount);
         return amount;
@@ -202,7 +205,9 @@ abstract contract PlumeStakingBase is
             } else {
                 // For native token rewards
                 (bool success,) = payable(msg.sender).call{ value: amount }("");
-                require(success, "Native token transfer failed");
+                if (!success) {
+                    revert NativeTransferFailed();
+                }
             }
 
             emit RewardClaimed(msg.sender, token, amount);
@@ -243,7 +248,9 @@ abstract contract PlumeStakingBase is
                 } else {
                     // For native token rewards
                     (bool success,) = payable(msg.sender).call{ value: amount }("");
-                    require(success, "Native token transfer failed");
+                    if (!success) {
+                        revert NativeTransferFailed();
+                    }
                 }
 
                 emit RewardClaimed(msg.sender, token, amount);

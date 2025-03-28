@@ -43,7 +43,7 @@ contract PlumeStakingRewards is PlumeStakingBase {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if (_isRewardToken(token)) {
-            revert TokenAlreadyExists(token);
+            revert TokenAlreadyExists();
         }
 
         $.rewardTokens.push(token);
@@ -100,7 +100,7 @@ contract PlumeStakingRewards is PlumeStakingBase {
             uint256 maxRate = $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
 
             if (rate > maxRate) {
-                revert RewardRateExceedsMax(rate, maxRate);
+                revert RewardRateExceedsMax();
             }
 
             if (!_isRewardToken(token)) {
@@ -136,7 +136,7 @@ contract PlumeStakingRewards is PlumeStakingBase {
         // For native token
         if (token == PLUME) {
             if (msg.value != amount) {
-                revert InvalidAmount(msg.value, amount);
+                revert InvalidAmount(msg.value);
             }
             // Native tokens already received in msg.value
         } else {
@@ -242,7 +242,7 @@ contract PlumeStakingRewards is PlumeStakingBase {
 
         // Ensure current reward rate doesn't exceed new max rate
         if ($.rewardRates[token] > newMaxRate) {
-            revert RewardRateExceedsMax($.rewardRates[token], newMaxRate);
+            revert RewardRateExceedsMax();
         }
 
         $.maxRewardRates[token] = newMaxRate;

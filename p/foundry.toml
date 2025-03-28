@@ -9,7 +9,7 @@ ast = true
 build_info = true
 extra_output = ["storageLayout"]
 optimizer = true
-optimizer_runs = 2 # used default optimization level when deploying $PLUME to mainnet
+optimizer_runs = 200
 
 [fmt]
 single_line_statement_blocks = "multi"

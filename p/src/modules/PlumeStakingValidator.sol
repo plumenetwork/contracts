@@ -7,12 +7,16 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import {
     CommissionTooHigh,
     InvalidAmount,
+    NativeTransferFailed,
     NoActiveStake,
     NotValidatorAdmin,
     TokenDoesNotExist,
+    TooManyStakers,
     ValidatorAlreadyExists,
+    ValidatorCapacityExceeded,
     ValidatorDoesNotExist,
     ValidatorInactive,
+    ValidatorPercentageExceeded,
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
@@ -65,12 +69,12 @@ contract PlumeStakingValidator is PlumeStakingBase {
 
         uint256 amount = msg.value;
         if (amount < $.minStakeAmount) {
-            revert InvalidAmount(amount, $.minStakeAmount);
+            revert InvalidAmount(amount);
         }
 
         // Check if absolute validator capacity would be exceeded
         if (validator.maxCapacity > 0 && validator.delegatedAmount + amount > validator.maxCapacity) {
-            revert("Validator capacity exceeded");
+            revert ValidatorCapacityExceeded();
         }
 
         // Check if percentage-based capacity would be exceeded
@@ -80,7 +84,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
             uint256 maxAllowed = (newTotalStaked * $.maxValidatorPercentage) / 10_000;
 
             if (newValidatorStaked > maxAllowed) {
-                revert("Validator percentage cap exceeded");
+                revert ValidatorPercentageExceeded();
             }
         }
 
@@ -194,8 +198,11 @@ contract PlumeStakingValidator is PlumeStakingBase {
             if (token != PLUME) {
                 IERC20(token).safeTransfer(msg.sender, amount);
             } else {
+                // Check if native transfer was successful
                 (bool success,) = payable(msg.sender).call{ value: amount }("");
-                require(success, "Native token transfer failed");
+                if (!success) {
+                    revert NativeTransferFailed();
+                }
             }
 
             emit RewardClaimedFromValidator(msg.sender, token, validatorId, amount);
@@ -224,14 +231,13 @@ contract PlumeStakingValidator is PlumeStakingBase {
 
         // Only validator admin can claim commission
         if (msg.sender != validator.l2AdminAddress) {
-            revert NotValidatorAdmin(msg.sender, validatorId);
+            revert NotValidatorAdmin(msg.sender);
         }
 
         // For safety, check if too many stakers
         address[] memory stakers = $.validatorStakers[validatorId];
         if (stakers.length > 100) {
-            // If too many stakers, you must use batch updates first
-            revert("Too many stakers, use batch update first");
+            revert TooManyStakers();
         }
 
         // Update all rewards to ensure commission is current
@@ -245,8 +251,11 @@ contract PlumeStakingValidator is PlumeStakingBase {
             if (token != PLUME) {
                 IERC20(token).safeTransfer(validator.l2WithdrawAddress, amount);
             } else {
+                // Check if native transfer was successful
                 (bool success,) = payable(validator.l2WithdrawAddress).call{ value: amount }("");
-                require(success, "Native token transfer failed");
+                if (!success) {
+                    revert NativeTransferFailed();
+                }
             }
 
             emit ValidatorCommissionClaimed(validatorId, token, amount);
@@ -365,7 +374,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
 
         // For safety, revert if attempting to update a very large number of stakers at once
         if (stakers.length > 100) {
-            revert("Too many stakers, use batch update");
+            revert TooManyStakers();
         }
 
         for (uint256 i = 0; i < stakers.length; i++) {
@@ -405,7 +414,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
         }
 
         if (commission > REWARD_PRECISION) {
-            revert CommissionTooHigh(commission, REWARD_PRECISION);
+            revert CommissionTooHigh();
         }
 
         // Create new validator

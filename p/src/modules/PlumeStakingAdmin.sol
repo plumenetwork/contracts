@@ -9,7 +9,7 @@ import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { PlumeStakingBase } from "./PlumeStakingBase.sol";
 /**
  * @title PlumeStakingAdmin
- * @author Based on work by Eugene Y. Q. Shen, Alp Guneysel
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Extension for administrative functionality
  */
 
@@ -184,7 +184,7 @@ contract PlumeStakingAdmin is PlumeStakingBase {
             revert ZeroAddress("recipient");
         }
         if (amount == 0) {
-            revert InvalidAmount(0, 1);
+            revert InvalidAmount(0);
         }
 
         // For native token (PLUME)
