@@ -27,6 +27,7 @@ contract UpgradePlumeStaking is Script, Test {
 
         // Upgrade to new implementation
         PLUMESTAKING_PROXY.upgradeToAndCall(address(newPlumeStakingImpl), "");
+        console2.log("Successfully upgraded PlumeStaking implementation");
 
         vm.stopBroadcast();
     }

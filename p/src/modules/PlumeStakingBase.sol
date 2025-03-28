@@ -2,6 +2,15 @@
 pragma solidity ^0.8.25;
 
 import { IPlumeStaking } from "../interfaces/IPlumeStaking.sol";
+
+import {
+    CooldownPeriodNotEnded,
+    InvalidAmount,
+    NoActiveStake,
+    TokenDoesNotExist,
+    TokensInCoolingPeriod
+} from "../lib/PlumeErrors.sol";
+import { CoolingCompleted, RewardClaimed, Staked, Unstaked, Withdrawn } from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -41,71 +50,12 @@ abstract contract PlumeStakingBase is
     /// @notice Address constant used to represent the native PLUME token
     address public constant override PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
-    // Events
-    /**
-     * @notice Emitted when a user stakes PLUME
-     */
-    event Staked(address indexed user, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 fromWallet);
-
-    /**
-     * @notice Emitted when a user unstakes PLUME
-     */
-    event Unstaked(address indexed user, uint256 amount);
-
-    /**
-     * @notice Emitted when a user withdraws their cooled-down PLUME
-     */
-    event Withdrawn(address indexed user, uint256 amount);
-
-    /**
-     * @notice Emitted when a user claims a reward
-     */
-    event RewardClaimed(address indexed user, address indexed token, uint256 amount);
-
-    /**
-     * @notice Emitted when tokens move from cooling to withdrawable (cooling period ends)
-     */
-    event CoolingCompleted(address indexed user, uint256 amount);
-
-    // Errors
-    /**
-     * @notice Thrown for an invalid amount
-     */
-    error InvalidAmount(uint256 amount, uint256 minAmount);
-
-    /**
-     * @notice Thrown when a user with cooling tokens tries to stake again
-     */
-    error TokensInCoolingPeriod(uint256 amount);
-
-    /**
-     * @notice Indicates a failure because the cooldown period has not ended
-     */
-    error CooldownPeriodNotEnded(uint256 endTime);
-
-    /**
-     * @notice Thrown when trying to perform an operation that requires an active stake, but user has none
-     */
-    error NoActiveStake();
-
-    /**
-     * @notice Thrown when attempting to interact with a token that is not in the rewards list
-     */
-    error TokenDoesNotExist(address token);
-
-    /**
-     * @notice Prevent the implementation contract from being initialized or reinitialized
-     */
-    constructor() {
-        _disableInitializers();
-    }
-
     /**
      * @notice Initialize PlumeStaking
      * @param owner Address of the owner of PlumeStaking
      * @param pUSD_ Address of the pUSD token
      */
-    function initialize(address owner, address pUSD_) public override initializer {
+    function initialize(address owner, address pUSD_) public virtual override initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
@@ -369,6 +319,22 @@ abstract contract PlumeStakingBase is
         }
 
         return amount;
+    }
+
+    /**
+     * @notice Get the claimable reward amount for a user and token
+     * @param user Address of the user to check
+     * @param token Address of the reward token
+     * @return amount Amount of reward token claimable
+     */
+    function getClaimableReward(address user, address token) external view virtual override returns (uint256 amount) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!_isRewardToken(token)) {
+            return 0;
+        }
+
+        return _earned(user, token, $.stakeInfo[user].staked);
     }
 
     // Internal utility functions

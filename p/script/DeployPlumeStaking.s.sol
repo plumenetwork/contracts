@@ -8,6 +8,8 @@ import { console2 } from "forge-std/console2.sol";
 
 import { Plume } from "../src/Plume.sol";
 import { PlumeStaking } from "../src/PlumeStaking.sol";
+
+import { IPlumeStaking } from "../src/interfaces/IPlumeStaking.sol";
 import { PlumeStakingProxy } from "../src/proxy/PlumeStakingProxy.sol";
 
 contract DeployPlumeStaking is Script {
@@ -37,12 +39,10 @@ contract DeployPlumeStaking is Script {
         console2.log("PlumeStaking Implementation deployed to:", address(plumeStakingImplementation));
 
         // 2. Prepare initialization data
-        bytes memory initData = abi.encodeCall(
-            PlumeStaking.initialize,
-            (
-                ADMIN_ADDRESS, // owner
-                PUSD_TOKEN_ADDRESS // pUSD token
-            )
+        bytes memory initData = abi.encodeWithSelector(
+            IPlumeStaking.initialize.selector,
+            ADMIN_ADDRESS, // owner
+            PUSD_TOKEN_ADDRESS // pUSD token
         );
 
         // 3. Deploy proxy contract pointing to implementation

@@ -6,7 +6,7 @@ import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 
 /**
  * @title IPlumeStaking
- * @author Based on work by Eugene Y. Q. Shen, Alp Guneysel
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Interface for the PlumeStaking system
  */
 interface IPlumeStaking {
@@ -62,5 +62,13 @@ interface IPlumeStaking {
     function amountStaked() external view returns (uint256 amount);
     function amountCooling() external view returns (uint256 amount);
     function amountWithdrawable() external view returns (uint256 amount);
+
+    /**
+     * @notice Get the claimable reward amount for a user and token
+     * @param user Address of the user to check
+     * @param token Address of the reward token
+     * @return amount Amount of reward token claimable
+     */
+    function getClaimableReward(address user, address token) external view returns (uint256 amount);
 
 }

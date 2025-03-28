@@ -13,4 +13,15 @@ import { PlumeStakingValidator } from "./modules/PlumeStakingValidator.sol";
  * @dev This contract serves as the entry point to PlumeStaking functionality
  *      It inherits from the specialized modules to provide a complete interface
  */
-contract PlumeStaking is PlumeStakingBase, PlumeStakingValidator, PlumeStakingRewards, PlumeStakingAdmin { }
+contract PlumeStaking is PlumeStakingBase, PlumeStakingValidator, PlumeStakingRewards, PlumeStakingAdmin {
+
+    /**
+     * @notice Initialize PlumeStaking
+     * @param owner Address of the owner of PlumeStaking
+     * @param pUSD_ Address of the pUSD token
+     */
+    function initialize(address owner, address pUSD_) public override initializer {
+        super.initialize(owner, pUSD_);
+    }
+
+}

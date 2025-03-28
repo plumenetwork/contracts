@@ -3,6 +3,8 @@ pragma solidity ^0.8.25;
 
 import { Plume } from "../src/Plume.sol";
 import { PlumeStaking } from "../src/PlumeStaking.sol";
+
+import { PlumeStakingStorage } from "../src/lib/PlumeStakingStorage.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Test } from "forge-std/Test.sol";
@@ -88,69 +90,87 @@ contract PlumeStakingForkTest is Test {
         assertGt(cooldownInterval, 0, "Cooldown should be > 0");
     }
 
-    function testStakeUnstakeFlow() public {
-        console2.log("Starting testStakeUnstakeFlow...");
-        uint256 amount = 1e18; // Use a small amount to test
+    function testStakeAndUnstake() public {
+        // Get initial state
+        (uint256 initialStaked,,,,) = staking.stakingInfo();
+        uint256 initialBalance = address(user1).balance;
+        uint256 stakeAmount = 100e18;
 
-        // Get initial staking total
-        uint256 initialStaked = staking.totalAmountStaked();
-        console2.log("Initial staked:", initialStaked);
-
-        // Stake
+        // Stake tokens
         vm.startPrank(user1);
-        // Use try/catch to debug
-        try staking.stake{ value: amount }() {
-            console2.log("Stake successful");
-        } catch Error(string memory reason) {
-            console2.log("Stake failed:", reason);
-            // Don't fail the test yet, just report the error
-        } catch (bytes memory) {
-            console2.log("Stake failed with low-level error");
-        }
+        staking.stake{ value: stakeAmount }();
+        vm.stopPrank();
 
-        // Verify stake if it succeeded
-        if (staking.amountStaked() > initialStaked) {
-            // Only continue with unstake if stake succeeded
-            try staking.unstake() {
-                console2.log("Unstake successful");
-            } catch Error(string memory reason) {
-                console2.log("Unstake failed:", reason);
-            } catch (bytes memory) {
-                console2.log("Unstake failed with low-level error");
-            }
-        }
+        // Check final state
+        (uint256 finalStaked,,,,) = staking.stakingInfo();
+        uint256 finalBalance = address(user1).balance;
+
+        // Verify state changes
+        assertEq(finalStaked, initialStaked + stakeAmount, "Total staked amount incorrect");
+        assertEq(finalBalance, initialBalance - stakeAmount, "User balance not reduced correctly");
+
+        // Get stake info
+        PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
+        assertEq(info.staked, stakeAmount, "User staked amount incorrect");
+    }
+
+    function testStakeAndUnstakeWithCooldown() public {
+        uint256 stakeAmount = 100e18;
+
+        // Get initial state
+        (uint256 initialStaked,,,,) = staking.stakingInfo();
+
+        // Stake tokens
+        vm.startPrank(user1);
+        staking.stake{ value: stakeAmount }();
+
+        // Verify stake
+        (uint256 afterStakeTotal,,,,) = staking.stakingInfo();
+        assertEq(afterStakeTotal, initialStaked + stakeAmount, "Total staked amount incorrect after stake");
+
+        // Unstake
+        staking.unstake();
+
+        // Verify unstake
+        (uint256 afterUnstakeTotal, uint256 totalCooling,,,) = staking.stakingInfo();
+        assertEq(afterUnstakeTotal, initialStaked, "Total staked amount incorrect after unstake");
+        assertEq(totalCooling, stakeAmount, "Cooling amount incorrect");
 
         vm.stopPrank();
     }
 
     function testMultipleUsers() public {
-        console2.log("Starting testMultipleUsers...");
+        uint256 amount1 = 100e18;
+        uint256 amount2 = 200e18;
 
-        // Get initial total staked amount
-        uint256 initialTotalStaked = staking.totalAmountStaked();
-        console2.log("Initial total staked:", initialTotalStaked);
+        // Get initial state
+        (uint256 initialStaked,,,,) = staking.stakingInfo();
 
-        // Try to stake with user1
-        uint256 amount1 = 1e18;
+        // User 1 stakes
         vm.startPrank(user1);
-        try staking.stake{ value: amount1 }() {
-            console2.log("User1 stake successful");
-
-            // Get staking info for user1
-            PlumeStaking.StakeInfo memory info = staking.stakeInfo(user1);
-            console2.log("User1 staked amount:", info.staked);
-
-            // Unstake for cleanup
-            staking.unstake();
-        } catch Error(string memory reason) {
-            console2.log("User1 stake failed:", reason);
-        } catch (bytes memory) {
-            console2.log("User1 stake failed with low-level error");
-        }
+        staking.stake{ value: amount1 }();
         vm.stopPrank();
 
-        // Skip this test for now
-        vm.skip(true);
+        // Verify after first stake
+        (uint256 afterFirstStake,,,,) = staking.stakingInfo();
+        assertEq(afterFirstStake, initialStaked + amount1, "Total staked amount incorrect after first stake");
+
+        // User 2 stakes
+        vm.startPrank(user2);
+        staking.stake{ value: amount2 }();
+        vm.stopPrank();
+
+        // Verify after second stake
+        (uint256 afterSecondStake,,,,) = staking.stakingInfo();
+        assertEq(
+            afterSecondStake, initialStaked + amount1 + amount2, "Total staked amount incorrect after second stake"
+        );
+
+        // Check individual balances
+        PlumeStakingStorage.StakeInfo memory info1 = staking.stakeInfo(user1);
+        PlumeStakingStorage.StakeInfo memory info2 = staking.stakeInfo(user2);
+        assertEq(info1.staked, amount1, "User 1 staked amount incorrect");
+        assertEq(info2.staked, amount2, "User 2 staked amount incorrect");
     }
 
     function testViewFunctions() public {

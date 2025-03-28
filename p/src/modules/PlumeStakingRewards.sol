@@ -4,6 +4,23 @@ pragma solidity ^0.8.25;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {
+    ArrayLengthMismatch,
+    EmptyArray,
+    InvalidAmount,
+    RewardRateExceedsMax,
+    TokenAlreadyExists,
+    TokenDoesNotExist
+} from "../lib/PlumeErrors.sol";
+import {
+    MaxRewardRateUpdated,
+    RewardClaimed,
+    RewardRatesSet,
+    RewardTokenAdded,
+    RewardTokenRemoved,
+    RewardsAdded,
+    Staked
+} from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { PlumeStakingBase } from "./PlumeStakingBase.sol";
 
@@ -15,19 +32,6 @@ import { PlumeStakingBase } from "./PlumeStakingBase.sol";
 contract PlumeStakingRewards is PlumeStakingBase {
 
     using SafeERC20 for IERC20;
-
-    // Events
-    event RewardRatesSet(address[] tokens, uint256[] rates);
-    event RewardsAdded(address indexed token, uint256 amount);
-    event RewardTokenAdded(address indexed token);
-    event RewardTokenRemoved(address indexed token);
-    event MaxRewardRateUpdated(address indexed token, uint256 newMaxRate);
-
-    // Errors
-    error TokenAlreadyExists(address token);
-    error EmptyArray();
-    error ArrayLengthMismatch();
-    error RewardRateExceedsMax(uint256 rate, uint256 maxRate);
 
     /**
      * @notice Add a token to the rewards list

@@ -4,6 +4,34 @@ pragma solidity ^0.8.25;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {
+    CommissionTooHigh,
+    InvalidAmount,
+    NoActiveStake,
+    NotValidatorAdmin,
+    TokenDoesNotExist,
+    ValidatorAlreadyExists,
+    ValidatorDoesNotExist,
+    ValidatorInactive,
+    ZeroAddress
+} from "../lib/PlumeErrors.sol";
+import {
+    EmergencyFundsTransferred,
+    MaxValidatorCommissionUpdated,
+    MaxValidatorPercentageUpdated,
+    RewardClaimedFromValidator,
+    StakedToValidator,
+    UnstakedFromValidator,
+    ValidatorActivated,
+    ValidatorAdded,
+    ValidatorCapacityUpdated,
+    ValidatorCommissionClaimed,
+    ValidatorDeactivated,
+    ValidatorEmergencyTransfer,
+    ValidatorRemoved,
+    ValidatorStakersRewardsUpdated,
+    ValidatorUpdated
+} from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { PlumeStakingBase } from "./PlumeStakingBase.sol";
 
@@ -15,68 +43,6 @@ import { PlumeStakingBase } from "./PlumeStakingBase.sol";
 contract PlumeStakingValidator is PlumeStakingBase {
 
     using SafeERC20 for IERC20;
-
-    // Events
-    event StakedToValidator(
-        address indexed user,
-        uint16 indexed validatorId,
-        uint256 amount,
-        uint256 fromCooling,
-        uint256 fromParked,
-        uint256 fromWallet
-    );
-
-    event UnstakedFromValidator(address indexed user, uint16 indexed validatorId, uint256 amount);
-
-    event RewardClaimedFromValidator(
-        address indexed user, address indexed token, uint16 indexed validatorId, uint256 amount
-    );
-
-    event ValidatorCommissionClaimed(uint16 indexed validatorId, address indexed token, uint256 amount);
-
-    event ValidatorAdded(
-        uint16 indexed validatorId,
-        uint256 commission,
-        address l2AdminAddress,
-        address l2WithdrawAddress,
-        string l1ValidatorAddress,
-        string l1AccountAddress
-    );
-
-    event ValidatorUpdated(
-        uint16 indexed validatorId,
-        uint256 commission,
-        address l2AdminAddress,
-        address l2WithdrawAddress,
-        string l1ValidatorAddress,
-        string l1AccountAddress
-    );
-
-    event ValidatorDeactivated(uint16 indexed validatorId);
-    event ValidatorActivated(uint16 indexed validatorId);
-    event ValidatorRemoved(uint16 indexed validatorId);
-
-    event ValidatorCapacityUpdated(uint16 indexed validatorId, uint256 oldCapacity, uint256 newCapacity);
-    event MaxValidatorPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
-    event MaxValidatorCommissionUpdated(uint256 oldMaxCommission, uint256 newMaxCommission);
-
-    event EmergencyFundsTransferred(
-        address indexed staker, uint16 indexed fromValidatorId, uint16 indexed toValidatorId, uint256 amount
-    );
-
-    event ValidatorEmergencyTransfer(
-        uint16 indexed fromValidatorId, uint16 indexed toValidatorId, uint256 amount, uint256 stakerCount
-    );
-
-    event ValidatorStakersRewardsUpdated(uint16 validatorId, uint256 startIndex, uint256 endIndex);
-
-    // Errors
-    error ValidatorDoesNotExist(uint16 validatorId);
-    error ValidatorAlreadyExists(uint16 validatorId);
-    error CommissionTooHigh(uint256 commission, uint256 maxCommission);
-    error NotValidatorAdmin(address caller, uint16 validatorId);
-    error ValidatorInactive(uint16 validatorId);
-    error ZeroAddress(string parameter);
 
     /**
      * @notice Stake PLUME to a specific validator
