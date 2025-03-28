@@ -5,8 +5,16 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import "../interfaces/ISpin.sol";
 import "../interfaces/ISupraRouterContract.sol";
+
+interface ISpin {
+
+    function updateRaffleTickets(address _user, uint256 _amount) external;
+    function getUserData(
+        address _user
+    ) external view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256);
+
+}
 
 /// @custom:oz-upgrades-from Spin
 contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {

@@ -214,4 +214,53 @@ contract SpinTest is Test {
 
         }
     }
+
+    function testStreakCount() public {
+        // Set the campaign start date
+        vm.warp(dateTime.toTimestamp(2025, 3, 10, 0, 0, 0));
+        vm.prank(ADMIN);
+        spin.setCampaignStartDate();
+
+        Vm.Log[] memory entries;
+
+        // Start spin 1
+        vm.recordLogs();
+        vm.warp(dateTime.toTimestamp(2025, 3, 10, 10, 0, 0));
+        vm.prank(address(USER));
+        spin.startSpin();
+
+        entries = vm.getRecordedLogs();
+        uint256 nonce = uint256(entries[0].topics[1]);
+
+        uint256[] memory testRNG = new uint256[](1);
+        testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
+
+        vm.prank(SUPRA_ORACLE);
+        spin.handleRandomness(nonce, testRNG);
+
+        // Start spin 2
+        vm.recordLogs();
+        vm.warp(dateTime.toTimestamp(2025, 3, 11, 10, 0, 0));
+        vm.prank(USER);
+        spin.startSpin();
+
+        entries = vm.getRecordedLogs();
+        nonce = uint256(entries[0].topics[1]);
+        testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
+
+        vm.prank(SUPRA_ORACLE);
+        spin.handleRandomness(nonce, testRNG);
+
+        // Streak count should be maintained till next day even if there is no spin on that day
+        vm.warp(dateTime.toTimestamp(2025, 3, 12, 23, 59, 59)); // Edge case
+        (uint256 streakCount,,,,,,) = spin.getUserData(USER);
+        assertEq(streakCount, 2, "Streak count should be 2");
+
+        // Streak breaks after 1 day of no spin
+        vm.warp(dateTime.toTimestamp(2025, 3, 13, 0, 0, 0)); // Edge case
+        (streakCount,,,,,,) = spin.getUserData(USER);
+        assertEq(streakCount, 0, "Streak count should be 0");
+    }
+
+    
 }

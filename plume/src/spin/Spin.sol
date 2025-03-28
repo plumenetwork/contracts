@@ -291,7 +291,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         if (streakCount == 0) {
             streakCount = 1;
         } else {
-            if (isNextDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay, dateTime)) {
+            if (isNextDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
                 streakCount++;
             } else if (isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
                 streakCount = streakCount;
@@ -319,7 +319,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         (uint16 lastSpinYear, uint8 lastSpinMonth, uint8 lastSpinDay) =
             (dateTime.getYear(lastTimeStamp), dateTime.getMonth(lastTimeStamp), dateTime.getDay(lastTimeStamp));
 
-        if (isNextDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay, dateTime)) {
+        if (isNextDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
             return streakCount;
         } else if (isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
             return streakCount;
@@ -382,9 +382,10 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint8 lastDay,
         uint16 currentYear,
         uint8 currentMonth,
-        uint8 currentDay,
-        IDateTime dateTime
+        uint8 currentDay
     ) internal view returns (bool) {
+        SpinStorage storage $ = _getSpinStorage();
+        IDateTime dateTime = $.dateTime;
         uint256 lastDateTimestamp = dateTime.toTimestamp(lastYear, lastMonth, lastDay);
         uint256 nextDayTimestamp = lastDateTimestamp + SECONDS_PER_DAY;
 
