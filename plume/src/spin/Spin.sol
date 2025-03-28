@@ -57,9 +57,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         mapping(uint8 => uint256) jackpotPrizes;
         /// @dev Mapping to bypass cooldown period
         mapping(address => bool) whitelists;
-        // For testing purposes
-        /// @dev Track how many times each prize was hit per day (day 1 to day 7)
-        mapping(uint8 => mapping(uint256 => uint256)) dailyPrizeHits; // day => category => count
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.Spin")) - 1)) & ~bytes32(uint256(0xff))
@@ -83,6 +80,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
 
     event RaffleTicketsUpdated(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
+    /// @notice Emitted when a user does not have enough streak count to claim the jackpot
+    event NotEnoughStreak(string message);
 
     // Errors
     /// @notice Revert if the caller is not an admin
@@ -176,7 +175,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     /// @notice Starts the spin process by generating a random number and recording the spin date.
     /// @dev This function is called by the user to initiate a spin.
-    function startSpin() external whenNotPaused canSpin returns (uint256) {
+    function startSpin() external whenNotPaused canSpin {
         SpinStorage storage $ = _getSpinStorage();
         string memory callbackSignature = "handleRandomness(uint256,uint256[],uint8)";
         uint8 rngCount = 1;
@@ -187,9 +186,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             $.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, $.admin);
         $.userNonce[nonce] = msg.sender;
 
-        //console.log("Nonce:", nonce);
         emit SpinRequested(nonce, msg.sender);
-        return nonce;
     }
 
     /**
@@ -198,7 +195,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
      * @param nonce The nonce associated with the spin request.
      * @param rngList The list of random numbers generated.
      */
-    function handleRandomness(uint256 nonce, uint256[] memory rngList, uint8 day) external onlyRole(SUPRA_ROLE) {
+    function handleRandomness(uint256 nonce, uint256[] memory rngList) external onlyRole(SUPRA_ROLE) {
         SpinStorage storage $ = _getSpinStorage();
 
         address user = $.userNonce[nonce];
@@ -213,29 +210,23 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         UserData storage _userData = $.userData[user];
 
         if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Jackpot"))) {
-            // require(block.timestamp >= $.lastJackpotClaim + 7 days, "Jackpot cooldown active");
-            // //TODO: Add case for ot enough streak count
-            // require(
-            //     _userData.streakCount >= (block.timestamp - $.campaignStartDate) / 7 days + 2,
-            //     "Not enough streak for jackpot"
-            // );
-
+            require(block.timestamp >= $.lastJackpotClaim + 7 days, "Jackpot cooldown active");
+            //TODO: Add case for ot enough streak count
+            if (_userData.streakCount >= (block.timestamp - $.campaignStartDate) / 7 days + 2) {
+                _userData.nothingCounts += 1;
+                emit NotEnoughStreak("Not enough streak count to claim Jackpot");
+            }
             _userData.jackpotWins++;
             $.lastJackpotClaim = block.timestamp;
-            $.dailyPrizeHits[day][1]++;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Raffle Ticket"))) {
             _userData.raffleTicketsGained += rewardAmount;
             _userData.raffleTicketsBalance += rewardAmount;
-            $.dailyPrizeHits[day][2]++;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("XP"))) {
             _userData.xpGained += rewardAmount;
-            $.dailyPrizeHits[day][3]++;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Plume Token"))) {
             _userData.plumeTokens += rewardAmount;
-            $.dailyPrizeHits[day][4]++;
         } else {
             _userData.nothingCounts += 1;
-            $.dailyPrizeHits[day][5]++;
         }
 
         _userData.streakCount = countStreak(user);
@@ -261,7 +252,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         }
 
         uint8 dayOfWeek = uint8(daysSinceStart % 7);
-        //console.log("Day of Week:", dayOfWeek);
 
         uint256 jackpotThreshold = $.jackpotProbabilities[dayOfWeek];
 
@@ -437,17 +427,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             userData.xpGained,
             userData.plumeTokens
         );
-    }
-
-    function getWeeklyPrizeStats(
-        uint8 day
-    ) external view returns (uint256[5] memory counts) {
-        SpinStorage storage $ = _getSpinStorage();
-        counts[0] = $.dailyPrizeHits[day][1]; // Jackpot
-        counts[1] = $.dailyPrizeHits[day][2]; // Raffle tickets
-        counts[2] = $.dailyPrizeHits[day][3]; // XP
-        counts[3] = $.dailyPrizeHits[day][4]; //Plume token
-        counts[4] = $.dailyPrizeHits[day][5]; // Nothing
     }
 
     function setJackpotProbabilities(

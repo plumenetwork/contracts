@@ -44,6 +44,7 @@ contract SpinTest is Test {
     uint256 constant COOLDOWN_PERIOD = 86_400; // 1 day
     uint8 constant RNG_COUNT = 1;
     uint256 constant NUM_CONFIRMATIONS = 1;
+    mapping (bytes32 => uint256) public prizeCounts;
 
     function setUp() public payable {
         // Fork from mainnet for testing with the deployed Supra Oracle
@@ -92,35 +93,64 @@ contract SpinTest is Test {
     }
 
     function testStartSpin() public {
-        // Ensure last spin date is set correctly
-        vm.record();
+        vm.recordLogs();
+
         vm.warp(dateTime.toTimestamp(2025, 3, 2, 10, 0, 0));
         vm.prank(USER);
         spin.startSpin();
-        // Retrieve the recorded storage accesses
-        (bytes32[] memory reads, bytes32[] memory writes) = vm.accesses(address(spin));
 
-        // Get the call data size
-        uint256 callDataSize = writes.length * 32; // Each slot is 32 bytes
+        // Expect emit Spin requested
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        assertEq(entries.length, 2, "No logs emitted");
 
-        // Log the size (useful for debugging)
-        emit log_named_uint("Call Data Size (bytes)", callDataSize);
+        assertEq(entries[1].topics[0], keccak256("SpinRequested(uint256,address)"), "SpinRequested event not emitted");
+        assertEq(entries[1].topics[2], bytes32(uint256(uint160(USER))), "User address incorrect");
 
-        // Assert that the call data is non-zero
-        assertGt(callDataSize, 0, "Call Data Size should be greater than 0");
+        uint256 nonce = uint256(entries[0].topics[1]);
+        emit log_named_uint("Extracted Nonce", nonce);
+
+        assertGt(nonce, 0, "Nonce should be greater than 0");
+    }
+
+    function testVRFCallback() public {
+        // Start spin
+        vm.recordLogs();
+        vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
+        vm.prank(address(USER));
+        spin.startSpin();
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        uint256 nonce = uint256(entries[0].topics[1]);
+
+        uint256[] memory testRNG = new uint256[](1);
+        testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
+
+        vm.recordLogs();
+        vm.prank(SUPRA_ORACLE); // Simulate Supra calling
+        spin.handleRandomness(nonce, testRNG);
+        Vm.Log[] memory entries2 = vm.getRecordedLogs();
+        // Check if SpinCompleted event is emitted
+        assertEq(entries2.length, 1, "No logs emitted");
+        assertEq(entries2[0].topics[0], keccak256("SpinCompleted(address,string,uint256)"), "SpinCompleted event not emitted");
+
+        emit log_named_string("Prize", abi.decode(entries2[0].data, (string)));
     }
 
     function testCooldownEnforcement() public {
         // Start spin
+        vm.recordLogs();
         vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
         vm.prank(USER);
-        uint256 nonce = spin.startSpin();
+        spin.startSpin();
+
+        Vm.Log[] memory entries1 = vm.getRecordedLogs();
+        uint256 nonce = uint256(entries1[0].topics[1]);
 
         uint256[] memory testRNG = new uint256[](1);
         testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
 
         vm.prank(SUPRA_ORACLE); // Simulate Supra calling
-        spin.handleRandomness(nonce, testRNG, 1);
+        spin.handleRandomness(nonce, testRNG);
 
         // Attempt to spin again within cooldown period
         vm.warp(dateTime.toTimestamp(2025, 3, 9, 14, 0, 0));
@@ -129,28 +159,15 @@ contract SpinTest is Test {
         spin.startSpin();
     }
 
-    function testSimulateVRFCallback() public {
-        vm.warp(dateTime.toTimestamp(2025, 3, 9, 10, 0, 0));
-        vm.prank(address(10));
-        spin.startSpin();
-
-        vm.prank(address(9));
-        uint256 nonce = spin.startSpin();
-        uint256[] memory testRNG = new uint256[](1);
-        testRNG[0] = uint256(keccak256(abi.encodePacked(block.timestamp))) % 1_000_000;
-
-        vm.prank(SUPRA_ORACLE); // Simulate Supra calling
-        spin.handleRandomness(nonce, testRNG, 1);
-    }
-
-    function testMassSimulateJackpotHits() public {
+    function testSimulatePrizeHits() public {
         uint256 baseTimestamp = dateTime.toTimestamp(2025, 3, 10, 0, 0, 0);
         vm.warp(baseTimestamp);
         vm.prank(ADMIN);
         spin.setCampaignStartDate();
+
         baseTimestamp = dateTime.toTimestamp(2025, 3, 10, 10, 0, 0);
         uint256 spinsPerDay = 100;
-        uint256 userSeed = 100; // Avoid low-address collisions
+        uint256 userSeed = 1;
 
         // Simulate over 7 days
         for (uint256 day = 1; day <= 7; day++) {
@@ -158,32 +175,43 @@ contract SpinTest is Test {
                 address user = address(uint160(userSeed + i));
                 uint256 hour = (i % 24); // spread spins over 24 hours
                 uint256 minute = (i % 60);
+
+                vm.recordLogs();
                 uint256 ts = baseTimestamp + ((day - 1) * 1 days) + (hour * 1 hours) + (minute * 1 minutes);
                 vm.warp(ts);
 
                 vm.prank(user);
-                uint256 nonce = spin.startSpin();
+                spin.startSpin();
+                Vm.Log[] memory entries1 = vm.getRecordedLogs();
+                uint256 nonce = uint256(entries1[0].topics[1]);
 
                 uint256[] memory testRNG = new uint256[](1);
                 testRNG[0] = uint256(keccak256(abi.encodePacked(ts, user))) % 1_000_000;
 
+                // Simulate Supra calling
+                vm.recordLogs();
                 vm.prank(SUPRA_ORACLE); // simulate Supra VRF callback
-                spin.handleRandomness(nonce, testRNG, uint8(day));
+                spin.handleRandomness(nonce, testRNG);
+                Vm.Log[] memory entries2 = vm.getRecordedLogs();
+
+                string memory rewardCategory = abi.decode(entries2[0].data, (string));
+                prizeCounts[keccak256(abi.encodePacked(rewardCategory))] += 1;
             }
 
-            userSeed += spinsPerDay; // Next day new users
-        }
+            emit log_string("");
+            emit log_named_uint("Day", day);
+            emit log_named_uint("   Jackpot", prizeCounts[keccak256(abi.encodePacked("Jackpot"))]);
+            emit log_named_uint("   RaffleTicket", prizeCounts[keccak256(abi.encodePacked("Raffle Ticket"))]);
+            emit log_named_uint("   XP", prizeCounts[keccak256(abi.encodePacked("XP"))]);
+            emit log_named_uint("   PlumeToken", prizeCounts[keccak256(abi.encodePacked("Plume Token"))]);
+            emit log_named_uint("   Nothing", prizeCounts[keccak256(abi.encodePacked("Nothing"))]);
 
-        // Log daily prize distribution
-        for (uint8 day = 1; day <= 7; day++) {
-            uint256[5] memory counts = spin.getWeeklyPrizeStats(day);
-            console.log(" Day", day);
-            console.log(" Jackpot      :", counts[0]);
-            console.log(" RaffleTicket:", counts[1]);
-            console.log(" XP           :", counts[2]);
-            console.log(" PlumeToken   :", counts[3]);
-            console.log("  Nothing      :", counts[4]);
+            prizeCounts[keccak256(abi.encodePacked("Jackpot"))] = 0;
+            prizeCounts[keccak256(abi.encodePacked("Raffle Ticket"))] = 0;
+            prizeCounts[keccak256(abi.encodePacked("XP"))] = 0;
+            prizeCounts[keccak256(abi.encodePacked("Plume Token"))] = 0;
+            prizeCounts[keccak256(abi.encodePacked("Nothing"))] = 0;
+
         }
     }
-
 }
