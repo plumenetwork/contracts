@@ -17,7 +17,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 jackpotWins;
         uint256 raffleTicketsGained;
         uint256 raffleTicketsBalance;
-        uint256 xpGained;
+        uint256 PPGained;
         uint256 plumeTokens;
         uint256 streakCount;
         uint256 lastSpinTimestamp;
@@ -38,8 +38,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256[7] jackpotProbabilities;
         /// @dev Raffle Multiplier
         uint256 baseRaffleMultiplier;
-        /// @dev XP gained per spin
-        uint256 xpPerSpin;
+        /// @dev PP gained per spin
+        uint256 PP_PerSpin;
         /// @dev Plume Token Rewards
         uint256[3] plumeAmounts;
         /// @dev Mapping of nonce to user
@@ -168,7 +168,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         $.jackpotPrizes[11] = 100_000;
 
         $.baseRaffleMultiplier = 100;
-        $.xpPerSpin = 100;
+        $.PP_PerSpin = 100;
         $.plumeAmounts = [2, 5, 10];
     }
 
@@ -220,8 +220,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Raffle Ticket"))) {
             _userData.raffleTicketsGained += rewardAmount;
             _userData.raffleTicketsBalance += rewardAmount;
-        } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("XP"))) {
-            _userData.xpGained += rewardAmount;
+        } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("PP"))) {
+            _userData.PPGained += rewardAmount;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Plume Token"))) {
             _userData.plumeTokens += rewardAmount;
         } else {
@@ -256,15 +256,13 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         if (probability < jackpotThreshold) {
             return ("Jackpot", $.jackpotPrizes[weekNumber]);
-        }
-
-        if (probability <= 200_000) {
+        }else if (probability <= 200_000) {
             uint256 plumeAmount = $.plumeAmounts[probability % 3];
             return ("Plume Token", plumeAmount);
         } else if (probability <= 600_000) {
             return ("Raffle Ticket", $.baseRaffleMultiplier * $.userData[user].streakCount);
         } else if (probability <= 900_000) {
-            return ("XP", $.xpPerSpin);
+            return ("PP", $.PP_PerSpin);
         }
 
         return ("Nothing", 0); // Default case
@@ -411,7 +409,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             uint256 jackpotWins,
             uint256 raffleTicketsGained,
             uint256 raffleTicketsBalance,
-            uint256 xpGained,
+            uint256 PPGained,
             uint256 smallPlumeTokens
         )
     {
@@ -424,68 +422,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             userData.jackpotWins,
             userData.raffleTicketsGained,
             userData.raffleTicketsBalance,
-            userData.xpGained,
+            userData.PPGained,
             userData.plumeTokens
         );
-    }
-
-    function setJackpotProbabilities(
-        uint8[7] memory _jackpotProbabilities
-    ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.jackpotProbabilities = _jackpotProbabilities;
-    }
-
-    function setJackpotPrizes(uint8 week, uint256 prize) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.jackpotPrizes[week] = prize;
-    }
-
-    function setCampaignStartDate() external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.campaignStartDate = block.timestamp;
-    }
-
-    function setCampaignStartDate(
-        uint256 _campaignStartDate
-    ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.campaignStartDate = _campaignStartDate;
-    }
-
-    function setBaseRaffleMultiplier(
-        uint256 _baseRaffleMultiplier
-    ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.baseRaffleMultiplier = _baseRaffleMultiplier;
-    }
-
-    function setXPPerSpin(
-        uint256 _xpPerSpin
-    ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.xpPerSpin = _xpPerSpin;
-    }
-
-    function setPlumeAmounts(
-        uint256[3] memory _plumeAmounts
-    ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.plumeAmounts = _plumeAmounts;
-    }
-
-    function whitelist(
-        address user
-    ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.whitelists[user] = true;
-    }
-
-    function setRaffleContract(
-        address raffleContract
-    ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.raffleContract = raffleContract;
     }
 
     /**
@@ -508,6 +447,84 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         jackpotPrize = $.jackpotPrizes[uint8(weekNumber)];
         requiredStreak = weekNumber + 2;
+    }
+
+    // Setters
+    /// @notice Sets the jackpot probabilities for each day of the week.
+    /// @param _jackpotProbabilities An array of 7 integers representing the jackpot vrf range for each day.
+    function setJackpotProbabilities(
+        uint8[7] memory _jackpotProbabilities
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.jackpotProbabilities = _jackpotProbabilities;
+    }
+
+    /// @notice Sets the jackpot prize for a specific week.
+    /// @param week The week number (0-11).
+    /// @param prize The jackpot prize amount.
+    function setJackpotPrizes(uint8 week, uint256 prize) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.jackpotPrizes[week] = prize;
+    }
+
+    /// @notice Sets the start date for the campaign.
+    function setCampaignStartDate() external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.campaignStartDate = block.timestamp;
+    }
+
+    /// @notice Sets the start date for the campaign.
+    /// @param _campaignStartDate The start date for the campaign.
+    function setCampaignStartDate(
+        uint256 _campaignStartDate
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.campaignStartDate = _campaignStartDate;
+    }
+
+    /// @notice Sets the base value for raffle.
+    /// @param _baseRaffleMultiplier The base value for raffle.
+    function setBaseRaffleMultiplier(
+        uint256 _baseRaffleMultiplier
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.baseRaffleMultiplier = _baseRaffleMultiplier;
+    }
+
+    /// @notice Sets the PP gained per spin.
+    /// @param _PP_PerSpin The PP gained per spin.
+    function setPP_PerSpin(
+        uint256 _PP_PerSpin
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.PP_PerSpin = _PP_PerSpin;
+    }
+
+    /// @notice Sets the Plume Token amounts.
+    /// @param _plumeAmounts An array of 3 integers representing the Plume Token amounts.
+    function setPlumeAmounts(
+        uint256[3] memory _plumeAmounts
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.plumeAmounts = _plumeAmounts;
+    }
+
+    /// @notice Sets the Raffle contract address.
+    /// @param raffleContract The address of the Raffle contract.
+    function setRaffleContract(
+        address raffleContract
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.raffleContract = raffleContract;
+    }
+
+    /// @notice Whitelist address to bypass cooldown period.
+    /// @param user The address of the user to whitelist.
+    function whitelist(
+        address user
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.whitelists[user] = true;
     }
 
     // UUPS Authorization
