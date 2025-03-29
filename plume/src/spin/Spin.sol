@@ -32,8 +32,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 lastJackpotClaim;
         /// @dev Mapping of wallet address to rewards
         mapping(address => UserData) userData;
-        /// @dev Timestamp of start time of Spin Game
-        uint256 startTimestamp;
         /// @dev Mapping of Week daya to Jackpot probabilities
         uint256[7] jackpotProbabilities;
         /// @dev Raffle Multiplier
@@ -151,7 +149,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         $.supraRouter = ISupraRouterContract(supraRouterAddress);
         $.dateTime = IDateTime(dateTimeAddress);
         $.admin = msg.sender;
-        $.startTimestamp = block.timestamp;
+        //$.campaignStartDate = block.timestamp;
 
         $.jackpotProbabilities = [1, 2, 3, 5, 7, 10, 20];
         $.jackpotPrizes[0] = 5000;
@@ -256,7 +254,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         if (probability < jackpotThreshold) {
             return ("Jackpot", $.jackpotPrizes[weekNumber]);
-        }else if (probability <= 200_000) {
+        } else if (probability <= 200_000) {
             uint256 plumeAmount = $.plumeAmounts[probability % 3];
             return ("Plume Token", plumeAmount);
         } else if (probability <= 600_000) {
@@ -409,7 +407,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             uint256 jackpotWins,
             uint256 raffleTicketsGained,
             uint256 raffleTicketsBalance,
-            uint256 PPGained,
+            uint256 ppGained,
             uint256 smallPlumeTokens
         )
     {
@@ -447,6 +445,11 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         jackpotPrize = $.jackpotPrizes[uint8(weekNumber)];
         requiredStreak = weekNumber + 2;
+    }
+
+    function getCampaignStartDate() external view returns (uint256) {
+        SpinStorage storage $ = _getSpinStorage();
+        return $.campaignStartDate;
     }
 
     // Setters

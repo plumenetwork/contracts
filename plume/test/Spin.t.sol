@@ -44,7 +44,7 @@ contract SpinTest is Test {
     uint256 constant COOLDOWN_PERIOD = 86_400; // 1 day
     uint8 constant RNG_COUNT = 1;
     uint256 constant NUM_CONFIRMATIONS = 1;
-    mapping (bytes32 => uint256) public prizeCounts;
+    mapping(bytes32 => uint256) public prizeCounts;
 
     function setUp() public payable {
         // Fork from mainnet for testing with the deployed Supra Oracle
@@ -52,7 +52,7 @@ contract SpinTest is Test {
 
         // Deploy the DateTime contract from src/DateTime.sol
         dateTime = new DateTime();
-        vm.warp(dateTime.toTimestamp(2025, 3, 1, 10, 0, 0));
+        vm.warp(dateTime.toTimestamp(2025, 3, 8, 10, 0, 0));
 
         // Deploy the Spin contract
         vm.prank(ADMIN);
@@ -60,6 +60,9 @@ contract SpinTest is Test {
 
         vm.prank(ADMIN);
         spin.initialize(SUPRA_ORACLE, address(dateTime));
+
+        vm.prank(ADMIN);
+        spin.setCampaignStartDate();
 
         vm.prank(SUPRA_OWNER);
         IDepositContract(DEPOSIT_CONTRACT).addClientToWhitelist(ADMIN, true);
@@ -95,7 +98,7 @@ contract SpinTest is Test {
     function testStartSpin() public {
         vm.recordLogs();
 
-        vm.warp(dateTime.toTimestamp(2025, 3, 2, 10, 0, 0));
+        vm.warp(dateTime.toTimestamp(2025, 3, 10, 10, 0, 0));
         vm.prank(USER);
         spin.startSpin();
 
@@ -131,7 +134,9 @@ contract SpinTest is Test {
         Vm.Log[] memory entries2 = vm.getRecordedLogs();
         // Check if SpinCompleted event is emitted
         assertEq(entries2.length, 1, "No logs emitted");
-        assertEq(entries2[0].topics[0], keccak256("SpinCompleted(address,string,uint256)"), "SpinCompleted event not emitted");
+        assertEq(
+            entries2[0].topics[0], keccak256("SpinCompleted(address,string,uint256)"), "SpinCompleted event not emitted"
+        );
 
         emit log_named_string("Prize", abi.decode(entries2[0].data, (string)));
     }
@@ -160,12 +165,7 @@ contract SpinTest is Test {
     }
 
     function testSimulatePrizeHits() public {
-        uint256 baseTimestamp = dateTime.toTimestamp(2025, 3, 10, 0, 0, 0);
-        vm.warp(baseTimestamp);
-        vm.prank(ADMIN);
-        spin.setCampaignStartDate();
-
-        baseTimestamp = dateTime.toTimestamp(2025, 3, 10, 10, 0, 0);
+        uint256 baseTimestamp = dateTime.toTimestamp(2025, 3, 10, 10, 0, 0);
         uint256 spinsPerDay = 100;
         uint256 userSeed = 1;
 
@@ -211,16 +211,11 @@ contract SpinTest is Test {
             prizeCounts[keccak256(abi.encodePacked("XP"))] = 0;
             prizeCounts[keccak256(abi.encodePacked("Plume Token"))] = 0;
             prizeCounts[keccak256(abi.encodePacked("Nothing"))] = 0;
-
         }
     }
 
     function testStreakCount() public {
-        // Set the campaign start date
-        vm.warp(dateTime.toTimestamp(2025, 3, 10, 0, 0, 0));
-        vm.prank(ADMIN);
-        spin.setCampaignStartDate();
-
+      
         Vm.Log[] memory entries;
 
         // Start spin 1
@@ -262,5 +257,4 @@ contract SpinTest is Test {
         assertEq(streakCount, 0, "Streak count should be 0");
     }
 
-    
 }
