@@ -34,8 +34,12 @@ interface IPlumeStaking {
     function initialize(address owner, address pUSD_) external;
 
     // Staking functions
-    function stake() external payable returns (uint256);
-    function unstake() external returns (uint256 amount);
+    function stake(
+        uint16 validatorId
+    ) external payable returns (uint256);
+    function unstake(
+        uint16 validatorId
+    ) external returns (uint256 amount);
     function withdraw() external returns (uint256 amount);
 
     // Reward functions

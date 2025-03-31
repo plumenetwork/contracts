@@ -10,6 +10,8 @@ error InvalidAmount(uint256 amount);
 error NoActiveStake();
 error ZeroAddress(string parameter);
 error TokenDoesNotExist(address token);
+error CooldownNotComplete();
+error TransferFailed();
 
 // Staking errors
 error TokensInCoolingPeriod();

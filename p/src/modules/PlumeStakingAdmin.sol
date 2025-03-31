@@ -180,6 +180,9 @@ contract PlumeStakingAdmin is PlumeStakingBase {
         uint256 amount,
         address recipient
     ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        if (token == address(0)) {
+            revert ZeroAddress("token");
+        }
         if (recipient == address(0)) {
             revert ZeroAddress("recipient");
         }

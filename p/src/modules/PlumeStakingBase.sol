@@ -2,14 +2,20 @@
 pragma solidity ^0.8.25;
 
 import { IPlumeStaking } from "../interfaces/IPlumeStaking.sol";
+import { console } from "forge-std/console.sol";
 
 import {
+    CooldownNotComplete,
     CooldownPeriodNotEnded,
     InvalidAmount,
     NativeTransferFailed,
     NoActiveStake,
     TokenDoesNotExist,
-    TokensInCoolingPeriod
+    TooManyStakers,
+    TransferFailed,
+    ValidatorCapacityExceeded,
+    ValidatorDoesNotExist,
+    ValidatorInactive
 } from "../lib/PlumeErrors.sol";
 import { CoolingCompleted, RewardClaimed, Staked, Unstaked, Withdrawn } from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
@@ -79,57 +85,147 @@ abstract contract PlumeStakingBase is
     ) internal override onlyRole(UPGRADER_ROLE) { }
 
     /**
-     * @notice Stake PLUME into the contract
+     * @notice Stake PLUME to a specific validator
+     * @param validatorId ID of the validator to stake to
      */
-    function stake() external payable virtual override nonReentrant returns (uint256) {
+    function stake(
+        uint16 validatorId
+    ) external payable override returns (uint256) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
 
-        uint256 amount = msg.value;
-
-        if (amount < $.minStakeAmount) {
-            revert InvalidAmount(amount);
+        // Verify validator exists and is active
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
         }
 
-        _updateRewards(msg.sender);
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        if (!validator.active) {
+            revert ValidatorInactive(validatorId);
+        }
 
-        // Update total staked amount - simple direct stake
-        info.staked += amount;
-        $.totalStaked += amount;
+        // Get user's stake info
+        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
+        PlumeStakingStorage.StakeInfo storage validatorInfo = $.userValidatorStakes[msg.sender][validatorId];
 
-        _updateRewards(msg.sender);
-        _addStakerIfNew(msg.sender);
+        console.log("Staking - Initial state:");
+        console.log("  Amount from wallet:", msg.value);
+        console.log("  Global cooling amount:", info.cooled);
+        console.log("  Global cooldown end:", info.cooldownEnd);
+        console.log("  Current timestamp:", block.timestamp);
+        console.log("  Has active cooldown:", info.cooldownEnd > block.timestamp);
 
-        // Only from wallet - no other sources
-        emit Staked(msg.sender, amount, 0, 0, amount);
-        return amount;
+        // Calculate amounts to use from each source
+        uint256 fromCooling = 0;
+        uint256 fromParked = 0;
+        uint256 fromWallet = msg.value;
+        uint256 totalAmount = msg.value;
+
+        // Use cooling amount if available
+        if (info.cooled > 0) {
+            console.log("Using cooling amount:");
+            console.log("  Available cooling:", info.cooled);
+            fromCooling = info.cooled;
+            info.cooled = 0; // Clear cooling amount
+            totalAmount += fromCooling;
+            console.log("  Amount from cooling:", fromCooling);
+            console.log("  New total amount:", totalAmount);
+        }
+
+        // Use parked amount if available
+        if (info.parked > 0) {
+            console.log("Using parked amount:");
+            console.log("  Available parked:", info.parked);
+            fromParked = info.parked;
+            info.parked = 0; // Clear parked amount
+            totalAmount += fromParked;
+            console.log("  Amount from parked:", fromParked);
+            console.log("  New total amount:", totalAmount);
+        }
+
+        // Verify minimum stake amount
+        if (totalAmount < $.minStakeAmount) {
+            revert InvalidAmount(totalAmount);
+        }
+
+        console.log("Final amounts:");
+        console.log("  From cooling:", fromCooling);
+        console.log("  From parked:", fromParked);
+        console.log("  From wallet:", fromWallet);
+        console.log("  Total amount:", totalAmount);
+
+        // Update rewards before changing stake amount
+        _updateRewardsForValidator(msg.sender, validatorId);
+
+        // Update user's staked amount for this validator
+        validatorInfo.staked += totalAmount;
+        info.staked += totalAmount;
+
+        // Update validator's delegated amount
+        validator.delegatedAmount += totalAmount;
+
+        // Update total staked amounts
+        $.validatorTotalStaked[validatorId] += totalAmount;
+        $.totalStaked += totalAmount;
+
+        // Track user-validator relationship
+        _addStakerToValidator(msg.sender, validatorId);
+
+        // Update rewards again with new stake amount
+        _updateRewardsForValidator(msg.sender, validatorId);
+
+        emit Staked(msg.sender, totalAmount, fromCooling, fromParked, fromWallet);
+        return totalAmount;
     }
 
     /**
-     * @notice Unstake PLUME from the contract
+     * @notice Unstake PLUME from a specific validator
+     * @param validatorId ID of the validator to unstake from
      * @return amount Amount of PLUME unstaked
      */
-    function unstake() external virtual override nonReentrant returns (uint256 amount) {
+    function unstake(
+        uint16 validatorId
+    ) external override returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
+        PlumeStakingStorage.StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
+        PlumeStakingStorage.StakeInfo storage globalInfo = $.stakeInfo[msg.sender];
 
         if (info.staked == 0) {
             revert NoActiveStake();
         }
 
-        _updateRewards(msg.sender);
+        // Update rewards before changing stake amount
+        _updateRewardsForValidator(msg.sender, validatorId);
 
         // Get unstaked amount
         amount = info.staked;
 
-        // Update user's staked amount
+        // Update user's staked amount for this validator
         info.staked = 0;
+
+        // Update validator's delegated amount
+        $.validators[validatorId].delegatedAmount -= amount;
+
+        // Update total staked amounts
+        $.validatorTotalStaked[validatorId] -= amount;
         $.totalStaked -= amount;
 
-        // Move tokens to cooling period
-        info.cooled += amount;
-        $.totalCooling += amount;
-        info.cooldownEnd = block.timestamp + $.cooldownInterval;
+        // Handle cooling period
+        if (globalInfo.cooldownEnd != 0 && block.timestamp < globalInfo.cooldownEnd) {
+            console.log("  Has active cooldown:", true);
+            // If there's an active cooldown, keep the existing cooling amount
+            console.log("Active cooldown found, keeping existing cooling amount:", globalInfo.cooled);
+        } else {
+            console.log("  Has active cooldown:", false);
+            console.log("No active cooldown, starting new one:");
+            // Start new cooldown period with unstaked amount
+            console.log("  Setting cooling to:", amount);
+            globalInfo.cooled = amount;
+            globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
+        }
+
+        console.log("Final state:");
+        console.log("  Cooling amount:", globalInfo.cooled);
+        console.log("  Cooldown end:", globalInfo.cooldownEnd);
 
         emit Unstaked(msg.sender, amount);
         return amount;
@@ -139,30 +235,34 @@ abstract contract PlumeStakingBase is
      * @notice Withdraw PLUME that has completed the cooldown period
      * @return amount Amount of PLUME withdrawn
      */
-    function withdraw() external virtual override nonReentrant returns (uint256 amount) {
+    function withdraw() external override nonReentrant returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
 
-        // Move cooled tokens to parked if cooldown has ended
+        // Calculate withdrawable amount
+        amount = info.parked;
         if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
-            info.parked += info.cooled;
-            $.totalWithdrawable += info.cooled;
-            $.totalCooling -= info.cooled;
+            amount += info.cooled;
             info.cooled = 0;
-            info.cooldownEnd = 0;
+            $.totalCooling = ($.totalCooling > info.cooled) ? $.totalCooling - info.cooled : 0;
         }
 
-        // Withdraw all parked tokens
-        amount = info.parked;
         if (amount == 0) {
             revert InvalidAmount(amount);
         }
 
-        // Clear user's parked amount
+        // Clear parked amount and update timestamp
         info.parked = 0;
-        $.totalWithdrawable -= amount;
+        info.lastUpdateTimestamp = block.timestamp;
 
-        // Transfer native tokens to the user
+        // Update total withdrawable amount
+        if ($.totalWithdrawable >= amount) {
+            $.totalWithdrawable -= amount;
+        } else {
+            $.totalWithdrawable = 0;
+        }
+
+        // Transfer PLUME to user
         (bool success,) = payable(msg.sender).call{ value: amount }("");
         if (!success) {
             revert NativeTransferFailed();
@@ -306,7 +406,7 @@ abstract contract PlumeStakingBase is
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
 
         // If cooldown has ended, return 0
-        if (info.cooldownEnd != 0 && block.timestamp >= info.cooldownEnd) {
+        if (info.cooldownEnd <= block.timestamp) {
             return 0;
         }
 
@@ -321,7 +421,8 @@ abstract contract PlumeStakingBase is
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
 
         amount = info.parked;
-        if (info.cooled > 0 && info.cooldownEnd <= block.timestamp) {
+        // Add cooled amount if cooldown period has ended
+        if (info.cooldownEnd <= block.timestamp) {
             amount += info.cooled;
         }
 
@@ -406,7 +507,9 @@ abstract contract PlumeStakingBase is
         if ($.totalStaked > 0) {
             uint256 timeDelta = block.timestamp - $.lastUpdateTimes[token];
             if (timeDelta > 0 && $.rewardRates[token] > 0) {
-                uint256 reward = (timeDelta * $.rewardRates[token] * REWARD_PRECISION) / $.totalStaked;
+                // Calculate reward with proper precision handling
+                uint256 reward = timeDelta * $.rewardRates[token];
+                reward = (reward * REWARD_PRECISION) / $.totalStaked;
                 $.rewardPerTokenCumulative[token] += reward;
             }
         }
@@ -426,12 +529,17 @@ abstract contract PlumeStakingBase is
         if ($.totalStaked > 0) {
             uint256 timeDelta = block.timestamp - $.lastUpdateTimes[token];
             if (timeDelta > 0 && $.rewardRates[token] > 0) {
-                rewardPerToken += (timeDelta * $.rewardRates[token] * REWARD_PRECISION) / $.totalStaked;
+                // Calculate reward with proper precision handling
+                uint256 additionalReward = timeDelta * $.rewardRates[token];
+                additionalReward = (additionalReward * REWARD_PRECISION) / $.totalStaked;
+                rewardPerToken += additionalReward;
             }
         }
 
-        return $.rewards[user][token]
-            + ((userStakedAmount * (rewardPerToken - $.userRewardPerTokenPaid[user][token])) / REWARD_PRECISION);
+        // Calculate rewards with proper precision handling
+        uint256 rewardDelta = rewardPerToken - $.userRewardPerTokenPaid[user][token];
+        uint256 userRewardDelta = (userStakedAmount * rewardDelta) / REWARD_PRECISION;
+        return $.rewards[user][token] + userRewardDelta;
     }
 
     /**
@@ -459,6 +567,125 @@ abstract contract PlumeStakingBase is
         }
 
         return tokens.length;
+    }
+
+    /**
+     * @notice Add a staker to a validator's staker list
+     * @param staker Address of the staker
+     * @param validatorId ID of the validator
+     */
+    function _addStakerToValidator(address staker, uint16 validatorId) internal virtual {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Add validator to user's validator list if not already there
+        if (!$.userHasStakedWithValidator[staker][validatorId]) {
+            $.userValidators[staker].push(validatorId);
+            $.userHasStakedWithValidator[staker][validatorId] = true;
+        }
+
+        // Add user to validator's staker list if not already there
+        if (!$.isStakerForValidator[validatorId][staker]) {
+            $.validatorStakers[validatorId].push(staker);
+            $.isStakerForValidator[validatorId][staker] = true;
+        }
+
+        // Also add to global stakers list if not already there
+        _addStakerIfNew(staker);
+    }
+
+    /**
+     * @notice Update rewards for a user on a specific validator
+     * @param user Address of the user
+     * @param validatorId ID of the validator
+     */
+    function _updateRewardsForValidator(address user, uint16 validatorId) internal virtual {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        address[] memory rewardTokens = $.rewardTokens;
+
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            address token = rewardTokens[i];
+
+            // Update reward per token for this validator
+            _updateRewardPerTokenForValidator(token, validatorId);
+
+            if (user != address(0)) {
+                // Get validator commission rate
+                PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+                uint256 validatorCommission = validator.commission;
+
+                // Get user's stake info
+                uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
+
+                // Get previous reward data
+                uint256 oldReward = $.userRewards[user][validatorId][token];
+                uint256 oldRewardPerToken = $.userValidatorRewardPerTokenPaid[user][validatorId][token];
+                uint256 currentRewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
+
+                // Calculate reward with improved precision
+                uint256 rewardDelta = currentRewardPerToken - oldRewardPerToken;
+
+                // Calculate user's portion with commission deducted in a single operation
+                uint256 userRewardAfterCommission = (
+                    userStakedAmount * rewardDelta * (REWARD_PRECISION - validatorCommission)
+                ) / (REWARD_PRECISION * REWARD_PRECISION);
+
+                // Calculate commission amount
+                uint256 commissionAmount =
+                    (userStakedAmount * rewardDelta * validatorCommission) / (REWARD_PRECISION * REWARD_PRECISION);
+
+                // Add commission to validator's accrued commission
+                if (commissionAmount > 0) {
+                    $.validatorAccruedCommission[validatorId][token] += commissionAmount;
+                }
+
+                // Update user's reward after commission
+                $.userRewards[user][validatorId][token] = oldReward + userRewardAfterCommission;
+
+                // Update user's reward per token paid
+                $.userValidatorRewardPerTokenPaid[user][validatorId][token] = currentRewardPerToken;
+            }
+        }
+    }
+
+    /**
+     * @notice Update the reward per token value for a specific validator
+     * @param token The address of the reward token
+     * @param validatorId The ID of the validator
+     */
+    function _updateRewardPerTokenForValidator(address token, uint16 validatorId) internal virtual {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if ($.validatorTotalStaked[validatorId] > 0) {
+            uint256 timeDelta = block.timestamp - $.validatorLastUpdateTimes[validatorId][token];
+            if (timeDelta > 0 && $.rewardRates[token] > 0) {
+                // Calculate reward with proper precision handling
+                uint256 reward = (timeDelta * $.rewardRates[token]);
+                reward = (reward * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
+                $.validatorRewardPerTokenCumulative[validatorId][token] += reward;
+            }
+        }
+
+        $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
+    }
+
+    /**
+     * @notice Update rewards for all stakers of a validator
+     * @param validatorId ID of the validator
+     */
+    function _updateRewardsForAllValidatorStakers(
+        uint16 validatorId
+    ) internal virtual {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        address[] memory stakers = $.validatorStakers[validatorId];
+
+        // For safety, revert if attempting to update a very large number of stakers at once
+        if (stakers.length > 100) {
+            revert TooManyStakers();
+        }
+
+        for (uint256 i = 0; i < stakers.length; i++) {
+            _updateRewardsForValidator(stakers[i], validatorId);
+        }
     }
 
 }

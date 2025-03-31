@@ -34,17 +34,13 @@ contract PlumeStakingForkTest is Test {
 
     // Constants
     uint256 public constant INITIAL_BALANCE = 1000e18;
+    uint16 public constant DEFAULT_VALIDATOR_ID = 0;
 
     function setUp() public {
-        // Debug fork connection
         console2.log("Forking network...");
         string memory rpcUrl = vm.envString("PLUME_DEVNET_RPC_URL");
         console2.log("RPC URL:", rpcUrl);
-
-        // Create fork with explicit block number if needed
-        // If revert occurs, try with a specific block number
         vm.createSelectFork(rpcUrl);
-        console2.log("Fork created at block:", block.number);
 
         // Connect to the existing proxy contract
         staking = PlumeStaking(payable(PLUMESTAKING_PROXY));
@@ -98,7 +94,7 @@ contract PlumeStakingForkTest is Test {
 
         // Stake tokens
         vm.startPrank(user1);
-        staking.stake{ value: stakeAmount }();
+        staking.stake{ value: stakeAmount }(DEFAULT_VALIDATOR_ID);
         vm.stopPrank();
 
         // Check final state
@@ -122,14 +118,14 @@ contract PlumeStakingForkTest is Test {
 
         // Stake tokens
         vm.startPrank(user1);
-        staking.stake{ value: stakeAmount }();
+        staking.stake{ value: stakeAmount }(DEFAULT_VALIDATOR_ID);
 
         // Verify stake
         (uint256 afterStakeTotal,,,,) = staking.stakingInfo();
         assertEq(afterStakeTotal, initialStaked + stakeAmount, "Total staked amount incorrect after stake");
 
         // Unstake
-        staking.unstake();
+        staking.unstake(DEFAULT_VALIDATOR_ID);
 
         // Verify unstake
         (uint256 afterUnstakeTotal, uint256 totalCooling,,,) = staking.stakingInfo();
@@ -148,7 +144,7 @@ contract PlumeStakingForkTest is Test {
 
         // User 1 stakes
         vm.startPrank(user1);
-        staking.stake{ value: amount1 }();
+        staking.stake{ value: amount1 }(DEFAULT_VALIDATOR_ID);
         vm.stopPrank();
 
         // Verify after first stake
@@ -157,7 +153,7 @@ contract PlumeStakingForkTest is Test {
 
         // User 2 stakes
         vm.startPrank(user2);
-        staking.stake{ value: amount2 }();
+        staking.stake{ value: amount2 }(DEFAULT_VALIDATOR_ID);
         vm.stopPrank();
 
         // Verify after second stake

@@ -269,7 +269,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
      * @param user Address of the user
      * @param validatorId ID of the validator
      */
-    function _updateRewardsForValidator(address user, uint16 validatorId) internal {
+    function _updateRewardsForValidator(address user, uint16 validatorId) internal virtual override(PlumeStakingBase) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address[] memory rewardTokens = $.rewardTokens;
 
@@ -323,14 +323,18 @@ contract PlumeStakingValidator is PlumeStakingBase {
      * @param token The address of the reward token
      * @param validatorId The ID of the validator
      */
-    function _updateRewardPerTokenForValidator(address token, uint16 validatorId) internal {
+    function _updateRewardPerTokenForValidator(
+        address token,
+        uint16 validatorId
+    ) internal virtual override(PlumeStakingBase) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if ($.validatorTotalStaked[validatorId] > 0) {
             uint256 timeDelta = block.timestamp - $.validatorLastUpdateTimes[validatorId][token];
             if (timeDelta > 0 && $.rewardRates[token] > 0) {
-                uint256 reward =
-                    (timeDelta * $.rewardRates[token] * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
+                // Calculate reward with proper precision handling
+                uint256 reward = timeDelta * $.rewardRates[token];
+                reward = (reward * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
                 $.validatorRewardPerTokenCumulative[validatorId][token] += reward;
             }
         }
@@ -343,7 +347,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
      * @param staker Address of the staker
      * @param validatorId ID of the validator
      */
-    function _addStakerToValidator(address staker, uint16 validatorId) internal {
+    function _addStakerToValidator(address staker, uint16 validatorId) internal virtual override(PlumeStakingBase) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         // Add validator to user's validator list if not already there
@@ -368,7 +372,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
      */
     function _updateRewardsForAllValidatorStakers(
         uint16 validatorId
-    ) internal {
+    ) internal virtual override(PlumeStakingBase) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address[] memory stakers = $.validatorStakers[validatorId];
 
@@ -440,6 +444,25 @@ contract PlumeStakingValidator is PlumeStakingBase {
         emit ValidatorAdded(
             validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress
         );
+    }
+
+    /**
+     * @notice Set the maximum capacity for a validator
+     * @param validatorId ID of the validator
+     * @param maxCapacity New maximum capacity
+     */
+    function setValidatorCapacity(uint16 validatorId, uint256 maxCapacity) external onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        uint256 oldCapacity = validator.maxCapacity;
+        validator.maxCapacity = maxCapacity;
+
+        emit ValidatorCapacityUpdated(validatorId, oldCapacity, maxCapacity);
     }
 
 }

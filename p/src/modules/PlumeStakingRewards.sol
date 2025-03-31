@@ -10,7 +10,8 @@ import {
     InvalidAmount,
     RewardRateExceedsMax,
     TokenAlreadyExists,
-    TokenDoesNotExist
+    TokenDoesNotExist,
+    ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
     MaxRewardRateUpdated,
@@ -41,6 +42,10 @@ contract PlumeStakingRewards is PlumeStakingBase {
         address token
     ) external onlyRole(ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (token == address(0)) {
+            revert ZeroAddress("token");
+        }
 
         if (_isRewardToken(token)) {
             revert TokenAlreadyExists();
@@ -96,6 +101,10 @@ contract PlumeStakingRewards is PlumeStakingBase {
             address token = tokens[i];
             uint256 rate = rewardRates_[i];
 
+            if (!_isRewardToken(token)) {
+                revert TokenDoesNotExist(token);
+            }
+
             // If token has a specific max rate, use it; otherwise use the global default
             uint256 maxRate = $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
 
@@ -103,16 +112,8 @@ contract PlumeStakingRewards is PlumeStakingBase {
                 revert RewardRateExceedsMax();
             }
 
-            if (!_isRewardToken(token)) {
-                // Add token to reward list if not already included
-                $.rewardTokens.push(token);
-                $.lastUpdateTimes[token] = block.timestamp;
-                emit RewardTokenAdded(token);
-            } else {
-                // Update existing token reward state
-                _updateRewardPerToken(token);
-            }
-
+            // Update existing token reward state
+            _updateRewardPerToken(token);
             $.rewardRates[token] = rate;
         }
 
