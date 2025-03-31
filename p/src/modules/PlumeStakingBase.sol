@@ -107,54 +107,39 @@ abstract contract PlumeStakingBase is
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
         PlumeStakingStorage.StakeInfo storage validatorInfo = $.userValidatorStakes[msg.sender][validatorId];
 
-        console.log("Staking - Initial state:");
-        console.log("  Amount from wallet:", msg.value);
-        console.log("  Global cooling amount:", info.cooled);
-        console.log("  Global cooldown end:", info.cooldownEnd);
-        console.log("  Current timestamp:", block.timestamp);
-        console.log("  Has active cooldown:", info.cooldownEnd > block.timestamp);
-
-        // Calculate amounts to use from each source
+        // Calculate amounts to use from each source in the correct order: cooling > parked > wallet
         uint256 fromCooling = 0;
         uint256 fromParked = 0;
-        uint256 fromWallet = msg.value;
-        uint256 totalAmount = msg.value;
+        uint256 fromWallet = 0;
+        uint256 totalAmount = 0;
 
-        // Use cooling amount if available
+        // First, use cooling amount if available (regardless of cooldown status)
         if (info.cooled > 0) {
-            console.log("Using cooling amount:");
-            console.log("  Available cooling:", info.cooled);
-            fromCooling = msg.value; // Only use what we need from cooling
-            if (fromCooling > info.cooled) {
-                fromCooling = info.cooled;
-            }
-            info.cooled -= fromCooling; // Only subtract what we used
+            fromCooling = info.cooled;
+            info.cooled = 0;
+            $.totalCooling = ($.totalCooling > fromCooling) ? $.totalCooling - fromCooling : 0;
+            info.cooldownEnd = 0; // Reset cooldown period
             totalAmount += fromCooling;
-            console.log("  Amount from cooling:", fromCooling);
-            console.log("  New total amount:", totalAmount);
         }
 
-        // Use parked amount if available
+        // Second, use parked amount if available
         if (info.parked > 0) {
-            console.log("Using parked amount:");
-            console.log("  Available parked:", info.parked);
             fromParked = info.parked;
-            info.parked = 0; // Clear parked amount
+            info.parked = 0;
             totalAmount += fromParked;
-            console.log("  Amount from parked:", fromParked);
-            console.log("  New total amount:", totalAmount);
+            $.totalWithdrawable = ($.totalWithdrawable > fromParked) ? $.totalWithdrawable - fromParked : 0;
+        }
+
+        // Finally, use wallet amount if needed
+        if (msg.value > 0) {
+            fromWallet = msg.value;
+            totalAmount += fromWallet;
         }
 
         // Verify minimum stake amount
         if (totalAmount < $.minStakeAmount) {
             revert InvalidAmount(totalAmount);
         }
-
-        console.log("Final amounts:");
-        console.log("  From cooling:", fromCooling);
-        console.log("  From parked:", fromParked);
-        console.log("  From wallet:", fromWallet);
-        console.log("  Total amount:", totalAmount);
 
         // Update rewards before changing stake amount
         _updateRewardsForValidator(msg.sender, validatorId);
@@ -217,10 +202,12 @@ abstract contract PlumeStakingBase is
         // Handle cooling period
         if (globalInfo.cooldownEnd != 0 && block.timestamp < globalInfo.cooldownEnd) {
             console.log("  Has active cooldown:", true);
-            // If there's an active cooldown, replace the existing cooling amount
-            console.log("Active cooldown found, replacing cooling amount:", amount);
-            // Set the cooling amount to the unstaked amount
-            globalInfo.cooled = amount;
+            // If there's an active cooldown, add to the existing cooling amount
+            console.log("Active cooldown found, adding to cooling amount:", amount);
+            // Add the unstaked amount to the existing cooling amount
+            globalInfo.cooled += amount;
+            // Reset cooldown period to start from current timestamp
+            globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
         } else {
             console.log("  Has active cooldown:", false);
             console.log("No active cooldown, starting new one:");

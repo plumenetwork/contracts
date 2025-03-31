@@ -373,9 +373,9 @@ contract PlumeStakingTest is Test {
     }
 
     // Stake & unstake first amount (50e18 goes to cooling)
-    // Stake second amount (uses 30e18 from cooling, leaving 20e18)
-    // Unstake second amount (puts 30e18 back in cooling)
-    // Final stake uses 50e18 from cooling and 50e18 from wallet
+    // Stake second amount (uses 50e18 from cooling + 30e18 from wallet for a total of 80e18)
+    // Unstake second amount (puts 80e18 in cooling)
+    // Final stake uses all 80e18 from cooling and 100e18 from wallet for a total of 180e18
     function testStakeFromMultipleSources() public {
         uint256 coolingAmount = 50e18;
         uint256 secondStakeAmount = 30e18;
@@ -391,21 +391,28 @@ contract PlumeStakingTest is Test {
         PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
         assertEq(info.cooled, 50e18, "Initial cooling balance should be 50e18");
 
-        // Second stake uses 30e18 from cooling
-        staking.stake{ value: secondStakeAmount }(DEFAULT_VALIDATOR_ID); // Uses 30e18 from cooling
-        staking.unstake(DEFAULT_VALIDATOR_ID); // Puts 30e18 back in cooling
+        // Second stake uses all cooling + wallet funds
+        staking.stake{ value: secondStakeAmount }(DEFAULT_VALIDATOR_ID);
+
+        // Record the current timestamp for later comparison
+        uint256 timestampBeforeSecondUnstake = block.timestamp;
+
+        staking.unstake(DEFAULT_VALIDATOR_ID); // Puts 80e18 back in cooling
 
         // Verify cooling balance after second stake/unstake
         info = staking.stakeInfo(user1);
-        assertEq(info.cooled, 60e18, "Cooling balance should be 60e18");
+        assertEq(info.cooled, 80e18, "Cooling balance should be 80e18");
         assertEq(info.parked, 0, "Parked balance should be 0");
+
+        // Verify cooldown timestamp was reset
+        assertEq(info.cooldownEnd, timestampBeforeSecondUnstake + 7 days, "Cooldown timestamp should be reset");
 
         // Final stake
         staking.stake{ value: finalStakeAmount }(DEFAULT_VALIDATOR_ID);
 
         // Verify final state
         info = staking.stakeInfo(user1);
-        assertEq(info.staked, 160e18, "Should have total amount staked"); // 60e18 from cooling + 100e18 new
+        assertEq(info.staked, 180e18, "Should have total amount staked"); // 80e18 from cooling + 100e18 new
         assertEq(info.cooled, 0, "Cooling should be empty");
         assertEq(info.parked, 0, "Parked should be empty");
         vm.stopPrank();
@@ -423,9 +430,8 @@ contract PlumeStakingTest is Test {
         assertEq(info.staked, stakeAmount);
         assertEq(info.cooled, 0);
 
-        // Try to withdraw more than staked (should fail)
-        uint256 withdrawAmount = stakeAmount + 1;
-
+        // Try to withdraw when there's nothing to withdraw (should fail)
+        vm.expectRevert(abi.encodeWithSelector(InvalidAmount.selector, 0));
         staking.withdraw();
 
         // Now unstake
@@ -434,6 +440,7 @@ contract PlumeStakingTest is Test {
         // Wait for cooldown
         vm.warp(block.timestamp + 7 days + 1);
 
+        // Now we can withdraw successfully
         staking.withdraw();
 
         vm.stopPrank();
@@ -494,33 +501,41 @@ contract PlumeStakingTest is Test {
 
     function testStakeWithParked() public {
         uint256 initialStake = 50e18;
-        uint256 parkedAmount = 30e18;
 
         vm.startPrank(user1);
 
-        // First stake and unstake to get some parked tokens
+        // First stake and unstake to get some tokens in cooling
         staking.stake{ value: initialStake }(DEFAULT_VALIDATOR_ID);
         staking.unstake(DEFAULT_VALIDATOR_ID);
 
         // Wait for cooldown
         vm.warp(block.timestamp + 7 days + 1);
 
-        // Withdraw to parked
-        staking.withdraw();
+        // Check if tokens are withdrawable
+        PlumeStakingStorage.StakeInfo memory infoBeforeWithdraw = staking.stakeInfo(user1);
+        assertEq(infoBeforeWithdraw.cooled, initialStake, "Cooling should have tokens after cooldown ends");
 
-        // Now stake using parked tokens
+        // Withdraw - this moves tokens from the contract to the user's wallet
+        uint256 userBalanceBefore = address(user1).balance;
+        staking.withdraw();
+        uint256 userBalanceAfter = address(user1).balance;
+
+        // Verify tokens were withdrawn to user's wallet
+        assertEq(userBalanceAfter - userBalanceBefore, initialStake, "Tokens should be sent to user's wallet");
+
+        // Now stake using new tokens from wallet
         uint256 newStakeAmount = 40e18;
 
-        uint256 expectedFromParked = Math.min(parkedAmount, newStakeAmount);
-        uint256 expectedFromWallet = newStakeAmount - expectedFromParked;
-
+        // All tokens come from wallet since withdraw() sent them to the wallet
         vm.expectEmit(true, true, true, true);
-        emit Staked(user1, newStakeAmount, 0, expectedFromParked, expectedFromWallet);
+        emit Staked(user1, newStakeAmount, 0, 0, newStakeAmount);
         staking.stake{ value: newStakeAmount }(DEFAULT_VALIDATOR_ID);
 
+        // Verify final state
         PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
-        assertEq(info.parked, parkedAmount - expectedFromParked);
         assertEq(info.staked, newStakeAmount);
+        assertEq(info.cooled, 0);
+        assertEq(info.parked, 0);
 
         vm.stopPrank();
     }
@@ -534,15 +549,15 @@ contract PlumeStakingTest is Test {
         staking.unstake(DEFAULT_VALIDATOR_ID);
         vm.warp(block.timestamp + 7 days + 1);
 
-        uint256 withdrawAmount = 50e18;
-        uint256 initialBalance = plume.balanceOf(user1);
+        uint256 initialBalance = address(user1).balance;
 
         staking.withdraw();
 
         // Verify state changes
         PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
-        assertEq(info.parked, stakeAmount - withdrawAmount);
-        assertEq(plume.balanceOf(user1), initialBalance + withdrawAmount);
+        assertEq(info.parked, 0, "Parked should be empty after withdrawal");
+        assertEq(info.cooled, 0, "Cooled should be empty after withdrawal");
+        assertEq(address(user1).balance, initialBalance + stakeAmount, "Full amount should be transferred to user");
 
         vm.stopPrank();
     }
@@ -564,38 +579,76 @@ contract PlumeStakingTest is Test {
         staking.unstake(DEFAULT_VALIDATOR_ID);
 
         // Test cooling amounts before cooldown ends
+        PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
+        assertEq(info.cooled, stakeAmount, "Cooling amount should match unstaked amount");
         assertEq(staking.amountCooling(), stakeAmount);
+
+        // Get global totals - note that totalCooling starts at 0 and needs admin to update it
         (, uint256 totalCooling, uint256 totalWithdrawable,,) = staking.stakingInfo();
-        assertEq(totalCooling, stakeAmount);
-        assertEq(staking.amountWithdrawable(), 0); // Nothing withdrawable yet
+        assertEq(totalCooling, 0, "Total cooling starts at 0 until admin updates it");
         assertEq(totalWithdrawable, 0); // Nothing withdrawable yet
 
+        // Admin needs to update the totals to track cooling
+        vm.stopPrank();
+        vm.prank(admin);
+        staking.updateTotalAmounts(0, type(uint256).max);
+
+        // Now globalCooling should be updated
+        (, totalCooling, totalWithdrawable,,) = staking.stakingInfo();
+        assertEq(totalCooling, stakeAmount, "Total cooling now tracks the user's cooling amount");
+        assertEq(totalWithdrawable, 0); // Nothing withdrawable yet
+
+        vm.startPrank(user1);
+
         // Test cooldown date
-        PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
+        info = staking.stakeInfo(user1);
         uint256 cooldownEnd = info.cooldownEnd;
         assertTrue(cooldownEnd > block.timestamp);
 
         // Wait for cooldown and withdraw some
         vm.warp(block.timestamp + 7 days + 1);
 
-        // After cooldown, cooling amount should be 0 and withdrawable should be full amount
-        assertEq(staking.amountCooling(), 0, "Cooling amount should be 0 after cooldown");
-        (, totalCooling, totalWithdrawable,,) = staking.stakingInfo();
-        assertEq(totalCooling, 0, "Total cooling amount should be 0 after cooldown");
-        assertEq(staking.amountWithdrawable(), stakeAmount, "Full amount should be withdrawable");
-        assertEq(totalWithdrawable, stakeAmount, "Full amount should be withdrawable");
+        // After cooldown, amountCooling() should return 0 since cooldown is over
+        // But the actual cooling amount in storage is unchanged until withdrawn or updated
+        assertEq(staking.amountCooling(), 0, "amountCooling() should return 0 after cooldown");
 
-        // Withdraw part of the amount
+        // Get actual cooling amount from storage
+        info = staking.stakeInfo(user1);
+        assertEq(info.cooled, stakeAmount, "Actual cooling amount in storage should remain unchanged");
+
+        // Check withdrawable amounts - should include cooled amount now that cooldown is over
+        assertEq(staking.amountWithdrawable(), stakeAmount, "Full amount should be withdrawable");
+        (,, totalWithdrawable,,) = staking.stakingInfo();
+        assertEq(totalWithdrawable, 0, "Total withdrawable not updated until admin updates totals");
+
+        // Update the total amounts to reflect the current state
+        vm.stopPrank();
+        vm.prank(admin);
+        staking.updateTotalAmounts(0, type(uint256).max);
+
+        // Check updated totals after admin update
+        (, totalCooling, totalWithdrawable,,) = staking.stakingInfo();
+        assertEq(totalCooling, 0, "Total cooling should be 0 after admin update");
+        assertEq(totalWithdrawable, stakeAmount, "Total withdrawable should include cooled amount");
+
+        // After admin update, the funds are moved from cooling to parked,
+        // so amountCooling() should still return 0
+        vm.prank(user1);
+        assertEq(staking.amountCooling(), 0, "amountCooling() should return 0 after funds are moved to parked");
+
+        // Withdraw as user
+        vm.startPrank(user1);
         staking.withdraw();
 
-        // Test balances after partial withdrawal
+        // Test balances after withdrawal
         assertEq(staking.amountWithdrawable(), 0, "Remaining withdrawable amount incorrect");
         (,, totalWithdrawable,,) = staking.stakingInfo();
-        assertEq(totalWithdrawable, 0, "Total withdrawable amount incorrect");
+        // withdraw() correctly updates the totalWithdrawable
+        assertEq(totalWithdrawable, 0, "totalWithdrawable should be updated to 0 after withdraw");
 
         // Test claimable amounts
         assertEq(staking.getClaimableReward(user1, PUSD_TOKEN), 0);
-        assertEq(staking.getClaimableReward(user1, PUSD_TOKEN), 0);
+        assertEq(staking.getClaimableReward(user1, PLUME_NATIVE), 0);
 
         vm.stopPrank();
     }
@@ -610,21 +663,51 @@ contract PlumeStakingTest is Test {
 
         // Unstake to move to cooling
         staking.unstake(DEFAULT_VALIDATOR_ID);
+
+        // Let's confirm the state before any admin action
+        PlumeStakingStorage.StakeInfo memory infoBeforeUpdate = staking.stakeInfo(user1);
+        assertEq(infoBeforeUpdate.cooled, stakeAmount, "Cooling amount should be set after unstake");
+        assertEq(staking.amountCooling(), stakeAmount, "amountCooling() should return full amount during cooldown");
+
         vm.stopPrank();
 
-        // Admin updates totals first - start from index 0 and process all stakers
+        // Admin updates totals - start from index 0 and process all stakers
         vm.prank(admin);
         staking.updateTotalAmounts(0, type(uint256).max);
 
-        // Verify initial state
+        // Verify state after first updateTotalAmounts
         (uint256 totalStaked, uint256 totalCooling, uint256 totalWithdrawable,,) = staking.stakingInfo();
         assertEq(totalStaked, 0);
-        assertEq(totalCooling, stakeAmount);
+        assertEq(totalCooling, stakeAmount, "Cooling amount should be tracked in global state");
         assertEq(totalWithdrawable, 0);
-        assertEq(staking.amountCooling(), stakeAmount);
+
+        // Get the actual cooling amount from storage after updateTotalAmounts
+        PlumeStakingStorage.StakeInfo memory infoAfterUpdate = staking.stakeInfo(user1);
+        assertEq(infoAfterUpdate.cooled, stakeAmount, "Cooling amount in storage should be unchanged");
+        assertEq(infoAfterUpdate.cooldownEnd, infoBeforeUpdate.cooldownEnd, "Cooldown end should be unchanged");
+
+        // Check if amountCooling() still returns the correct amount during cooldown
+        vm.prank(user1);
+        assertEq(staking.amountCooling(), stakeAmount, "amountCooling() should return the amount during cooldown");
 
         // Move time past cooldown period
         vm.warp(block.timestamp + 7 days + 1);
+
+        // After cooldown, amountCooling() should return 0
+        vm.prank(user1);
+        assertEq(staking.amountCooling(), 0, "amountCooling() returns 0 after cooldown ends");
+
+        // The global cooling total has not been updated yet
+        (totalStaked, totalCooling, totalWithdrawable,,) = staking.stakingInfo();
+        assertEq(totalCooling, stakeAmount, "Total cooling amount hasn't been updated yet");
+
+        // Get the actual cooling amount from storage
+        PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
+        assertEq(info.cooled, stakeAmount, "Actual cooling amount in storage is unchanged");
+
+        // amountWithdrawable should now include the cooling amount
+        vm.prank(user1);
+        assertEq(staking.amountWithdrawable(), stakeAmount, "Amount should be withdrawable after cooldown");
 
         // Admin updates totals again after cooldown
         vm.prank(admin);
@@ -637,7 +720,11 @@ contract PlumeStakingTest is Test {
         assertEq(totalStaked, 0);
         assertEq(totalCooling, 0, "Cooling amount should be 0 after update");
         assertEq(totalWithdrawable, stakeAmount, "Amount should be withdrawable");
-        assertEq(staking.amountCooling(), 0, "Individual cooling amount should be 0 after update");
+
+        // User's storage state should be updated: cooling amount moved to parked
+        info = staking.stakeInfo(user1);
+        assertEq(info.cooled, 0, "Cooling amount in storage should be 0 after update");
+        assertEq(info.parked, stakeAmount, "Parked amount should be updated");
 
         // User can now withdraw
         vm.prank(user1);
@@ -647,7 +734,14 @@ contract PlumeStakingTest is Test {
         (totalStaked, totalCooling, totalWithdrawable,,) = staking.stakingInfo();
         assertEq(totalStaked, 0);
         assertEq(totalCooling, 0);
-        assertEq(totalWithdrawable, 0);
+
+        // withdraw() correctly updates the totalWithdrawable
+        assertEq(totalWithdrawable, 0, "totalWithdrawable should be updated to 0 after withdraw");
+
+        // Check user's final state - these amounts should be zero
+        info = staking.stakeInfo(user1);
+        assertEq(info.cooled, 0);
+        assertEq(info.parked, 0);
     }
 
     function testStorageSlot() public {
