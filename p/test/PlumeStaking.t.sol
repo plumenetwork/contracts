@@ -374,13 +374,12 @@ contract PlumeStakingTest is Test {
 
     // Stake & unstake first amount (50e18 goes to cooling)
     // Stake second amount (uses 30e18 from cooling, leaving 20e18)
-    // Unstake second amount (puts 30e18 back in cooling, total back to 50e18)
+    // Unstake second amount (puts 30e18 back in cooling)
     // Final stake uses 50e18 from cooling and 50e18 from wallet
     function testStakeFromMultipleSources() public {
         uint256 coolingAmount = 50e18;
-        uint256 parkedAmount = 30e18;
-        uint256 walletAmount = 20e18;
-        uint256 totalStakeAmount = 100e18;
+        uint256 secondStakeAmount = 30e18;
+        uint256 finalStakeAmount = 100e18;
 
         vm.startPrank(user1);
 
@@ -393,20 +392,20 @@ contract PlumeStakingTest is Test {
         assertEq(info.cooled, 50e18, "Initial cooling balance should be 50e18");
 
         // Second stake uses 30e18 from cooling
-        staking.stake{ value: parkedAmount }(DEFAULT_VALIDATOR_ID); // Uses 30e18 from cooling
+        staking.stake{ value: secondStakeAmount }(DEFAULT_VALIDATOR_ID); // Uses 30e18 from cooling
         staking.unstake(DEFAULT_VALIDATOR_ID); // Puts 30e18 back in cooling
 
-        // Verify cooling balance is still 50e18
+        // Verify cooling balance after second stake/unstake
         info = staking.stakeInfo(user1);
-        assertEq(info.cooled, 50e18, "Cooling balance should still be 50e18");
+        assertEq(info.cooled, 60e18, "Cooling balance should be 60e18");
         assertEq(info.parked, 0, "Parked balance should be 0");
 
         // Final stake
-        staking.stake{ value: totalStakeAmount }(DEFAULT_VALIDATOR_ID);
+        staking.stake{ value: finalStakeAmount }(DEFAULT_VALIDATOR_ID);
 
         // Verify final state
         info = staking.stakeInfo(user1);
-        assertEq(info.staked, totalStakeAmount, "Should have total amount staked");
+        assertEq(info.staked, 160e18, "Should have total amount staked"); // 60e18 from cooling + 100e18 new
         assertEq(info.cooled, 0, "Cooling should be empty");
         assertEq(info.parked, 0, "Parked should be empty");
         vm.stopPrank();

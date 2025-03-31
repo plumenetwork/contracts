@@ -124,8 +124,11 @@ abstract contract PlumeStakingBase is
         if (info.cooled > 0) {
             console.log("Using cooling amount:");
             console.log("  Available cooling:", info.cooled);
-            fromCooling = info.cooled;
-            info.cooled = 0; // Clear cooling amount
+            fromCooling = msg.value; // Only use what we need from cooling
+            if (fromCooling > info.cooled) {
+                fromCooling = info.cooled;
+            }
+            info.cooled -= fromCooling; // Only subtract what we used
             totalAmount += fromCooling;
             console.log("  Amount from cooling:", fromCooling);
             console.log("  New total amount:", totalAmount);
@@ -201,6 +204,8 @@ abstract contract PlumeStakingBase is
 
         // Update user's staked amount for this validator
         info.staked = 0;
+        // Update global stake info
+        globalInfo.staked -= amount;
 
         // Update validator's delegated amount
         $.validators[validatorId].delegatedAmount -= amount;
@@ -212,8 +217,10 @@ abstract contract PlumeStakingBase is
         // Handle cooling period
         if (globalInfo.cooldownEnd != 0 && block.timestamp < globalInfo.cooldownEnd) {
             console.log("  Has active cooldown:", true);
-            // If there's an active cooldown, keep the existing cooling amount
-            console.log("Active cooldown found, keeping existing cooling amount:", globalInfo.cooled);
+            // If there's an active cooldown, replace the existing cooling amount
+            console.log("Active cooldown found, replacing cooling amount:", amount);
+            // Set the cooling amount to the unstaked amount
+            globalInfo.cooled = amount;
         } else {
             console.log("  Has active cooldown:", false);
             console.log("No active cooldown, starting new one:");
