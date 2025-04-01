@@ -72,6 +72,33 @@ graph LR
 | `setMinStakeAmount(uint256 amount)` | Set the minimum stake amount |
 | `adminWithdraw(address token, uint256 amount, address recipient)` | Admin function to withdraw tokens |
 
+### AddValidator Parameters
+
+The `addValidator` function requires the following parameters:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `validatorId` | `uint16` | Unique identifier for the validator |
+| `commission` | `uint256` | Commission rate as a fraction of REWARD_PRECISION (e.g., 5% = 5e16, 10% = 1e17, 20% = 2e17) |
+| `l2AdminAddress` | `address` | Admin address that can manage the validator |
+| `l2WithdrawAddress` | `address` | Address to receive validator commission rewards |
+| `l1ValidatorAddress` | `string` | L1 validator address (informational) |
+| `l1AccountAddress` | `string` | L1 account address (informational) |
+
+**Example:**
+
+```solidity
+// Add a validator with 5% commission
+plumeStaking.addValidator(
+    1,                              // validatorId
+    5e16,                           // commission (5%)
+    0xAdminAddress,                 // l2AdminAddress
+    0xWithdrawAddress,              // l2WithdrawAddress
+    "0x123abc...",                  // l1ValidatorAddress
+    "0x456def..."                   // l1AccountAddress
+);
+```
+
 ## Events
 
 ### Core Staking Events
