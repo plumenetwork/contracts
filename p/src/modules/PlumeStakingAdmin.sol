@@ -5,6 +5,15 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { InvalidAmount, ZeroAddress } from "../lib/PlumeErrors.sol";
+import {
+    AdminWithdraw,
+    CooldownIntervalSet,
+    MinStakeAmountSet,
+    PartialTotalAmountsUpdated,
+    StakeInfoUpdated,
+    StakerAdded,
+    TotalAmountsUpdated
+} from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { PlumeStakingBase } from "./PlumeStakingBase.sol";
 /**
@@ -16,28 +25,6 @@ import { PlumeStakingBase } from "./PlumeStakingBase.sol";
 contract PlumeStakingAdmin is PlumeStakingBase {
 
     using SafeERC20 for IERC20;
-
-    // Events
-    event MinStakeAmountSet(uint256 amount);
-    event CooldownIntervalSet(uint256 interval);
-    event TotalAmountsUpdated(uint256 totalStaked, uint256 totalCooling, uint256 totalWithdrawable);
-    event PartialTotalAmountsUpdated(
-        uint256 startIndex,
-        uint256 endIndex,
-        uint256 processedStaked,
-        uint256 processedCooling,
-        uint256 processedWithdrawable
-    );
-    event StakeInfoUpdated(
-        address indexed user,
-        uint256 staked,
-        uint256 cooled,
-        uint256 parked,
-        uint256 cooldownEnd,
-        uint256 lastUpdateTimestamp
-    );
-    event StakerAdded(address indexed staker);
-    event AdminWithdraw(address indexed token, uint256 amount, address indexed recipient);
 
     // Admin helpers
     /**
