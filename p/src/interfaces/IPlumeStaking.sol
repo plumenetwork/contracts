@@ -39,6 +39,7 @@ interface IPlumeStaking {
     function stake(
         uint16 validatorId
     ) external payable returns (uint256);
+    function stakeOnBehalf(uint16 validatorId, address staker) external payable returns (uint256);
     function unstake(
         uint16 validatorId
     ) external returns (uint256 amount);

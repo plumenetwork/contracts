@@ -15,13 +15,15 @@ import {
     TransferFailed,
     ValidatorCapacityExceeded,
     ValidatorDoesNotExist,
-    ValidatorInactive
+    ValidatorInactive,
+    ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
     CoolingCompleted,
     RewardClaimed,
     RewardClaimedFromValidator,
     Staked,
+    StakedOnBehalf,
     Unstaked,
     UnstakedFromValidator,
     Withdrawn
@@ -517,6 +519,66 @@ abstract contract PlumeStakingBase is
         }
 
         return _earned(user, token, $.stakeInfo[user].staked);
+    }
+
+    /**
+     * @notice Stake PLUME to a specific validator on behalf of another user
+     * @param validatorId ID of the validator to stake to
+     * @param staker Address of the staker to stake on behalf of
+     * @return Amount of PLUME staked
+     */
+    function stakeOnBehalf(uint16 validatorId, address staker) external payable returns (uint256) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Verify validator exists and is active
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        if (staker == address(0)) {
+            revert ZeroAddress("staker");
+        }
+
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        if (!validator.active) {
+            revert ValidatorInactive(validatorId);
+        }
+
+        // Get staker's stake info
+        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[staker];
+        PlumeStakingStorage.StakeInfo storage validatorInfo = $.userValidatorStakes[staker][validatorId];
+
+        // Only use funds from msg.sender's wallet
+        uint256 fromWallet = msg.value;
+
+        // Verify minimum stake amount
+        if (fromWallet < $.minStakeAmount) {
+            revert InvalidAmount(fromWallet);
+        }
+
+        // Update rewards before changing stake amount
+        _updateRewardsForValidator(staker, validatorId);
+
+        // Update staker's staked amount for this validator
+        validatorInfo.staked += fromWallet;
+        info.staked += fromWallet;
+
+        // Update validator's delegated amount
+        validator.delegatedAmount += fromWallet;
+
+        // Update total staked amounts
+        $.validatorTotalStaked[validatorId] += fromWallet;
+        $.totalStaked += fromWallet;
+
+        // Track staker-validator relationship
+        _addStakerToValidator(staker, validatorId);
+
+        // Update rewards again with new stake amount
+        _updateRewardsForValidator(staker, validatorId);
+
+        emit Staked(staker, validatorId, fromWallet, 0, 0, fromWallet);
+        emit StakedOnBehalf(msg.sender, staker, validatorId, fromWallet);
+        return fromWallet;
     }
 
     // Internal utility functions

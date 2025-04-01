@@ -309,3 +309,12 @@ event EmergencyFundsTransferred(
 event ValidatorEmergencyTransfer(
     uint16 indexed fromValidatorId, uint16 indexed toValidatorId, uint256 amount, uint256 stakerCount
 );
+
+/**
+ * @notice Emitted when a user stakes PLUME on behalf of another user
+ * @param sender Address of the sender who initiated the stake
+ * @param staker Address of the staker who receives the stake
+ * @param validatorId ID of the validator
+ * @param amount Amount of $PLUME staked
+ */
+event StakedOnBehalf(address indexed sender, address indexed staker, uint16 indexed validatorId, uint256 amount);

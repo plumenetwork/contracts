@@ -750,4 +750,42 @@ contract PlumeStakingTest is Test {
         );
     }
 
+    function testStakeOnBehalf() public {
+        uint256 stakeAmount = 100e18;
+
+        // Setup initial balances
+        vm.deal(user1, stakeAmount);
+        vm.deal(user2, 0); // User2 has no funds initially
+
+        assertEq(address(user2).balance, 0, "User2 should start with 0 balance");
+
+        // User1 stakes on behalf of User2
+        vm.prank(user1);
+        staking.stakeOnBehalf{ value: stakeAmount }(DEFAULT_VALIDATOR_ID, user2);
+
+        // Check user2's stake info
+        PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user2);
+        assertEq(info.staked, stakeAmount, "User2 should have the staked amount");
+        assertEq(info.cooled, 0, "User2 should have no cooling amount");
+        assertEq(info.parked, 0, "User2 should have no parked amount");
+
+        // User2 should be able to unstake these funds
+        vm.prank(user2);
+        uint256 unstakeAmount = staking.unstake(DEFAULT_VALIDATOR_ID);
+        assertEq(unstakeAmount, stakeAmount, "User2 should be able to unstake the full amount");
+
+        // Verify cooling amount
+        info = staking.stakeInfo(user2);
+        assertEq(info.cooled, stakeAmount, "Amount should now be in cooling");
+
+        // Advance time to end cooldown
+        vm.warp(block.timestamp + 7 days + 1);
+
+        // User2 should be able to withdraw
+        vm.prank(user2);
+        uint256 withdrawnAmount = staking.withdraw();
+        assertEq(withdrawnAmount, stakeAmount, "User2 should be able to withdraw the full amount");
+        assertEq(address(user2).balance, stakeAmount, "User2 should now have the funds");
+    }
+
 }
