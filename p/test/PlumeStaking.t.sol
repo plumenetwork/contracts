@@ -585,7 +585,7 @@ contract PlumeStakingTest is Test {
 
         // Get global totals - note that totalCooling starts at 0 and needs admin to update it
         (, uint256 totalCooling, uint256 totalWithdrawable,,) = staking.stakingInfo();
-        assertEq(totalCooling, 0, "Total cooling starts at 0 until admin updates it");
+        assertEq(totalCooling, stakeAmount, "Total cooling should match unstaked amount");
         assertEq(totalWithdrawable, 0); // Nothing withdrawable yet
 
         // Admin needs to update the totals to track cooling

@@ -17,7 +17,15 @@ import {
     ValidatorDoesNotExist,
     ValidatorInactive
 } from "../lib/PlumeErrors.sol";
-import { CoolingCompleted, RewardClaimed, Staked, Unstaked, Withdrawn } from "../lib/PlumeEvents.sol";
+import {
+    CoolingCompleted,
+    RewardClaimed,
+    RewardClaimedFromValidator,
+    Staked,
+    Unstaked,
+    UnstakedFromValidator,
+    Withdrawn
+} from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -174,6 +182,12 @@ abstract contract PlumeStakingBase is
         uint16 validatorId
     ) external override returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Verify validator exists
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
         PlumeStakingStorage.StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
         PlumeStakingStorage.StakeInfo storage globalInfo = $.stakeInfo[msg.sender];
 
@@ -189,6 +203,7 @@ abstract contract PlumeStakingBase is
 
         // Update user's staked amount for this validator
         info.staked = 0;
+
         // Update global stake info
         globalInfo.staked -= amount;
 
@@ -217,11 +232,18 @@ abstract contract PlumeStakingBase is
             globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
         }
 
+        // Update validator-specific cooling totals
+        $.validatorTotalCooling[validatorId] += amount;
+        $.totalCooling += amount;
+
         console.log("Final state:");
         console.log("  Cooling amount:", globalInfo.cooled);
         console.log("  Cooldown end:", globalInfo.cooldownEnd);
 
+        // Emit both events for backward compatibility
         emit Unstaked(msg.sender, validatorId, amount);
+        emit UnstakedFromValidator(msg.sender, validatorId, amount);
+
         return amount;
     }
 
@@ -269,45 +291,103 @@ abstract contract PlumeStakingBase is
     /**
      * @notice Claim all accumulated rewards from a single token
      * @param token Address of the reward token to claim
+     * @param validatorId Optional validator ID to claim from (0 for global rewards)
      * @return amount Amount of reward token claimed
      */
-    function claim(
-        address token
-    ) external virtual override nonReentrant returns (uint256 amount) {
+    function _claimWithValidator(address token, uint16 validatorId) internal virtual returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if (!_isRewardToken(token)) {
             revert TokenDoesNotExist(token);
         }
 
-        _updateRewards(msg.sender);
-
-        amount = $.rewards[msg.sender][token];
-        if (amount > 0) {
-            $.rewards[msg.sender][token] = 0;
-
-            // Update total claimable
-            if ($.totalClaimableByToken[token] >= amount) {
-                $.totalClaimableByToken[token] -= amount;
-            } else {
-                $.totalClaimableByToken[token] = 0;
+        // For validator-specific claims, verify the validator exists
+        if (validatorId != 0) {
+            if (!$.validatorExists[validatorId]) {
+                revert ValidatorDoesNotExist(validatorId);
             }
+            _updateRewardsForValidator(msg.sender, validatorId);
+        } else {
+            _updateRewards(msg.sender);
+        }
 
-            // Transfer ERC20 tokens
-            if (token != PLUME) {
-                IERC20(token).safeTransfer(msg.sender, amount);
-            } else {
-                // For native token rewards
-                (bool success,) = payable(msg.sender).call{ value: amount }("");
-                if (!success) {
-                    revert NativeTransferFailed();
+        // Handle different reward types based on validatorId
+        if (validatorId != 0) {
+            // Validator-specific rewards
+            amount = $.userRewards[msg.sender][validatorId][token];
+            if (amount > 0) {
+                $.userRewards[msg.sender][validatorId][token] = 0;
+
+                // Update total claimable
+                if ($.totalClaimableByToken[token] >= amount) {
+                    $.totalClaimableByToken[token] -= amount;
+                } else {
+                    $.totalClaimableByToken[token] = 0;
                 }
-            }
 
-            emit RewardClaimed(msg.sender, token, amount);
+                // Transfer tokens - either ERC20 or native PLUME
+                if (token != PLUME) {
+                    IERC20(token).safeTransfer(msg.sender, amount);
+                } else {
+                    // Check if native transfer was successful
+                    (bool success,) = payable(msg.sender).call{ value: amount }("");
+                    if (!success) {
+                        revert NativeTransferFailed();
+                    }
+                }
+
+                emit RewardClaimedFromValidator(msg.sender, token, validatorId, amount);
+            }
+        } else {
+            // Global rewards
+            amount = $.rewards[msg.sender][token];
+            if (amount > 0) {
+                $.rewards[msg.sender][token] = 0;
+
+                // Update total claimable
+                if ($.totalClaimableByToken[token] >= amount) {
+                    $.totalClaimableByToken[token] -= amount;
+                } else {
+                    $.totalClaimableByToken[token] = 0;
+                }
+
+                // Transfer ERC20 tokens
+                if (token != PLUME) {
+                    IERC20(token).safeTransfer(msg.sender, amount);
+                } else {
+                    // For native token rewards
+                    (bool success,) = payable(msg.sender).call{ value: amount }("");
+                    if (!success) {
+                        revert NativeTransferFailed();
+                    }
+                }
+
+                emit RewardClaimed(msg.sender, token, amount);
+            }
         }
 
         return amount;
+    }
+
+    /**
+     * @notice Claim all accumulated rewards from a single token
+     * @param token Address of the reward token to claim
+     * @return amount Amount of reward token claimed
+     */
+    function claim(
+        address token
+    ) external virtual override nonReentrant returns (uint256 amount) {
+        return _claimWithValidator(token, 0);
+    }
+
+    /**
+     * @notice Claim all accumulated rewards from a single token for a specific validator
+     * @param token Address of the reward token to claim
+     * @param validatorId Validator ID to claim from
+     * @return amount Amount of reward token claimed
+     */
+    function claim(address token, uint16 validatorId) external virtual override nonReentrant returns (uint256 amount) {
+        return _claimWithValidator(token, validatorId);
     }
 
     /**
