@@ -42,9 +42,9 @@ graph LR
 
 | Function | Description |
 |----------|-------------|
-| `claim(address token)` | Claim rewards for a specific token (global) |
+| `claim(address token)` | Claim rewards for a specific token from all validators the user has staked with |
 | `claim(address token, uint16 validatorId)` | Claim rewards for a specific token from a specific validator |
-| `claimAll()` | Claim all accumulated rewards from all tokens |
+| `claimAll()` | Claim all accumulated rewards from all tokens and all validators |
 | `restakeRewards(uint16 validatorId)` | Stake native token rewards without withdrawing first |
 
 ### View Functions
@@ -156,6 +156,37 @@ plumeStaking.addValidator(
 | `REWARD_PRECISION` | `1e18` | Scaling factor for reward calculations |
 | `PLUME` | `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` | Address constant for native PLUME token |
 
+## Error Handling
+
+The PlumeStaking system uses custom Solidity errors for efficient gas usage and clear error reporting. Key errors include:
+
+### Core Errors
+- `InvalidAmount(uint256 amount)` - Thrown when an invalid amount is provided
+- `NoActiveStake()` - Thrown when trying to perform an operation requiring an active stake, but no stake is active
+- `ZeroAddress(string parameter)` - Thrown when a zero address is provided for a parameter that cannot be zero
+- `TokenDoesNotExist(address token)` - Thrown when trying to perform an operation with a token that doesn't exist
+- `InsufficientFunds(uint256 available, uint256 requested)` - Thrown when attempting to withdraw more funds than available
+
+### Validator Errors
+- `ValidatorDoesNotExist(uint16 validatorId)` - Thrown when trying to interact with a non-existent validator
+- `ValidatorAlreadyExists(uint16 validatorId)` - Thrown when trying to add a validator with an ID that already exists
+- `ValidatorInactive(uint16 validatorId)` - Thrown when trying to interact with an inactive validator
+- `NotValidatorAdmin(address caller)` - Thrown when a non-admin tries to perform a validator admin operation
+- `ValidatorCapacityExceeded()` - Thrown when a validator's capacity would be exceeded by an operation
+- `TooManyStakers()` - Thrown when an operation would affect too many stakers at once
+
+### Reward Errors
+- `TokenAlreadyExists()` - Thrown when trying to add a token that already exists in the reward token list
+- `CommissionTooHigh()` - Thrown when a validator commission exceeds the maximum allowed value
+- `RewardRateExceedsMax()` - Thrown when a reward rate exceeds the maximum allowed value
+- `NativeTransferFailed()` - Thrown when a native token transfer fails
+
+### Administrative Errors
+- `StakerExists(address staker)` - Thrown when attempting to add a staker that already exists
+- `AdminTransferFailed()` - Thrown when a native token transfer fails in an admin operation
+- `IndexOutOfRange(uint256 index, uint256 length)` - Thrown when an array index is out of bounds
+- `InvalidIndexRange(uint256 startIndex, uint256 endIndex)` - Thrown when an index range is invalid
+
 ## Staking Behavior
 
 ### Smart Cooling Token Usage
@@ -206,9 +237,19 @@ sequenceDiagram
     PlumeStaking->>User: Transfer unstaked tokens
     PlumeStaking-->>User: Withdrawn event
     
-    User->>PlumeStaking: claim(token)
-    PlumeStaking->>User: Transfer reward tokens
-    PlumeStaking-->>User: RewardClaimed event
+    alt Claim rewards from all validators
+        User->>PlumeStaking: claim(token)
+        PlumeStaking->>User: Transfer reward tokens from all validators
+        PlumeStaking-->>User: RewardClaimedFromValidator events
+    else Claim rewards from specific validator
+        User->>PlumeStaking: claim(token, validatorId)
+        PlumeStaking->>User: Transfer reward tokens from specific validator
+        PlumeStaking-->>User: RewardClaimedFromValidator event
+    else Claim all rewards from all tokens and validators
+        User->>PlumeStaking: claimAll()
+        PlumeStaking->>User: Transfer all reward tokens from all validators
+        PlumeStaking-->>User: RewardClaimedFromValidator events for each token/validator
+    end
 ```
 
 ## Getting Started

@@ -4,7 +4,15 @@ pragma solidity ^0.8.25;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { InvalidAmount, ZeroAddress } from "../lib/PlumeErrors.sol";
+import {
+    AdminTransferFailed,
+    IndexOutOfRange,
+    InsufficientFunds,
+    InvalidAmount,
+    InvalidIndexRange,
+    StakerExists,
+    ZeroAddress
+} from "../lib/PlumeErrors.sol";
 import {
     AdminWithdraw,
     CooldownIntervalSet,
@@ -43,7 +51,7 @@ contract PlumeStakingManager is PlumeStakingRewards {
         // Ensure indices are within bounds
         uint256 stakersLength = $.stakers.length;
         if (startIndex >= stakersLength) {
-            revert("Start index out of bounds");
+            revert IndexOutOfRange(startIndex, stakersLength);
         }
 
         // If endIndex is 0 or greater than stakers length, set it to stakers length
@@ -52,7 +60,7 @@ contract PlumeStakingManager is PlumeStakingRewards {
         }
 
         if (startIndex >= endIndex) {
-            revert("Invalid index range");
+            revert InvalidIndexRange(startIndex, endIndex);
         }
 
         // Process specified range of stakers
@@ -147,7 +155,7 @@ contract PlumeStakingManager is PlumeStakingRewards {
 
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         if ($.isStaker[staker]) {
-            revert("Already a staker");
+            revert StakerExists(staker);
         }
 
         $.stakers.push(staker);
@@ -190,11 +198,15 @@ contract PlumeStakingManager is PlumeStakingRewards {
                 totalLiabilities += PlumeStakingStorage.layout().totalClaimableByToken[PLUME];
             }
             uint256 balance = address(this).balance;
-            require(balance - amount >= totalLiabilities, "Cannot withdraw user funds");
+            if (balance - amount < totalLiabilities) {
+                revert InsufficientFunds(balance - totalLiabilities, amount);
+            }
 
             // Transfer native tokens
             (bool success,) = payable(recipient).call{ value: amount }("");
-            require(success, "Native token transfer failed");
+            if (!success) {
+                revert AdminTransferFailed();
+            }
         } else {
             // For ERC20 tokens
             IERC20(token).safeTransfer(recipient, amount);

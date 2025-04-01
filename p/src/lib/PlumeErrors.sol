@@ -121,3 +121,35 @@ error RewardRateExceedsMax();
  * @notice Thrown when a native token transfer fails
  */
 error NativeTransferFailed();
+
+/**
+ * @notice Thrown when an array index is out of bounds
+ * @param index The index that was out of bounds
+ * @param length The length of the array
+ */
+error IndexOutOfRange(uint256 index, uint256 length);
+
+/**
+ * @notice Thrown when an index range is invalid
+ * @param startIndex The start index
+ * @param endIndex The end index
+ */
+error InvalidIndexRange(uint256 startIndex, uint256 endIndex);
+
+/**
+ * @notice Thrown when attempting to add a staker that already exists
+ * @param staker The address of the staker that already exists
+ */
+error StakerExists(address staker);
+
+/**
+ * @notice Thrown when attempting to withdraw user funds
+ * @param available The amount available for withdrawal
+ * @param requested The amount requested for withdrawal
+ */
+error InsufficientFunds(uint256 available, uint256 requested);
+
+/**
+ * @notice Thrown when a native token transfer fails in an admin operation
+ */
+error AdminTransferFailed();
