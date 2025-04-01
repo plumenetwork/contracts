@@ -115,7 +115,7 @@ abstract contract PlumeStakingBase is
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
         PlumeStakingStorage.StakeInfo storage validatorInfo = $.userValidatorStakes[msg.sender][validatorId];
 
-        // Calculate amounts to use from each source in the correct order: cooling > parked > wallet
+        // Calculate amounts to use from each source
         uint256 fromCooling = 0;
         uint256 fromParked = 0;
         uint256 fromWallet = 0;
@@ -123,24 +123,37 @@ abstract contract PlumeStakingBase is
 
         // First, use cooling amount if available (regardless of cooldown status)
         if (info.cooled > 0) {
-            fromCooling = info.cooled;
-            info.cooled = 0;
+            // Determine how much to use from cooling - only use what's needed
+            uint256 amountToUseFromCooling = msg.value > 0
+                ? (msg.value < info.cooled ? msg.value : info.cooled) // Use only what's needed up to msg.value
+                : info.cooled; // If no msg.value, use all cooling tokens
+
+            fromCooling = amountToUseFromCooling;
+            info.cooled -= fromCooling;
             $.totalCooling = ($.totalCooling > fromCooling) ? $.totalCooling - fromCooling : 0;
-            info.cooldownEnd = 0; // Reset cooldown period
+
+            // Only reset cooldown if all cooling tokens are used
+            if (info.cooled == 0) {
+                info.cooldownEnd = 0;
+            }
+
             totalAmount += fromCooling;
         }
 
-        // Second, use parked amount if available
-        if (info.parked > 0) {
-            fromParked = info.parked;
-            info.parked = 0;
+        // Second, use parked amount if available and more is needed
+        uint256 remainingNeeded = msg.value > 0 ? (msg.value - fromCooling) : 0;
+        if (info.parked > 0 && remainingNeeded > 0) {
+            // Only use as much as needed from parked
+            fromParked = remainingNeeded > info.parked ? info.parked : remainingNeeded;
+            info.parked -= fromParked;
             totalAmount += fromParked;
             $.totalWithdrawable = ($.totalWithdrawable > fromParked) ? $.totalWithdrawable - fromParked : 0;
+            remainingNeeded -= fromParked;
         }
 
         // Finally, use wallet amount if needed
-        if (msg.value > 0) {
-            fromWallet = msg.value;
+        if (msg.value > 0 && remainingNeeded > 0) {
+            fromWallet = remainingNeeded;
             totalAmount += fromWallet;
         }
 
@@ -182,6 +195,35 @@ abstract contract PlumeStakingBase is
         uint16 validatorId
     ) external override returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        PlumeStakingStorage.StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
+
+        // Unstake the full amount
+        if (info.staked > 0) {
+            return _unstake(validatorId, info.staked);
+        }
+
+        // If no stake, revert with the appropriate error
+        revert NoActiveStake();
+    }
+
+    /**
+     * @notice Unstake a specific amount of PLUME from a specific validator
+     * @param validatorId ID of the validator to unstake from
+     * @param amount Amount of PLUME to unstake
+     * @return amountUnstaked The amount actually unstaked
+     */
+    function unstake(uint16 validatorId, uint256 amount) external override returns (uint256 amountUnstaked) {
+        return _unstake(validatorId, amount);
+    }
+
+    /**
+     * @notice Internal implementation of unstake logic
+     * @param validatorId ID of the validator to unstake from
+     * @param amount Amount of PLUME to unstake
+     * @return amountUnstaked The amount actually unstaked
+     */
+    function _unstake(uint16 validatorId, uint256 amount) internal returns (uint256 amountUnstaked) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         // Verify validator exists
         if (!$.validatorExists[validatorId]) {
@@ -195,46 +237,50 @@ abstract contract PlumeStakingBase is
             revert NoActiveStake();
         }
 
+        if (amount == 0) {
+            revert InvalidAmount(amount);
+        }
+
+        // Limit amount to what's actually staked
+        amountUnstaked = amount > info.staked ? info.staked : amount;
+
         // Update rewards before changing stake amount
         _updateRewardsForValidator(msg.sender, validatorId);
 
-        // Get unstaked amount
-        amount = info.staked;
-
         // Update user's staked amount for this validator
-        info.staked = 0;
+        info.staked -= amountUnstaked;
 
         // Update global stake info
-        globalInfo.staked -= amount;
+        globalInfo.staked -= amountUnstaked;
 
         // Update validator's delegated amount
-        $.validators[validatorId].delegatedAmount -= amount;
+        $.validators[validatorId].delegatedAmount -= amountUnstaked;
 
         // Update total staked amounts
-        $.validatorTotalStaked[validatorId] -= amount;
-        $.totalStaked -= amount;
+        $.validatorTotalStaked[validatorId] -= amountUnstaked;
+        $.totalStaked -= amountUnstaked;
 
         // Handle cooling period
         if (globalInfo.cooldownEnd != 0 && block.timestamp < globalInfo.cooldownEnd) {
             // If there's an active cooldown, add to the existing cooling amount
-            globalInfo.cooled += amount;
+            globalInfo.cooled += amountUnstaked;
             // Reset cooldown period to start from current timestamp
             globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
         } else {
             // Start new cooldown period with unstaked amount
-            globalInfo.cooled = amount;
+            globalInfo.cooled = amountUnstaked;
             globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
         }
 
         // Update validator-specific cooling totals
-        $.validatorTotalCooling[validatorId] += amount;
-        $.totalCooling += amount;
+        $.validatorTotalCooling[validatorId] += amountUnstaked;
+        $.totalCooling += amountUnstaked;
 
         // Emit both events for backward compatibility
-        emit Unstaked(msg.sender, validatorId, amount);
-        emit UnstakedFromValidator(msg.sender, validatorId, amount);
+        emit Unstaked(msg.sender, validatorId, amountUnstaked);
+        emit UnstakedFromValidator(msg.sender, validatorId, amountUnstaked);
 
-        return amount;
+        return amountUnstaked;
     }
 
     /**

@@ -43,6 +43,7 @@ interface IPlumeStaking {
     function unstake(
         uint16 validatorId
     ) external returns (uint256 amount);
+    function unstake(uint16 validatorId, uint256 amount) external returns (uint256 amountUnstaked);
     function withdraw() external returns (uint256 amount);
 
     // Reward functions

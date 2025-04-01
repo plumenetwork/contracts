@@ -372,10 +372,7 @@ contract PlumeStakingTest is Test {
         vm.stopPrank();
     }
 
-    // Stake & unstake first amount (50e18 goes to cooling)
-    // Stake second amount (uses 50e18 from cooling + 30e18 from wallet for a total of 80e18)
-    // Unstake second amount (puts 80e18 in cooling)
-    // Final stake uses all 80e18 from cooling and 100e18 from wallet for a total of 180e18
+    // Test using partial cooling funds when staking
     function testStakeFromMultipleSources() public {
         uint256 coolingAmount = 50e18;
         uint256 secondStakeAmount = 30e18;
@@ -391,28 +388,30 @@ contract PlumeStakingTest is Test {
         PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
         assertEq(info.cooled, 50e18, "Initial cooling balance should be 50e18");
 
-        // Second stake uses all cooling + wallet funds
+        // Second stake uses only the necessary cooling + wallet funds (30e18)
         staking.stake{ value: secondStakeAmount }(DEFAULT_VALIDATOR_ID);
 
         // Record the current timestamp for later comparison
         uint256 timestampBeforeSecondUnstake = block.timestamp;
 
-        staking.unstake(DEFAULT_VALIDATOR_ID); // Puts 80e18 back in cooling
+        staking.unstake(DEFAULT_VALIDATOR_ID); // Puts 30e18 back in cooling
 
         // Verify cooling balance after second stake/unstake
+        // Only 30e18 was staked, so unstaking should only put 30e18 in cooling
+        // 20e18 should still be in cooling from before
         info = staking.stakeInfo(user1);
-        assertEq(info.cooled, 80e18, "Cooling balance should be 80e18");
+        assertEq(info.cooled, 50e18, "Cooling balance should be 50e18 (20e18 remaining + 30e18 new)");
         assertEq(info.parked, 0, "Parked balance should be 0");
 
         // Verify cooldown timestamp was reset
         assertEq(info.cooldownEnd, timestampBeforeSecondUnstake + 7 days, "Cooldown timestamp should be reset");
 
-        // Final stake
+        // Final stake - uses all cooling (50e18) plus wallet funds (50e18)
         staking.stake{ value: finalStakeAmount }(DEFAULT_VALIDATOR_ID);
 
-        // Verify final state
+        // Verify final state - should be 50e18 from cooling + 50e18 from wallet = 100e18 total
         info = staking.stakeInfo(user1);
-        assertEq(info.staked, 180e18, "Should have total amount staked"); // 80e18 from cooling + 100e18 new
+        assertEq(info.staked, 100e18, "Should have total amount staked");
         assertEq(info.cooled, 0, "Cooling should be empty");
         assertEq(info.parked, 0, "Parked should be empty");
         vm.stopPrank();

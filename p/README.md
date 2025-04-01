@@ -7,7 +7,6 @@ PlumeStaking is a flexible and comprehensive staking system for PLUME tokens tha
 PlumeStaking uses a modular architecture with linear inheritance to organize functionality:
 
 ```mermaid
-%%{init: {'disableMermaidControls': true}}%%
 graph LR
     A[PlumeStakingBase] --> B[PlumeStakingValidator]
     B --> C[PlumeStakingRewards]
@@ -35,7 +34,8 @@ graph LR
 |----------|-------------|
 | `stake(uint16 validatorId)` | Stake PLUME tokens to a specific validator |
 | `stakeOnBehalf(uint16 validatorId, address staker)` | Stake on behalf of another user |
-| `unstake(uint16 validatorId)` | Unstake tokens from a specific validator |
+| `unstake(uint16 validatorId)` | Unstake all tokens from a specific validator |
+| `unstake(uint16 validatorId, uint256 amount)` | Unstake a specific amount of tokens from a validator |
 | `withdraw()` | Withdraw tokens that have completed the cooldown period |
 
 ### Reward Functions
@@ -128,22 +128,40 @@ graph LR
 | `REWARD_PRECISION` | `1e18` | Scaling factor for reward calculations |
 | `PLUME` | `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` | Address constant for native PLUME token |
 
+## Staking Behavior
+
+### Smart Cooling Token Usage
+
+When staking PLUME tokens, the system intelligently manages cooling tokens:
+
+- If the user has tokens in cooling state, the system only uses the necessary amount (up to the staking amount)
+- The cooldown period is only reset if all cooling tokens are used
+- If a user has 50 tokens in cooling and stakes 30 tokens, only 30 are used from cooling, preserving the cooldown period for the remaining 20 tokens
+
+### Partial Unstaking
+
+The system supports partial unstaking:
+
+- Users can unstake a specific amount from a validator using `unstake(validatorId, amount)`
+- This provides more flexibility compared to unstaking all tokens at once
+- Partially unstaked tokens still go through the cooldown period
+
 ## Staking Flow
 
 ```mermaid
-%%{init: {'disableMermaidControls': true}}%%
 sequenceDiagram
     participant User
     participant PlumeStaking
     participant Validator
     
     User->>PlumeStaking: stake(validatorId)
+    Note over PlumeStaking: Uses cooling tokens intelligently
     PlumeStaking->>Validator: Delegate tokens
     PlumeStaking-->>User: Staked event
     
     Note over User,PlumeStaking: Accumulating rewards
     
-    User->>PlumeStaking: unstake(validatorId)
+    User->>PlumeStaking: unstake(validatorId) or unstake(validatorId, amount)
     PlumeStaking->>PlumeStaking: Start cooldown period
     PlumeStaking-->>User: Unstaked event
     
