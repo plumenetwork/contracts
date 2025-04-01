@@ -137,6 +137,7 @@ When staking PLUME tokens, the system intelligently manages cooling tokens:
 - If the user has tokens in cooling state, the system only uses the necessary amount (up to the staking amount)
 - The cooldown period is only reset if all cooling tokens are used
 - If a user has 50 tokens in cooling and stakes 30 tokens, only 30 are used from cooling, preserving the cooldown period for the remaining 20 tokens
+- This provides a better user experience by allowing partial use of cooling tokens without losing cooldown progress on unused tokens
 
 ### Partial Unstaking
 
@@ -145,6 +146,7 @@ The system supports partial unstaking:
 - Users can unstake a specific amount from a validator using `unstake(validatorId, amount)`
 - This provides more flexibility compared to unstaking all tokens at once
 - Partially unstaked tokens still go through the cooldown period
+- The original `unstake(validatorId)` function remains as a convenience method to unstake all tokens
 
 ## Staking Flow
 
@@ -155,13 +157,18 @@ sequenceDiagram
     participant Validator
     
     User->>PlumeStaking: stake(validatorId)
-    Note over PlumeStaking: Uses cooling tokens intelligently
+    Note over PlumeStaking: Uses cooling tokens intelligently<br>(Preserves cooldown for partially used cooling)
     PlumeStaking->>Validator: Delegate tokens
     PlumeStaking-->>User: Staked event
     
     Note over User,PlumeStaking: Accumulating rewards
     
-    User->>PlumeStaking: unstake(validatorId) or unstake(validatorId, amount)
+    alt Unstake all tokens
+        User->>PlumeStaking: unstake(validatorId)
+    else Unstake specific amount
+        User->>PlumeStaking: unstake(validatorId, amount)
+    end
+    
     PlumeStaking->>PlumeStaking: Start cooldown period
     PlumeStaking-->>User: Unstaked event
     
