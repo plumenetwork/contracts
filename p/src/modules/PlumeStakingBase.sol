@@ -2,8 +2,6 @@
 pragma solidity ^0.8.25;
 
 import { IPlumeStaking } from "../interfaces/IPlumeStaking.sol";
-import { console } from "forge-std/console.sol";
-
 import {
     CooldownNotComplete,
     CooldownPeriodNotEnded,
@@ -218,18 +216,12 @@ abstract contract PlumeStakingBase is
 
         // Handle cooling period
         if (globalInfo.cooldownEnd != 0 && block.timestamp < globalInfo.cooldownEnd) {
-            console.log("  Has active cooldown:", true);
             // If there's an active cooldown, add to the existing cooling amount
-            console.log("Active cooldown found, adding to cooling amount:", amount);
-            // Add the unstaked amount to the existing cooling amount
             globalInfo.cooled += amount;
             // Reset cooldown period to start from current timestamp
             globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
         } else {
-            console.log("  Has active cooldown:", false);
-            console.log("No active cooldown, starting new one:");
             // Start new cooldown period with unstaked amount
-            console.log("  Setting cooling to:", amount);
             globalInfo.cooled = amount;
             globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
         }
@@ -237,10 +229,6 @@ abstract contract PlumeStakingBase is
         // Update validator-specific cooling totals
         $.validatorTotalCooling[validatorId] += amount;
         $.totalCooling += amount;
-
-        console.log("Final state:");
-        console.log("  Cooling amount:", globalInfo.cooled);
-        console.log("  Cooldown end:", globalInfo.cooldownEnd);
 
         // Emit both events for backward compatibility
         emit Unstaked(msg.sender, validatorId, amount);
