@@ -41,8 +41,7 @@ contract DeployPlumeStaking is Script {
         // 2. Prepare initialization data
         bytes memory initData = abi.encodeWithSelector(
             IPlumeStaking.initialize.selector,
-            ADMIN_ADDRESS, // owner
-            PUSD_TOKEN_ADDRESS // pUSD token
+            ADMIN_ADDRESS // owner
         );
 
         // 3. Deploy proxy contract pointing to implementation

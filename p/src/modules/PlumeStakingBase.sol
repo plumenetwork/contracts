@@ -68,15 +68,15 @@ abstract contract PlumeStakingBase is
     /**
      * @notice Initialize PlumeStaking
      * @param owner Address of the owner of PlumeStaking
-     * @param pUSD_ Address of the pUSD token
      */
-    function initialize(address owner, address pUSD_) public virtual override initializer {
+    function initialize(
+        address owner
+    ) public virtual override initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        $.pUSD = IERC20(pUSD_);
         $.minStakeAmount = 1e18;
         $.cooldownInterval = 7 days;
 

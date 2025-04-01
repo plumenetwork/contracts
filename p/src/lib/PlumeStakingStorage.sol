@@ -15,8 +15,6 @@ library PlumeStakingStorage {
 
     // Main storage struct using ERC-7201 namespaced storage pattern
     struct Layout {
-        /// @dev Address of the $pUSD token
-        IERC20 pUSD;
         /// @notice Array of all staker addresses
         address[] stakers;
         /// @notice Array of all reward token addresses

@@ -31,7 +31,9 @@ interface IPlumeStaking {
     function PLUME() external pure returns (address);
 
     // Core functions all implementations must support
-    function initialize(address owner, address pUSD_) external;
+    function initialize(
+        address owner
+    ) external;
 
     // Staking functions
     function stake(

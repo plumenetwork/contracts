@@ -18,10 +18,11 @@ contract PlumeStaking is PlumeStakingBase, PlumeStakingValidator, PlumeStakingRe
     /**
      * @notice Initialize PlumeStaking
      * @param owner Address of the owner of PlumeStaking
-     * @param pUSD_ Address of the pUSD token
      */
-    function initialize(address owner, address pUSD_) public override initializer {
-        super.initialize(owner, pUSD_);
+    function initialize(
+        address owner
+    ) public override initializer {
+        super.initialize(owner);
     }
 
     /**

@@ -80,7 +80,7 @@ contract PlumeStakingTest is Test {
         console2.log("Deployed implementation:", address(implementation));
 
         // Initialize proxy with the implementation
-        bytes memory initData = abi.encodeCall(PlumeStaking.initialize, (admin, PUSD_TOKEN));
+        bytes memory initData = abi.encodeCall(PlumeStaking.initialize, (admin));
         PlumeStakingProxy proxy = new PlumeStakingProxy(address(implementation), initData);
         console2.log("Deployed proxy:", address(proxy));
 
