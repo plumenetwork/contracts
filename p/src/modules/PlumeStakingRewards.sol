@@ -25,14 +25,14 @@ import {
     Staked
 } from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
-import { PlumeStakingBase } from "./PlumeStakingBase.sol";
+import { PlumeStakingValidator } from "./PlumeStakingValidator.sol";
 
 /**
  * @title PlumeStakingRewards
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Extension for rewards management functionality
  */
-contract PlumeStakingRewards is PlumeStakingBase {
+contract PlumeStakingRewards is PlumeStakingValidator {
 
     using SafeERC20 for IERC20;
 
@@ -303,13 +303,5 @@ contract PlumeStakingRewards is PlumeStakingBase {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         return $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
     }
-
-    // Empty implementations of abstract functions that will be overridden in PlumeStaking
-    function _addStakerToValidator(address staker, uint16 validatorId) internal virtual override { }
-    function _updateRewardsForValidator(address user, uint16 validatorId) internal virtual override { }
-    function _updateRewardPerTokenForValidator(address token, uint16 validatorId) internal virtual override { }
-    function _updateRewardsForAllValidatorStakers(
-        uint16 validatorId
-    ) internal virtual override { }
 
 }

@@ -15,14 +15,14 @@ import {
     TotalAmountsUpdated
 } from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
-import { PlumeStakingBase } from "./PlumeStakingBase.sol";
+import { PlumeStakingRewards } from "./PlumeStakingRewards.sol";
 /**
- * @title PlumeStakingAdmin
+ * @title PlumeStakingManager
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Extension for administrative functionality
  */
 
-contract PlumeStakingAdmin is PlumeStakingBase {
+contract PlumeStakingManager is PlumeStakingRewards {
 
     using SafeERC20 for IERC20;
 
@@ -242,13 +242,5 @@ contract PlumeStakingAdmin is PlumeStakingBase {
     function cooldownInterval() external view returns (uint256) {
         return PlumeStakingStorage.layout().cooldownInterval;
     }
-
-    // Empty implementations of abstract functions that will be overridden in PlumeStaking
-    function _addStakerToValidator(address staker, uint16 validatorId) internal virtual override { }
-    function _updateRewardsForValidator(address user, uint16 validatorId) internal virtual override { }
-    function _updateRewardPerTokenForValidator(address token, uint16 validatorId) internal virtual override { }
-    function _updateRewardsForAllValidatorStakers(
-        uint16 validatorId
-    ) internal virtual override { }
 
 }
