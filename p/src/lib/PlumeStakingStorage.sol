@@ -10,6 +10,9 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  */
 library PlumeStakingStorage {
 
+    /// @notice Special validator ID used for operations not tied to a specific validator
+    uint16 constant GLOBAL_VALIDATOR_ID = type(uint16).max; // 65535
+
     // Main storage struct using ERC-7201 namespaced storage pattern
     struct Layout {
         /// @dev Address of the $pUSD token

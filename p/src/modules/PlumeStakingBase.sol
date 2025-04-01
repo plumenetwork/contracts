@@ -161,7 +161,7 @@ abstract contract PlumeStakingBase is
         // Update rewards again with new stake amount
         _updateRewardsForValidator(msg.sender, validatorId);
 
-        emit Staked(msg.sender, totalAmount, fromCooling, fromParked, fromWallet);
+        emit Staked(msg.sender, validatorId, totalAmount, fromCooling, fromParked, fromWallet);
         return totalAmount;
     }
 
@@ -221,7 +221,7 @@ abstract contract PlumeStakingBase is
         console.log("  Cooling amount:", globalInfo.cooled);
         console.log("  Cooldown end:", globalInfo.cooldownEnd);
 
-        emit Unstaked(msg.sender, amount);
+        emit Unstaked(msg.sender, validatorId, amount);
         return amount;
     }
 
@@ -568,99 +568,21 @@ abstract contract PlumeStakingBase is
      * @param staker Address of the staker
      * @param validatorId ID of the validator
      */
-    function _addStakerToValidator(address staker, uint16 validatorId) internal virtual {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-
-        // Add validator to user's validator list if not already there
-        if (!$.userHasStakedWithValidator[staker][validatorId]) {
-            $.userValidators[staker].push(validatorId);
-            $.userHasStakedWithValidator[staker][validatorId] = true;
-        }
-
-        // Add user to validator's staker list if not already there
-        if (!$.isStakerForValidator[validatorId][staker]) {
-            $.validatorStakers[validatorId].push(staker);
-            $.isStakerForValidator[validatorId][staker] = true;
-        }
-
-        // Also add to global stakers list if not already there
-        _addStakerIfNew(staker);
-    }
+    function _addStakerToValidator(address staker, uint16 validatorId) internal virtual;
 
     /**
      * @notice Update rewards for a user on a specific validator
      * @param user Address of the user
      * @param validatorId ID of the validator
      */
-    function _updateRewardsForValidator(address user, uint16 validatorId) internal virtual {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        address[] memory rewardTokens = $.rewardTokens;
-
-        for (uint256 i = 0; i < rewardTokens.length; i++) {
-            address token = rewardTokens[i];
-
-            // Update reward per token for this validator
-            _updateRewardPerTokenForValidator(token, validatorId);
-
-            if (user != address(0)) {
-                // Get validator commission rate
-                PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
-                uint256 validatorCommission = validator.commission;
-
-                // Get user's stake info
-                uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
-
-                // Get previous reward data
-                uint256 oldReward = $.userRewards[user][validatorId][token];
-                uint256 oldRewardPerToken = $.userValidatorRewardPerTokenPaid[user][validatorId][token];
-                uint256 currentRewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
-
-                // Calculate reward with improved precision
-                uint256 rewardDelta = currentRewardPerToken - oldRewardPerToken;
-
-                // Calculate user's portion with commission deducted in a single operation
-                uint256 userRewardAfterCommission = (
-                    userStakedAmount * rewardDelta * (REWARD_PRECISION - validatorCommission)
-                ) / (REWARD_PRECISION * REWARD_PRECISION);
-
-                // Calculate commission amount
-                uint256 commissionAmount =
-                    (userStakedAmount * rewardDelta * validatorCommission) / (REWARD_PRECISION * REWARD_PRECISION);
-
-                // Add commission to validator's accrued commission
-                if (commissionAmount > 0) {
-                    $.validatorAccruedCommission[validatorId][token] += commissionAmount;
-                }
-
-                // Update user's reward after commission
-                $.userRewards[user][validatorId][token] = oldReward + userRewardAfterCommission;
-
-                // Update user's reward per token paid
-                $.userValidatorRewardPerTokenPaid[user][validatorId][token] = currentRewardPerToken;
-            }
-        }
-    }
+    function _updateRewardsForValidator(address user, uint16 validatorId) internal virtual;
 
     /**
      * @notice Update the reward per token value for a specific validator
      * @param token The address of the reward token
      * @param validatorId The ID of the validator
      */
-    function _updateRewardPerTokenForValidator(address token, uint16 validatorId) internal virtual {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-
-        if ($.validatorTotalStaked[validatorId] > 0) {
-            uint256 timeDelta = block.timestamp - $.validatorLastUpdateTimes[validatorId][token];
-            if (timeDelta > 0 && $.rewardRates[token] > 0) {
-                // Calculate reward with proper precision handling
-                uint256 reward = (timeDelta * $.rewardRates[token]);
-                reward = (reward * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
-                $.validatorRewardPerTokenCumulative[validatorId][token] += reward;
-            }
-        }
-
-        $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
-    }
+    function _updateRewardPerTokenForValidator(address token, uint16 validatorId) internal virtual;
 
     /**
      * @notice Update rewards for all stakers of a validator
@@ -668,18 +590,6 @@ abstract contract PlumeStakingBase is
      */
     function _updateRewardsForAllValidatorStakers(
         uint16 validatorId
-    ) internal virtual {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        address[] memory stakers = $.validatorStakers[validatorId];
-
-        // For safety, revert if attempting to update a very large number of stakers at once
-        if (stakers.length > 100) {
-            revert TooManyStakers();
-        }
-
-        for (uint256 i = 0; i < stakers.length; i++) {
-            _updateRewardsForValidator(stakers[i], validatorId);
-        }
-    }
+    ) internal virtual;
 
 }

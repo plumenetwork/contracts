@@ -256,4 +256,12 @@ contract PlumeStakingAdmin is PlumeStakingBase {
         return PlumeStakingStorage.layout().cooldownInterval;
     }
 
+    // Empty implementations of abstract functions that will be overridden in PlumeStaking
+    function _addStakerToValidator(address staker, uint16 validatorId) internal virtual override { }
+    function _updateRewardsForValidator(address user, uint16 validatorId) internal virtual override { }
+    function _updateRewardPerTokenForValidator(address token, uint16 validatorId) internal virtual override { }
+    function _updateRewardsForAllValidatorStakers(
+        uint16 validatorId
+    ) internal virtual override { }
+
 }

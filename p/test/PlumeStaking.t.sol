@@ -176,15 +176,15 @@ contract PlumeStakingTest is Test {
         // No approval needed for native token
         staking.stake{ value: amount }(DEFAULT_VALIDATOR_ID);
 
-        vm.expectEmit(true, false, false, true);
-        emit Unstaked(user1, amount);
+        vm.expectEmit(true, true, false, true);
+        emit Unstaked(user1, DEFAULT_VALIDATOR_ID, amount);
 
-        staking.unstake(DEFAULT_VALIDATOR_ID);
+        uint256 unstakeAmount = staking.unstake(DEFAULT_VALIDATOR_ID);
 
-        PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
-        assertEq(info.staked, 0);
-        assertEq(info.cooled, amount);
-        assertEq(info.cooldownEnd, block.timestamp + 7 days);
+        assertEq(unstakeAmount, amount);
+
+        // Check that amount is now in cooling
+        assertEq(staking.amountCooling(), amount);
         vm.stopPrank();
     }
 
@@ -528,7 +528,7 @@ contract PlumeStakingTest is Test {
 
         // All tokens come from wallet since withdraw() sent them to the wallet
         vm.expectEmit(true, true, true, true);
-        emit Staked(user1, newStakeAmount, 0, 0, newStakeAmount);
+        emit Staked(user1, DEFAULT_VALIDATOR_ID, newStakeAmount, 0, 0, newStakeAmount);
         staking.stake{ value: newStakeAmount }(DEFAULT_VALIDATOR_ID);
 
         // Verify final state

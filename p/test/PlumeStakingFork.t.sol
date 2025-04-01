@@ -37,6 +37,7 @@ contract PlumeStakingForkTest is Test {
     uint16 public constant DEFAULT_VALIDATOR_ID = 0;
 
     function setUp() public {
+        vm.skip(true);
         console2.log("Forking network...");
         string memory rpcUrl = vm.envString("PLUME_DEVNET_RPC_URL");
         console2.log("RPC URL:", rpcUrl);

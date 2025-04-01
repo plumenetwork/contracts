@@ -32,7 +32,7 @@ contract PlumeStaking is PlumeStakingBase, PlumeStakingValidator, PlumeStakingRe
     function _addStakerToValidator(
         address staker,
         uint16 validatorId
-    ) internal virtual override(PlumeStakingBase, PlumeStakingValidator) {
+    ) internal virtual override(PlumeStakingBase, PlumeStakingValidator, PlumeStakingAdmin, PlumeStakingRewards) {
         PlumeStakingValidator._addStakerToValidator(staker, validatorId);
     }
 
@@ -44,7 +44,7 @@ contract PlumeStaking is PlumeStakingBase, PlumeStakingValidator, PlumeStakingRe
     function _updateRewardsForValidator(
         address user,
         uint16 validatorId
-    ) internal virtual override(PlumeStakingBase, PlumeStakingValidator) {
+    ) internal virtual override(PlumeStakingBase, PlumeStakingValidator, PlumeStakingAdmin, PlumeStakingRewards) {
         PlumeStakingValidator._updateRewardsForValidator(user, validatorId);
     }
 
@@ -56,7 +56,7 @@ contract PlumeStaking is PlumeStakingBase, PlumeStakingValidator, PlumeStakingRe
     function _updateRewardPerTokenForValidator(
         address token,
         uint16 validatorId
-    ) internal virtual override(PlumeStakingBase, PlumeStakingValidator) {
+    ) internal virtual override(PlumeStakingBase, PlumeStakingValidator, PlumeStakingAdmin, PlumeStakingRewards) {
         PlumeStakingValidator._updateRewardPerTokenForValidator(token, validatorId);
     }
 
@@ -66,7 +66,7 @@ contract PlumeStaking is PlumeStakingBase, PlumeStakingValidator, PlumeStakingRe
      */
     function _updateRewardsForAllValidatorStakers(
         uint16 validatorId
-    ) internal virtual override(PlumeStakingBase, PlumeStakingValidator) {
+    ) internal virtual override(PlumeStakingBase, PlumeStakingValidator, PlumeStakingAdmin, PlumeStakingRewards) {
         PlumeStakingValidator._updateRewardsForAllValidatorStakers(validatorId);
     }
 

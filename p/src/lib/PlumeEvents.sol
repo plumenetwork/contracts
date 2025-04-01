@@ -10,19 +10,28 @@ pragma solidity ^0.8.25;
 /**
  * @notice Emitted when a user stakes PLUME
  * @param user Address of the user
+ * @param validatorId ID of the validator
  * @param amount Amount of $PLUME staked
  * @param fromCooling Amount taken from cooling
  * @param fromParked Amount taken from parked
  * @param fromWallet Amount taken from wallet
  */
-event Staked(address indexed user, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 fromWallet);
+event Staked(
+    address indexed user,
+    uint16 indexed validatorId,
+    uint256 amount,
+    uint256 fromCooling,
+    uint256 fromParked,
+    uint256 fromWallet
+);
 
 /**
  * @notice Emitted when a user unstakes PLUME
  * @param user Address of the user
+ * @param validatorId ID of the validator
  * @param amount Amount of PLUME unstaked
  */
-event Unstaked(address indexed user, uint256 amount);
+event Unstaked(address indexed user, uint16 indexed validatorId, uint256 amount);
 
 /**
  * @notice Emitted when a user withdraws their cooled-down PLUME

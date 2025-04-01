@@ -11,6 +11,8 @@ import {
     RewardRateExceedsMax,
     TokenAlreadyExists,
     TokenDoesNotExist,
+    ValidatorDoesNotExist,
+    ValidatorInactive,
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
@@ -151,11 +153,26 @@ contract PlumeStakingRewards is PlumeStakingBase {
 
     /**
      * @notice Stakes native token (PLUME) rewards without withdrawing them first
+     * @param validatorId ID of the validator to stake to
      * @return stakedAmount Amount of PLUME rewards that were staked
      */
-    function restakeRewards() external nonReentrant returns (uint256 stakedAmount) {
+    function restakeRewards(
+        uint16 validatorId
+    ) external nonReentrant returns (uint256 stakedAmount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Verify validator exists and is active
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        if (!validator.active) {
+            revert ValidatorInactive(validatorId);
+        }
+
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
+        PlumeStakingStorage.StakeInfo storage validatorInfo = $.userValidatorStakes[msg.sender][validatorId];
 
         // Native token is represented by PLUME constant
         address token = PLUME;
@@ -181,17 +198,29 @@ contract PlumeStakingRewards is PlumeStakingBase {
                 $.totalClaimableByToken[token] = 0;
             }
 
-            // Add to user's staked amount
+            // Update rewards before changing stake amount
+            _updateRewardsForValidator(msg.sender, validatorId);
+
+            // Update user's staked amount for this validator
+            validatorInfo.staked += stakedAmount;
             info.staked += stakedAmount;
+
+            // Update validator's delegated amount
+            validator.delegatedAmount += stakedAmount;
+
+            // Update total staked amounts
+            $.validatorTotalStaked[validatorId] += stakedAmount;
             $.totalStaked += stakedAmount;
 
+            // Track user-validator relationship
+            _addStakerToValidator(msg.sender, validatorId);
+
             // Update rewards again with new stake amount
-            _updateRewards(msg.sender);
-            _addStakerIfNew(msg.sender);
+            _updateRewardsForValidator(msg.sender, validatorId);
 
             // Emit both claimed and staked events
             emit RewardClaimed(msg.sender, token, stakedAmount);
-            emit Staked(msg.sender, stakedAmount, 0, 0, 0);
+            emit Staked(msg.sender, validatorId, stakedAmount, 0, 0, 0);
         }
 
         return stakedAmount;
@@ -274,5 +303,13 @@ contract PlumeStakingRewards is PlumeStakingBase {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         return $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
     }
+
+    // Empty implementations of abstract functions that will be overridden in PlumeStaking
+    function _addStakerToValidator(address staker, uint16 validatorId) internal virtual override { }
+    function _updateRewardsForValidator(address user, uint16 validatorId) internal virtual override { }
+    function _updateRewardPerTokenForValidator(address token, uint16 validatorId) internal virtual override { }
+    function _updateRewardsForAllValidatorStakers(
+        uint16 validatorId
+    ) internal virtual override { }
 
 }
