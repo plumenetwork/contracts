@@ -7,7 +7,7 @@ PlumeStaking is a flexible and comprehensive staking system for PLUME tokens tha
 PlumeStaking uses a modular architecture with linear inheritance to organize functionality:
 
 ```mermaid
-graph TD
+graph LR
     A[PlumeStakingBase] --> B[PlumeStakingValidator]
     B --> C[PlumeStakingRewards]
     C --> D[PlumeStakingManager]
