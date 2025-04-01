@@ -18,6 +18,7 @@ import {
 import {
     MaxRewardRateUpdated,
     RewardClaimed,
+    RewardClaimedFromValidator,
     RewardRatesSet,
     RewardTokenAdded,
     RewardTokenRemoved,
@@ -73,7 +74,7 @@ contract PlumeStakingRewards is PlumeStakingValidator {
         }
 
         // Capture any remaining rewards and zero the rate
-        _updateRewardPerToken(token);
+        _updateRewardPerToken(token, 0);
         $.rewardRates[token] = 0;
 
         // Remove token from the rewards list (replace with last element and pop)
@@ -114,8 +115,12 @@ contract PlumeStakingRewards is PlumeStakingValidator {
                 revert RewardRateExceedsMax();
             }
 
-            // Update existing token reward state
-            _updateRewardPerToken(token);
+            // Update existing token reward state for all validators
+            uint16[] memory validatorIds = $.validatorIds;
+            for (uint256 j = 0; j < validatorIds.length; j++) {
+                _updateRewardPerToken(token, validatorIds[j]);
+            }
+
             $.rewardRates[token] = rate;
         }
 
@@ -134,7 +139,11 @@ contract PlumeStakingRewards is PlumeStakingValidator {
             revert TokenDoesNotExist(token);
         }
 
-        _updateRewardPerToken(token);
+        // Update for all validators
+        uint16[] memory validatorIds = $.validatorIds;
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            _updateRewardPerToken(token, validatorIds[i]);
+        }
 
         // For native token
         if (token == PLUME) {
@@ -181,23 +190,34 @@ contract PlumeStakingRewards is PlumeStakingValidator {
             revert TokenDoesNotExist(token);
         }
 
-        // Update rewards to get the latest amount
+        // Update rewards to get the latest amount for all validators
         _updateRewards(msg.sender);
 
-        // Get the current reward amount for native token
-        stakedAmount = $.rewards[msg.sender][token];
+        // Get all of the user's validators and sum claimable rewards
+        uint16[] memory userValidators = $.userValidators[msg.sender];
+        stakedAmount = 0;
+
+        for (uint256 i = 0; i < userValidators.length; i++) {
+            uint16 userValidatorId = userValidators[i];
+            uint256 validatorRewards = $.userRewards[msg.sender][userValidatorId][token];
+
+            if (validatorRewards > 0) {
+                // Reset rewards to 0 as if they were claimed
+                $.userRewards[msg.sender][userValidatorId][token] = 0;
+                stakedAmount += validatorRewards;
+
+                // Update total claimable
+                if ($.totalClaimableByToken[token] >= validatorRewards) {
+                    $.totalClaimableByToken[token] -= validatorRewards;
+                } else {
+                    $.totalClaimableByToken[token] = 0;
+                }
+
+                emit RewardClaimedFromValidator(msg.sender, token, userValidatorId, validatorRewards);
+            }
+        }
 
         if (stakedAmount > 0) {
-            // Reset rewards to 0 as if they were claimed
-            $.rewards[msg.sender][token] = 0;
-
-            // Update total claimable
-            if ($.totalClaimableByToken[token] >= stakedAmount) {
-                $.totalClaimableByToken[token] -= stakedAmount;
-            } else {
-                $.totalClaimableByToken[token] = 0;
-            }
-
             // Update rewards before changing stake amount
             _updateRewardsForValidator(msg.sender, validatorId);
 
@@ -218,8 +238,7 @@ contract PlumeStakingRewards is PlumeStakingValidator {
             // Update rewards again with new stake amount
             _updateRewardsForValidator(msg.sender, validatorId);
 
-            // Emit both claimed and staked events
-            emit RewardClaimed(msg.sender, token, stakedAmount);
+            // Emit staked event
             emit Staked(msg.sender, validatorId, stakedAmount, 0, 0, 0);
         }
 
@@ -230,7 +249,7 @@ contract PlumeStakingRewards is PlumeStakingValidator {
      * @notice Get reward information for a user
      * @param user Address of the user
      * @param token Address of the token
-     * @return rewards Current pending rewards
+     * @return rewards Total current pending rewards across all validators
      */
     function earned(address user, address token) external view returns (uint256 rewards) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
@@ -239,7 +258,14 @@ contract PlumeStakingRewards is PlumeStakingValidator {
             return 0;
         }
 
-        return _earned(user, token, $.stakeInfo[user].staked);
+        uint16[] memory userValidators = $.userValidators[user];
+
+        for (uint256 i = 0; i < userValidators.length; i++) {
+            uint16 validatorId = userValidators[i];
+            rewards += _earned(user, token, validatorId);
+        }
+
+        return rewards;
     }
 
     /**

@@ -325,9 +325,9 @@ abstract contract PlumeStakingBase is
     }
 
     /**
-     * @notice Claim all accumulated rewards from a single token
-     * @param token Address of the reward token to claim
-     * @param validatorId Optional validator ID to claim from (0 for global rewards)
+     * @notice Claim rewards for a specific token from a specific validator
+     * @param token Address of the token to claim
+     * @param validatorId ID of the validator to claim from
      * @return amount Amount of reward token claimed
      */
     function _claimWithValidator(address token, uint16 validatorId) internal virtual returns (uint256 amount) {
@@ -337,89 +337,70 @@ abstract contract PlumeStakingBase is
             revert TokenDoesNotExist(token);
         }
 
-        // For validator-specific claims, verify the validator exists
-        if (validatorId != 0) {
-            if (!$.validatorExists[validatorId]) {
-                revert ValidatorDoesNotExist(validatorId);
-            }
-            _updateRewardsForValidator(msg.sender, validatorId);
-        } else {
-            _updateRewards(msg.sender);
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
         }
 
-        // Handle different reward types based on validatorId
-        if (validatorId != 0) {
-            // Validator-specific rewards
-            amount = $.userRewards[msg.sender][validatorId][token];
-            if (amount > 0) {
-                $.userRewards[msg.sender][validatorId][token] = 0;
+        _updateRewardsForValidator(msg.sender, validatorId);
 
-                // Update total claimable
-                if ($.totalClaimableByToken[token] >= amount) {
-                    $.totalClaimableByToken[token] -= amount;
-                } else {
-                    $.totalClaimableByToken[token] = 0;
-                }
+        amount = $.userRewards[msg.sender][validatorId][token];
+        if (amount > 0) {
+            $.userRewards[msg.sender][validatorId][token] = 0;
 
-                // Transfer tokens - either ERC20 or native PLUME
-                if (token != PLUME) {
-                    IERC20(token).safeTransfer(msg.sender, amount);
-                } else {
-                    // Check if native transfer was successful
-                    (bool success,) = payable(msg.sender).call{ value: amount }("");
-                    if (!success) {
-                        revert NativeTransferFailed();
-                    }
-                }
-
-                emit RewardClaimedFromValidator(msg.sender, token, validatorId, amount);
+            // Update total claimable
+            if ($.totalClaimableByToken[token] >= amount) {
+                $.totalClaimableByToken[token] -= amount;
+            } else {
+                $.totalClaimableByToken[token] = 0;
             }
-        } else {
-            // Global rewards
-            amount = $.rewards[msg.sender][token];
-            if (amount > 0) {
-                $.rewards[msg.sender][token] = 0;
 
-                // Update total claimable
-                if ($.totalClaimableByToken[token] >= amount) {
-                    $.totalClaimableByToken[token] -= amount;
-                } else {
-                    $.totalClaimableByToken[token] = 0;
+            // Transfer tokens - either ERC20 or native PLUME
+            if (token != PLUME) {
+                IERC20(token).safeTransfer(msg.sender, amount);
+            } else {
+                // Check if native transfer was successful
+                (bool success,) = payable(msg.sender).call{ value: amount }("");
+                if (!success) {
+                    revert NativeTransferFailed();
                 }
-
-                // Transfer ERC20 tokens
-                if (token != PLUME) {
-                    IERC20(token).safeTransfer(msg.sender, amount);
-                } else {
-                    // For native token rewards
-                    (bool success,) = payable(msg.sender).call{ value: amount }("");
-                    if (!success) {
-                        revert NativeTransferFailed();
-                    }
-                }
-
-                emit RewardClaimed(msg.sender, token, amount);
             }
+
+            emit RewardClaimedFromValidator(msg.sender, token, validatorId, amount);
         }
 
         return amount;
     }
 
     /**
-     * @notice Claim all accumulated rewards from a single token
-     * @param token Address of the reward token to claim
-     * @return amount Amount of reward token claimed
+     * @notice Claim rewards for a specific token from all validators
+     * @param token Address of the token to claim
+     * @return totalAmount Total amount of reward token claimed
      */
     function claim(
         address token
-    ) external virtual override nonReentrant returns (uint256 amount) {
-        return _claimWithValidator(token, 0);
+    ) external virtual override nonReentrant returns (uint256 totalAmount) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!_isRewardToken(token)) {
+            revert TokenDoesNotExist(token);
+        }
+
+        uint16[] memory userValidators = $.userValidators[msg.sender];
+        totalAmount = 0;
+
+        for (uint256 i = 0; i < userValidators.length; i++) {
+            uint16 validatorId = userValidators[i];
+            uint256 amount = _claimWithValidator(token, validatorId);
+            totalAmount += amount;
+        }
+
+        return totalAmount;
     }
 
     /**
-     * @notice Claim all accumulated rewards from a single token for a specific validator
-     * @param token Address of the reward token to claim
-     * @param validatorId Validator ID to claim from
+     * @notice Claim rewards for a specific token from a specific validator
+     * @param token Address of the token to claim
+     * @param validatorId ID of the validator to claim from
      * @return amount Amount of reward token claimed
      */
     function claim(address token, uint16 validatorId) external virtual override nonReentrant returns (uint256 amount) {
@@ -427,47 +408,35 @@ abstract contract PlumeStakingBase is
     }
 
     /**
-     * @notice Claim all accumulated rewards from all tokens
-     * @return amounts Array of amounts claimed for each token
+     * @notice Claim rewards for all tokens from all validators
+     * @return totalAmount Total amount of all reward tokens claimed
      */
-    function claimAll() external virtual override nonReentrant returns (uint256[] memory amounts) {
+    function claimAll() external virtual override nonReentrant returns (uint256 totalAmount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address[] memory tokens = $.rewardTokens;
-        amounts = new uint256[](tokens.length);
+        uint16[] memory userValidators = $.userValidators[msg.sender];
 
-        _updateRewards(msg.sender);
-
+        // For each token
         for (uint256 i = 0; i < tokens.length; i++) {
             address token = tokens[i];
-            uint256 amount = $.rewards[msg.sender][token];
 
-            if (amount > 0) {
-                $.rewards[msg.sender][token] = 0;
-                amounts[i] = amount;
-
-                // Update total claimable
-                if ($.totalClaimableByToken[token] >= amount) {
-                    $.totalClaimableByToken[token] -= amount;
-                } else {
-                    $.totalClaimableByToken[token] = 0;
-                }
-
-                // Transfer ERC20 tokens
-                if (token != PLUME) {
-                    IERC20(token).safeTransfer(msg.sender, amount);
-                } else {
-                    // For native token rewards
-                    (bool success,) = payable(msg.sender).call{ value: amount }("");
-                    if (!success) {
-                        revert NativeTransferFailed();
-                    }
-                }
-
-                emit RewardClaimed(msg.sender, token, amount);
+            if (!_isRewardToken(token)) {
+                continue;
             }
+
+            uint256 tokenTotalAmount = 0;
+
+            // For each validator
+            for (uint256 j = 0; j < userValidators.length; j++) {
+                uint16 validatorId = userValidators[j];
+                uint256 amount = _claimWithValidator(token, validatorId);
+                tokenTotalAmount += amount;
+            }
+
+            totalAmount += tokenTotalAmount;
         }
 
-        return amounts;
+        return totalAmount;
     }
 
     /**
@@ -540,7 +509,7 @@ abstract contract PlumeStakingBase is
     }
 
     /**
-     * @notice Get the claimable reward amount for a user and token
+     * @notice Get the claimable reward amount for a user and token across all validators
      * @param user Address of the user to check
      * @param token Address of the reward token
      * @return amount Amount of reward token claimable
@@ -552,7 +521,14 @@ abstract contract PlumeStakingBase is
             return 0;
         }
 
-        return _earned(user, token, $.stakeInfo[user].staked);
+        uint16[] memory userValidators = $.userValidators[user];
+
+        for (uint256 i = 0; i < userValidators.length; i++) {
+            uint16 validatorId = userValidators[i];
+            amount += _earned(user, token, validatorId);
+        }
+
+        return amount;
     }
 
     /**
@@ -637,79 +613,80 @@ abstract contract PlumeStakingBase is
         address user
     ) internal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        address[] memory rewardTokens = $.rewardTokens;
 
-        for (uint256 i = 0; i < rewardTokens.length; i++) {
-            address token = rewardTokens[i];
-            _updateRewardPerToken(token);
+        // Get all validators the user has staked with
+        uint16[] memory userValidators = $.userValidators[user];
 
-            if (user != address(0)) {
-                uint256 oldReward = $.rewards[user][token];
-                uint256 newReward = _earned(user, token, $.stakeInfo[user].staked);
-
-                // Update total claimable tracking
-                if (newReward > oldReward) {
-                    $.totalClaimableByToken[token] += (newReward - oldReward);
-                } else if (oldReward > newReward) {
-                    // This shouldn't happen in normal operation, but we handle it to be safe
-                    uint256 decrease = oldReward - newReward;
-                    if ($.totalClaimableByToken[token] >= decrease) {
-                        $.totalClaimableByToken[token] -= decrease;
-                    } else {
-                        $.totalClaimableByToken[token] = 0;
-                    }
-                }
-
-                $.rewards[user][token] = newReward;
-                $.userRewardPerTokenPaid[user][token] = $.rewardPerTokenCumulative[token];
-            }
+        // Update rewards for each validator
+        for (uint256 i = 0; i < userValidators.length; i++) {
+            uint16 validatorId = userValidators[i];
+            _updateRewardsForValidator(user, validatorId);
         }
     }
 
     /**
      * @notice Update the reward per token value
+     * @param token The address of the reward token
+     * @param validatorId The ID of the validator
      */
-    function _updateRewardPerToken(
-        address token
-    ) internal {
+    function _updateRewardPerToken(address token, uint16 validatorId) internal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
-        if ($.totalStaked > 0) {
-            uint256 timeDelta = block.timestamp - $.lastUpdateTimes[token];
+        if ($.validatorTotalStaked[validatorId] > 0) {
+            uint256 timeDelta = block.timestamp - $.validatorLastUpdateTimes[validatorId][token];
             if (timeDelta > 0 && $.rewardRates[token] > 0) {
                 // Calculate reward with proper precision handling
                 uint256 reward = timeDelta * $.rewardRates[token];
-                reward = (reward * REWARD_PRECISION) / $.totalStaked;
-                $.rewardPerTokenCumulative[token] += reward;
+                reward = (reward * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
+                $.validatorRewardPerTokenCumulative[validatorId][token] += reward;
             }
         }
 
-        $.lastUpdateTimes[token] = block.timestamp;
+        $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
     }
 
     /**
      * @notice Calculate the earned rewards for a user
+     * @param user Address of the user
+     * @param token Address of the token
+     * @param validatorId ID of the validator
+     * @return rewards Amount of rewards earned
      */
-    function _earned(address user, address token, uint256 userStakedAmount) internal view returns (uint256 rewards) {
+    function _earned(address user, address token, uint16 validatorId) internal view returns (uint256 rewards) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
-        uint256 rewardPerToken = $.rewardPerTokenCumulative[token];
+        // Get validator commission rate
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        uint256 validatorCommission = validator.commission;
+
+        // Get user's stake info
+        uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
+
+        if (userStakedAmount == 0) {
+            return 0;
+        }
+
+        uint256 rewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
 
         // If there are currently staked tokens, add the rewards that have accumulated since last update
-        if ($.totalStaked > 0) {
-            uint256 timeDelta = block.timestamp - $.lastUpdateTimes[token];
+        if ($.validatorTotalStaked[validatorId] > 0) {
+            uint256 timeDelta = block.timestamp - $.validatorLastUpdateTimes[validatorId][token];
             if (timeDelta > 0 && $.rewardRates[token] > 0) {
                 // Calculate reward with proper precision handling
                 uint256 additionalReward = timeDelta * $.rewardRates[token];
-                additionalReward = (additionalReward * REWARD_PRECISION) / $.totalStaked;
+                additionalReward = (additionalReward * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
                 rewardPerToken += additionalReward;
             }
         }
 
-        // Calculate rewards with proper precision handling
-        uint256 rewardDelta = rewardPerToken - $.userRewardPerTokenPaid[user][token];
-        uint256 userRewardDelta = (userStakedAmount * rewardDelta) / REWARD_PRECISION;
-        return $.rewards[user][token] + userRewardDelta;
+        // Calculate reward delta
+        uint256 rewardDelta = rewardPerToken - $.userValidatorRewardPerTokenPaid[user][validatorId][token];
+
+        // Calculate user's portion with commission deducted
+        uint256 userRewardAfterCommission = (userStakedAmount * rewardDelta * (REWARD_PRECISION - validatorCommission))
+            / (REWARD_PRECISION * REWARD_PRECISION);
+
+        return $.userRewards[user][validatorId][token] + userRewardAfterCommission;
     }
 
     /**

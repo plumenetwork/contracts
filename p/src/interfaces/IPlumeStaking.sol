@@ -51,7 +51,7 @@ interface IPlumeStaking {
         address token
     ) external returns (uint256 amount);
     function claim(address token, uint16 validatorId) external returns (uint256 amount);
-    function claimAll() external returns (uint256[] memory amounts);
+    function claimAll() external returns (uint256 totalAmount);
 
     // View functions
     function stakingInfo()
