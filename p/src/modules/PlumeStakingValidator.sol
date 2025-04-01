@@ -224,6 +224,18 @@ contract PlumeStakingValidator is PlumeStakingBase {
     }
 
     /**
+     * @notice Get the list of validators a user has staked with
+     * @param user Address of the user to check
+     * @return validatorIds Array of validator IDs the user has staked with
+     */
+    function getUserValidators(
+        address user
+    ) external view virtual override returns (uint16[] memory validatorIds) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        return $.userValidators[user];
+    }
+
+    /**
      * @notice Add a new validator
      * @param validatorId Fixed UUID for the validator
      * @param commission Commission rate (as fraction of REWARD_PRECISION)

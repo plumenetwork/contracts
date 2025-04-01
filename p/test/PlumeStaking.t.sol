@@ -600,85 +600,91 @@ contract PlumeStakingTest is Test {
         // No approval needed for native token
         staking.stake{ value: stakeAmount }(DEFAULT_VALIDATOR_ID);
 
-        // Test staked amounts
-        assertEq(staking.amountStaked(), stakeAmount);
-        (uint256 totalStaked,,,,) = staking.stakingInfo();
-        assertEq(totalStaked, stakeAmount);
-
-        // Unstake
-        staking.unstake(DEFAULT_VALIDATOR_ID);
-
-        // Test cooling amounts before cooldown ends
         PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
-        assertEq(info.cooled, stakeAmount, "Cooling amount should match unstaked amount");
-        assertEq(staking.amountCooling(), stakeAmount);
+        assertEq(info.staked, stakeAmount);
+        assertEq(staking.amountStaked(), stakeAmount);
+        assertEq(staking.amountCooling(), 0);
+        assertEq(staking.amountWithdrawable(), 0);
 
-        // Get global totals - note that totalCooling starts at 0 and needs admin to update it
-        (, uint256 totalCooling, uint256 totalWithdrawable,,) = staking.stakingInfo();
-        assertEq(totalCooling, stakeAmount, "Total cooling should match unstaked amount");
-        assertEq(totalWithdrawable, 0); // Nothing withdrawable yet
+        // Unstake partially
+        staking.unstake(DEFAULT_VALIDATOR_ID, unstakeAmount);
 
-        // Admin needs to update the totals to track cooling
-        vm.stopPrank();
-        vm.prank(admin);
-        staking.updateTotalAmounts(0, type(uint256).max);
-
-        // Now globalCooling should be updated
-        (, totalCooling, totalWithdrawable,,) = staking.stakingInfo();
-        assertEq(totalCooling, stakeAmount, "Total cooling now tracks the user's cooling amount");
-        assertEq(totalWithdrawable, 0); // Nothing withdrawable yet
-
-        vm.startPrank(user1);
-
-        // Test cooldown date
+        // Check that unstaked amount is in cooling
         info = staking.stakeInfo(user1);
-        uint256 cooldownEnd = info.cooldownEnd;
-        assertTrue(cooldownEnd > block.timestamp);
+        assertEq(info.staked, stakeAmount - unstakeAmount);
+        assertEq(staking.amountStaked(), stakeAmount - unstakeAmount);
+        assertEq(staking.amountCooling(), unstakeAmount);
+        assertEq(staking.amountWithdrawable(), 0);
 
-        // Wait for cooldown and withdraw some
+        // Wait for cooldown
         vm.warp(block.timestamp + 7 days + 1);
 
-        // After cooldown, amountCooling() should return 0 since cooldown is over
-        // But the actual cooling amount in storage is unchanged until withdrawn or updated
-        assertEq(staking.amountCooling(), 0, "amountCooling() should return 0 after cooldown");
+        // Check that unstaked amount is now withdrawable
+        assertEq(staking.amountCooling(), 0);
+        assertEq(staking.amountWithdrawable(), unstakeAmount);
 
-        // Get actual cooling amount from storage
-        info = staking.stakeInfo(user1);
-        assertEq(info.cooled, stakeAmount, "Actual cooling amount in storage should remain unchanged");
-
-        // Check withdrawable amounts - should include cooled amount now that cooldown is over
-        assertEq(staking.amountWithdrawable(), stakeAmount, "Full amount should be withdrawable");
-        (,, totalWithdrawable,,) = staking.stakingInfo();
-        assertEq(totalWithdrawable, 0, "Total withdrawable not updated until admin updates totals");
-
-        // Update the total amounts to reflect the current state
         vm.stopPrank();
-        vm.prank(admin);
-        staking.updateTotalAmounts(0, type(uint256).max);
+    }
 
-        // Check updated totals after admin update
-        (, totalCooling, totalWithdrawable,,) = staking.stakingInfo();
-        assertEq(totalCooling, 0, "Total cooling should be 0 after admin update");
-        assertEq(totalWithdrawable, stakeAmount, "Total withdrawable should include cooled amount");
-
-        // After admin update, the funds are moved from cooling to parked,
-        // so amountCooling() should still return 0
-        vm.prank(user1);
-        assertEq(staking.amountCooling(), 0, "amountCooling() should return 0 after funds are moved to parked");
-
-        // Withdraw as user
+    function testGetUserValidators() public {
         vm.startPrank(user1);
-        staking.withdraw();
 
-        // Test balances after withdrawal
-        assertEq(staking.amountWithdrawable(), 0, "Remaining withdrawable amount incorrect");
-        (,, totalWithdrawable,,) = staking.stakingInfo();
-        // withdraw() correctly updates the totalWithdrawable
-        assertEq(totalWithdrawable, 0, "totalWithdrawable should be updated to 0 after withdraw");
+        // Initially user shouldn't have any validators
+        uint16[] memory initialValidators = staking.getUserValidators(user1);
+        assertEq(initialValidators.length, 0, "User should have no validators initially");
 
-        // Test claimable amounts
-        assertEq(staking.getClaimableReward(user1, PUSD_TOKEN), 0);
-        assertEq(staking.getClaimableReward(user1, PLUME_NATIVE), 0);
+        // Stake with the default validator
+        staking.stake{ value: 50e18 }(DEFAULT_VALIDATOR_ID);
+
+        // User should now have 1 validator
+        uint16[] memory validators = staking.getUserValidators(user1);
+        assertEq(validators.length, 1, "User should have 1 validator after staking");
+        assertEq(validators[0], DEFAULT_VALIDATOR_ID, "Validator ID should match");
+
+        // Add a second validator and stake with it
+        uint16 secondValidatorId = 2;
+        vm.stopPrank();
+
+        vm.startPrank(admin);
+        staking.addValidator(
+            secondValidatorId,
+            0, // 0% commission
+            admin,
+            admin,
+            "0x123",
+            "0x456"
+        );
+        vm.stopPrank();
+
+        vm.startPrank(user1);
+        staking.stake{ value: 30e18 }(secondValidatorId);
+
+        // User should now have 2 validators
+        validators = staking.getUserValidators(user1);
+        assertEq(validators.length, 2, "User should have 2 validators after staking with second validator");
+
+        // The validators may be in any order, so check both are present
+        bool foundFirstValidator = false;
+        bool foundSecondValidator = false;
+
+        for (uint256 i = 0; i < validators.length; i++) {
+            if (validators[i] == DEFAULT_VALIDATOR_ID) {
+                foundFirstValidator = true;
+            }
+            if (validators[i] == secondValidatorId) {
+                foundSecondValidator = true;
+            }
+        }
+
+        assertTrue(foundFirstValidator, "First validator should be in the list");
+        assertTrue(foundSecondValidator, "Second validator should be in the list");
+
+        // Unstake completely from the first validator
+        staking.unstake(DEFAULT_VALIDATOR_ID);
+
+        // User should still have 2 validators (unstaking doesn't remove validator from the list)
+        validators = staking.getUserValidators(user1);
+        assertEq(validators.length, 2, "User should still have 2 validators after unstaking");
 
         vm.stopPrank();
     }

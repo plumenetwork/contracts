@@ -57,6 +57,7 @@ graph LR
 | `amountCooling()` | Get the amount of PLUME in cooling period for the caller |
 | `amountWithdrawable()` | Get the amount of PLUME that is withdrawable for the caller |
 | `getClaimableReward(address user, address token)` | Get claimable reward amount for a user and token |
+| `getUserValidators(address user)` | Get the list of validator IDs a user has staked with |
 
 ### Administrative Functions
 

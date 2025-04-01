@@ -80,4 +80,13 @@ interface IPlumeStaking {
      */
     function getClaimableReward(address user, address token) external view returns (uint256 amount);
 
+    /**
+     * @notice Get the list of validators a user has staked with
+     * @param user Address of the user to check
+     * @return validatorIds Array of validator IDs the user has staked with
+     */
+    function getUserValidators(
+        address user
+    ) external view returns (uint16[] memory validatorIds);
+
 }
