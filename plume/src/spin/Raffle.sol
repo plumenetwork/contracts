@@ -122,15 +122,13 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
      * @notice Adds a new prize with an initial total ticket pool of 0.
      */
     function addPrize(
-        uint256 prizeId,
         string memory name,
         string memory description,
         uint256 value
     ) external onlyRole(ADMIN_ROLE) {
         RaffleStorage storage $ = _getRaffleStorage();
-        if ($.prizes[prizeId].isActive) {
-            revert PrizeAlreadyExists();
-        }
+        
+        uint256 prizeId = $.prizeIds.length + 1;
 
         // Add prize to the list
         $.prizeIds.push(prizeId);
@@ -158,6 +156,16 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     ) external onlyRole(ADMIN_ROLE) onlyValidPrize(prizeId) {
         RaffleStorage storage $ = _getRaffleStorage();
         $.prizes[prizeId].isActive = false;
+
+        uint256 len = $.prizeIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            if ($.prizeIds[i] == prizeId) {
+                $.prizeIds[i] = $.prizeIds[len - 1];
+                $.prizeIds.pop();
+                break;
+            }
+        }
+
         emit PrizeRemoved(prizeId);
     }
 

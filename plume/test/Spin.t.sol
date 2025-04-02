@@ -215,7 +215,6 @@ contract SpinTest is Test {
     }
 
     function testStreakCount() public {
-      
         Vm.Log[] memory entries;
 
         // Start spin 1
