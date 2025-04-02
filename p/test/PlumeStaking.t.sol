@@ -492,17 +492,23 @@ contract PlumeStakingTest is Test {
         PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
         assertEq(info.cooled, 50e18, "Initial cooling balance should be 50e18");
 
-        // Second stake uses only the necessary cooling + wallet funds (30e18)
-        staking.stake{ value: secondStakeAmount }(DEFAULT_VALIDATOR_ID);
+        // Second stake - now we should use restake for cooling funds and stake for wallet funds
+        // First, use restake to use 30e18 from the cooling balance
+        staking.restake(DEFAULT_VALIDATOR_ID, 30e18);
+
+        // Verify cooling balance after restake
+        info = staking.stakeInfo(user1);
+        assertEq(info.cooled, 20e18, "Cooling balance should be 20e18 (50e18 - 30e18)");
+        assertEq(info.staked, 30e18, "Staked balance should be 30e18");
+        assertEq(info.parked, 0, "Parked balance should be 0");
 
         // Record the current timestamp for later comparison
         uint256 timestampBeforeSecondUnstake = block.timestamp;
 
+        // Unstake what we just restaked
         staking.unstake(DEFAULT_VALIDATOR_ID); // Puts 30e18 back in cooling
 
-        // Verify cooling balance after second stake/unstake
-        // Only 30e18 was staked, so unstaking should only put 30e18 in cooling
-        // 20e18 should still be in cooling from before
+        // Verify cooling balance after unstake
         info = staking.stakeInfo(user1);
         assertEq(info.cooled, 50e18, "Cooling balance should be 50e18 (20e18 remaining + 30e18 new)");
         assertEq(info.parked, 0, "Parked balance should be 0");
@@ -510,8 +516,12 @@ contract PlumeStakingTest is Test {
         // Verify cooldown timestamp was reset
         assertEq(info.cooldownEnd, timestampBeforeSecondUnstake + 7 days, "Cooldown timestamp should be reset");
 
-        // Final stake - uses all cooling (50e18) plus wallet funds (50e18)
-        staking.stake{ value: finalStakeAmount }(DEFAULT_VALIDATOR_ID);
+        // Final step - use restake for cooling funds and stake for wallet funds
+        // First, use restake to consume all cooling funds (50e18)
+        staking.restake(DEFAULT_VALIDATOR_ID, 0); // Use all available cooling funds
+
+        // Then use stake to add wallet funds (50e18)
+        staking.stake{ value: 50e18 }(DEFAULT_VALIDATOR_ID);
 
         // Verify final state - should be 50e18 from cooling + 50e18 from wallet = 100e18 total
         info = staking.stakeInfo(user1);
@@ -1179,9 +1189,16 @@ contract PlumeStakingTest is Test {
 
         // Get user info after updating total amounts
         PlumeStakingStorage.StakeInfo memory infoBeforeStake = staking.stakeInfo(user1);
+        assertEq(infoBeforeStake.parked, 50e18, "Should have 50e18 parked after cooldown");
 
-        // Now stake with new funds
+        // Now stake with new funds from wallet and restake with parked funds
         vm.startPrank(user1);
+
+        // First use restake to use parked funds
+        uint256 parkedAmountToUse = 10e18;
+        staking.restake(DEFAULT_VALIDATOR_ID, parkedAmountToUse);
+
+        // Then use wallet funds for additional staking if needed
         uint256 walletAmount = 10e18;
         staking.stake{ value: walletAmount }(DEFAULT_VALIDATOR_ID);
 
@@ -1198,6 +1215,11 @@ contract PlumeStakingTest is Test {
 
         // Verify some amount of parked funds was used
         assertLt(infoAfterStake.parked, infoBeforeStake.parked, "Some parked funds should be used");
+        assertEq(
+            infoAfterStake.parked,
+            infoBeforeStake.parked - parkedAmountToUse,
+            "Parked balance should decrease by the amount used"
+        );
 
         vm.stopPrank();
     }
