@@ -17,11 +17,19 @@ import {
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
-    CoolingCompleted,
+    CooldownIntervalUpdated,
+    CooldownStarted,
+    ForceUnstaked,
+    MinStakeAmountUpdated,
     RewardClaimed,
     RewardClaimedFromValidator,
+    RewardRateCheckpointCreated,
+    RewardRatesSet,
+    RewardsAdded,
     Staked,
     StakedOnBehalf,
+    StakerAdded,
+    TokensParked,
     Unstaked,
     UnstakedFromValidator,
     Withdrawn
@@ -165,6 +173,9 @@ abstract contract PlumeStakingBase is
         // Update rewards before changing stake amount
         _updateRewardsForValidator(msg.sender, validatorId);
 
+        // If this is the first time staking with this validator, record the start time
+        bool firstTimeStaking = validatorInfo.staked == 0;
+
         // Update user's staked amount for this validator
         validatorInfo.staked += totalAmount;
         info.staked += totalAmount;
@@ -178,6 +189,11 @@ abstract contract PlumeStakingBase is
 
         // Track user-validator relationship
         _addStakerToValidator(msg.sender, validatorId);
+
+        // Set the user's stake start time for this validator if it's their first time
+        if (firstTimeStaking) {
+            $.userValidatorStakeStartTime[msg.sender][validatorId] = block.timestamp;
+        }
 
         // Update rewards again with new stake amount
         _updateRewardsForValidator(msg.sender, validatorId);
@@ -276,9 +292,9 @@ abstract contract PlumeStakingBase is
         $.validatorTotalCooling[validatorId] += amountUnstaked;
         $.totalCooling += amountUnstaked;
 
-        // Emit both events for backward compatibility
+        // Emit events for unstaking
+        emit CooldownStarted(msg.sender, validatorId, amountUnstaked, globalInfo.cooldownEnd);
         emit Unstaked(msg.sender, validatorId, amountUnstaked);
-        emit UnstakedFromValidator(msg.sender, validatorId, amountUnstaked);
 
         return amountUnstaked;
     }
@@ -525,7 +541,11 @@ abstract contract PlumeStakingBase is
 
         for (uint256 i = 0; i < userValidators.length; i++) {
             uint16 validatorId = userValidators[i];
-            amount += _earned(user, token, validatorId);
+
+            // Use _earned function for consistency with claim logic
+            // This ensures getClaimableReward returns the same amount that would be claimed
+            uint256 validatorReward = _earned(user, token, validatorId);
+            amount += validatorReward;
         }
 
         return amount;
@@ -569,6 +589,9 @@ abstract contract PlumeStakingBase is
         // Update rewards before changing stake amount
         _updateRewardsForValidator(staker, validatorId);
 
+        // Check if this is the first time the staker is staking with this validator
+        bool firstTimeStaking = validatorInfo.staked == 0;
+
         // Update staker's staked amount for this validator
         validatorInfo.staked += fromWallet;
         info.staked += fromWallet;
@@ -582,6 +605,11 @@ abstract contract PlumeStakingBase is
 
         // Track staker-validator relationship
         _addStakerToValidator(staker, validatorId);
+
+        // Set the staker's stake start time for this validator if it's their first time
+        if (firstTimeStaking) {
+            $.userValidatorStakeStartTime[staker][validatorId] = block.timestamp;
+        }
 
         // Update rewards again with new stake amount
         _updateRewardsForValidator(staker, validatorId);
@@ -666,27 +694,126 @@ abstract contract PlumeStakingBase is
             return 0;
         }
 
-        uint256 rewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
+        // Process rewards using checkpoints for the entire staking duration
+        PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorRewardRateCheckpoints[validatorId][token];
 
-        // If there are currently staked tokens, add the rewards that have accumulated since last update
-        if ($.validatorTotalStaked[validatorId] > 0) {
-            uint256 timeDelta = block.timestamp - $.validatorLastUpdateTimes[validatorId][token];
-            if (timeDelta > 0 && $.rewardRates[token] > 0) {
-                // Calculate reward with proper precision handling
-                uint256 additionalReward = timeDelta * $.rewardRates[token];
-                additionalReward = (additionalReward * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
-                rewardPerToken += additionalReward;
+        if (checkpoints.length > 0) {
+            // Get existing rewards
+            uint256 existingRewards = $.userRewards[user][validatorId][token];
+
+            // Calculate start time (when user started staking or last claimed)
+            uint256 startTime = $.userValidatorStakeStartTime[user][validatorId];
+            if (startTime == 0) {
+                // Fall back to reward per token paid timestamp if stake start time isn't set
+                startTime = $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token];
+
+                // If that's also not set, use the last update timestamp from the validator
+                if (startTime == 0) {
+                    startTime = $.validatorLastUpdateTimes[validatorId][token];
+                }
             }
+
+            // Find the first applicable checkpoint
+            uint256 startIndex = 0;
+            while (startIndex < checkpoints.length && checkpoints[startIndex].timestamp < startTime) {
+                startIndex++;
+            }
+
+            if (startIndex > 0) {
+                // Adjust startIndex to include the checkpoint before the start time
+                // to properly calculate from startTime to the next checkpoint
+                startIndex--;
+            }
+
+            uint256 newRewards = 0;
+            uint256 lastTime = startTime;
+
+            // Process all relevant checkpoints
+            for (uint256 i = startIndex; i < checkpoints.length; i++) {
+                PlumeStakingStorage.RateCheckpoint storage checkpoint = checkpoints[i];
+
+                // Get the rate to use for this period
+                uint256 rate = checkpoint.rate;
+
+                // Handle period from lastTime to checkpoint.timestamp (if applicable)
+                if (lastTime < checkpoint.timestamp) {
+                    uint256 periodEndTime = checkpoint.timestamp;
+                    uint256 periodStartTime = lastTime > checkpoint.timestamp ? lastTime : checkpoint.timestamp;
+
+                    // Check if this isn't the first checkpoint and we need to use the previous rate
+                    if (i > 0 && lastTime < checkpoint.timestamp) {
+                        rate = checkpoints[i - 1].rate;
+                        uint256 duration = checkpoint.timestamp - lastTime;
+
+                        if (duration > 0 && rate > 0 && $.validatorTotalStaked[validatorId] > 0) {
+                            uint256 periodReward =
+                                (duration * rate * userStakedAmount) / $.validatorTotalStaked[validatorId];
+                            uint256 userPeriodReward =
+                                (periodReward * (REWARD_PRECISION - validatorCommission)) / REWARD_PRECISION;
+                            newRewards += userPeriodReward;
+                        }
+                    }
+
+                    lastTime = checkpoint.timestamp;
+                }
+
+                // Handle period from checkpoint.timestamp to next checkpoint or now
+                uint256 endTime = i + 1 < checkpoints.length ? checkpoints[i + 1].timestamp : block.timestamp;
+
+                if (lastTime < endTime) {
+                    uint256 duration = endTime - lastTime;
+
+                    if (duration > 0 && rate > 0 && $.validatorTotalStaked[validatorId] > 0) {
+                        uint256 periodReward =
+                            (duration * rate * userStakedAmount) / $.validatorTotalStaked[validatorId];
+                        uint256 userPeriodReward =
+                            (periodReward * (REWARD_PRECISION - validatorCommission)) / REWARD_PRECISION;
+                        newRewards += userPeriodReward;
+                    }
+
+                    lastTime = endTime;
+                }
+            }
+
+            // Handle any remaining time using the most recent rate
+            if (lastTime < block.timestamp && checkpoints.length > 0) {
+                uint256 duration = block.timestamp - lastTime;
+                uint256 rate = checkpoints[checkpoints.length - 1].rate;
+
+                if (duration > 0 && rate > 0 && $.validatorTotalStaked[validatorId] > 0) {
+                    uint256 periodReward = (duration * rate * userStakedAmount) / $.validatorTotalStaked[validatorId];
+                    uint256 userPeriodReward =
+                        (periodReward * (REWARD_PRECISION - validatorCommission)) / REWARD_PRECISION;
+                    newRewards += userPeriodReward;
+                }
+            }
+
+            return existingRewards + newRewards;
+        } else {
+            // Fall back to traditional calculation if no checkpoints
+            uint256 rewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
+
+            // If there are currently staked tokens, add the rewards that have accumulated since last update
+            if ($.validatorTotalStaked[validatorId] > 0) {
+                uint256 timeDelta = block.timestamp - $.validatorLastUpdateTimes[validatorId][token];
+                if (timeDelta > 0 && $.rewardRates[token] > 0) {
+                    // Calculate reward with proper precision handling
+                    uint256 additionalReward = timeDelta * $.rewardRates[token];
+                    additionalReward = (additionalReward * REWARD_PRECISION) / $.validatorTotalStaked[validatorId];
+                    rewardPerToken += additionalReward;
+                }
+            }
+
+            // Calculate reward delta
+            uint256 rewardDelta = rewardPerToken - $.userValidatorRewardPerTokenPaid[user][validatorId][token];
+
+            // Calculate user's portion with commission deducted
+            uint256 userRewardAfterCommission = (
+                userStakedAmount * rewardDelta * (REWARD_PRECISION - validatorCommission)
+            ) / (REWARD_PRECISION * REWARD_PRECISION);
+
+            return $.userRewards[user][validatorId][token] + userRewardAfterCommission;
         }
-
-        // Calculate reward delta
-        uint256 rewardDelta = rewardPerToken - $.userValidatorRewardPerTokenPaid[user][validatorId][token];
-
-        // Calculate user's portion with commission deducted
-        uint256 userRewardAfterCommission = (userStakedAmount * rewardDelta * (REWARD_PRECISION - validatorCommission))
-            / (REWARD_PRECISION * REWARD_PRECISION);
-
-        return $.userRewards[user][validatorId][token] + userRewardAfterCommission;
     }
 
     /**

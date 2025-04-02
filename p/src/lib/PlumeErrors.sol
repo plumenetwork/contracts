@@ -153,3 +153,10 @@ error InsufficientFunds(uint256 available, uint256 requested);
  * @notice Thrown when a native token transfer fails in an admin operation
  */
 error AdminTransferFailed();
+
+/**
+ * @notice Thrown when an invalid reward rate checkpoint index is provided
+ * @param token The token address
+ * @param index The invalid index
+ */
+error InvalidRewardRateCheckpoint(address token, uint256 index);

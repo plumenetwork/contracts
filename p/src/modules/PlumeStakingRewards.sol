@@ -8,6 +8,7 @@ import {
     ArrayLengthMismatch,
     EmptyArray,
     InvalidAmount,
+    InvalidRewardRateCheckpoint,
     RewardRateExceedsMax,
     TokenAlreadyExists,
     TokenDoesNotExist,
@@ -17,8 +18,10 @@ import {
 } from "../lib/PlumeErrors.sol";
 import {
     MaxRewardRateUpdated,
+    MaxRewardRatesSet,
     RewardClaimed,
     RewardClaimedFromValidator,
+    RewardRateCheckpointCreated,
     RewardRatesSet,
     RewardTokenAdded,
     RewardTokenRemoved,
@@ -118,13 +121,76 @@ contract PlumeStakingRewards is PlumeStakingValidator {
             // Update existing token reward state for all validators
             uint16[] memory validatorIds = $.validatorIds;
             for (uint256 j = 0; j < validatorIds.length; j++) {
-                _updateRewardPerToken(token, validatorIds[j]);
+                uint16 validatorId = validatorIds[j];
+
+                // Update global reward state for this token and validator before changing rate
+                _updateRewardPerToken(token, validatorId);
+
+                // Create a checkpoint for this validator's token rate
+                _createRewardRateCheckpoint(token, validatorId, rate);
             }
 
+            // Create a global checkpoint for this token's rate (for validators added in the future)
+            _createGlobalRewardRateCheckpoint(token, rate);
+
+            // Set the current rate
             $.rewardRates[token] = rate;
         }
 
         emit RewardRatesSet(tokens, rewardRates_);
+    }
+
+    /**
+     * @notice Create a checkpoint for a specific token's reward rate for a validator
+     * @param token The token address
+     * @param validatorId The validator ID
+     * @param rate The new reward rate
+     */
+    function _createRewardRateCheckpoint(address token, uint16 validatorId, uint256 rate) internal {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Get the current reward per token value
+        uint256 currentCumulativeIndex = $.validatorRewardPerTokenCumulative[validatorId][token];
+
+        // Create the checkpoint
+        PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({
+            timestamp: block.timestamp,
+            rate: rate,
+            cumulativeIndex: currentCumulativeIndex
+        });
+
+        // Add the checkpoint to storage
+        $.validatorRewardRateCheckpoints[validatorId][token].push(checkpoint);
+
+        // Emit event
+        uint256 checkpointIndex = $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
+        emit RewardRateCheckpointCreated(token, rate, block.timestamp, checkpointIndex, currentCumulativeIndex);
+    }
+
+    /**
+     * @notice Create a global checkpoint for a token's reward rate
+     * @param token The token address
+     * @param rate The new reward rate
+     */
+    function _createGlobalRewardRateCheckpoint(address token, uint256 rate) internal {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Get the current reward per token value
+        uint256 currentCumulativeIndex = $.rewardPerTokenCumulative[token];
+
+        // Create the checkpoint
+        PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({
+            timestamp: block.timestamp,
+            rate: rate,
+            cumulativeIndex: currentCumulativeIndex
+        });
+
+        // Add the checkpoint to storage
+        $.rewardRateCheckpoints[token].push(checkpoint);
+
+        // Emit event
+        uint256 checkpointIndex = $.rewardRateCheckpoints[token].length - 1;
+        emit RewardRateCheckpointCreated(token, rate, block.timestamp, checkpointIndex, currentCumulativeIndex);
     }
 
     /**
@@ -302,6 +368,8 @@ contract PlumeStakingRewards is PlumeStakingValidator {
         }
 
         $.maxRewardRates[token] = newMaxRate;
+
+        // Emit the MaxRewardRateUpdated event
         emit MaxRewardRateUpdated(token, newMaxRate);
     }
 
@@ -328,6 +396,89 @@ contract PlumeStakingRewards is PlumeStakingValidator {
     ) external view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         return $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
+    }
+
+    /**
+     * @notice Get the number of checkpoints for a token
+     * @param token The token address
+     * @return count Number of checkpoints
+     */
+    function getRewardRateCheckpointCount(
+        address token
+    ) external view returns (uint256) {
+        return PlumeStakingStorage.layout().rewardRateCheckpoints[token].length;
+    }
+
+    /**
+     * @notice Get the number of checkpoints for a validator's token
+     * @param validatorId The validator ID
+     * @param token The token address
+     * @return count Number of checkpoints
+     */
+    function getValidatorRewardRateCheckpointCount(uint16 validatorId, address token) external view returns (uint256) {
+        return PlumeStakingStorage.layout().validatorRewardRateCheckpoints[validatorId][token].length;
+    }
+
+    /**
+     * @notice Get checkpoint data for a token
+     * @param token The token address
+     * @param index The checkpoint index
+     * @return timestamp Timestamp when the checkpoint was created
+     * @return rate Reward rate at the checkpoint
+     * @return cumulativeIndex Cumulative reward index at the checkpoint
+     */
+    function getRewardRateCheckpoint(
+        address token,
+        uint256 index
+    ) external view returns (uint256 timestamp, uint256 rate, uint256 cumulativeIndex) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (index >= $.rewardRateCheckpoints[token].length) {
+            revert InvalidRewardRateCheckpoint(token, index);
+        }
+
+        PlumeStakingStorage.RateCheckpoint storage checkpoint = $.rewardRateCheckpoints[token][index];
+        return (checkpoint.timestamp, checkpoint.rate, checkpoint.cumulativeIndex);
+    }
+
+    /**
+     * @notice Get checkpoint data for a validator's token
+     * @param validatorId The validator ID
+     * @param token The token address
+     * @param index The checkpoint index
+     * @return timestamp Timestamp when the checkpoint was created
+     * @return rate Reward rate at the checkpoint
+     * @return cumulativeIndex Cumulative reward index at the checkpoint
+     */
+    function getValidatorRewardRateCheckpoint(
+        uint16 validatorId,
+        address token,
+        uint256 index
+    ) external view returns (uint256 timestamp, uint256 rate, uint256 cumulativeIndex) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (index >= $.validatorRewardRateCheckpoints[validatorId][token].length) {
+            revert InvalidRewardRateCheckpoint(token, index);
+        }
+
+        PlumeStakingStorage.RateCheckpoint storage checkpoint =
+            $.validatorRewardRateCheckpoints[validatorId][token][index];
+        return (checkpoint.timestamp, checkpoint.rate, checkpoint.cumulativeIndex);
+    }
+
+    /**
+     * @notice Get the last processed checkpoint index for a user/validator/token
+     * @param user The user address
+     * @param validatorId The validator ID
+     * @param token The token address
+     * @return index The last processed checkpoint index
+     */
+    function getUserLastCheckpointIndex(
+        address user,
+        uint16 validatorId,
+        address token
+    ) external view returns (uint256) {
+        return PlumeStakingStorage.layout().userLastCheckpointIndex[user][validatorId][token];
     }
 
 }

@@ -10,6 +10,13 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  */
 library PlumeStakingStorage {
 
+    // Rate checkpoint struct to store historical reward rates
+    struct RateCheckpoint {
+        uint256 timestamp; // Timestamp when this rate became active
+        uint256 rate; // Reward rate at this checkpoint
+        uint256 cumulativeIndex; // Accumulated reward per token at this checkpoint
+    }
+
     // Main storage struct using ERC-7201 namespaced storage pattern
     struct Layout {
         /// @notice Array of all staker addresses
@@ -28,6 +35,8 @@ library PlumeStakingStorage {
         mapping(address => uint256) rewardsAvailable;
         /// @notice Maps a token address to the total amount claimable for that token
         mapping(address => uint256) totalClaimableByToken;
+        /// @notice Maps a token address to its history of rate checkpoints
+        mapping(address => RateCheckpoint[]) rewardRateCheckpoints;
         /// @notice Total $PLUME staked in the contract
         uint256 totalStaked;
         /// @notice Total $PLUME in cooling period
@@ -91,6 +100,15 @@ library PlumeStakingStorage {
         mapping(uint16 => uint256) validatorCapacity;
         /// @notice Maximum percentage of total staked funds any validator can have (in basis points)
         uint256 maxValidatorPercentage;
+        /// @notice Maps a validator ID and token to its history of rate checkpoints
+        mapping(uint16 => mapping(address => RateCheckpoint[])) validatorRewardRateCheckpoints;
+        /// @notice Maps a (user, validator, token) triple to the index of the last checkpoint that was paid
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userLastCheckpointIndex;
+        /// @notice Maps a (user, validator) pair to the timestamp when the user started staking with this validator
+        mapping(address => mapping(uint16 => uint256)) userValidatorStakeStartTime;
+        /// @notice Maps a (user, validator, token) triple to the timestamp when the user's reward per token was last
+        /// updated
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaidTimestamp;
     }
 
     // Validator info struct to store validator details
