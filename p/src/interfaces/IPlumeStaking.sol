@@ -36,9 +36,20 @@ interface IPlumeStaking {
     ) external;
 
     // Staking functions
+    /**
+     * @notice Stake PLUME to a specific validator using only wallet funds
+     * @param validatorId ID of the validator to stake to
+     */
     function stake(
         uint16 validatorId
     ) external payable returns (uint256);
+
+    /**
+     * @notice Restake PLUME to a specific validator, using funds only from cooling and parked balances
+     * @param validatorId ID of the validator to stake to
+     * @param amount Amount of tokens to restake (can be 0 to use all available cooling/parked funds)
+     */
+    function restake(uint16 validatorId, uint256 amount) external returns (uint256);
     function stakeOnBehalf(uint16 validatorId, address staker) external payable returns (uint256);
     function unstake(
         uint16 validatorId
@@ -71,6 +82,48 @@ interface IPlumeStaking {
     function amountStaked() external view returns (uint256 amount);
     function amountCooling() external view returns (uint256 amount);
     function amountWithdrawable() external view returns (uint256 amount);
+
+    /**
+     * @notice Get the total amount of PLUME staked in the contract
+     * @return amount Total amount of PLUME staked
+     */
+    function totalAmountStaked() external view returns (uint256 amount);
+
+    /**
+     * @notice Get the total amount of PLUME cooling in the contract
+     * @return amount Total amount of PLUME cooling
+     */
+    function totalAmountCooling() external view returns (uint256 amount);
+
+    /**
+     * @notice Get the total amount of PLUME withdrawable in the contract
+     * @return amount Total amount of PLUME withdrawable
+     */
+    function totalAmountWithdrawable() external view returns (uint256 amount);
+
+    /**
+     * @notice Get the total amount of token claimable across all users
+     * @param token Address of the token to check
+     * @return amount Total amount of token claimable
+     */
+    function totalAmountClaimable(
+        address token
+    ) external view returns (uint256 amount);
+
+    /**
+     * @notice Get the cooldown end date for the caller
+     * @return timestamp Time when the cooldown period ends
+     */
+    function cooldownEndDate() external view returns (uint256 timestamp);
+
+    /**
+     * @notice Get the reward rate for a specific token
+     * @param token Address of the token to check
+     * @return rate Current reward rate for the token
+     */
+    function getRewardRate(
+        address token
+    ) external view returns (uint256 rate);
 
     /**
      * @notice Get the claimable reward amount for a user and token
