@@ -16,8 +16,8 @@ contract DeployPlumeStaking is Script {
 
     // Configuration Constants
     address private constant ADMIN_ADDRESS = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
-    address private constant PLUME_TOKEN_ADDRESS = 0x17F085f1437C54498f0085102AB33e7217C067C8;
-    address private constant PUSD_TOKEN_ADDRESS = 0x81A7A4Ece4D161e720ec602Ad152a7026B82448b;
+    address private constant PLUME_TOKEN_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address private constant PUSD_TOKEN_ADDRESS = 0xdddD73F5Df1F0DC31373357beAC77545dC5A6f3F;
     address private constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     // Initial staking parameters
