@@ -127,10 +127,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256 value
     ) external onlyRole(ADMIN_ROLE) {
         RaffleStorage storage $ = _getRaffleStorage();
-        if ($.prizes[prizeId].isActive) {
-            revert PrizeAlreadyExists();
-        }
-
+        
         uint256 prizeId = $.prizeIds.length + 1;
 
         // Add prize to the list
