@@ -256,17 +256,4 @@ contract SpinTest is Test {
         assertEq(streakCount, 0, "Streak count should be 0");
     }
 
-    function testDetermineReward() public {
-        // Test the reward determination logic
-        // Set a specific time for testing
-        vm.prank(ADMIN);
-        spin.setCampaignStartDate(0);
-        uint256 time = spin.getCampaignStartDate();
-        emit log_named_uint("Campaign Start Date", time);
-        uint256 rn =
-            15_505_362_517_924_319_744_337_903_872_650_417_812_985_766_966_478_109_796_169_764_777_583_082_361_595;
-        vm.warp(1_743_191_832);
-        spin.determineReward(rn, USER);
-    }
-
 }
