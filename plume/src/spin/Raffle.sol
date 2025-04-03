@@ -359,6 +359,11 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         return ($.prizeIds, ticketCounts, $.winnings[user]);
     }
 
+    function getSpinContract() external view returns (address) {
+        RaffleStorage storage $ = _getRaffleStorage();
+        return address($.spinContract);
+    }
+
     function updatePrizeEndTimestamp(
         uint256 prizeId,
         uint256 endtimestamp
@@ -367,6 +372,13 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         Prize storage prize = $.prizes[prizeId];
 
         prize.endTimestamp = endtimestamp;
+    }
+
+    function setSpinContract(
+        address spinContract
+    ) external onlyRole(ADMIN_ROLE) {
+        RaffleStorage storage $ = _getRaffleStorage();
+        $.spinContract = ISpin(spinContract);
     }
 
     // UUPS Authorization
