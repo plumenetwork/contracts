@@ -64,6 +64,8 @@ abstract contract PlumeStakingBase is
     bytes32 public constant override ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @notice Role for upgraders of PlumeStaking
     bytes32 public constant override UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    /// @notice Role for validators of PlumeStaking
+    bytes32 public constant VALIDATOR_ROLE = keccak256("VALIDATOR_ROLE");
     /// @notice Maximum reward rate: ~100% APY (3171 nanotoken per second per token)
     uint256 public constant override MAX_REWARD_RATE = 3171 * 1e9;
     /// @notice Scaling factor for reward calculations

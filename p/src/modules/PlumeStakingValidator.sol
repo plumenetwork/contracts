@@ -56,7 +56,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
     function claimValidatorCommission(
         uint16 validatorId,
         address token
-    ) external nonReentrant returns (uint256 amount) {
+    ) external nonReentrant onlyRole(VALIDATOR_ROLE) returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if (!$.validatorExists[validatorId]) {
@@ -98,6 +98,135 @@ contract PlumeStakingValidator is PlumeStakingBase {
         }
 
         return amount;
+    }
+
+    /**
+     * @notice Set the commission rate for a validator
+     * @param validatorId ID of the validator
+     * @param newCommission New commission rate (as fraction of REWARD_PRECISION)
+     */
+    function updateValidatorCommission(uint16 validatorId, uint256 newCommission) external onlyRole(VALIDATOR_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+        // Only the validator admin can update commission
+        if (msg.sender != validator.l2AdminAddress) {
+            revert NotValidatorAdmin(msg.sender);
+        }
+
+        // Ensure commission doesn't exceed maximum allowed
+        if (newCommission > REWARD_PRECISION) {
+            revert CommissionTooHigh();
+        }
+
+        // Update all rewards to ensure commission is accounted for correctly
+        _updateRewardsForAllValidatorStakers(validatorId);
+
+        // Store the old commission value for event
+        uint256 oldCommission = validator.commission;
+
+        // Update commission
+        validator.commission = newCommission;
+
+        // Emit event for the update
+        emit ValidatorUpdated(
+            validatorId,
+            newCommission,
+            validator.l2AdminAddress,
+            validator.l2WithdrawAddress,
+            validator.l1ValidatorAddress,
+            validator.l1AccountAddress
+        );
+    }
+
+    /**
+     * @notice Update the L2 admin address for a validator
+     * @param validatorId ID of the validator
+     * @param newAdminAddress New admin address
+     */
+    function updateValidatorAdminAddress(
+        uint16 validatorId,
+        address newAdminAddress
+    ) external onlyRole(VALIDATOR_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+        // Only the current validator admin can update the admin address
+        if (msg.sender != validator.l2AdminAddress) {
+            revert NotValidatorAdmin(msg.sender);
+        }
+
+        // Ensure new admin address is not zero
+        if (newAdminAddress == address(0)) {
+            revert ZeroAddress("newAdminAddress");
+        }
+
+        // Update admin address
+        validator.l2AdminAddress = newAdminAddress;
+
+        // Grant VALIDATOR_ROLE to the new admin
+        _grantRole(VALIDATOR_ROLE, newAdminAddress);
+
+        // Emit event for the update
+        emit ValidatorUpdated(
+            validatorId,
+            validator.commission,
+            newAdminAddress,
+            validator.l2WithdrawAddress,
+            validator.l1ValidatorAddress,
+            validator.l1AccountAddress
+        );
+    }
+
+    /**
+     * @notice Update the L2 withdraw address for a validator
+     * @param validatorId ID of the validator
+     * @param newWithdrawAddress New withdraw address
+     */
+    function updateValidatorWithdrawAddress(
+        uint16 validatorId,
+        address newWithdrawAddress
+    ) external onlyRole(VALIDATOR_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+        // Only the validator admin can update the withdraw address
+        if (msg.sender != validator.l2AdminAddress) {
+            revert NotValidatorAdmin(msg.sender);
+        }
+
+        // Ensure new withdraw address is not zero
+        if (newWithdrawAddress == address(0)) {
+            revert ZeroAddress("newWithdrawAddress");
+        }
+
+        // Update withdraw address
+        validator.l2WithdrawAddress = newWithdrawAddress;
+
+        // Emit event for the update
+        emit ValidatorUpdated(
+            validatorId,
+            validator.commission,
+            validator.l2AdminAddress,
+            newWithdrawAddress,
+            validator.l1ValidatorAddress,
+            validator.l1AccountAddress
+        );
     }
 
     /**

@@ -73,6 +73,15 @@ graph LR
 | `setMinStakeAmount(uint256 amount)` | Set the minimum stake amount |
 | `adminWithdraw(address token, uint256 amount, address recipient)` | Admin function to withdraw tokens |
 
+### Validator Self-Management Functions
+
+| Function | Description |
+|----------|-------------|
+| `claimValidatorCommission(uint16 validatorId, address token)` | Claim commission rewards for a validator |
+| `updateValidatorCommission(uint16 validatorId, uint256 newCommission)` | Update a validator's commission rate |
+| `updateValidatorAdminAddress(uint16 validatorId, address newAdminAddress)` | Update a validator's admin address |
+| `updateValidatorWithdrawAddress(uint16 validatorId, address newWithdrawAddress)` | Update a validator's withdraw address |
+
 ### AddValidator Parameters
 
 The `addValidator` function requires the following parameters:
@@ -155,6 +164,7 @@ plumeStaking.addValidator(
 | `MAX_REWARD_RATE` | `3171 * 1e9` | Maximum reward rate (~100% APY) |
 | `REWARD_PRECISION` | `1e18` | Scaling factor for reward calculations |
 | `PLUME` | `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` | Address constant for native PLUME token |
+| `VALIDATOR_ROLE` | `keccak256("VALIDATOR_ROLE")` | Role for validators |
 
 ## Error Handling
 
