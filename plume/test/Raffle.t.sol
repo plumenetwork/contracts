@@ -3,12 +3,14 @@ pragma solidity ^0.8.25;
 
 import "../src/interfaces/ISupraRouterContract.sol";
 import "../src/spin/DateTime.sol";
-import "../src/spin/Spin.sol";
+
 import "../src/spin/Raffle.sol";
+import "../src/spin/Spin.sol";
 import "forge-std/Test.sol";
 import "forge-std/console.sol";
 
 contract RaffleTest is Test {
+
     Spin spin;
     ISupraRouterContract supraRouter;
     DateTime dateTime;
@@ -36,6 +38,7 @@ contract RaffleTest is Test {
     }
 
     // function testAddPrize() public {
-        
+
     // }
+
 }

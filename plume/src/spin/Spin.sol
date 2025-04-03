@@ -221,6 +221,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("PP"))) {
             _userData.PPGained += rewardAmount;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Plume Token"))) {
+            transferPlume(user, rewardAmount);
             _userData.plumeTokens += rewardAmount;
         } else {
             _userData.nothingCounts += 1;
@@ -323,12 +324,31 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         return 0;
     }
 
+    function transferPlume(address to, uint256 amount) internal {
+        require(address(this).balance >= amount, "Insufficient balance in Spin contract");
+        (bool sent,) = to.call{ value: amount }("");
+        require(sent, "Failed to transfer Plume Token (ether)");
+    }
+
     function updateRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
         SpinStorage storage $ = _getSpinStorage();
 
         $.userData[user].raffleTicketsBalance -= ticketsUsed;
 
         emit RaffleTicketsUpdated(user, ticketsUsed, $.userData[user].raffleTicketsBalance);
+    }
+
+    /**
+     * @notice Allows the admin to withdraw Ether from the contract.
+     * @param recipient The address to receive the funds.
+     * @param amount The amount of Ether to withdraw (in wei).
+     */
+    function withdraw(address payable recipient, uint256 amount) external onlyRole(ADMIN_ROLE) {
+        require(address(this).balance >= amount, "Insufficient contract balance");
+        require(recipient != address(0), "Invalid recipient address");
+
+        (bool success,) = recipient.call{ value: amount }("");
+        require(success, "Withdrawal failed");
     }
 
     /// @dev Allows the admin to pause the contract, preventing certain actions.
@@ -452,6 +472,10 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         return $.campaignStartDate;
     }
 
+    function getContractBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+
     // Setters
     /// @notice Sets the jackpot probabilities for each day of the week.
     /// @param _jackpotProbabilities An array of 7 integers representing the jackpot vrf range for each day.
@@ -538,5 +562,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function _authorizeUpgrade(
         address newImplementation
     ) internal override onlyRole(ADMIN_ROLE) { }
+
+    /// @notice Fallback function to receive ether
+    receive() external payable { }
 
 }
