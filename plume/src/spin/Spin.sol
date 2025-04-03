@@ -221,6 +221,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("PP"))) {
             _userData.PPGained += rewardAmount;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Plume Token"))) {
+            transferPlume(user, rewardAmount);
             _userData.plumeTokens += rewardAmount;
         } else {
             _userData.nothingCounts += 1;
@@ -321,6 +322,12 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         }
 
         return 0;
+    }
+
+    function transferPlume(address to, uint256 amount) internal {
+        require(address(this).balance >= amount, "Insufficient balance in Spin contract");
+        (bool sent,) = to.call{ value: amount }("");
+        require(sent, "Failed to transfer Plume Token (ether)");
     }
 
     function updateRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
@@ -538,5 +545,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function _authorizeUpgrade(
         address newImplementation
     ) internal override onlyRole(ADMIN_ROLE) { }
+
+    /// @notice Fallback function to receive ether
+    receive() external payable { }
 
 }

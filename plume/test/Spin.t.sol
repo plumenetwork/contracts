@@ -70,7 +70,7 @@ contract SpinTest is Test {
         bool isWhitelisted = IDepositContract(DEPOSIT_CONTRACT).isClientWhitelisted(ADMIN);
         assertTrue(isWhitelisted, "Spin contract is not whitelisted under ADMIN");
 
-        vm.deal(ADMIN, 1 ether);
+        vm.deal(ADMIN, 200 ether);
         vm.prank(ADMIN);
         IDepositContract(DEPOSIT_CONTRACT).depositFundClient{ value: 0.1 ether }();
 
@@ -91,6 +91,9 @@ contract SpinTest is Test {
         vm.prank(SUPRA_OWNER);
         bool contractEligible = IDepositContract(DEPOSIT_CONTRACT).isContractEligible(ADMIN, address(spin));
         assertTrue(contractEligible, "Spin contract is not eligible for VRF");
+
+        vm.prank(ADMIN);
+        address(spin).call{ value: 100 ether }("");
 
         assertTrue(spin.hasRole(spin.DEFAULT_ADMIN_ROLE(), ADMIN), "ADMIN is not the contract admin");
     }
@@ -215,7 +218,6 @@ contract SpinTest is Test {
     }
 
     function testStreakCount() public {
-      
         Vm.Log[] memory entries;
 
         // Start spin 1
@@ -255,6 +257,44 @@ contract SpinTest is Test {
         vm.warp(dateTime.toTimestamp(2025, 3, 13, 0, 0, 0)); // Edge case
         (streakCount,,,,,,) = spin.getUserData(USER);
         assertEq(streakCount, 0, "Streak count should be 0");
+    }
+
+    function testPlumeToken() public {
+        uint256 baseTimestamp = dateTime.toTimestamp(2025, 3, 10, 10, 0, 0);
+        uint256 amount;
+
+        // Simulate over 7 days
+        for (uint256 day = 1; day <= 7; day++) {
+            uint256 hour = (100 % 24); // spread spins over 24 hours
+            uint256 minute = (100 % 60);
+
+            vm.recordLogs();
+            uint256 ts = baseTimestamp + ((day - 1) * 1 days) + (hour * 1 hours) + (minute * 1 minutes);
+            vm.warp(ts);
+
+            vm.prank(USER);
+            spin.startSpin();
+            Vm.Log[] memory entries1 = vm.getRecordedLogs();
+            uint256 nonce = uint256(entries1[0].topics[1]);
+
+            uint256[] memory testRNG = new uint256[](1);
+            testRNG[0] = uint256(keccak256(abi.encodePacked(ts, USER))) % 1_000_000;
+
+            // Simulate Supra calling
+            vm.recordLogs();
+            vm.prank(SUPRA_ORACLE); // simulate Supra VRF callback
+            spin.handleRandomness(nonce, testRNG);
+            Vm.Log[] memory entries2 = vm.getRecordedLogs();
+
+            string memory rewardCategory = abi.decode(entries2[0].data, (string));
+            if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Plume Token"))) {
+                amount += uint256(entries2[0].topics[1]);
+                emit log_uint(amount);
+            }
+        }
+        assertEq(USER.balance, amount, "User balance incorrect");
+
+
     }
 
 }
