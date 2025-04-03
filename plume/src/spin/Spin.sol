@@ -338,6 +338,19 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         emit RaffleTicketsUpdated(user, ticketsUsed, $.userData[user].raffleTicketsBalance);
     }
 
+    /**
+     * @notice Allows the admin to withdraw Ether from the contract.
+     * @param recipient The address to receive the funds.
+     * @param amount The amount of Ether to withdraw (in wei).
+     */
+    function withdraw(address payable recipient, uint256 amount) external onlyRole(ADMIN_ROLE) {
+        require(address(this).balance >= amount, "Insufficient contract balance");
+        require(recipient != address(0), "Invalid recipient address");
+
+        (bool success,) = recipient.call{ value: amount }("");
+        require(success, "Withdrawal failed");
+    }
+
     /// @dev Allows the admin to pause the contract, preventing certain actions.
     function pause() external onlyRole(ADMIN_ROLE) {
         _pause();
@@ -457,6 +470,10 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function getCampaignStartDate() external view returns (uint256) {
         SpinStorage storage $ = _getSpinStorage();
         return $.campaignStartDate;
+    }
+
+    function getContractBalance() external view returns (uint256) {
+        return address(this).balance;
     }
 
     // Setters

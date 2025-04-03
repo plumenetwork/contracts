@@ -35,7 +35,7 @@ contract SpinTest is Test {
     IDepositContract depositContract;
     DateTime dateTime;
 
-    address constant ADMIN = address(0x1);
+    address payable constant ADMIN = payable(address(0x1));
     address constant USER = address(0x2);
     address constant SUPRA_ORACLE = address(0x6D46C098996AD584c9C40D6b4771680f54cE3726);
     address constant DEPOSIT_CONTRACT = address(0x3B5F96986389f6BaCF58d5b69425fab000D3551e);
@@ -293,8 +293,14 @@ contract SpinTest is Test {
             }
         }
         assertEq(USER.balance, amount, "User balance incorrect");
+    }
 
+    function testWithdraw() public {
+        vm.prank(ADMIN);
+        spin.withdraw(ADMIN,100 ether);
 
+        uint256 balance = address(spin).balance;
+        assertEq(balance, 0, "Spin contract balance should be 0");
     }
 
 }
