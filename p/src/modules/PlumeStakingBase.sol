@@ -111,7 +111,7 @@ abstract contract PlumeStakingBase is
     ) external payable override returns (uint256) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
-        // Verify validator exists and is active
+        // Verify validator exists and is activex`
         if (!$.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
@@ -1018,6 +1018,60 @@ abstract contract PlumeStakingBase is
     ) internal virtual {
         // This delegate function is implemented in PlumeStakingValidator
         // Empty implementation in base to allow other contracts to override
+    }
+
+    /**
+     * @notice Get information about a validator including total staked amount
+     * @param validatorId ID of the validator to check
+     * @return info Validator information
+     * @return totalStaked Total PLUME staked to this validator
+     * @return stakersCount Number of stakers delegating to this validator
+     */
+    function getValidatorInfo(
+        uint16 validatorId
+    )
+        external
+        view
+        override
+        returns (PlumeStakingStorage.ValidatorInfo memory info, uint256 totalStaked, uint256 stakersCount)
+    {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        info = $.validators[validatorId];
+        totalStaked = $.validatorTotalStaked[validatorId];
+        stakersCount = $.validatorStakers[validatorId].length;
+
+        return (info, totalStaked, stakersCount);
+    }
+
+    /**
+     * @notice Get essential statistics about a validator
+     * @param validatorId ID of the validator to check
+     * @return active Whether the validator is active
+     * @return commission Validator's commission rate
+     * @return totalStaked Total PLUME staked to this validator
+     * @return stakersCount Number of stakers delegating to this validator
+     */
+    function getValidatorStats(
+        uint16 validatorId
+    ) external view override returns (bool active, uint256 commission, uint256 totalStaked, uint256 stakersCount) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        active = validator.active;
+        commission = validator.commission;
+        totalStaked = $.validatorTotalStaked[validatorId];
+        stakersCount = $.validatorStakers[validatorId].length;
+
+        return (active, commission, totalStaked, stakersCount);
     }
 
 }

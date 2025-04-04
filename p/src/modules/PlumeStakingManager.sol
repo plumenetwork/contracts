@@ -101,70 +101,6 @@ contract PlumeStakingManager is PlumeStakingRewards {
     }
 
     /**
-     * @notice Admin function to set a user's stake info
-     * @param user Address of the user
-     * @param staked Amount staked
-     * @param cooled Amount in cooling
-     * @param parked Amount parked (withdrawable)
-     * @param cooldownEnd Timestamp when cooldown ends
-     * @param lastUpdateTimestamp Last reward update timestamp
-     */
-    function setStakeInfo(
-        address user,
-        uint256 staked,
-        uint256 cooled,
-        uint256 parked,
-        uint256 cooldownEnd,
-        uint256 lastUpdateTimestamp
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        if (user == address(0)) {
-            revert ZeroAddress("user");
-        }
-
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[user];
-
-        // Update user's stake info
-        info.staked = staked;
-        info.cooled = cooled;
-        info.parked = parked;
-        info.cooldownEnd = cooldownEnd;
-
-        // Add user to stakers list if they have any funds
-        if (staked > 0 || cooled > 0 || parked > 0) {
-            _addStakerIfNew(user);
-        }
-
-        // Update rewards for all tokens
-        _updateRewards(user);
-
-        emit StakeInfoUpdated(user, staked, cooled, parked, cooldownEnd, lastUpdateTimestamp);
-    }
-
-    /**
-     * @notice Admin function to manually add a staker to tracking
-     * @param staker Address of the staker to add
-     * @dev Will revert if address is zero or already a staker
-     */
-    function addStaker(
-        address staker
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        if (staker == address(0)) {
-            revert ZeroAddress("staker");
-        }
-
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        if ($.isStaker[staker]) {
-            revert StakerExists(staker);
-        }
-
-        $.stakers.push(staker);
-        $.isStaker[staker] = true;
-
-        emit StakerAdded(staker);
-    }
-
-    /**
      * @notice Allows admin to withdraw any token from the contract
      * @param token Address of the token to withdraw (use PLUME for native tokens)
      * @param amount Amount of tokens to withdraw
@@ -216,14 +152,39 @@ contract PlumeStakingManager is PlumeStakingRewards {
     }
 
     /**
+     * @notice Set staking parameters (cooldown interval and/or minimum stake amount)
+     * @param flags Bitmap: bit 0 = update cooldown, bit 1 = update min stake
+     * @param newCooldownInterval New cooldown interval (if bit 0 set)
+     * @param newMinStakeAmount New minimum stake amount (if bit 1 set)
+     */
+    function setStakingParams(
+        uint8 flags,
+        uint256 newCooldownInterval,
+        uint256 newMinStakeAmount
+    ) external onlyRole(ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Update cooldown interval if flag bit 0 is set
+        if (flags & 1 != 0) {
+            $.cooldownInterval = newCooldownInterval;
+            emit CooldownIntervalSet(newCooldownInterval);
+        }
+
+        // Update minimum stake amount if flag bit 1 is set
+        if (flags & 2 != 0) {
+            $.minStakeAmount = newMinStakeAmount;
+            emit MinStakeAmountSet(newMinStakeAmount);
+        }
+    }
+
+    /**
      * @notice Set the cooldown interval
      * @param interval New cooldown interval in seconds
      */
     function setCooldownInterval(
         uint256 interval
     ) external onlyRole(ADMIN_ROLE) {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        $.cooldownInterval = interval;
+        PlumeStakingStorage.layout().cooldownInterval = interval;
         emit CooldownIntervalSet(interval);
     }
 
@@ -234,8 +195,7 @@ contract PlumeStakingManager is PlumeStakingRewards {
     function setMinStakeAmount(
         uint256 amount
     ) external onlyRole(ADMIN_ROLE) {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        $.minStakeAmount = amount;
+        PlumeStakingStorage.layout().minStakeAmount = amount;
         emit MinStakeAmountSet(amount);
     }
 

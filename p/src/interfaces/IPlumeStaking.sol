@@ -64,6 +64,14 @@ interface IPlumeStaking {
     function claim(address token, uint16 validatorId) external returns (uint256 amount);
     function claimAll() external returns (uint256 totalAmount);
 
+    /**
+     * @notice Update validator settings
+     * @param validatorId ID of the validator
+     * @param updateType Type of update (0=commission, 1=admin address, 2=withdraw address)
+     * @param data Encoded update data (uint256 for commission, address for admin/withdraw)
+     */
+    function updateValidator(uint16 validatorId, uint8 updateType, bytes calldata data) external;
+
     // View functions
     function stakingInfo()
         external
@@ -141,5 +149,31 @@ interface IPlumeStaking {
     function getUserValidators(
         address user
     ) external view returns (uint16[] memory validatorIds);
+
+    /**
+     * @notice Get information about a validator including total staked amount
+     * @param validatorId ID of the validator to check
+     * @return info Validator information
+     * @return totalStaked Total PLUME staked to this validator
+     * @return stakersCount Number of stakers delegating to this validator
+     */
+    function getValidatorInfo(
+        uint16 validatorId
+    )
+        external
+        view
+        returns (PlumeStakingStorage.ValidatorInfo memory info, uint256 totalStaked, uint256 stakersCount);
+
+    /**
+     * @notice Get essential statistics about a validator
+     * @param validatorId ID of the validator to check
+     * @return active Whether the validator is active
+     * @return commission Validator's commission rate
+     * @return totalStaked Total PLUME staked to this validator
+     * @return stakersCount Number of stakers delegating to this validator
+     */
+    function getValidatorStats(
+        uint16 validatorId
+    ) external view returns (bool active, uint256 commission, uint256 totalStaked, uint256 stakersCount);
 
 }

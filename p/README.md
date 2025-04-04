@@ -90,7 +90,7 @@ The `addValidator` function requires the following parameters:
 |-----------|------|-------------|
 | `validatorId` | `uint16` | Unique identifier for the validator |
 | `commission` | `uint256` | Commission rate as a fraction of REWARD_PRECISION (e.g., 5% = 5e16, 10% = 1e17, 20% = 2e17) |
-| `l2AdminAddress` | `address` | Admin address that can manage the validator |
+| `l2AdminAddress` | `address` | Admin address that can manage the validator  (l2Address should be a multisig with Plume Foundation)|
 | `l2WithdrawAddress` | `address` | Address to receive validator commission rewards |
 | `l1ValidatorAddress` | `string` | L1 validator address (informational) |
 | `l1AccountAddress` | `string` | L1 account address (informational) |

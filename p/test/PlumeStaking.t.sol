@@ -178,6 +178,9 @@ contract PlumeStakingTest is Test {
             "0x456" // l1AccountAddress
         );
 
+        // Grant validator role to user1
+        staking.grantRole(staking.VALIDATOR_ROLE(), user1);
+
         // Set validator capacity to a high value to allow staking
         staking.setValidatorCapacity(DEFAULT_VALIDATOR_ID, 1_000_000e18); // 1M PLUME capacity
 
@@ -204,6 +207,24 @@ contract PlumeStakingTest is Test {
         rates[2] = 5e17; // 0.5 token per second for secondToken
 
         staking.setRewardRates(tokens, rates);
+
+        // Setup: Add a second validator for testing
+        uint16 secondValidatorId = 1;
+        vm.startPrank(admin);
+        staking.addValidator(
+            secondValidatorId,
+            10e16, // 10% commission
+            user2,
+            user2,
+            "0x789",
+            "0xabc"
+        );
+
+        // Grant validator role to user2
+        staking.grantRole(staking.VALIDATOR_ROLE(), user2);
+
+        staking.setValidatorCapacity(secondValidatorId, 1_000_000e18);
+        vm.stopPrank();
 
         vm.stopPrank();
         console2.log("Setup complete");
@@ -904,60 +925,6 @@ contract PlumeStakingTest is Test {
         assertEq(plumeSlot, keccak256("plume.storage.PlumeStaking"));
     }
 
-    function testSetStakeInfo() public {
-        vm.startPrank(admin);
-
-        // Initial values to set
-        uint256 initialStaked = 100e18;
-        uint256 initialCooled = 50e18;
-        uint256 initialParked = 25e18;
-        uint256 initialCooldownEnd = block.timestamp + 1 days;
-        uint256 initialLastUpdateTimestamp = block.timestamp;
-
-        // Set the stake info for user1
-        vm.expectEmit(true, true, false, true);
-        emit StakeInfoUpdated(
-            user1, initialStaked, initialCooled, initialParked, initialCooldownEnd, initialLastUpdateTimestamp
-        );
-
-        staking.setStakeInfo(
-            user1, initialStaked, initialCooled, initialParked, initialCooldownEnd, initialLastUpdateTimestamp
-        );
-
-        // Verify the stake info was set correctly
-        PlumeStakingStorage.StakeInfo memory info = staking.stakeInfo(user1);
-        assertEq(info.staked, initialStaked, "Staked amount should match");
-        assertEq(info.cooled, initialCooled, "Cooled amount should match");
-        assertEq(info.parked, initialParked, "Parked amount should match");
-        assertEq(info.cooldownEnd, initialCooldownEnd, "Cooldown end should match");
-
-        // Test updating the stake info
-        uint256 updatedStaked = 200e18;
-        uint256 updatedCooled = 75e18;
-        uint256 updatedParked = 30e18;
-        uint256 updatedCooldownEnd = block.timestamp + 2 days;
-        uint256 updatedLastUpdateTimestamp = block.timestamp + 1;
-
-        staking.setStakeInfo(
-            user1, updatedStaked, updatedCooled, updatedParked, updatedCooldownEnd, updatedLastUpdateTimestamp
-        );
-
-        // Verify the updated stake info
-        info = staking.stakeInfo(user1);
-        assertEq(info.staked, updatedStaked, "Updated staked amount should match");
-        assertEq(info.cooled, updatedCooled, "Updated cooled amount should match");
-        assertEq(info.parked, updatedParked, "Updated parked amount should match");
-        assertEq(info.cooldownEnd, updatedCooldownEnd, "Updated cooldown end should match");
-
-        // Test with zero address (should revert)
-        vm.expectRevert(abi.encodeWithSelector(ZeroAddress.selector, "user"));
-        staking.setStakeInfo(
-            address(0), updatedStaked, updatedCooled, updatedParked, updatedCooldownEnd, updatedLastUpdateTimestamp
-        );
-
-        vm.stopPrank();
-    }
-
     function testAdminWithdrawComprehensive() public {
         // Setup
         vm.deal(address(staking), 100e18);
@@ -1068,17 +1035,13 @@ contract PlumeStakingTest is Test {
 
     // Test for validator-related internal functions
     function testValidatorRelatedFunctions() public {
-        // Setup: Add a second validator for testing
-        uint16 secondValidatorId = 1;
+        // The second validator (ID 1) already exists from setUp, don't try to add it again
         vm.startPrank(admin);
-        staking.addValidator(
-            secondValidatorId,
-            10e16, // 10% commission
-            user2,
-            user2,
-            "0x789",
-            "0xabc"
-        );
+
+        // Just verify we can get information about the validator
+        uint16 secondValidatorId = 1;
+
+        // Ensure validator capacity is set
         staking.setValidatorCapacity(secondValidatorId, 1_000_000e18);
         vm.stopPrank();
 
@@ -1109,25 +1072,6 @@ contract PlumeStakingTest is Test {
         vm.startPrank(admin);
         uint16[] memory userValidators = staking.getUserValidators(user1);
         assertEq(userValidators.length, 2, "User should have 2 validators");
-        vm.stopPrank();
-    }
-
-    function testAddStaker() public {
-        vm.startPrank(admin);
-
-        // Try to add a new staker
-        address newStaker = address(0x1234);
-
-        // Add staker
-        vm.expectEmit(true, false, false, false);
-        emit StakerAdded(newStaker);
-        staking.addStaker(newStaker);
-
-        // Verify the staker was added - we can't reliably check timestamp,
-        // so we'll verify the existence in a different way - by trying to add again
-        vm.expectRevert(abi.encodeWithSelector(StakerExists.selector, newStaker));
-        staking.addStaker(newStaker);
-
         vm.stopPrank();
     }
 
@@ -1277,6 +1221,12 @@ contract PlumeStakingTest is Test {
         // Test NotValidatorAdmin revert
         // Set up a validator where user1 is not the admin
         vm.startPrank(admin);
+
+        // Ensure admin has VALIDATOR_ROLE
+        if (!staking.hasRole(staking.VALIDATOR_ROLE(), admin)) {
+            staking.grantRole(staking.VALIDATOR_ROLE(), admin);
+        }
+
         uint16 testValidatorId = 111;
         staking.addValidator(
             testValidatorId,
@@ -1334,6 +1284,11 @@ contract PlumeStakingTest is Test {
             "0x123",
             "0x456"
         );
+
+        // Make sure admin has the VALIDATOR_ROLE
+        if (!staking.hasRole(staking.VALIDATOR_ROLE(), admin)) {
+            staking.grantRole(staking.VALIDATOR_ROLE(), admin);
+        }
 
         // Add many stakers (but less than the 100 limit) to this validator
         // Note: Creating a test with truly >100 stakers would be very gas intensive,
@@ -1615,15 +1570,15 @@ contract PlumeStakingTest is Test {
     function testSnapshotRewardAccrual() public {
         console2.log("Running testSnapshotRewardAccrual");
 
-        // Setup multiple users
-        address user1 = makeAddr("rewardUser1");
-        address user2 = makeAddr("rewardUser2");
-        address user3 = makeAddr("rewardUser3");
+        // Setup multiple users with different names to avoid shadowing
+        address rewardUser1 = makeAddr("rewardUser1");
+        address rewardUser2 = makeAddr("rewardUser2");
+        address rewardUser3 = makeAddr("rewardUser3");
 
         // Give them ETH for staking
-        vm.deal(user1, 1000e18);
-        vm.deal(user2, 1000e18);
-        vm.deal(user3, 1000e18);
+        vm.deal(rewardUser1, 1000e18);
+        vm.deal(rewardUser2, 1000e18);
+        vm.deal(rewardUser3, 1000e18);
         vm.deal(admin, 1000e18); // Give admin ETH for contract operations
 
         // Setup multiple validators with different commissions
@@ -1637,8 +1592,8 @@ contract PlumeStakingTest is Test {
         staking.addValidator(
             validator1Id,
             5e16, // 5% commission
-            user1, // admin is user1
-            user1, // withdrawal address is user1
+            rewardUser1, // admin is rewardUser1
+            rewardUser1, // withdrawal address is rewardUser1
             "0xval1",
             "0xacc1"
         );
@@ -1646,8 +1601,8 @@ contract PlumeStakingTest is Test {
         staking.addValidator(
             validator2Id,
             10e16, // 10% commission
-            user2, // admin is user2
-            user2, // withdrawal address is user2
+            rewardUser2, // admin is rewardUser2
+            rewardUser2, // withdrawal address is rewardUser2
             "0xval2",
             "0xacc2"
         );
@@ -1655,8 +1610,8 @@ contract PlumeStakingTest is Test {
         staking.addValidator(
             validator3Id,
             0, // 0% commission
-            user3, // admin is user3
-            user3, // withdrawal address is user3
+            rewardUser3, // admin is rewardUser3
+            rewardUser3, // withdrawal address is rewardUser3
             "0xval3",
             "0xacc3"
         );
@@ -1716,12 +1671,12 @@ contract PlumeStakingTest is Test {
         // PHASE 1: Initial Staking
         console2.log("PHASE 1: Initial Staking");
 
-        // User1 stakes with validator1
-        vm.prank(user1);
+        // rewardUser1 stakes with validator1
+        vm.prank(rewardUser1);
         staking.stake{ value: 100e18 }(validator1Id);
 
-        // User2 stakes with validator2
-        vm.prank(user2);
+        // rewardUser2 stakes with validator2
+        vm.prank(rewardUser2);
         staking.stake{ value: 200e18 }(validator2Id);
 
         // Advance time by 1 day to accrue rewards
@@ -1745,16 +1700,16 @@ contract PlumeStakingTest is Test {
         vm.stopPrank();
 
         // User3 stakes with validator3, after rate change
-        vm.prank(user3);
+        vm.prank(rewardUser3);
         staking.stake{ value: 150e18 }(validator3Id);
 
         // Advance time by another day to accrue rewards at new rates
         vm.warp(block.timestamp + 1 days);
 
-        // PHASE 3: User1 stakes with additional validator (validator3)
+        // PHASE 3: rewardUser1 stakes with additional validator (validator3)
         console2.log("PHASE 3: Additional Staking");
 
-        vm.prank(user1);
+        vm.prank(rewardUser1);
         staking.stake{ value: 50e18 }(validator3Id);
 
         // PHASE 4: Change Reward Rates Again
@@ -1788,57 +1743,69 @@ contract PlumeStakingTest is Test {
 
         // Setup mock transfers for rewards claims
         vm.mockCall(
-            PUSD_TOKEN, abi.encodeWithSelector(IERC20.transfer.selector, user1, type(uint256).max), abi.encode(true)
+            PUSD_TOKEN,
+            abi.encodeWithSelector(IERC20.transfer.selector, rewardUser1, type(uint256).max),
+            abi.encode(true)
         );
         vm.mockCall(
-            PUSD_TOKEN, abi.encodeWithSelector(IERC20.transfer.selector, user2, type(uint256).max), abi.encode(true)
+            PUSD_TOKEN,
+            abi.encodeWithSelector(IERC20.transfer.selector, rewardUser2, type(uint256).max),
+            abi.encode(true)
         );
         vm.mockCall(
-            PUSD_TOKEN, abi.encodeWithSelector(IERC20.transfer.selector, user3, type(uint256).max), abi.encode(true)
+            PUSD_TOKEN,
+            abi.encodeWithSelector(IERC20.transfer.selector, rewardUser3, type(uint256).max),
+            abi.encode(true)
         );
         vm.mockCall(
-            secondToken, abi.encodeWithSelector(IERC20.transfer.selector, user1, type(uint256).max), abi.encode(true)
+            secondToken,
+            abi.encodeWithSelector(IERC20.transfer.selector, rewardUser1, type(uint256).max),
+            abi.encode(true)
         );
         vm.mockCall(
-            secondToken, abi.encodeWithSelector(IERC20.transfer.selector, user2, type(uint256).max), abi.encode(true)
+            secondToken,
+            abi.encodeWithSelector(IERC20.transfer.selector, rewardUser2, type(uint256).max),
+            abi.encode(true)
         );
         vm.mockCall(
-            secondToken, abi.encodeWithSelector(IERC20.transfer.selector, user3, type(uint256).max), abi.encode(true)
+            secondToken,
+            abi.encodeWithSelector(IERC20.transfer.selector, rewardUser3, type(uint256).max),
+            abi.encode(true)
         );
 
-        // Check rewards for user1 - PUSD
-        vm.prank(user1);
-        uint256 user1PusdReward = staking.getClaimableReward(user1, PUSD_TOKEN);
+        // Check rewards for rewardUser1 - PUSD
+        vm.prank(rewardUser1);
+        uint256 user1PusdReward = staking.getClaimableReward(rewardUser1, PUSD_TOKEN);
         console2.log("User1 PUSD reward:", user1PusdReward);
 
-        // Check rewards for user1 - PLUME
-        vm.prank(user1);
-        uint256 user1PlumeReward = staking.getClaimableReward(user1, PLUME_NATIVE);
+        // Check rewards for rewardUser1 - PLUME
+        vm.prank(rewardUser1);
+        uint256 user1PlumeReward = staking.getClaimableReward(rewardUser1, PLUME_NATIVE);
         console2.log("User1 PLUME reward:", user1PlumeReward);
 
-        // Check rewards for user1 - secondToken
-        vm.prank(user1);
-        uint256 user1SecondTokenReward = staking.getClaimableReward(user1, secondToken);
+        // Check rewards for rewardUser1 - secondToken
+        vm.prank(rewardUser1);
+        uint256 user1SecondTokenReward = staking.getClaimableReward(rewardUser1, secondToken);
         console2.log("User1 secondToken reward:", user1SecondTokenReward);
 
-        // Check rewards for user2 - PUSD
-        vm.prank(user2);
-        uint256 user2PusdReward = staking.getClaimableReward(user2, PUSD_TOKEN);
+        // Check rewards for rewardUser2 - PUSD
+        vm.prank(rewardUser2);
+        uint256 user2PusdReward = staking.getClaimableReward(rewardUser2, PUSD_TOKEN);
         console2.log("User2 PUSD reward:", user2PusdReward);
 
-        // Check rewards for user2 - PLUME
-        vm.prank(user2);
-        uint256 user2PlumeReward = staking.getClaimableReward(user2, PLUME_NATIVE);
+        // Check rewards for rewardUser2 - PLUME
+        vm.prank(rewardUser2);
+        uint256 user2PlumeReward = staking.getClaimableReward(rewardUser2, PLUME_NATIVE);
         console2.log("User2 PLUME reward:", user2PlumeReward);
 
         // Check rewards for user3 - PUSD
-        vm.prank(user3);
-        uint256 user3PusdReward = staking.getClaimableReward(user3, PUSD_TOKEN);
+        vm.prank(rewardUser3);
+        uint256 user3PusdReward = staking.getClaimableReward(rewardUser3, PUSD_TOKEN);
         console2.log("User3 PUSD reward:", user3PusdReward);
 
         // Check rewards for user3 - PLUME
-        vm.prank(user3);
-        uint256 user3PlumeReward = staking.getClaimableReward(user3, PLUME_NATIVE);
+        vm.prank(rewardUser3);
+        uint256 user3PlumeReward = staking.getClaimableReward(rewardUser3, PLUME_NATIVE);
         console2.log("User3 PLUME reward:", user3PlumeReward);
 
         // Validate expected reward ranges
@@ -1873,24 +1840,24 @@ contract PlumeStakingTest is Test {
         // Phase 2: ~2e18 per second * 86400 seconds * (150e18 / 350e18) * 1.0 = ~74,057e18
         // Phase 3+4: ~1e18 per second * 86400 seconds * (150e18 / 550e18) * 1.0 = ~23,564e18
         // Total expected: ~194,400e18 (actual calculated value from contract)
-        assertGt(user3PusdReward, 185_000e18, "User3 PUSD reward too low");
-        assertLt(user3PusdReward, 205_000e18, "User3 PUSD reward too high");
+        assertGt(user3PusdReward, 185_000e18, "rewardUser3 PUSD reward too low");
+        assertLt(user3PusdReward, 205_000e18, "rewardUser3 PUSD reward too high");
 
-        // User2 PLUME Rewards:
-        // Phase 1: 0 (User2 staked with validator2, so no PLUME rewards)
+        // rewardUser2 PLUME Rewards:
+        // Phase 1: 0 (rewardUser2 staked with validator2, so no PLUME rewards)
         // Phase 2: 0 (PLUME rate set to 0)
         // Phase 3+4: ~0.5e18 per second * 86400 seconds * (200e18 / 500e18) * 0.9 = ~15,552e18
         // Total expected: ~38,880e18 (actual calculated value from contract)
-        assertGt(user2PlumeReward, 37_000e18, "User2 PLUME reward too low");
-        assertLt(user2PlumeReward, 40_000e18, "User2 PLUME reward too high");
+        assertGt(user2PlumeReward, 37_000e18, "rewardUser2 PLUME reward too low");
+        assertLt(user2PlumeReward, 40_000e18, "rewardUser2 PLUME reward too high");
 
-        // User3 PLUME Rewards:
+        // rewardUser3 PLUME Rewards:
         // Joined in Phase 2, 0% commission
         // Phase 2: 0 (PLUME rate set to 0)
         // Phase 3+4: ~0.5e18 per second * 86400 seconds * (150e18 / 500e18) * 1.0 = ~12,960e18
         // Total expected: ~32,400e18 (actual calculated value from contract)
-        assertGt(user3PlumeReward, 31_000e18, "User3 PLUME reward too low");
-        assertLt(user3PlumeReward, 34_000e18, "User3 PLUME reward too high");
+        assertGt(user3PlumeReward, 31_000e18, "rewardUser3 PLUME reward too low");
+        assertLt(user3PlumeReward, 34_000e18, "rewardUser3 PLUME reward too high");
     }
 
 }
