@@ -58,6 +58,8 @@ graph LR
 | `amountWithdrawable()` | Get the amount of PLUME that is withdrawable for the caller |
 | `getClaimableReward(address user, address token)` | Get claimable reward amount for a user and token |
 | `getUserValidators(address user)` | Get the list of validator IDs a user has staked with |
+| `getValidatorInfo(uint16 validatorId)` | Get information about a validator including total staked amount |
+| `getValidatorStats(uint16 validatorId)` | Get essential validator stats: active status, commission, total staked amount, and stakers count |
 
 ### Administrative Functions
 
@@ -78,9 +80,29 @@ graph LR
 | Function | Description |
 |----------|-------------|
 | `claimValidatorCommission(uint16 validatorId, address token)` | Claim commission rewards for a validator |
-| `updateValidatorCommission(uint16 validatorId, uint256 newCommission)` | Update a validator's commission rate |
-| `updateValidatorAdminAddress(uint16 validatorId, address newAdminAddress)` | Update a validator's admin address |
-| `updateValidatorWithdrawAddress(uint16 validatorId, address newWithdrawAddress)` | Update a validator's withdraw address |
+| `updateValidator(uint16 validatorId, uint8 updateType, bytes calldata data)` | Update validator settings (commission, admin address, or withdraw address) |
+
+The `updateValidator` function replaces the previous separate functions and uses a simple integer to determine the type of update:
+
+```solidity
+// Update validator commission to 10%
+// updateType 0 = commission update
+uint256 newCommission = 1e17; // 10%
+bytes memory data = abi.encode(newCommission);
+plumeStaking.updateValidator(1, 0, data);
+
+// Update validator admin address
+// updateType 1 = admin address update
+address newAdminAddress = 0xNewAdminAddress;
+bytes memory data = abi.encode(newAdminAddress);
+plumeStaking.updateValidator(1, 1, data);
+
+// Update validator withdraw address
+// updateType 2 = withdraw address update
+address newWithdrawAddress = 0xNewWithdrawAddress;
+bytes memory data = abi.encode(newWithdrawAddress);
+plumeStaking.updateValidator(1, 2, data);
+```
 
 ### AddValidator Parameters
 
