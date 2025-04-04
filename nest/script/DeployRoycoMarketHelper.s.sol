@@ -54,7 +54,7 @@ contract DeployRoycoMarketHelper is Script, Test {
         helper.updateAtomicParameters(
             address(0), // Keep existing atomic queue
             3600, // 1 hour deadline
-            9900 // 98% price (2% discount)
+            9900 // 99% price (1% discount)
         );
 
         // Log implementation verification
