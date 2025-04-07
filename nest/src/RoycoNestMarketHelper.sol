@@ -121,7 +121,7 @@ contract RoycoNestMarketHelper is Initializable, AccessControlUpgradeable, UUPSU
         RoycoMarketHelperStorage storage $ = _getRoycoMarketHelperStorage();
         $.atomicQueue = IAtomicQueue(_atomicQueue);
         $.deadlinePeriod = 3600; // 1 hour default
-        $.pricePercentage = 9800; // 98% default (2% discount)
+        $.pricePercentage = 9900; // 99% default (1% discount)
     }
 
     /**
