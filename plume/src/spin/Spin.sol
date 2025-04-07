@@ -174,7 +174,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     /// @dev This function is called by the user to initiate a spin.
     function startSpin() external whenNotPaused canSpin {
         SpinStorage storage $ = _getSpinStorage();
-        string memory callbackSignature = "handleRandomness(uint256,uint256[],uint8)";
+        string memory callbackSignature = "handleRandomness(uint256,uint256[])";
         uint8 rngCount = 1;
         uint256 numConfirmations = 1;
         uint256 clientSeed = uint256(keccak256(abi.encodePacked($.admin, block.timestamp)));
@@ -325,8 +325,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     }
 
     function transferPlume(address to, uint256 amount) internal {
+        amount = amount * 1 ether;
         require(address(this).balance >= amount, "Insufficient balance in Spin contract");
-        (bool sent,) = to.call{ value: amount }("");
+        (bool sent,) = to.call{ value: amount  }("");
         require(sent, "Failed to transfer Plume Token (ether)");
     }
 
