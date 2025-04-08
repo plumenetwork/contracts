@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.25;
 
-import "../src/PlumeStaking.sol";
+import { PlumeStaking_Monolithic } from "../src/PlumeStaking_Monolithic.sol"; // Import the monolithic contract
 import "../src/interfaces/IPlumeStaking.sol";
 import "../src/lib/PlumeStakingStorage.sol";
 import "../src/modules/PlumeStakingBase.sol";
@@ -57,7 +57,7 @@ import { console2 } from "forge-std/console2.sol";
 contract PlumeStakingTest is Test {
 
     // Contracts
-    PlumeStaking public staking;
+    PlumeStaking_Monolithic public staking;
     Plume public plume;
     IERC20 public pUSD;
 
@@ -96,16 +96,16 @@ contract PlumeStakingTest is Test {
         console2.log("Testing as admin:", admin);
 
         // Deploy new implementation
-        PlumeStaking implementation = new PlumeStaking();
+        PlumeStaking_Monolithic implementation = new PlumeStaking_Monolithic();
         console2.log("Deployed implementation:", address(implementation));
 
         // Initialize proxy with the implementation
-        bytes memory initData = abi.encodeCall(PlumeStaking.initialize, (admin));
+        bytes memory initData = abi.encodeCall(PlumeStaking_Monolithic.initialize, (admin));
         PlumeStakingProxy proxy = new PlumeStakingProxy(address(implementation), initData);
         console2.log("Deployed proxy:", address(proxy));
 
         // Get the proxy as PlumeStaking
-        staking = PlumeStaking(payable(address(proxy)));
+        staking = PlumeStaking_Monolithic(payable(address(proxy)));
 
         // Setup token references
         plume = Plume(PLUME_TOKEN);

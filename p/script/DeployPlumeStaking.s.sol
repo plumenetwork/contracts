@@ -7,7 +7,7 @@ import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
 
 import { Plume } from "../src/Plume.sol";
-import { PlumeStaking } from "../src/PlumeStaking.sol";
+import { PlumeStaking_Monolithic } from "../src/PlumeStaking_Monolithic.sol";
 
 import { IPlumeStaking } from "../src/interfaces/IPlumeStaking.sol";
 import { PlumeStakingProxy } from "../src/proxy/PlumeStakingProxy.sol";
@@ -35,7 +35,7 @@ contract DeployPlumeStaking is Script {
         vm.startBroadcast(ADMIN_ADDRESS);
 
         // 1. Deploy implementation contract
-        PlumeStaking plumeStakingImplementation = new PlumeStaking();
+        PlumeStaking_Monolithic plumeStakingImplementation = new PlumeStaking_Monolithic();
         console2.log("PlumeStaking Implementation deployed to:", address(plumeStakingImplementation));
 
         // 2. Prepare initialization data
@@ -48,7 +48,7 @@ contract DeployPlumeStaking is Script {
         ERC1967Proxy proxy = new PlumeStakingProxy(address(plumeStakingImplementation), initData);
         console2.log("PlumeStaking Proxy deployed to:", address(proxy));
 
-        PlumeStaking plumeStaking = PlumeStaking(payable(address(proxy)));
+        PlumeStaking_Monolithic plumeStaking = PlumeStaking_Monolithic(payable(address(proxy)));
 
         // 4. Add reward tokens
         plumeStaking.addRewardToken(PUSD_TOKEN_ADDRESS);

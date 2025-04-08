@@ -109,6 +109,7 @@ library PlumeStakingStorage {
         /// @notice Maps a (user, validator, token) triple to the timestamp when the user's reward per token was last
         /// updated
         mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaidTimestamp;
+        bool initialized;
     }
 
     // Validator info struct to store validator details

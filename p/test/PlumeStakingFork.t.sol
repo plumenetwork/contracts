@@ -2,7 +2,7 @@
 pragma solidity ^0.8.25;
 
 import { Plume } from "../src/Plume.sol";
-import { PlumeStaking } from "../src/PlumeStaking.sol";
+import { PlumeStaking_Monolithic } from "../src/PlumeStaking_Monolithic.sol";
 
 import { PlumeStakingStorage } from "../src/lib/PlumeStakingStorage.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -18,7 +18,7 @@ import { console2 } from "forge-std/console2.sol";
 contract PlumeStakingForkTest is Test {
 
     // Contracts
-    PlumeStaking public staking;
+    PlumeStaking_Monolithic public staking;
 
     // Addresses from deployment script
     address public constant ADMIN = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
@@ -44,7 +44,7 @@ contract PlumeStakingForkTest is Test {
         vm.createSelectFork(rpcUrl);
 
         // Connect to the existing proxy contract
-        staking = PlumeStaking(payable(PLUMESTAKING_PROXY));
+        staking = PlumeStaking_Monolithic(payable(PLUMESTAKING_PROXY));
         console2.log("Connected to PlumeStaking at:", address(staking));
 
         // Setup test accounts
