@@ -17,22 +17,16 @@ import {
     ValidatorUpdated
 } from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
+import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
+
+import { OwnableInternal } from "@solidstate/access/ownable/OwnableInternal.sol";
 import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
 
-// Needed for commission claim
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-
-// Import the reward logic library
-import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
-
-// Import OwnableInternal for the modifier logic
-import { OwnableInternal } from "@solidstate/access/ownable/OwnableInternal.sol";
-
-// Keep ReentrancyGuard
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 // Struct definition REMOVED from file level

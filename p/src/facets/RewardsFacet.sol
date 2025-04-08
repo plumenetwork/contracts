@@ -26,11 +26,10 @@ import {
     Staked
 } from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
+import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
+
 import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
-
-// Import the new library
-import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
 
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";

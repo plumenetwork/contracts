@@ -17,16 +17,15 @@ import {
 } from "../lib/PlumeErrors.sol";
 import { CooldownStarted, Staked, StakedOnBehalf, Unstaked, Withdrawn } from "../lib/PlumeEvents.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
+import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
+import { PlumeValidatorLogic } from "../lib/PlumeValidatorLogic.sol";
+
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
 
-// Import the new reward logic library
-import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
-// Import the new validator logic library
-import { PlumeValidatorLogic } from "../lib/PlumeValidatorLogic.sol";
 
 /**
  * @title StakingFacet
