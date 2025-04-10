@@ -109,6 +109,8 @@ library PlumeStakingStorage {
         /// @notice Maps a (user, validator, token) triple to the timestamp when the user's reward per token was last
         /// updated
         mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaidTimestamp;
+        /// @notice Maps a role (bytes32) to an address to check if the address has the role.
+        mapping(bytes32 => mapping(address => bool)) hasRole;
         bool initialized;
     }
 

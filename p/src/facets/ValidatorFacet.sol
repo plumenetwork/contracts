@@ -16,18 +16,22 @@ import {
     ValidatorCommissionClaimed,
     ValidatorUpdated
 } from "../lib/PlumeEvents.sol";
-import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
+
 import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
+import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 
 import { OwnableInternal } from "@solidstate/access/ownable/OwnableInternal.sol";
 import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
 
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+
+import { IAccessControl } from "../interfaces/IAccessControl.sol";
+import { PlumeRoles } from "../lib/PlumeRoles.sol";
 
 // Struct definition REMOVED from file level
 
@@ -69,6 +73,18 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         _;
     }
 
+    // --- Modifiers ---
+
+    /**
+     * @dev Modifier to check role using the AccessControlFacet.
+     */
+    modifier onlyRole(
+        bytes32 _role
+    ) {
+        require(IAccessControl(address(this)).hasRole(_role, msg.sender), "Caller does not have the required role");
+        _;
+    }
+
     // --- Validator Management (Owner) ---
 
     /**
@@ -87,7 +103,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address l2WithdrawAddress,
         string calldata l1ValidatorAddress,
         string calldata l1AccountAddress
-    ) external onlyOwner {
+    ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
 
         if ($.validatorExists[validatorId]) {
@@ -126,7 +142,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @param validatorId ID of the validator
      * @param maxCapacity New maximum capacity
      */
-    function setValidatorCapacity(uint16 validatorId, uint256 maxCapacity) external onlyOwner {
+    function setValidatorCapacity(
+        uint16 validatorId,
+        uint256 maxCapacity
+    ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
 
         if (!$.validatorExists[validatorId]) {

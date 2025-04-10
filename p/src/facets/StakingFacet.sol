@@ -16,8 +16,9 @@ import {
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import { CooldownStarted, Staked, StakedOnBehalf, Unstaked, Withdrawn } from "../lib/PlumeEvents.sol";
-import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
+
 import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
+import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { PlumeValidatorLogic } from "../lib/PlumeValidatorLogic.sol";
 
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
@@ -25,7 +26,6 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
-
 
 /**
  * @title StakingFacet
@@ -292,7 +292,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         $.totalCooling += amountUnstaked; // Global total cooling is needed
 
         emit CooldownStarted(msg.sender, validatorId, amountUnstaked, globalInfo.cooldownEnd);
-        emit Unstaked(msg.sender, validatorId, amountUnstaked); // Keep original Unstaked event
+        emit Unstaked(msg.sender, validatorId, amountUnstaked);
 
         return amountUnstaked;
     }

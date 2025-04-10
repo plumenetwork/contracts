@@ -26,15 +26,19 @@ import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
+import { OwnableInternal } from "@solidstate/access/ownable/OwnableInternal.sol"; // For inherited onlyOwner
+
+import { PlumeRoles } from "../lib/PlumeRoles.sol"; // Import roles
+
+// Import the new Access Control interface to call it
+import { IAccessControl } from "../interfaces/IAccessControl.sol";
 
 /**
  * @title ManagementFacet
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Facet handling administrative functions like setting parameters and managing contract funds.
  */
-contract ManagementFacet is
-    ReentrancyGuardUpgradeable // Removed AccessControlUpgradeable
-{
+contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     using SafeERC20 for IERC20;
     using Address for address payable;
@@ -49,9 +53,81 @@ contract ManagementFacet is
         $ = PlumeStakingStorage.layout();
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == OwnableStorage.layout().owner, "Must be owner");
+    // --- Modifiers ---
+
+    /**
+     * @dev Modifier to check role using the AccessControlFacet.
+     * Assumes AccessControlFacet is deployed and added to the diamond.
+     */
+    modifier onlyRole(
+        bytes32 _role
+    ) {
+        require(IAccessControl(address(this)).hasRole(_role, msg.sender), "Caller does not have the required role");
         _;
+    }
+
+    // --- Events (Add role-related events) ---
+    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
+    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
+
+    // --- Internal Functions ---
+
+    function _hasRole(bytes32 _role, address _account) internal view returns (bool) {
+        return _getPlumeStorage().hasRole[_role][_account];
+    }
+
+    function _grantRole(bytes32 _role, address _account) internal {
+        if (!_hasRole(_role, _account)) {
+            _getPlumeStorage().hasRole[_role][_account] = true;
+            emit RoleGranted(_role, _account, msg.sender);
+        }
+    }
+
+    function _revokeRole(bytes32 _role, address _account) internal {
+        if (_hasRole(_role, _account)) {
+            _getPlumeStorage().hasRole[_role][_account] = false;
+            emit RoleRevoked(_role, _account, msg.sender);
+        }
+    }
+
+    // --- Role Management Functions (Initially Owner Controlled) ---
+
+    /**
+     * @notice Grants a role to an account.
+     * @dev Caller must have ADMIN_ROLE or be the contract owner initially.
+     * TODO: Change modifier to onlyRole(PlumeRoles.ADMIN_ROLE) after initial setup.
+     * @param _role The role identifier (bytes32).
+     * @param _account The address to grant the role to.
+     */
+    function grantRole(bytes32 _role, address _account) external virtual onlyOwner {
+        if (_account == address(0)) {
+            revert ZeroAddress("account");
+        }
+        _grantRole(_role, _account);
+    }
+
+    /**
+     * @notice Revokes a role from an account.
+     * @dev Caller must have ADMIN_ROLE or be the contract owner initially.
+     * TODO: Change modifier to onlyRole(PlumeRoles.ADMIN_ROLE) after initial setup.
+     * @param _role The role identifier (bytes32).
+     * @param _account The address to revoke the role from.
+     */
+    function revokeRole(bytes32 _role, address _account) external virtual onlyOwner {
+        if (_account == address(0)) {
+            revert ZeroAddress("account");
+        }
+        _revokeRole(_role, _account);
+    }
+
+    /**
+     * @notice Allows an account to renounce their own role.
+     * @param _role The role identifier (bytes32).
+     * @param _account The calling address must match this account.
+     */
+    function renounceRole(bytes32 _role, address _account) external virtual {
+        require(_account == msg.sender, "Renounce only allowed for self");
+        _revokeRole(_role, _account);
     }
 
     // --- Parameter Setting (Owner) ---
@@ -203,6 +279,16 @@ contract ManagementFacet is
     }
 
     // --- View Functions ---
+
+    /**
+     * @notice Checks if an account has a specific role.
+     * @param _role The role identifier (bytes32).
+     * @param _account The address to check.
+     * @return True if the account has the role, false otherwise.
+     */
+    function hasRole(bytes32 _role, address _account) external view virtual returns (bool) {
+        return _hasRole(_role, _account);
+    }
 
     /**
      * @notice Gets the current minimum stake amount.

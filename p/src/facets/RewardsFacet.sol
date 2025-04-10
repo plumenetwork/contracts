@@ -25,8 +25,9 @@ import {
     RewardsAdded,
     Staked
 } from "../lib/PlumeEvents.sol";
-import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
+
 import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
+import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 
 import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
@@ -36,15 +37,17 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 
+import { IAccessControl } from "../interfaces/IAccessControl.sol";
+import { PlumeRoles } from "../lib/PlumeRoles.sol";
+import { OwnableInternal } from "@solidstate/access/ownable/OwnableInternal.sol";
+
 using PlumeRewardLogic for PlumeStakingStorage.Layout;
 
 /**
  * @title RewardsFacet
  * @notice Facet handling reward token management, rate setting, reward calculation, and claiming.
  */
-contract RewardsFacet is
-    ReentrancyGuardUpgradeable // Removed AccessControlUpgradeable
-{
+contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     using SafeERC20 for IERC20;
     using Address for address payable;
@@ -65,8 +68,10 @@ contract RewardsFacet is
         }
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == OwnableStorage.layout().owner, "Must be owner");
+    modifier onlyRole(
+        bytes32 _role
+    ) {
+        require(IAccessControl(address(this)).hasRole(_role, msg.sender), "Caller does not have the required role");
         _;
     }
 
@@ -93,7 +98,7 @@ contract RewardsFacet is
     // --- Admin Functions ---
     function addRewardToken(
         address token
-    ) external onlyOwner {
+    ) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         if (token == address(0)) {
             revert ZeroAddress("token");
@@ -110,7 +115,7 @@ contract RewardsFacet is
 
     function removeRewardToken(
         address token
-    ) external onlyOwner {
+    ) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         uint256 tokenIndex = _getTokenIndex(token);
         if (tokenIndex >= $.rewardTokens.length) {
@@ -128,7 +133,10 @@ contract RewardsFacet is
         emit RewardTokenRemoved(token);
     }
 
-    function setRewardRates(address[] calldata tokens, uint256[] calldata rewardRates_) external onlyOwner {
+    function setRewardRates(
+        address[] calldata tokens,
+        uint256[] calldata rewardRates_
+    ) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         if (tokens.length == 0) {
             revert EmptyArray();
@@ -157,7 +165,7 @@ contract RewardsFacet is
         emit RewardRatesSet(tokens, rewardRates_);
     }
 
-    function setMaxRewardRate(address token, uint256 newMaxRate) external onlyOwner {
+    function setMaxRewardRate(address token, uint256 newMaxRate) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         if (!_isRewardToken(token)) {
             revert TokenDoesNotExist(token);
@@ -169,7 +177,10 @@ contract RewardsFacet is
         emit MaxRewardRateUpdated(token, newMaxRate);
     }
 
-    function addRewards(address token, uint256 amount) external payable onlyOwner {
+    function addRewards(
+        address token,
+        uint256 amount
+    ) external payable virtual nonReentrant onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         if (!_isRewardToken(token)) {
             revert TokenDoesNotExist(token);
