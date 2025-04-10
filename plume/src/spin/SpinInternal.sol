@@ -10,7 +10,7 @@ import "../interfaces/IDateTime.sol";
 import "../interfaces/ISupraRouterContract.sol";
 
 /// @custom:oz-upgrades-from Spin
-contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
+contract SpinInternal is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
 
     // Storage
     struct UserData {
@@ -54,6 +54,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         mapping(uint8 => uint256) jackpotPrizes;
         /// @dev Mapping to bypass cooldown period
         mapping(address => bool) whitelists;
+        /// @dev campaign start
+        bool enableSpin;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.Spin")) - 1)) & ~bytes32(uint256(0xff))
@@ -87,6 +89,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     error AlreadySpunToday();
     /// @notice Revert if the nonce is invalid
     error InvalidNonce();
+    /// @notice Revert if the campaign has not started
+    error CampaignNotStarted();
 
     // Modifiers
 
@@ -164,15 +168,19 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         $.jackpotPrizes[10] = 50_000;
         $.jackpotPrizes[11] = 100_000;
 
-        $.baseRaffleMultiplier = 100;
-        $.PP_PerSpin = 100;
-        $.plumeAmounts = [2, 5, 10];
+        $.baseRaffleMultiplier = 69;
+        $.PP_PerSpin = 0;
+        //$.plumeAmounts = [2, 5, 10];
+        $.plumeAmounts = [1, 1, 1];
     }
 
     /// @notice Starts the spin process by generating a random number and recording the spin date.
     /// @dev This function is called by the user to initiate a spin.
     function startSpin() external whenNotPaused canSpin {
         SpinStorage storage $ = _getSpinStorage();
+        if (!$.enableSpin) {
+            revert CampaignNotStarted();
+        }
         string memory callbackSignature = "handleRandomness(uint256,uint256[])";
         uint8 rngCount = 1;
         uint256 numConfirmations = 1;
@@ -473,6 +481,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function setCampaignStartDate() external onlyRole(ADMIN_ROLE) {
         SpinStorage storage $ = _getSpinStorage();
         $.campaignStartDate = block.timestamp;
+        $.enableSpin = true;
     }
 
     /// @notice Sets the start date for the campaign.
@@ -482,6 +491,13 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     ) external onlyRole(ADMIN_ROLE) {
         SpinStorage storage $ = _getSpinStorage();
         $.campaignStartDate = _campaignStartDate;
+    }
+
+    function setEnableSpin(
+        bool flag
+    ) external onlyRole(ADMIN_ROLE) {
+        SpinStorage storage $ = _getSpinStorage();
+        $.enableSpin = flag;
     }
 
     /// @notice Sets the base value for raffle.
