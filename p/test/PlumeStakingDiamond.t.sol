@@ -10,10 +10,13 @@ import { PlumeStakingStorage } from "../src/lib/PlumeStakingStorage.sol";
 
 // Custom Facet Contracts (needed for casting interactions AND struct definitions)
 // Import needed for ValidatorListData struct
+import { AccessControlFacet } from "../src/facets/AccessControlFacet.sol";
+
 import { ManagementFacet } from "../src/facets/ManagementFacet.sol";
 import { RewardsFacet } from "../src/facets/RewardsFacet.sol";
 import { StakingFacet } from "../src/facets/StakingFacet.sol";
 import { ValidatorFacet } from "../src/facets/ValidatorFacet.sol";
+import { IAccessControl } from "../src/interfaces/IAccessControl.sol";
 
 // SolidState Diamond Interface & Cut Interface
 
@@ -21,8 +24,10 @@ import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535Diamo
 import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 
 // Libs & Errors/Events
+
 import "../src/lib/PlumeErrors.sol";
 import "../src/lib/PlumeEvents.sol";
+import { PlumeRoles } from "../src/lib/PlumeRoles.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // Mocks & Tokens (If used)
@@ -30,6 +35,12 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // import { Plume } from "../src/Plume.sol";
 
 contract PlumeStakingDiamondTest is Test {
+
+    // --- Declare Events Needed for vm.expectEmit --- Needed because imports aren't resolving correctly
+    event RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole);
+    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
+    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
+    // ---
 
     // Diamond Proxy Address
     PlumeStaking internal diamondProxy;
@@ -76,13 +87,24 @@ contract PlumeStakingDiamondTest is Test {
         );
 
         // 2. Deploy Custom Facets
+        AccessControlFacet accessControlFacet = new AccessControlFacet();
         StakingFacet stakingFacet = new StakingFacet();
         RewardsFacet rewardsFacet = new RewardsFacet();
         ValidatorFacet validatorFacet = new ValidatorFacet();
         ManagementFacet managementFacet = new ManagementFacet();
 
         // 3. Prepare Diamond Cut
-        IERC2535DiamondCutInternal.FacetCut[] memory cut = new IERC2535DiamondCutInternal.FacetCut[](4);
+        IERC2535DiamondCutInternal.FacetCut[] memory cut = new IERC2535DiamondCutInternal.FacetCut[](5);
+
+        // AccessControl Facet Selectors (Copied from deployment script)
+        bytes4[] memory accessControlSigs_Manual = new bytes4[](7);
+        accessControlSigs_Manual[0] = bytes4(keccak256(bytes("initializeAccessControl()")));
+        accessControlSigs_Manual[1] = bytes4(keccak256(bytes("hasRole(bytes32,address)")));
+        accessControlSigs_Manual[2] = bytes4(keccak256(bytes("getRoleAdmin(bytes32)")));
+        accessControlSigs_Manual[3] = bytes4(keccak256(bytes("grantRole(bytes32,address)")));
+        accessControlSigs_Manual[4] = bytes4(keccak256(bytes("revokeRole(bytes32,address)")));
+        accessControlSigs_Manual[5] = bytes4(keccak256(bytes("renounceRole(bytes32,address)")));
+        accessControlSigs_Manual[6] = bytes4(keccak256(bytes("setRoleAdmin(bytes32,bytes32)")));
 
         // Staking Facet Selectors (Copied from deployment script)
         bytes4[] memory stakingSigs_Manual = new bytes4[](11);
@@ -144,21 +166,26 @@ contract PlumeStakingDiamondTest is Test {
 
         // Use correct struct type and enum path for each cut
         cut[0] = IERC2535DiamondCutInternal.FacetCut({
+            target: address(accessControlFacet),
+            action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
+            selectors: accessControlSigs_Manual
+        });
+        cut[1] = IERC2535DiamondCutInternal.FacetCut({
             target: address(stakingFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
             selectors: stakingSigs_Manual
         });
-        cut[1] = IERC2535DiamondCutInternal.FacetCut({
+        cut[2] = IERC2535DiamondCutInternal.FacetCut({
             target: address(rewardsFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
             selectors: rewardsSigs_Manual
         });
-        cut[2] = IERC2535DiamondCutInternal.FacetCut({
+        cut[3] = IERC2535DiamondCutInternal.FacetCut({
             target: address(validatorFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
             selectors: validatorSigs_Manual
         });
-        cut[3] = IERC2535DiamondCutInternal.FacetCut({
+        cut[4] = IERC2535DiamondCutInternal.FacetCut({
             target: address(managementFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
             selectors: managementSigs_Manual
@@ -173,6 +200,21 @@ contract PlumeStakingDiamondTest is Test {
         // Use payable cast for owner check
         assertEq(ISolidStateDiamond(payable(address(diamondProxy))).owner(), admin, "Owner mismatch after init");
 
+        // 5b. Initialize Access Control (grant DEFAULT_ADMIN_ROLE to admin)
+        // Use the AccessControlFacet type cast to the proxy address
+        AccessControlFacet(address(diamondProxy)).initializeAccessControl();
+
+        // --- Grant Initial Roles (Mirrors Deployment Script) ---
+        IAccessControl accessControl = IAccessControl(address(diamondProxy));
+        accessControl.grantRole(PlumeRoles.ADMIN_ROLE, admin);
+        accessControl.setRoleAdmin(PlumeRoles.ADMIN_ROLE, PlumeRoles.ADMIN_ROLE);
+        accessControl.setRoleAdmin(PlumeRoles.UPGRADER_ROLE, PlumeRoles.ADMIN_ROLE);
+        accessControl.setRoleAdmin(PlumeRoles.VALIDATOR_ROLE, PlumeRoles.ADMIN_ROLE);
+        accessControl.setRoleAdmin(PlumeRoles.REWARD_MANAGER_ROLE, PlumeRoles.ADMIN_ROLE);
+        accessControl.grantRole(PlumeRoles.UPGRADER_ROLE, admin);
+        accessControl.grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
+        accessControl.grantRole(PlumeRoles.REWARD_MANAGER_ROLE, admin);
+
         // --- Initial Contract State Setup ---
         // Setup token references (assuming mocks or interfaces)
         plume = IERC20(PLUME_TOKEN);
@@ -181,7 +223,7 @@ contract PlumeStakingDiamondTest is Test {
         // Fund accounts
         vm.deal(user1, INITIAL_BALANCE);
         vm.deal(user2, INITIAL_BALANCE);
-        vm.deal(admin, INITIAL_BALANCE);
+        vm.deal(admin, INITIAL_BALANCE * 2); // Ensure admin has enough ETH too
         vm.deal(validatorAdmin, INITIAL_BALANCE);
         // Fund the proxy itself only if needed for native token rewards
         vm.deal(address(diamondProxy), INITIAL_BALANCE); // For PLUME_NATIVE rewards
@@ -220,7 +262,7 @@ contract PlumeStakingDiamondTest is Test {
         ValidatorFacet(address(diamondProxy)).setValidatorCapacity(secondValidatorId, 1_000_000e18);
 
         vm.stopPrank();
-        console2.log("Diamond test setup complete");
+        console2.log("Diamond test setup complete (with AccessControlFacet)");
     }
 
     // --- Test Cases ---
@@ -839,6 +881,207 @@ contract PlumeStakingDiamondTest is Test {
         assertEq(listData[1].commission, 10e16, "Validator 1 commission mismatch"); // From setUp
     }
 
-    // ... (rest of tests) ...
+    // --- AccessControlFacet Tests ---
+
+    function testAC_InitialRoles() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        assertTrue(ac.hasRole(PlumeRoles.ADMIN_ROLE, admin), "Admin should have ADMIN_ROLE");
+        assertTrue(ac.hasRole(PlumeRoles.UPGRADER_ROLE, admin), "Admin should have UPGRADER_ROLE");
+        assertTrue(ac.hasRole(PlumeRoles.VALIDATOR_ROLE, admin), "Admin should have VALIDATOR_ROLE");
+        assertTrue(ac.hasRole(PlumeRoles.REWARD_MANAGER_ROLE, admin), "Admin should have REWARD_MANAGER_ROLE");
+        assertFalse(ac.hasRole(PlumeRoles.ADMIN_ROLE, user1), "User1 should not have ADMIN_ROLE");
+    }
+
+    function testAC_GetRoleAdmin() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        assertEq(ac.getRoleAdmin(PlumeRoles.ADMIN_ROLE), PlumeRoles.ADMIN_ROLE, "Admin of ADMIN_ROLE mismatch");
+        assertEq(ac.getRoleAdmin(PlumeRoles.UPGRADER_ROLE), PlumeRoles.ADMIN_ROLE, "Admin of UPGRADER_ROLE mismatch");
+        assertEq(ac.getRoleAdmin(PlumeRoles.VALIDATOR_ROLE), PlumeRoles.ADMIN_ROLE, "Admin of VALIDATOR_ROLE mismatch");
+        assertEq(
+            ac.getRoleAdmin(PlumeRoles.REWARD_MANAGER_ROLE),
+            PlumeRoles.ADMIN_ROLE,
+            "Admin of REWARD_MANAGER_ROLE mismatch"
+        );
+        // Check default admin for an unmanaged role (should be 0x00)
+        bytes32 unmanagedRole = keccak256("UNMANAGED_ROLE");
+        assertEq(ac.getRoleAdmin(unmanagedRole), bytes32(0), "Default admin mismatch");
+    }
+
+    function testAC_GrantRole() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        bytes32 roleToGrant = PlumeRoles.VALIDATOR_ROLE;
+
+        assertFalse(ac.hasRole(roleToGrant, user1), "User1 should not have role initially");
+
+        // Admin grants role
+        vm.startPrank(admin);
+        vm.expectEmit(true, true, true, true, address(diamondProxy));
+        emit RoleGranted(roleToGrant, user1, admin);
+        ac.grantRole(roleToGrant, user1);
+        vm.stopPrank();
+
+        assertTrue(ac.hasRole(roleToGrant, user1), "User1 should have role after grant");
+
+        // Granting again should not emit
+        vm.startPrank(admin);
+        // vm.expectNoEmit(); // Foundry doesn't have expectNoEmit easily
+        ac.grantRole(roleToGrant, user1);
+        vm.stopPrank();
+    }
+
+    function testAC_GrantRole_NotAdmin() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        bytes32 roleToGrant = PlumeRoles.VALIDATOR_ROLE;
+
+        // user1 (who is not admin of VALIDATOR_ROLE) tries to grant
+        vm.startPrank(user1);
+        // Expect revert from AccessControlInternal check based on getRoleAdmin(VALIDATOR_ROLE) which is ADMIN_ROLE
+        vm.expectRevert(
+            bytes(
+                "AccessControl: account 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 is missing role 0xdf8b4c520ffe197c5343c6f5aec59570151ef9a492f2c624fd45ddde6135ec42"
+            )
+        );
+        ac.grantRole(roleToGrant, user2);
+        vm.stopPrank();
+    }
+
+    function testAC_RevokeRole() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        bytes32 roleToRevoke = PlumeRoles.VALIDATOR_ROLE;
+
+        // Grant first
+        vm.startPrank(admin);
+        ac.grantRole(roleToRevoke, user1);
+        vm.stopPrank();
+        assertTrue(ac.hasRole(roleToRevoke, user1), "User1 should have role before revoke");
+
+        // Admin revokes role
+        vm.startPrank(admin);
+        vm.expectEmit(true, true, true, true, address(diamondProxy));
+        emit RoleRevoked(roleToRevoke, user1, admin);
+        ac.revokeRole(roleToRevoke, user1);
+        vm.stopPrank();
+
+        assertFalse(ac.hasRole(roleToRevoke, user1), "User1 should not have role after revoke");
+
+        // Revoking again should not emit
+        vm.startPrank(admin);
+        ac.revokeRole(roleToRevoke, user1);
+        vm.stopPrank();
+    }
+
+    function testAC_RevokeRole_NotAdmin() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        bytes32 roleToRevoke = PlumeRoles.VALIDATOR_ROLE;
+
+        // Grant first
+        vm.startPrank(admin);
+        ac.grantRole(roleToRevoke, user1);
+        vm.stopPrank();
+
+        // user2 (not admin) tries to revoke
+        vm.startPrank(user2);
+        vm.expectRevert(
+            bytes(
+                "AccessControl: account 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC is missing role 0xdf8b4c520ffe197c5343c6f5aec59570151ef9a492f2c624fd45ddde6135ec42"
+            )
+        );
+        ac.revokeRole(roleToRevoke, user1);
+        vm.stopPrank();
+    }
+
+    function testAC_RenounceRole() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        bytes32 roleToRenounce = PlumeRoles.VALIDATOR_ROLE;
+
+        // Grant first
+        vm.startPrank(admin);
+        ac.grantRole(roleToRenounce, user1);
+        vm.stopPrank();
+        assertTrue(ac.hasRole(roleToRenounce, user1), "User1 should have role before renounce");
+
+        // user1 renounces their own role
+        vm.startPrank(user1);
+        vm.expectEmit(true, true, true, true, address(diamondProxy));
+        // Sender in event is msg.sender (user1)
+        emit RoleRevoked(roleToRenounce, user1, user1);
+        // Interface requires passing the account, internal logic uses msg.sender
+        ac.renounceRole(roleToRenounce, user1);
+        vm.stopPrank();
+
+        assertFalse(ac.hasRole(roleToRenounce, user1), "User1 should not have role after renounce");
+    }
+
+    function testAC_RenounceRole_NotSelf() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        bytes32 roleToRenounce = PlumeRoles.VALIDATOR_ROLE;
+
+        // Grant first
+        vm.startPrank(admin);
+        ac.grantRole(roleToRenounce, user1);
+        vm.stopPrank();
+
+        // user2 tries to renounce user1's role
+        vm.startPrank(user2);
+        vm.expectRevert(bytes("AccessControl: can only renounce roles for self"));
+        ac.renounceRole(roleToRenounce, user1);
+        vm.stopPrank();
+    }
+
+    function testAC_SetRoleAdmin() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        bytes32 roleToManage = PlumeRoles.VALIDATOR_ROLE;
+        bytes32 newAdminRole = PlumeRoles.UPGRADER_ROLE;
+        bytes32 oldAdminRole = ac.getRoleAdmin(roleToManage); // Should be ADMIN_ROLE
+
+        assertEq(oldAdminRole, PlumeRoles.ADMIN_ROLE, "Initial admin role mismatch");
+
+        // Admin changes admin of VALIDATOR_ROLE to UPGRADER_ROLE
+        vm.startPrank(admin);
+        vm.expectEmit(true, true, true, true, address(diamondProxy));
+        emit RoleAdminChanged(roleToManage, oldAdminRole, newAdminRole);
+        ac.setRoleAdmin(roleToManage, newAdminRole);
+        vm.stopPrank();
+
+        assertEq(ac.getRoleAdmin(roleToManage), newAdminRole, "New admin role was not set");
+    }
+
+    function testAC_SetRoleAdmin_NotAdmin() public {
+        IAccessControl ac = IAccessControl(address(diamondProxy));
+        bytes32 roleToManage = PlumeRoles.VALIDATOR_ROLE;
+        bytes32 newAdminRole = PlumeRoles.UPGRADER_ROLE;
+
+        // user1 (not ADMIN_ROLE) tries to set role admin
+        vm.startPrank(user1);
+        vm.expectRevert(
+            bytes(
+                "AccessControl: account 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 is missing role 0xdf8b4c520ffe197c5343c6f5aec59570151ef9a492f2c624fd45ddde6135ec42"
+            )
+        );
+        ac.setRoleAdmin(roleToManage, newAdminRole);
+        vm.stopPrank();
+    }
+
+    // --- Test Protected Functions ---
+
+    function testProtected_AddValidator_Success() public {
+        // Admin (who has VALIDATOR_ROLE) calls addValidator
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).addValidator(10, 5e16, user1, user1, "v10", "a10");
+        vm.stopPrank();
+        // Check validator exists (implicitly checks success)
+        (,, uint256 stakerCount) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(10);
+        assertEq(stakerCount, 0);
+    }
+
+    function testProtected_AddValidator_Fail() public {
+        // User1 (no VALIDATOR_ROLE) calls addValidator
+        vm.startPrank(user1);
+        vm.expectRevert(bytes("Caller does not have the required role"));
+        ValidatorFacet(address(diamondProxy)).addValidator(11, 5e16, user2, user2, "v11", "a11");
+        vm.stopPrank();
+    }
+
+    // Add similar tests for other protected functions (setValidatorCapacity, setMinStakeAmount, addRewardToken etc.)
 
 }
