@@ -2,14 +2,14 @@
 pragma solidity ^0.8.20;
 
 // SolidState Access Control
-import { AccessControlInternal } from "solidstate-solidity/access/access_control/AccessControlInternal.sol";
-// Correctly import the storage library
-import { AccessControlStorage } from "solidstate-solidity/access/access_control/AccessControlStorage.sol";
+import { AccessControlInternal } from "@solidstate/access/access_control/AccessControlInternal.sol";
+import { AccessControlStorage } from "@solidstate/access/access_control/AccessControlStorage.sol";
 
 // Plume Roles & Interface
 
 import { IAccessControl } from "../interfaces/IAccessControl.sol";
 import { PlumeRoles } from "../lib/PlumeRoles.sol";
+import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol"; // For potential shared init flag
 
 /**
  * @title AccessControlFacet
@@ -17,6 +17,26 @@ import { PlumeRoles } from "../lib/PlumeRoles.sol";
  * @dev Uses the storage slot defined in SolidState's AccessControlStorage.
  */
 contract AccessControlFacet is IAccessControl, AccessControlInternal {
+
+    // Simple flag to prevent re-initialization within this facet's context
+    bool private _initializedAC;
+
+    // Define locally as it's not being resolved via inheritance
+    bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+
+    /**
+     * @notice Initializes the AccessControl facet, granting DEFAULT_ADMIN_ROLE.
+     * @dev Can only be called once, typically by the diamond owner after cutting the facet.
+     * Grants DEFAULT_ADMIN_ROLE to the caller (expected to be the owner/deployer).
+     */
+    function initializeAccessControl() external {
+        require(!_initializedAC, "ACF: init"); // AccessControlFacet: Already initialized
+        // Grant the essential DEFAULT_ADMIN_ROLE to the caller
+        // Use msg.sender instead of _msgSender() as it's not resolved
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _initializedAC = true;
+        // Emit an event? Optional.
+    }
 
     // --- External Functions ---
 

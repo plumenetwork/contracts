@@ -68,13 +68,14 @@ contract DeployPlumeStakingDiamond is Script, Test {
         IERC2535DiamondCutInternal.FacetCut[] memory cut = new IERC2535DiamondCutInternal.FacetCut[](5);
 
         // --- AccessControl Facet Selectors --- (NEW)
-        bytes4[] memory accessControlSigs_Manual = new bytes4[](6);
-        accessControlSigs_Manual[0] = bytes4(keccak256(bytes("hasRole(bytes32,address)")));
-        accessControlSigs_Manual[1] = bytes4(keccak256(bytes("getRoleAdmin(bytes32)")));
-        accessControlSigs_Manual[2] = bytes4(keccak256(bytes("grantRole(bytes32,address)")));
-        accessControlSigs_Manual[3] = bytes4(keccak256(bytes("revokeRole(bytes32,address)")));
-        accessControlSigs_Manual[4] = bytes4(keccak256(bytes("renounceRole(bytes32,address)")));
-        accessControlSigs_Manual[5] = bytes4(keccak256(bytes("setRoleAdmin(bytes32,bytes32)")));
+        bytes4[] memory accessControlSigs_Manual = new bytes4[](7);
+        accessControlSigs_Manual[0] = bytes4(keccak256(bytes("initializeAccessControl()")));
+        accessControlSigs_Manual[1] = bytes4(keccak256(bytes("hasRole(bytes32,address)")));
+        accessControlSigs_Manual[2] = bytes4(keccak256(bytes("getRoleAdmin(bytes32)")));
+        accessControlSigs_Manual[3] = bytes4(keccak256(bytes("grantRole(bytes32,address)")));
+        accessControlSigs_Manual[4] = bytes4(keccak256(bytes("revokeRole(bytes32,address)")));
+        accessControlSigs_Manual[5] = bytes4(keccak256(bytes("renounceRole(bytes32,address)")));
+        accessControlSigs_Manual[6] = bytes4(keccak256(bytes("setRoleAdmin(bytes32,bytes32)")));
         cut[0] = IERC2535DiamondCutInternal.FacetCut({ // Put AC facet first (index 0)
             target: address(accessControlFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
@@ -168,7 +169,13 @@ contract DeployPlumeStakingDiamond is Script, Test {
         ISolidStateDiamond(payableProxy).diamondCut(cut, address(0), "");
         console2.log("Diamond Cut executed.");
 
-        // --- Grant Initial Roles (POST CUT) ---
+        // --- Initialize AccessControl Facet --- (NEW STEP)
+        console2.log("Initializing AccessControl Facet...");
+        // Cast proxy to AccessControlFacet to call initializer
+        AccessControlFacet(payableProxy).initializeAccessControl();
+        console2.log("AccessControl Facet Initialized.");
+
+        // --- Grant Initial Roles (POST CUT & INIT) ---
         console2.log("Granting initial roles...");
         // Get interface for the AccessControlFacet *through the proxy*
         IAccessControl accessControl = IAccessControl(payableProxy);

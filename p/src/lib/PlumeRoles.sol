@@ -19,5 +19,4 @@ library PlumeRoles {
     // Role for managing reward settings and distribution
     bytes32 public constant REWARD_MANAGER_ROLE = keccak256("REWARD_MANAGER_ROLE");
 
-
 }
