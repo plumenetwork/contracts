@@ -95,6 +95,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @param l2WithdrawAddress Withdrawal address for validator rewards
      * @param l1ValidatorAddress Address of validator on L1 (informational)
      * @param l1AccountAddress Address of account on L1 (informational)
+     * @param l1AccountEvmAddress EVM address of account on L1 (informational)
      */
     function addValidator(
         uint16 validatorId,
@@ -102,7 +103,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address l2AdminAddress,
         address l2WithdrawAddress,
         string calldata l1ValidatorAddress,
-        string calldata l1AccountAddress
+        string calldata l1AccountAddress,
+        uint256 l1AccountEvmAddress
     ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
 
@@ -127,13 +129,14 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         validator.l2WithdrawAddress = l2WithdrawAddress;
         validator.l1ValidatorAddress = l1ValidatorAddress;
         validator.l1AccountAddress = l1AccountAddress;
+        validator.l1AccountEvmAddress = l1AccountEvmAddress;
         validator.active = true;
 
         $.validatorIds.push(validatorId);
         $.validatorExists[validatorId] = true;
 
         emit ValidatorAdded(
-            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress
+            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress, l1AccountEvmAddress
         );
     }
 
@@ -206,7 +209,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             validator.l2AdminAddress,
             validator.l2WithdrawAddress,
             validator.l1ValidatorAddress,
-            validator.l1AccountAddress
+            validator.l1AccountAddress,
+            validator.l1AccountEvmAddress
         );
     }
 
@@ -240,6 +244,52 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
         // Return amount even if 0
         return amount;
+    }
+
+    /**
+     * @notice Vote to slash a malicious validator
+     * @dev Caller must be a validator
+     * @param maliciousValidatorId ID of the malicious validator
+     * @param voteExpiration Timestamp when the vote expires
+     */
+    function voteToSlashValidator(
+        uint16 maliciousValidatorId,
+        uint256 voteExpiration
+    ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
+        // TODO - check if onlyRole is right
+        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        if (voteExpiration > block.timestamp + $.maxSlashVoteDurationInSeconds) {
+            revert SlashVoteDurationTooLong();
+        }
+        $.slashingVotes[maliciousValidatorId][msg.sender] = voteExpiration;
+    }
+
+    /**
+     * @notice Slash a malicious validator that has received votes from all other validators
+     * @param validatorId ID of the validator to slash
+     */
+    function slashValidator(
+        uint16 validatorId
+    ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
+
+        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        if (!validator.active) {
+            revert ValidatorNotActive(validatorId);
+        }
+
+        // Check if validator has received votes from all other validators
+        for (uint16 i = 0; i < $.validatorIds.length; i++) {
+            if ($.validatorIds[i] == validatorId) {
+                continue;
+            }
+            if ($.slashingVotes[validatorId][$.validatorIds[i]] >= block.timestamp) {
+                revert SlashVoteNotReceived();
+            }
+        }
+
+        // TODO - Slash the validator - remove all rewards
+        validator.active = false;
     }
 
     // --- View Functions --- (Using _getPlumeStorage)

@@ -161,6 +161,8 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         emit CooldownIntervalSet(_cooldownInterval);
     }
 
+    // TODO - add new setter functions
+
     // --- Admin Fund Management (Owner) ---
 
     /**

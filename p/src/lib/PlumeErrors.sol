@@ -160,3 +160,8 @@ error AdminTransferFailed();
  * @param index The invalid index
  */
 error InvalidRewardRateCheckpoint(address token, uint256 index);
+
+/**
+ * @notice Thrown when a slash vote duration is too long
+ */
+error SlashVoteDurationTooLong();

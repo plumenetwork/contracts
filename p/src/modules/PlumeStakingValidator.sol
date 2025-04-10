@@ -115,7 +115,8 @@ contract PlumeStakingValidator is PlumeStakingBase {
             validator.l2AdminAddress,
             validator.l2WithdrawAddress,
             validator.l1ValidatorAddress,
-            validator.l1AccountAddress
+            validator.l1AccountAddress,
+            validator.l1AccountEvmAddress
         );
     }
 
@@ -406,6 +407,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
      * @param l2WithdrawAddress Withdrawal address for validator rewards
      * @param l1ValidatorAddress Address of validator on L1 (informational)
      * @param l1AccountAddress Address of account on L1 (informational)
+     * @param l1AccountEvmAddress EVM address of account on L1 (informational)
      */
     function addValidator(
         uint16 validatorId,
@@ -413,7 +415,8 @@ contract PlumeStakingValidator is PlumeStakingBase {
         address l2AdminAddress,
         address l2WithdrawAddress,
         string calldata l1ValidatorAddress,
-        string calldata l1AccountAddress
+        string calldata l1AccountAddress,
+        uint256 l1AccountEvmAddress
     ) external onlyRole(ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
@@ -449,12 +452,13 @@ contract PlumeStakingValidator is PlumeStakingBase {
         $.validatorExists[validatorId] = true;
 
         // Initialize epoch data if using epochs
+        // TODO - remove epochs
         if ($.usingEpochs) {
             $.epochValidatorAmounts[$.currentEpochNumber][validatorId] = 0;
         }
 
         emit ValidatorAdded(
-            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress
+            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress, l1AccountEvmAddress
         );
     }
 

@@ -122,7 +122,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // Validator Facet Selectors (Copied + getAccruedCommission + new views)
         bytes4[] memory validatorSigs_Manual = new bytes4[](10); // Increase size to 10
-        validatorSigs_Manual[0] = bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string)")));
+        validatorSigs_Manual[0] = bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
         validatorSigs_Manual[2] = bytes4(keccak256(bytes("updateValidator(uint16,uint8,bytes)")));
         validatorSigs_Manual[3] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));
@@ -211,12 +211,12 @@ contract PlumeStakingDiamondTest is Test {
         RewardsFacet(address(diamondProxy)).addRewards{ value: INITIAL_BALANCE }(PLUME_NATIVE, INITIAL_BALANCE);
 
         ValidatorFacet(address(diamondProxy)).addValidator(
-            DEFAULT_VALIDATOR_ID, 5e16, validatorAdmin, validatorAdmin, "0xval1", "0xacc1"
+            DEFAULT_VALIDATOR_ID, 5e16, validatorAdmin, validatorAdmin, "0xval1", "0xacc1", 0x1234
         );
         ValidatorFacet(address(diamondProxy)).setValidatorCapacity(DEFAULT_VALIDATOR_ID, 1_000_000e18);
 
         uint16 secondValidatorId = 1;
-        ValidatorFacet(address(diamondProxy)).addValidator(secondValidatorId, 10e16, user2, user2, "0xval2", "0xacc2");
+        ValidatorFacet(address(diamondProxy)).addValidator(secondValidatorId, 10e16, user2, user2, "0xval2", "0xacc2", 0x5678);
         ValidatorFacet(address(diamondProxy)).setValidatorCapacity(secondValidatorId, 1_000_000e18);
 
         vm.stopPrank();
@@ -414,7 +414,8 @@ contract PlumeStakingDiamondTest is Test {
             infoBefore.l2AdminAddress, // Existing value
             infoBefore.l2WithdrawAddress, // Existing value
             infoBefore.l1ValidatorAddress, // Existing value
-            infoBefore.l1AccountAddress // Existing value
+            infoBefore.l1AccountAddress, // Existing value
+            infoBefore.l1AccountEvmAddress // Existing value
         );
 
         // Call as the VALIDATOR ADMIN (l2AdminAddress)
@@ -460,7 +461,8 @@ contract PlumeStakingDiamondTest is Test {
             newAdmin, // The new value
             infoBefore.l2WithdrawAddress, // Existing value
             infoBefore.l1ValidatorAddress, // Existing value
-            infoBefore.l1AccountAddress // Existing value
+            infoBefore.l1AccountAddress, // Existing value
+            infoBefore.l1AccountEvmAddress // Existing value
         );
 
         // Call as the CURRENT VALIDATOR ADMIN
@@ -572,17 +574,18 @@ contract PlumeStakingDiamondTest is Test {
         uint256 commission = 15e16; // 15%
         address l2Admin = makeAddr("newValAdmin");
         address l2Withdraw = makeAddr("newValWithdraw");
-        string memory l1ValAddr = "0xval3";
-        string memory l1AccAddr = "0xacc3";
+        string memory l1ValAddr = "plumevaloper1zqd0cre4rmk2659h2h4afseemx2amxtqrvmymr";
+        string memory l1AccAddr = "plume1zqd0cre4rmk2659h2h4afseemx2amxtqpmnxy4";
+        uint256 l1AccEvmAddr = 0x1234;
 
         // Check event emission
         vm.expectEmit(true, true, true, true, address(diamondProxy));
-        emit ValidatorAdded(newValidatorId, commission, l2Admin, l2Withdraw, l1ValAddr, l1AccAddr);
+        emit ValidatorAdded(newValidatorId, commission, l2Admin, l2Withdraw, l1ValAddr, l1AccAddr, l1AccEvmAddr);
 
         // Call as admin
         vm.startPrank(admin);
         ValidatorFacet(address(diamondProxy)).addValidator(
-            newValidatorId, commission, l2Admin, l2Withdraw, l1ValAddr, l1AccAddr
+            newValidatorId, commission, l2Admin, l2Withdraw, l1ValAddr, l1AccAddr, l1AccEvmAddr
         );
         vm.stopPrank();
 
@@ -595,6 +598,7 @@ contract PlumeStakingDiamondTest is Test {
         // Add checks for other fields if needed, e.g., l1 addresses, active status
         assertEq(storedInfo.l1ValidatorAddress, l1ValAddr, "Stored L1 validator address mismatch");
         assertEq(storedInfo.l1AccountAddress, l1AccAddr, "Stored L1 account address mismatch");
+        assertEq(storedInfo.l1AccountEvmAddress, l1AccEvmAddr, "Stored L1 account EVM address mismatch");
         assertTrue(storedInfo.active, "Newly added validator should be active");
     }
 
@@ -603,7 +607,7 @@ contract PlumeStakingDiamondTest is Test {
         vm.expectRevert(bytes("Must be owner"));
 
         vm.startPrank(user1);
-        ValidatorFacet(address(diamondProxy)).addValidator(newValidatorId, 5e16, user1, user1, "0xval4", "0xacc4");
+        ValidatorFacet(address(diamondProxy)).addValidator(newValidatorId, 5e16, user1, user1, "0xval4", "0xacc4", 0x5678);
         vm.stopPrank();
     }
 
@@ -621,6 +625,7 @@ contract PlumeStakingDiamondTest is Test {
         // Check L1 addresses added in setUp
         assertEq(info.l1ValidatorAddress, "0xval1", "L1 validator address mismatch");
         assertEq(info.l1AccountAddress, "0xacc1", "L1 account address mismatch");
+        assertEq(info.l1AccountEvmAddress, 0x1234, "L1 account EVM address mismatch");
     }
 
     function testGetValidatorInfo_NonExistent() public {

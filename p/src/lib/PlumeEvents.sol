@@ -194,6 +194,7 @@ event ValidatorCommissionClaimed(uint16 indexed validatorId, address indexed tok
  * @param l2WithdrawAddress Withdrawal address
  * @param l1ValidatorAddress L1 validator address
  * @param l1AccountAddress L1 account address
+ * @param l1AccountEvmAddress EVM address of account on L1 (informational)
  */
 event ValidatorAdded(
     uint16 indexed validatorId,
@@ -201,7 +202,8 @@ event ValidatorAdded(
     address l2AdminAddress,
     address l2WithdrawAddress,
     string l1ValidatorAddress,
-    string l1AccountAddress
+    string l1AccountAddress,
+    uint256 l1AccountEvmAddress
 );
 
 /**
@@ -212,6 +214,7 @@ event ValidatorAdded(
  * @param l2WithdrawAddress New withdrawal address
  * @param l1ValidatorAddress New L1 validator address
  * @param l1AccountAddress New L1 account address
+ * @param l1AccountEvmAddress New EVM address of account on L1 (informational)
  */
 event ValidatorUpdated(
     uint16 indexed validatorId,
@@ -219,7 +222,8 @@ event ValidatorUpdated(
     address l2AdminAddress,
     address l2WithdrawAddress,
     string l1ValidatorAddress,
-    string l1AccountAddress
+    string l1AccountAddress,
+    uint256 l1AccountEvmAddress
 );
 
 /**

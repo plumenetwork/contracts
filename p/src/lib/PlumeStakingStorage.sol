@@ -89,16 +89,20 @@ library PlumeStakingStorage {
         /// @notice Maps a (validator, token) pair to the commission accumulated
         mapping(uint16 => mapping(address => uint256)) validatorAccruedCommission;
         /// @notice Flag to indicate if epochs are being used
+        // TODO - remove epochs
         bool usingEpochs;
         /// @notice Current epoch number
+        // TODO - remove epochs
         uint256 currentEpochNumber;
         /// @notice Maps epoch number to validator amounts for each validator
         mapping(uint256 => mapping(uint16 => uint256)) epochValidatorAmounts;
         /// @notice Maximum allowed commission for all validators
+        // TODO - check where we set this
         uint256 maxValidatorCommission;
         /// @notice Maximum stake capacity for a validator
         mapping(uint16 => uint256) validatorCapacity;
         /// @notice Maximum percentage of total staked funds any validator can have (in basis points)
+        // TODO - check where we set this
         uint256 maxValidatorPercentage;
         /// @notice Maps a validator ID and token to its history of rate checkpoints
         mapping(uint16 => mapping(address => RateCheckpoint[])) validatorRewardRateCheckpoints;
@@ -112,6 +116,11 @@ library PlumeStakingStorage {
         /// @notice Maps a role (bytes32) to an address to check if the address has the role.
         mapping(bytes32 => mapping(address => bool)) hasRole;
         bool initialized;
+        /// @notice Maps a malicious validator ID to the validator that voted to slash it
+        mapping(uint16 maliciousValidatorId => mapping(uint16 votingValidatorId => uint256 voteExpiration)) slashingVotes;
+        /// @notice The maximum length of time for which a validator's vote to slash another validator is valid
+        // TODO - check where we set this
+        uint256 maxSlashVoteDurationInSeconds;
     }
 
     // Validator info struct to store validator details
@@ -123,6 +132,7 @@ library PlumeStakingStorage {
         address l2WithdrawAddress; // Address for validator rewards
         string l1ValidatorAddress; // L1 validator address (for reference)
         string l1AccountAddress; // L1 account address (for reference)
+        uint256 l1AccountEvmAddress; // EVM address of account on L1 (for reference)
         bool active; // Whether the validator is active
         uint256 maxCapacity; // Maximum amount of PLUME that can be staked with this validator
     }
