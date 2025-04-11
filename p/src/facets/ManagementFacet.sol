@@ -28,9 +28,8 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { OwnableInternal } from "@solidstate/access/ownable/OwnableInternal.sol"; // For inherited onlyOwner
 
-import { PlumeRoles } from "../lib/PlumeRoles.sol"; // Import roles
+import { PlumeRoles } from "../lib/PlumeRoles.sol";
 
-// Import the new Access Control interface to call it
 import { IAccessControl } from "../interfaces/IAccessControl.sol";
 
 /**

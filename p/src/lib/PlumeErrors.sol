@@ -165,3 +165,12 @@ error InvalidRewardRateCheckpoint(address token, uint256 index);
  * @notice Thrown when a slash vote duration is too long
  */
 error SlashVoteDurationTooLong();
+
+// Slashing Errors
+error CannotVoteForSelf();
+error AlreadyVotedToSlash(uint16 targetValidatorId, uint16 voterValidatorId);
+error ValidatorNotActive(uint16 validatorId);
+error ValidatorAlreadySlashed(uint16 validatorId);
+error UnanimityNotReached(uint256 votes, uint256 required);
+error SlashVoteExpired(uint16 targetValidatorId, uint16 voterValidatorId);
+error SlashConditionsNotMet(uint16 validatorId);

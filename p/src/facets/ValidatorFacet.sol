@@ -2,18 +2,28 @@
 pragma solidity ^0.8.25;
 
 import {
+    AlreadyVotedToSlash,
+    CannotVoteForSelf,
     CommissionTooHigh,
     NativeTransferFailed,
     NotValidatorAdmin,
+    SlashConditionsNotMet,
+    SlashVoteDurationTooLong,
+    SlashVoteExpired,
     TooManyStakers,
+    UnanimityNotReached,
     ValidatorAlreadyExists,
+    ValidatorAlreadySlashed,
     ValidatorDoesNotExist,
+    ValidatorNotActive,
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
+    SlashVoteCast,
     ValidatorAdded,
     ValidatorCapacityUpdated,
     ValidatorCommissionClaimed,
+    ValidatorSlashed,
     ValidatorUpdated
 } from "../lib/PlumeEvents.sol";
 
@@ -134,9 +144,17 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         $.validatorIds.push(validatorId);
         $.validatorExists[validatorId] = true;
+        // Add admin to ID mapping
+        $.adminToValidatorId[l2AdminAddress] = validatorId;
 
         emit ValidatorAdded(
-            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress, l1AccountEvmAddress
+            validatorId,
+            commission,
+            l2AdminAddress,
+            l2WithdrawAddress,
+            l1ValidatorAddress,
+            l1AccountAddress,
+            l1AccountEvmAddress
         );
     }
 
@@ -187,11 +205,15 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             validator.commission = newCommission;
         } else if (updateType == 1) {
             // Update Admin Address
+            address currentAdminAddress = validator.l2AdminAddress;
             address newAdminAddress = abi.decode(data, (address));
             if (newAdminAddress == address(0)) {
                 revert ZeroAddress("newAdminAddress");
             }
             validator.l2AdminAddress = newAdminAddress;
+            // Update admin to ID mapping
+            delete $.adminToValidatorId[currentAdminAddress];
+            $.adminToValidatorId[newAdminAddress] = validatorId;
         } else if (updateType == 2) {
             // Update Withdraw Address
             address newWithdrawAddress = abi.decode(data, (address));
@@ -248,48 +270,170 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     /**
      * @notice Vote to slash a malicious validator
-     * @dev Caller must be a validator
-     * @param maliciousValidatorId ID of the malicious validator
-     * @param voteExpiration Timestamp when the vote expires
+     * @dev Caller must be the L2 admin of an *active* validator.
+     * @param maliciousValidatorId ID of the malicious validator to vote against
+     * @param voteExpiration Timestamp when this vote expires
      */
-    function voteToSlashValidator(
-        uint16 maliciousValidatorId,
-        uint256 voteExpiration
-    ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
-        // TODO - check if onlyRole is right
+    function voteToSlashValidator(uint16 maliciousValidatorId, uint256 voteExpiration) external nonReentrant {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        if (voteExpiration > block.timestamp + $.maxSlashVoteDurationInSeconds) {
-            revert SlashVoteDurationTooLong();
+        address voterAdmin = msg.sender;
+        uint16 voterValidatorId = $.adminToValidatorId[voterAdmin];
+
+        // Check 1: Voter is an active validator admin
+        if (voterValidatorId == 0 || !$.validators[voterValidatorId].active) {
+            revert NotValidatorAdmin(voterAdmin); // Or a more specific error like "CallerIsNotActiveValidatorAdmin"
         }
-        $.slashingVotes[maliciousValidatorId][msg.sender] = voteExpiration;
+
+        // Check 2: Target validator exists and is active
+        PlumeStakingStorage.ValidatorInfo storage targetValidator = $.validators[maliciousValidatorId];
+        if (!$.validatorExists[maliciousValidatorId]) {
+            revert ValidatorDoesNotExist(maliciousValidatorId);
+        }
+        if (!targetValidator.active) {
+            revert ValidatorNotActive(maliciousValidatorId);
+        }
+        if (targetValidator.slashed) {
+            revert ValidatorAlreadySlashed(maliciousValidatorId);
+        }
+
+        // Check 3: Cannot vote for self
+        if (voterValidatorId == maliciousValidatorId) {
+            revert CannotVoteForSelf();
+        }
+
+        // Check 4: Vote expiration validity
+        if (
+            voteExpiration <= block.timestamp || $.maxSlashVoteDurationInSeconds == 0 // Prevent voting if duration not
+                // set
+                || voteExpiration > block.timestamp + $.maxSlashVoteDurationInSeconds
+        ) {
+            revert SlashVoteDurationTooLong(); // Re-use or create "InvalidVoteExpiration"
+        }
+
+        // Check 5: Voter hasn't already voted recently (check existing vote expiration)
+        uint256 currentVoteExpiration = $.slashingVotes[maliciousValidatorId][voterValidatorId];
+        if (currentVoteExpiration >= block.timestamp) {
+            revert AlreadyVotedToSlash(maliciousValidatorId, voterValidatorId);
+        }
+
+        // Store the vote
+        $.slashingVotes[maliciousValidatorId][voterValidatorId] = voteExpiration;
+
+        // Increment vote count only if the previous vote was expired
+        if (currentVoteExpiration < block.timestamp) {
+            $.slashVoteCounts[maliciousValidatorId]++;
+        }
+
+        emit SlashVoteCast(maliciousValidatorId, voterValidatorId, voteExpiration);
     }
 
     /**
-     * @notice Slash a malicious validator that has received votes from all other validators
-     * @param validatorId ID of the validator to slash
+     * @notice Slash a malicious validator if enough valid votes have been cast.
+     * @dev Callable by anyone with ADMIN_ROLE.
+     * @param validatorId ID of the validator to potentially slash
      */
     function slashValidator(
         uint16 validatorId
-    ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
-
+    ) external nonReentrant onlyRole(PlumeRoles.ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
-        if (!validator.active) {
+
+        // Check 1: Target validator exists, is active, and not already slashed
+        PlumeStakingStorage.ValidatorInfo storage targetValidator = $.validators[validatorId];
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        if (!targetValidator.active) {
             revert ValidatorNotActive(validatorId);
         }
+        if (targetValidator.slashed) {
+            revert ValidatorAlreadySlashed(validatorId);
+        }
 
-        // Check if validator has received votes from all other validators
-        for (uint16 i = 0; i < $.validatorIds.length; i++) {
-            if ($.validatorIds[i] == validatorId) {
-                continue;
-            }
-            if ($.slashingVotes[validatorId][$.validatorIds[i]] >= block.timestamp) {
-                revert SlashVoteNotReceived();
+        // Check 3: Count valid votes from *active* validators
+        uint256 validVotes = 0;
+        uint256 activeValidatorsCount = 0;
+        uint16[] memory allValidatorIds = $.validatorIds;
+
+        for (uint256 i = 0; i < allValidatorIds.length; i++) {
+            uint16 currentId = allValidatorIds[i];
+            if ($.validators[currentId].active) {
+                activeValidatorsCount++;
+                // Don't count self-votes (shouldn't exist, but defense-in-depth)
+                if (currentId == validatorId) {
+                    continue;
+                }
+
+                // Check if this active validator has a non-expired vote
+                if ($.slashingVotes[validatorId][currentId] >= block.timestamp) {
+                    validVotes++;
+                }
             }
         }
 
-        // TODO - Slash the validator - remove all rewards
-        validator.active = false;
+        // Check 4: Unanimity condition
+        // Required votes = activeValidatorsCount - 1 (all *other* active validators)
+        uint256 requiredVotes = activeValidatorsCount > 0 ? activeValidatorsCount - 1 : 0;
+
+        if (validVotes < requiredVotes) {
+            // revert SlashThresholdNotMet(validVotes, requiredVotes);
+            revert UnanimityNotReached(validVotes, requiredVotes);
+        }
+
+        // --- Conditions met, perform slashing --- //
+
+        // a) Mark as inactive and slashed
+        targetValidator.active = false;
+        targetValidator.slashed = true;
+
+        // b) Zero out any pending commission for the slashed validator
+        address[] memory rewardTokens = $.rewardTokens;
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            $.validatorAccruedCommission[validatorId][rewardTokens[i]] = 0;
+        }
+
+        /*
+         * --- Slashing Penalty Implementation ---
+         * When a validator is confirmed to be slashed:
+         * 1. The validator is marked inactive and slashed.
+         * 2. Any pending commission rewards for the validator are zeroed out.
+        * 3. The total active stake currently delegated to this validator (`$.validatorTotalStaked[validatorId]`)
+         *    is calculated as the `penaltyAmount`.
+        * 4. This `penaltyAmount` is subtracted from the global `$.totalStaked`, effectively burning these tokens
+         *    from the total supply tracked by this contract.
+         * 5. The slashed validator's specific `$.validatorTotalStaked[validatorId]` is set to 0.
+        * 6. **(High Gas Cost Warning)** The function iterates through all stakers currently delegated to this
+        validator.
+         *    For each staker, their individual active stake balance with *this specific validator*
+         *    (`$.userValidatorStakes[staker][validatorId].staked`) is set to 0.
+         *    This prevents users from attempting to unstake or otherwise interact with the burned funds.
+         * 7. The `ValidatorSlashed` event is emitted, including the total `penaltyAmount` burned.
+         */
+        // d) Implement stake penalty: Burn all stake associated with this validator.
+        uint256 penaltyAmount = $.validatorTotalStaked[validatorId];
+        if (penaltyAmount > 0) {
+            // Decrease global and validator totals
+            $.totalStaked -= penaltyAmount;
+            $.validatorTotalStaked[validatorId] = 0;
+
+            // !! WARNING: HIGH GAS COST !!
+            // Zero out individual stakes for all stakers of this validator.
+            // This prevents users from trying to unstake burned funds.
+            // Consider adding limits or alternative mechanisms if gas is a concern.
+            address[] storage stakers = $.validatorStakers[validatorId];
+            for (uint256 i = 0; i < stakers.length; i++) {
+                $.userValidatorStakes[stakers[i]][validatorId].staked = 0;
+                // Note: We don't remove the staker from the array here, as they might have
+                // stake with other validators or cooled/parked tokens.
+                // The validator is marked inactive, preventing new stakes.
+            }
+        }
+
+        // e) Reset vote counts and potentially votes for the slashed validator (cleanup)
+        $.slashVoteCounts[validatorId] = 0;
+        // Might also clear $.slashingVotes[validatorId][*] loop if needed, though checking `slashed` flag is
+        // sufficient.
+
+        emit ValidatorSlashed(validatorId, msg.sender, penaltyAmount);
     }
 
     // --- View Functions --- (Using _getPlumeStorage)

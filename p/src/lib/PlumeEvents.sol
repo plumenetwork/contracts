@@ -362,3 +362,19 @@ event StakeInfoUpdated(
  * @param totalWithdrawable Updated total withdrawable amount
  */
 event TotalAmountsUpdated(uint256 totalStaked, uint256 totalCooling, uint256 totalWithdrawable);
+
+/**
+ * @notice Emitted when a vote to slash a validator is cast
+ * @param targetValidatorId ID of the validator being voted against
+ * @param voterValidatorId ID of the validator casting the vote
+ * @param voteExpiration Timestamp when the vote expires
+ */
+event SlashVoteCast(uint16 indexed targetValidatorId, uint16 indexed voterValidatorId, uint256 voteExpiration);
+
+/**
+ * @notice Emitted when a validator is slashed
+ * @param validatorId ID of the slashed validator
+ * @param slasher Address that triggered the slash
+ * @param penaltyAmount Amount of stake potentially burned or redistributed (TBD)
+ */
+event ValidatorSlashed(uint16 indexed validatorId, address indexed slasher, uint256 penaltyAmount);

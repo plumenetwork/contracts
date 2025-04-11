@@ -144,7 +144,8 @@ contract PlumeStakingDiamondTest is Test {
 
         // Validator Facet Selectors (Copied + getAccruedCommission + new views)
         bytes4[] memory validatorSigs_Manual = new bytes4[](10); // Increase size to 10
-        validatorSigs_Manual[0] = bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,uint256)")));
+        validatorSigs_Manual[0] =
+            bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
         validatorSigs_Manual[2] = bytes4(keccak256(bytes("updateValidator(uint16,uint8,bytes)")));
         validatorSigs_Manual[3] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));
@@ -258,7 +259,9 @@ contract PlumeStakingDiamondTest is Test {
         ValidatorFacet(address(diamondProxy)).setValidatorCapacity(DEFAULT_VALIDATOR_ID, 1_000_000e18);
 
         uint16 secondValidatorId = 1;
-        ValidatorFacet(address(diamondProxy)).addValidator(secondValidatorId, 10e16, user2, user2, "0xval2", "0xacc2", 0x5678);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            secondValidatorId, 10e16, user2, user2, "0xval2", "0xacc2", 0x5678
+        );
         ValidatorFacet(address(diamondProxy)).setValidatorCapacity(secondValidatorId, 1_000_000e18);
 
         vm.stopPrank();
@@ -649,7 +652,9 @@ contract PlumeStakingDiamondTest is Test {
         vm.expectRevert(bytes("Must be owner"));
 
         vm.startPrank(user1);
-        ValidatorFacet(address(diamondProxy)).addValidator(newValidatorId, 5e16, user1, user1, "0xval4", "0xacc4", 0x5678);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            newValidatorId, 5e16, user1, user1, "0xval4", "0xacc4", 0x5678
+        );
         vm.stopPrank();
     }
 

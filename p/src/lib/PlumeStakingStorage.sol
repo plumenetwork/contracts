@@ -117,10 +117,15 @@ library PlumeStakingStorage {
         mapping(bytes32 => mapping(address => bool)) hasRole;
         bool initialized;
         /// @notice Maps a malicious validator ID to the validator that voted to slash it
-        mapping(uint16 maliciousValidatorId => mapping(uint16 votingValidatorId => uint256 voteExpiration)) slashingVotes;
+        mapping(uint16 maliciousValidatorId => mapping(uint16 votingValidatorId => uint256 voteExpiration))
+            slashingVotes;
         /// @notice The maximum length of time for which a validator's vote to slash another validator is valid
         // TODO - check where we set this
         uint256 maxSlashVoteDurationInSeconds;
+        /// @notice Maps malicious validator ID to the count of active, non-expired votes against it
+        mapping(uint16 => uint256) slashVoteCounts;
+        /// @notice Maps an admin address to its validator ID (if it's a validator admin)
+        mapping(address => uint16) adminToValidatorId;
     }
 
     // Validator info struct to store validator details
@@ -134,6 +139,7 @@ library PlumeStakingStorage {
         string l1AccountAddress; // L1 account address (for reference)
         uint256 l1AccountEvmAddress; // EVM address of account on L1 (for reference)
         bool active; // Whether the validator is active
+        bool slashed; // Whether the validator has been slashed
         uint256 maxCapacity; // Maximum amount of PLUME that can be staked with this validator
     }
 
