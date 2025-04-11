@@ -281,7 +281,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Check 1: Voter is an active validator admin
         if (voterValidatorId == 0 || !$.validators[voterValidatorId].active) {
-            revert NotValidatorAdmin(voterAdmin); // Or a more specific error like "CallerIsNotActiveValidatorAdmin"
+            revert NotValidatorAdmin(voterAdmin);
         }
 
         // Check 2: Target validator exists and is active
@@ -307,7 +307,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             voteExpiration <= block.timestamp || $.maxSlashVoteDurationInSeconds == 0 // Prevent voting if duration not
                 || voteExpiration > block.timestamp + $.maxSlashVoteDurationInSeconds
         ) {
-            revert SlashVoteDurationTooLong(); // Re-use or create "InvalidVoteExpiration"
+            revert SlashVoteDurationTooLong();
         }
 
         // Check 5: Voter hasn't already voted recently (check existing vote expiration)
@@ -375,7 +375,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint256 requiredVotes = activeValidatorsCount > 0 ? activeValidatorsCount - 1 : 0;
 
         if (validVotes < requiredVotes) {
-            // revert SlashThresholdNotMet(validVotes, requiredVotes);
             revert UnanimityNotReached(validVotes, requiredVotes);
         }
 
@@ -436,7 +435,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         emit ValidatorSlashed(validatorId, msg.sender, penaltyAmount);
     }
 
-    // --- View Functions --- (Using _getPlumeStorage)
+    // --- View Functions ---
 
     /**
      * @notice Get information about a validator including total staked amount and staker count

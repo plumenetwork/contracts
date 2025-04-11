@@ -131,8 +131,9 @@ contract DeployPlumeStakingDiamond is Script, Test {
         });
 
         // Validator Facet Selectors (Shifted index to 3)
-        bytes4[] memory validatorSigs_Manual = new bytes4[](10);
-        validatorSigs_Manual[0] = bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string)")));
+        bytes4[] memory validatorSigs_Manual = new bytes4[](12);
+        validatorSigs_Manual[0] =
+            bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
         validatorSigs_Manual[2] = bytes4(keccak256(bytes("updateValidator(uint16,uint8,bytes)")));
         validatorSigs_Manual[3] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));
@@ -140,8 +141,10 @@ contract DeployPlumeStakingDiamond is Script, Test {
         validatorSigs_Manual[5] = bytes4(keccak256(bytes("getValidatorStats(uint16)")));
         validatorSigs_Manual[6] = bytes4(keccak256(bytes("getUserValidators(address)")));
         validatorSigs_Manual[7] = bytes4(keccak256(bytes("getAccruedCommission(uint16,address)")));
-        validatorSigs_Manual[8] = bytes4(keccak256(bytes("getActiveValidatorCount()")));
-        validatorSigs_Manual[9] = bytes4(keccak256(bytes("getValidatorsList()")));
+        validatorSigs_Manual[8] = bytes4(keccak256(bytes("getValidatorsList()")));
+        validatorSigs_Manual[9] = bytes4(keccak256(bytes("getActiveValidatorCount()")));
+        validatorSigs_Manual[10] = bytes4(keccak256(bytes("voteToSlashValidator(uint16,uint256)")));
+        validatorSigs_Manual[11] = bytes4(keccak256(bytes("slashValidator(uint16)")));
         cut[3] = IERC2535DiamondCutInternal.FacetCut({
             target: address(validatorFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
@@ -149,13 +152,14 @@ contract DeployPlumeStakingDiamond is Script, Test {
         });
 
         // Management Facet Selectors (Shifted index to 4)
-        bytes4[] memory managementSigs_Manual = new bytes4[](6); // Size back to 6
+        bytes4[] memory managementSigs_Manual = new bytes4[](7);
         managementSigs_Manual[0] = bytes4(keccak256(bytes("setMinStakeAmount(uint256)")));
         managementSigs_Manual[1] = bytes4(keccak256(bytes("setCooldownInterval(uint256)")));
         managementSigs_Manual[2] = bytes4(keccak256(bytes("adminWithdraw(address,uint256,address)")));
         managementSigs_Manual[3] = bytes4(keccak256(bytes("updateTotalAmounts(uint256,uint256)")));
         managementSigs_Manual[4] = bytes4(keccak256(bytes("getMinStakeAmount()")));
         managementSigs_Manual[5] = bytes4(keccak256(bytes("getCooldownInterval()")));
+        managementSigs_Manual[6] = bytes4(keccak256(bytes("setMaxSlashVoteDuration(uint256)")));
         cut[4] = IERC2535DiamondCutInternal.FacetCut({
             target: address(managementFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
@@ -174,6 +178,11 @@ contract DeployPlumeStakingDiamond is Script, Test {
         // Cast proxy to AccessControlFacet to call initializer
         AccessControlFacet(payableProxy).initializeAccessControl();
         console2.log("AccessControl Facet Initialized.");
+
+        // --- Set Initial Slashing Vote Duration --- (NEW STEP)
+        console2.log("Setting initial max slash vote duration...");
+        ManagementFacet(payableProxy).setMaxSlashVoteDuration(INITIAL_COOLDOWN); // Use cooldown as initial duration
+        console2.log("Initial max slash vote duration set to:", INITIAL_COOLDOWN, "seconds");
 
         // --- Grant Initial Roles (POST CUT & INIT) ---
         console2.log("Granting initial roles...");
