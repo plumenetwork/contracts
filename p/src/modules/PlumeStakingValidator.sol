@@ -407,7 +407,6 @@ contract PlumeStakingValidator is PlumeStakingBase {
      * @param l2WithdrawAddress Withdrawal address for validator rewards
      * @param l1ValidatorAddress Address of validator on L1 (informational)
      * @param l1AccountAddress Address of account on L1 (informational)
-     * @param l1AccountEvmAddress EVM address of account on L1 (informational)
      */
     function addValidator(
         uint16 validatorId,
@@ -415,8 +414,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
         address l2AdminAddress,
         address l2WithdrawAddress,
         string calldata l1ValidatorAddress,
-        string calldata l1AccountAddress,
-        uint256 l1AccountEvmAddress
+        string calldata l1AccountAddress
     ) external onlyRole(ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
@@ -458,7 +456,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
         }
 
         emit ValidatorAdded(
-            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress, l1AccountEvmAddress
+            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress, 0x0
         );
     }
 

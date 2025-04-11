@@ -303,8 +303,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Check 4: Vote expiration validity
         if (
+            // set
             voteExpiration <= block.timestamp || $.maxSlashVoteDurationInSeconds == 0 // Prevent voting if duration not
-                // set
                 || voteExpiration > block.timestamp + $.maxSlashVoteDurationInSeconds
         ) {
             revert SlashVoteDurationTooLong(); // Re-use or create "InvalidVoteExpiration"

@@ -378,3 +378,9 @@ event SlashVoteCast(uint16 indexed targetValidatorId, uint16 indexed voterValida
  * @param penaltyAmount Amount of stake potentially burned or redistributed (TBD)
  */
 event ValidatorSlashed(uint16 indexed validatorId, address indexed slasher, uint256 penaltyAmount);
+
+/**
+ * @notice Emitted when the maximum slash vote duration is set
+ * @param duration New maximum duration in seconds
+ */
+event MaxSlashVoteDurationSet(uint256 duration);
