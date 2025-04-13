@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { IPlumeStakingRewardTreasury } from "./interfaces/IPlumeStakingRewardTreasury.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { IPlumeStakingRewardTreasury } from "./interfaces/IPlumeStakingRewardTreasury.sol";
 
 /**
  * @title PlumeStakingRewardTreasury
@@ -13,6 +13,7 @@ import { IPlumeStakingRewardTreasury } from "./interfaces/IPlumeStakingRewardTre
  * @dev This contract is used by the RewardsFacet to distribute rewards to validators and delegators
  */
 contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessControl, ReentrancyGuard {
+
     using SafeERC20 for IERC20;
 
     // Events
@@ -47,7 +48,9 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
      * @dev Only callable by ADMIN_ROLE
      * @param token The token address to add
      */
-    function addRewardToken(address token) external onlyRole(ADMIN_ROLE) {
+    function addRewardToken(
+        address token
+    ) external onlyRole(ADMIN_ROLE) {
         require(token != address(0), "Cannot add zero address as token");
         require(!_isRewardToken[token], "Token already added");
 
@@ -86,12 +89,12 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
     ) external override nonReentrant onlyRole(DISTRIBUTOR_ROLE) {
         require(recipient != address(0), "Cannot distribute to zero address");
         require(amount > 0, "Amount must be greater than 0");
-        
+
         // Check both address(0) and the canonical ETH placeholder address
         if (token == address(0) || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
             // ETH distribution
             require(address(this).balance >= amount, "Insufficient ETH balance");
-            (bool success, ) = recipient.call{value: amount}("");
+            (bool success,) = recipient.call{ value: amount }("");
             require(success, "ETH transfer failed");
         } else {
             // ERC20 token distribution
@@ -117,7 +120,9 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
      * @param token The token address (use address(0) or 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE for native ETH)
      * @return The balance
      */
-    function getBalance(address token) external view override returns (uint256) {
+    function getBalance(
+        address token
+    ) external view override returns (uint256) {
         if (token == address(0) || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
             return address(this).balance;
         } else {
@@ -130,7 +135,9 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
      * @param token The token address
      * @return Whether the token is registered
      */
-    function isRewardToken(address token) external view returns (bool) {
+    function isRewardToken(
+        address token
+    ) external view returns (bool) {
         return _isRewardToken[token];
     }
 
@@ -140,4 +147,5 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
     receive() external payable {
         emit ETHReceived(msg.sender, msg.value);
     }
-} 
+
+}

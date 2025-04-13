@@ -27,9 +27,9 @@ import {
     TreasurySet
 } from "../lib/PlumeEvents.sol";
 
+import { IPlumeStakingRewardTreasury } from "../interfaces/IPlumeStakingRewardTreasury.sol";
 import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
-import { IPlumeStakingRewardTreasury } from "../interfaces/IPlumeStakingRewardTreasury.sol";
 
 import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
@@ -63,7 +63,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     // --- Storage Access ---
     bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
 
-    // --- Treasury --- 
+    // --- Treasury ---
     // Storage slot for treasury address
     bytes32 internal constant TREASURY_STORAGE_POSITION = keccak256("plume.storage.RewardTreasury");
 
@@ -76,7 +76,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return treasuryAddress;
     }
 
-    function setTreasuryAddress(address _treasury) internal {
+    function setTreasuryAddress(
+        address _treasury
+    ) internal {
         bytes32 position = TREASURY_STORAGE_POSITION;
         assembly {
             sstore(position, _treasury)
@@ -124,7 +126,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @dev Only callable by ADMIN role
      * @param _treasury Address of the PlumeStakingRewardTreasury contract
      */
-    function setTreasury(address _treasury) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+    function setTreasury(
+        address _treasury
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
         require(_treasury != address(0), "Treasury cannot be zero address");
         setTreasuryAddress(_treasury);
         emit TreasurySet(_treasury);
@@ -222,7 +226,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         address treasury = getTreasuryAddress();
         require(treasury != address(0), "Treasury not set");
-        
+
         // Check if treasury has sufficient funds
         bool hasFunds = IPlumeStakingRewardTreasury(treasury).hasEnoughBalance(token, amount);
         require(hasFunds, "Insufficient funds in treasury");
@@ -240,10 +244,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     // --- Claim Functions ---
 
-    function claim(
-        address token,
-        uint16 validatorId
-    ) external nonReentrant returns (uint256) {
+    function claim(address token, uint16 validatorId) external nonReentrant returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         if (!_isRewardToken(token)) {
             revert TokenDoesNotExist(token);
@@ -267,21 +268,23 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (reward > 0) {
             // Reset stored accumulated reward
             $.userRewards[user][validatorId][token] = 0;
-            
+
             // Update validator commission
             if (commissionAmount > 0) {
                 $.validatorAccruedCommission[validatorId][token] += commissionAmount;
             }
-            
+
             // Transfer the reward from treasury to user
             _transferRewardFromTreasury(token, reward, user);
-            
+
             emit RewardClaimedFromValidator(user, token, validatorId, reward);
         }
         return reward;
     }
 
-    function claim(address token) external nonReentrant returns (uint256) {
+    function claim(
+        address token
+    ) external nonReentrant returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         if (!_isRewardToken(token)) {
             revert TokenDoesNotExist(token);
@@ -322,7 +325,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (totalReward > 0) {
             // Transfer rewards from treasury to user
             _transferRewardFromTreasury(token, totalReward, msg.sender);
-            
+
             emit RewardClaimed(msg.sender, token, totalReward);
         }
         return totalReward;
@@ -371,7 +374,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             if (totalReward > 0) {
                 // Transfer rewards from treasury to user
                 _transferRewardFromTreasury(token, totalReward, msg.sender);
-                
+
                 claims[i] = totalReward;
                 emit RewardClaimed(msg.sender, token, totalReward);
             }
@@ -400,7 +403,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         $.rewardsAvailable[token] = ($.rewardsAvailable[token] > amount) ? $.rewardsAvailable[token] - amount : 0;
     }
 
-    function _isRewardToken(address token) internal view returns (bool) {
+    function _isRewardToken(
+        address token
+    ) internal view returns (bool) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         address[] memory rewardTokens = $.rewardTokens;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -411,7 +416,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return false;
     }
 
-    function _getTokenIndex(address token) internal view returns (uint256) {
+    function _getTokenIndex(
+        address token
+    ) internal view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         address[] memory rewardTokens = $.rewardTokens;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -450,7 +457,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return $.rewardTokens;
     }
 
-    function getMaxRewardRate(address token) external view returns (uint256) {
+    function getMaxRewardRate(
+        address token
+    ) external view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         return $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
     }
@@ -464,15 +473,14 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         lastUpdateTime = $.lastUpdateTimes[token];
     }
 
-    function getRewardRateCheckpointCount(address token) external view returns (uint256) {
+    function getRewardRateCheckpointCount(
+        address token
+    ) external view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         return $.rewardRateCheckpoints[token].length;
     }
 
-    function getValidatorRewardRateCheckpointCount(
-        uint16 validatorId,
-        address token
-    ) external view returns (uint256) {
+    function getValidatorRewardRateCheckpointCount(uint16 validatorId, address token) external view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         return $.validatorRewardRateCheckpoints[validatorId][token].length;
     }
@@ -511,7 +519,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             $.validatorRewardRateCheckpoints[validatorId][token][index];
         return (checkpoint.timestamp, checkpoint.rate, checkpoint.cumulativeIndex);
     }
-    
+
     /**
      * @notice Gets the current treasury address
      * @return The address of the current treasury contract
@@ -519,4 +527,5 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function getTreasury() external view returns (address) {
         return getTreasuryAddress();
     }
+
 }
