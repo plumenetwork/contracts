@@ -390,3 +390,36 @@ event MaxSlashVoteDurationSet(uint256 duration);
  * @param treasury Address of the new treasury
  */
 event TreasurySet(address indexed treasury);
+
+// Treasury Events
+event RewardDistributed(address indexed token, uint256 amount, address indexed recipient);
+
+/**
+ * @notice Emitted when Plume (native) tokens are received by the treasury
+ * @param sender Address of the sender
+ * @param amount Amount of Plume received
+ */
+event PlumeReceived(address indexed sender, uint256 amount);
+
+/**
+ * @notice Emitted when native tokens are deposited to the treasury
+ * @param sender Address of the sender
+ * @param amount Amount of tokens deposited
+ */
+event NativeTokenDeposited(address indexed sender, uint256 amount);
+
+/**
+ * @notice Emitted when an ERC20 token is received by the treasury
+ * @param token Address of the token
+ * @param sender Address of the sender
+ * @param amount Amount of tokens received
+ */
+event TokenReceived(address indexed token, address indexed sender, uint256 amount);
+
+/**
+ * @notice Emitted when a token transfer fails
+ * @param token Address of the token (PLUME_NATIVE for native token)
+ * @param recipient Address of the intended recipient
+ * @param amount Amount that failed to transfer
+ */
+event TransferFailed(address indexed token, address indexed recipient, uint256 amount);

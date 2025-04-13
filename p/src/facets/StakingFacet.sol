@@ -9,7 +9,7 @@ import {
     NoActiveStake,
     TokenDoesNotExist,
     TooManyStakers,
-    TransferFailed,
+    TransferError,
     ValidatorCapacityExceeded,
     ValidatorDoesNotExist,
     ValidatorInactive,
@@ -290,6 +290,11 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // $.validatorTotalCooling[validatorId] += amountUnstaked; // Let's comment this out for now. Seems validator
         // specific.
         $.totalCooling += amountUnstaked; // Global total cooling is needed
+
+        // If the user's stake with this validator is now zero, remove them from the validator's staker list
+        if (info.staked == 0) {
+            PlumeValidatorLogic.removeStakerFromValidator($, msg.sender, validatorId);
+        }
 
         emit CooldownStarted(msg.sender, validatorId, amountUnstaked, globalInfo.cooldownEnd);
         emit Unstaked(msg.sender, validatorId, amountUnstaked);

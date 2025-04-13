@@ -7,6 +7,22 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+// Import Plume errors and events
+import {
+    InsufficientBalance,
+    InsufficientPlumeBalance,
+    InsufficientTokenBalance,
+    InvalidToken,
+    PlumeTransferFailed,
+    TokenAlreadyAdded,
+    TokenNotRegistered,
+    TokenTransferFailed,
+    ZeroAddressToken,
+    ZeroAmount,
+    ZeroRecipientAddress
+} from "./lib/PlumeErrors.sol";
+import { PlumeReceived, RewardDistributed, RewardTokenAdded, TokenReceived } from "./lib/PlumeEvents.sol";
+
 /**
  * @title PlumeStakingRewardTreasury
  * @notice Contract responsible for holding and distributing reward tokens for the PlumeStaking system
@@ -16,10 +32,8 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
 
     using SafeERC20 for IERC20;
 
-    // Events
-    event RewardTokenAdded(address indexed token);
-    event RewardDistributed(address indexed token, uint256 amount, address indexed recipient);
-    event ETHReceived(address indexed sender, uint256 amount);
+    // Constants
+    address public constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     // Role constants
     bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
@@ -35,6 +49,13 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
      * @param distributor The address that will have the distributor role (usually the diamond proxy)
      */
     constructor(address admin, address distributor) {
+        if (admin == address(0)) {
+            revert ZeroAddressToken();
+        }
+        if (distributor == address(0)) {
+            revert ZeroAddressToken();
+        }
+
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(ADMIN_ROLE, admin);
         _grantRole(DISTRIBUTOR_ROLE, distributor);
@@ -51,8 +72,12 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
     function addRewardToken(
         address token
     ) external onlyRole(ADMIN_ROLE) {
-        require(token != address(0), "Cannot add zero address as token");
-        require(!_isRewardToken[token], "Token already added");
+        if (token == address(0)) {
+            revert ZeroAddressToken();
+        }
+        if (_isRewardToken[token]) {
+            revert TokenAlreadyAdded(token);
+        }
 
         _rewardTokens.push(token);
         _isRewardToken[token] = true;
@@ -62,15 +87,21 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
 
     /**
      * @notice Check if the treasury has enough balance of a token
-     * @param token The token address (use address(0) or 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE for native ETH)
+     * @param token The token address (use PLUME_NATIVE for native PLUME)
      * @param amount The amount to check
      * @return Whether the treasury has enough balance
      */
     function hasEnoughBalance(address token, uint256 amount) external view override returns (bool) {
-        // Check both address(0) and the canonical ETH placeholder address
-        if (token == address(0) || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
+        if (amount == 0) {
+            return true;
+        }
+
+        if (token == PLUME_NATIVE) {
             return address(this).balance >= amount;
         } else {
+            if (!_isRewardToken[token]) {
+                revert TokenNotRegistered(token);
+            }
             return IERC20(token).balanceOf(address(this)) >= amount;
         }
     }
@@ -78,7 +109,7 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
     /**
      * @notice Distribute reward to a recipient
      * @dev Can only be called by an address with DISTRIBUTOR_ROLE
-     * @param token The token address (use address(0) or 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE for native ETH)
+     * @param token The token address (use PLUME_NATIVE for native PLUME)
      * @param amount The amount to distribute
      * @param recipient The recipient address
      */
@@ -87,21 +118,37 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
         uint256 amount,
         address recipient
     ) external override nonReentrant onlyRole(DISTRIBUTOR_ROLE) {
-        require(recipient != address(0), "Cannot distribute to zero address");
-        require(amount > 0, "Amount must be greater than 0");
+        if (recipient == address(0)) {
+            revert ZeroRecipientAddress();
+        }
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
 
-        // Check both address(0) and the canonical ETH placeholder address
-        if (token == address(0) || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
-            // ETH distribution
-            require(address(this).balance >= amount, "Insufficient ETH balance");
+        if (token == PLUME_NATIVE) {
+            // PLUME distribution
+            uint256 balance = address(this).balance;
+            if (balance < amount) {
+                revert InsufficientPlumeBalance(amount, balance);
+            }
+
             (bool success,) = recipient.call{ value: amount }("");
-            require(success, "ETH transfer failed");
+            if (!success) {
+                revert PlumeTransferFailed(recipient, amount);
+            }
         } else {
             // ERC20 token distribution
-            require(_isRewardToken[token], "Token not registered");
+            if (!_isRewardToken[token]) {
+                revert TokenNotRegistered(token);
+            }
+
             uint256 balance = IERC20(token).balanceOf(address(this));
-            require(balance >= amount, "Insufficient token balance");
-            IERC20(token).safeTransfer(recipient, amount);
+            if (balance < amount) {
+                revert InsufficientTokenBalance(token, amount, balance);
+            }
+
+            // Use SafeERC20 to safely transfer tokens
+            SafeERC20.safeTransfer(IERC20(token), recipient, amount);
         }
 
         emit RewardDistributed(token, amount, recipient);
@@ -117,15 +164,18 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
 
     /**
      * @notice Get the balance of a token in the treasury
-     * @param token The token address (use address(0) or 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE for native ETH)
+     * @param token The token address (use PLUME_NATIVE for native PLUME)
      * @return The balance
      */
     function getBalance(
         address token
     ) external view override returns (uint256) {
-        if (token == address(0) || token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
+        if (token == PLUME_NATIVE) {
             return address(this).balance;
         } else {
+            if (!_isRewardToken[token]) {
+                revert TokenNotRegistered(token);
+            }
             return IERC20(token).balanceOf(address(this));
         }
     }
@@ -142,10 +192,10 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
     }
 
     /**
-     * @notice Allows the treasury to receive ETH
+     * @notice Allows the treasury to receive PLUME
      */
     receive() external payable {
-        emit ETHReceived(msg.sender, msg.value);
+        emit PlumeReceived(msg.sender, msg.value);
     }
 
 }

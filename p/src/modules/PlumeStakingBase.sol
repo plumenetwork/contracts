@@ -10,7 +10,7 @@ import {
     NoActiveStake,
     TokenDoesNotExist,
     TooManyStakers,
-    TransferFailed,
+    TransferError,
     ValidatorCapacityExceeded,
     ValidatorDoesNotExist,
     ValidatorInactive,

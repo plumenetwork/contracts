@@ -41,6 +41,8 @@ import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import { IAccessControl } from "../interfaces/IAccessControl.sol";
+
+import { IPlumeStakingRewardTreasury } from "../interfaces/IPlumeStakingRewardTreasury.sol";
 import { PlumeRoles } from "../lib/PlumeRoles.sol";
 
 // Struct definition REMOVED from file level
@@ -69,9 +71,22 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     uint256 private constant REWARD_PRECISION = 1e18;
 
     // --- Storage Access ---
+    // Storage slot for treasury address (same as in RewardsFacet)
+    bytes32 internal constant TREASURY_STORAGE_POSITION = keccak256("plume.storage.RewardTreasury");
+
     // Helper to get Plume-specific storage layout
     function _getPlumeStorage() internal pure returns (PlumeStakingStorage.Layout storage $) {
         $ = PlumeStakingStorage.layout();
+    }
+
+    // Helper to get treasury address (same implementation as in RewardsFacet)
+    function getTreasuryAddress() internal view returns (address) {
+        bytes32 position = TREASURY_STORAGE_POSITION;
+        address treasuryAddress;
+        assembly {
+            treasuryAddress := sload(position)
+        }
+        return treasuryAddress;
     }
 
     // Modifier for Validator Admin checks
@@ -254,14 +269,14 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (amount > 0) {
             $.validatorAccruedCommission[validatorId][token] = 0;
             address recipient = validator.l2WithdrawAddress;
-            if (token != PLUME) {
-                IERC20(token).safeTransfer(recipient, amount);
-            } else {
-                (bool success,) = payable(recipient).call{ value: amount }("");
-                if (!success) {
-                    revert NativeTransferFailed();
-                }
-            }
+
+            // Get the treasury address
+            address treasury = getTreasuryAddress();
+            require(treasury != address(0), "Treasury not set");
+
+            // Use the treasury to distribute reward instead of direct transfer
+            IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);
+
             emit ValidatorCommissionClaimed(validatorId, token, amount);
         }
         // Return amount even if 0

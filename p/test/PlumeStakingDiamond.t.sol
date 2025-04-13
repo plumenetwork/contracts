@@ -503,6 +503,212 @@ contract PlumeStakingDiamondTest is Test {
         assertLe(claimableAfter, 1e14, "Claimable should be very small after claim");
     }
 
+    function testComprehensiveStakingAndRewards() public {
+        console2.log("Starting comprehensive staking and rewards test");
+
+        // Setup reward tokens with known rates for easy calculation
+        // PUSD: 0.001 token per second (reduced from 1), PLUME_NATIVE: much smaller rate to avoid exceeding max
+        uint256 pusdRate = 1e15; // 0.001 PUSD per second (reduced from 1e18 to prevent excessive rewards)
+        uint256 plumeRate = 1e9; // 0.000000001 PLUME per second (adjusted to be below max)
+
+        vm.startPrank(admin);
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(pUSD);
+        tokens[1] = PLUME_NATIVE;
+        uint256[] memory rates = new uint256[](2);
+        rates[0] = pusdRate;
+        rates[1] = plumeRate;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+
+        // Ensure treasury has enough tokens
+        uint256 treasuryAmount = 1000 ether;
+        pUSD.transfer(address(treasury), treasuryAmount);
+        vm.stopPrank();
+
+        // Record initial timestamps
+        uint256 initialTimestamp = block.timestamp;
+        uint256 initialBlock = block.number;
+        console2.log("Initial timestamp:", initialTimestamp);
+        console2.log("Initial block:", initialBlock);
+
+        // Setup commission for validators
+        uint16 validator0 = DEFAULT_VALIDATOR_ID;
+        uint16 validator1 = 1;
+        uint256 commissionRate0 = 1000; // 10%
+        uint256 commissionRate1 = 2000; // 20%
+
+        // Set commission rates
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).updateValidator(validator0, 0, abi.encode(commissionRate0));
+        vm.stopPrank();
+
+        vm.startPrank(user2); // user2 is admin for validator1 from setUp
+        ValidatorFacet(address(diamondProxy)).updateValidator(validator1, 0, abi.encode(commissionRate1));
+        vm.stopPrank();
+
+        // === User1 stakes with validator0 ===
+        console2.log("User 1 staking with validator 0");
+        uint256 user1Stake = 50 ether;
+        vm.deal(user1, 100 ether);
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: user1Stake }(validator0);
+        vm.stopPrank();
+
+        // === User2 stakes with validator1 ===
+        console2.log("User 2 staking with validator 1");
+        uint256 user2Stake = 100 ether;
+        vm.deal(user2, 150 ether);
+        vm.startPrank(user2);
+        StakingFacet(address(diamondProxy)).stake{ value: user2Stake }(validator1);
+        vm.stopPrank();
+
+        // === First time advancement (1 day) ===
+        uint256 timeAdvance1 = 1 days;
+        vm.roll(block.number + timeAdvance1 / 12); // Assuming ~12 second blocks
+        vm.warp(block.timestamp + timeAdvance1);
+        console2.log("Advanced time by 1 day");
+
+        // Check accrued rewards for user1
+        uint256 user1ExpectedReward = user1Stake * pusdRate * timeAdvance1 / 1e18; // Simplified calculation
+        uint256 user1Commission = user1ExpectedReward * commissionRate0 / 10_000;
+        uint256 user1NetReward = user1ExpectedReward - user1Commission;
+
+        uint256 user1ClaimablePUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+        console2.log("User 1 claimable PUSD after 1 day:", user1ClaimablePUSD);
+        console2.log("Expected approximately:", user1NetReward);
+
+        // Check accrued commission for validator0
+        uint256 validator0Commission =
+            ValidatorFacet(address(diamondProxy)).getAccruedCommission(validator0, address(pUSD));
+        console2.log("Validator 0 accrued commission:", validator0Commission);
+        console2.log("Expected approximately:", user1Commission);
+
+        // === User1 claims rewards ===
+        vm.startPrank(user1);
+        uint256 user1BalanceBefore = pUSD.balanceOf(user1);
+        RewardsFacet(address(diamondProxy)).claim(address(pUSD), validator0);
+        uint256 user1BalanceAfter = pUSD.balanceOf(user1);
+        uint256 user1Claimed = user1BalanceAfter - user1BalanceBefore;
+        vm.stopPrank();
+
+        console2.log("User 1 claimed PUSD:", user1Claimed);
+        assertEq(user1Claimed, user1ClaimablePUSD, "User 1 claimed amount should match claimable amount");
+
+        // === Second time advancement (3 days) ===
+        uint256 timeAdvance2 = 3 days;
+        vm.roll(block.number + timeAdvance2 / 12);
+        vm.warp(block.timestamp + timeAdvance2);
+        console2.log("Advanced time by 3 more days");
+
+        // === User2 claims rewards ===
+        uint256 user2ClaimablePUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user2, address(pUSD));
+        console2.log("User 2 claimable PUSD after 4 days total:", user2ClaimablePUSD);
+
+        uint256 user2ExpectedReward = user2Stake * pusdRate * (timeAdvance1 + timeAdvance2) / 1e18;
+        uint256 user2Commission = user2ExpectedReward * commissionRate1 / 10_000;
+        uint256 user2NetReward = user2ExpectedReward - user2Commission;
+        console2.log("Expected approximately:", user2NetReward);
+
+        vm.startPrank(user2);
+        uint256 user2BalanceBefore = pUSD.balanceOf(user2);
+        RewardsFacet(address(diamondProxy)).claim(address(pUSD), validator1);
+        uint256 user2BalanceAfter = pUSD.balanceOf(user2);
+        uint256 user2Claimed = user2BalanceAfter - user2BalanceBefore;
+        vm.stopPrank();
+
+        console2.log("User 2 claimed PUSD:", user2Claimed);
+        assertEq(user2Claimed, user2ClaimablePUSD, "User 2 claimed amount should match claimable amount");
+
+        // === Transfer tokens to diamond proxy for commission payments ===
+        console2.log("Funding diamond proxy for commission payments");
+        vm.startPrank(admin);
+        pUSD.transfer(address(diamondProxy), 10 ether); // Transfer enough tokens to cover commissions
+        vm.stopPrank();
+
+        // === Validator admins claim commission ===
+        // Validator 0 admin claims commission
+        vm.startPrank(validatorAdmin);
+        uint256 validatorAdmin0BalanceBefore = pUSD.balanceOf(validatorAdmin);
+        uint256 claimedCommission0 =
+            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validator0, address(pUSD));
+        uint256 validatorAdmin0BalanceAfter = pUSD.balanceOf(validatorAdmin);
+        vm.stopPrank();
+
+        console2.log("Validator 0 admin claimed commission:", claimedCommission0);
+        console2.log("Balance change confirms:", validatorAdmin0BalanceAfter - validatorAdmin0BalanceBefore);
+        assertEq(
+            claimedCommission0,
+            validatorAdmin0BalanceAfter - validatorAdmin0BalanceBefore,
+            "Commission claimed should match balance change"
+        );
+
+        // Validator 1 admin (user2) claims commission
+        vm.startPrank(user2);
+        uint256 validatorAdmin1BalanceBefore = pUSD.balanceOf(user2);
+        uint256 claimedCommission1 =
+            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validator1, address(pUSD));
+        uint256 validatorAdmin1BalanceAfter = pUSD.balanceOf(user2);
+        vm.stopPrank();
+
+        console2.log("Validator 1 admin claimed commission:", claimedCommission1);
+        console2.log("Balance change confirms:", validatorAdmin1BalanceAfter - validatorAdmin1BalanceBefore);
+        assertEq(
+            claimedCommission1,
+            validatorAdmin1BalanceAfter - validatorAdmin1BalanceBefore,
+            "Commission claimed should match balance change"
+        );
+
+        // === User1 unstakes from validator0 ===
+        console2.log("User 1 unstaking from validator 0");
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).unstake(validator0);
+        vm.stopPrank();
+
+        // === Check cooldown period and withdraw ===
+        uint256 cooldownInterval = ManagementFacet(address(diamondProxy)).getCooldownInterval();
+        console2.log("Cooldown interval:", cooldownInterval);
+
+        // Advance time past cooldown
+        vm.roll(block.number + cooldownInterval / 12);
+        vm.warp(block.timestamp + cooldownInterval);
+        console2.log("Advanced time past cooldown period");
+
+        // Withdraw unstaked tokens
+        vm.startPrank(user1);
+        uint256 user1EthBalanceBefore = user1.balance;
+        uint256 withdrawnAmount = StakingFacet(address(diamondProxy)).withdraw();
+        uint256 user1EthBalanceAfter = user1.balance;
+        vm.stopPrank();
+
+        console2.log("User 1 withdrew amount:", withdrawnAmount);
+        console2.log("ETH balance change:", user1EthBalanceAfter - user1EthBalanceBefore);
+        assertEq(
+            withdrawnAmount,
+            user1EthBalanceAfter - user1EthBalanceBefore,
+            "Withdrawn amount should match ETH balance change"
+        );
+        assertEq(withdrawnAmount, user1Stake, "Withdrawn amount should equal initial stake");
+
+        // === Final verification ===
+        // Check that user1 has no more stake
+        vm.startPrank(user1);
+        uint256 finalStake = StakingFacet(address(diamondProxy)).amountStaked();
+        vm.stopPrank();
+
+        assertEq(finalStake, 0, "User 1 should have no stake left after withdrawal");
+
+        // Check final state of validator0
+        (bool isActive, uint256 commission, uint256 totalStaked, uint256 stakersCount) =
+            ValidatorFacet(address(diamondProxy)).getValidatorStats(validator0);
+
+        assertTrue(isActive, "Validator 0 should still be active");
+        assertEq(commission, commissionRate0, "Validator 0 commission rate should be unchanged");
+        assertEq(totalStaked, 0, "Validator 0 should have no stake left");
+        assertEq(stakersCount, 0, "Validator 0 should have no stakers left");
+
+        console2.log("Comprehensive staking and rewards test completed successfully");
+    }
+
     function testUpdateTotalAmounts() public {
         // Setup stakers
         uint16 validatorId = DEFAULT_VALIDATOR_ID;

@@ -50,4 +50,48 @@ library PlumeValidatorLogic {
         }
     }
 
+    /**
+     * @notice Removes a staker from the validator's list if they have no stake left with this validator.
+     * @dev This should be called after unstaking when a user's stake with a validator reaches zero.
+     * @param $ The PlumeStaking storage layout.
+     * @param staker The address of the staker.
+     * @param validatorId The ID of the validator.
+     */
+    function removeStakerFromValidator(
+        PlumeStakingStorage.Layout storage $,
+        address staker,
+        uint16 validatorId
+    ) internal {
+        // Only proceed if the user has no stake left with this validator
+        if ($.userValidatorStakes[staker][validatorId].staked == 0 && $.isStakerForValidator[validatorId][staker]) {
+            // Remove staker from validator's staker list by replacing with the last element
+            address[] storage stakers = $.validatorStakers[validatorId];
+            for (uint256 i = 0; i < stakers.length; i++) {
+                if (stakers[i] == staker) {
+                    // Replace with the last element and remove the last element
+                    stakers[i] = stakers[stakers.length - 1];
+                    stakers.pop();
+                    break;
+                }
+            }
+
+            // Update the mapping to show staker is no longer staking with this validator
+            $.isStakerForValidator[validatorId][staker] = false;
+
+            // Optionally, also remove validator from user's validator list if needed
+            // (only if we want to keep this list accurate)
+            if ($.userHasStakedWithValidator[staker][validatorId]) {
+                uint16[] storage userValidators = $.userValidators[staker];
+                for (uint256 i = 0; i < userValidators.length; i++) {
+                    if (userValidators[i] == validatorId) {
+                        userValidators[i] = userValidators[userValidators.length - 1];
+                        userValidators.pop();
+                        break;
+                    }
+                }
+                $.userHasStakedWithValidator[staker][validatorId] = false;
+            }
+        }
+    }
+
 }
