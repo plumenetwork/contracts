@@ -4,27 +4,52 @@ PlumeStaking is a flexible and comprehensive staking system for PLUME tokens tha
 
 ## Architecture
 
-PlumeStaking uses a modular architecture with linear inheritance to organize functionality:
+PlumeStaking now uses a Diamond architecture with multiple facets to organize functionality:
 
 ```mermaid
-graph LR
-    A[PlumeStakingBase] --> B[PlumeStakingValidator]
-    B --> C[PlumeStakingRewards]
-    C --> D[PlumeStakingManager]
-    D --> E[PlumeStaking]
+graph TD
+    A[PlumeStaking<br>Diamond Proxy] --> B[AccessControlFacet]
+    A --> C[StakingFacet]
+    A --> D[RewardsFacet]
+    A --> E[ValidatorFacet]
+    A --> F[ManagementFacet]
+    D --> G[PlumeStakingRewardTreasury]
 
-    style E fill:#f96,stroke:#333,stroke-width:2px
-    style D fill:#9cf,stroke:#333,stroke-width:1px
-    style C fill:#9cf,stroke:#333,stroke-width:1px
+    style A fill:#f96,stroke:#333,stroke-width:2px
     style B fill:#9cf,stroke:#333,stroke-width:1px
-    style A fill:#9cf,stroke:#333,stroke-width:1px
+    style C fill:#9cf,stroke:#333,stroke-width:1px
+    style D fill:#9cf,stroke:#333,stroke-width:1px
+    style E fill:#9cf,stroke:#333,stroke-width:1px
+    style F fill:#9cf,stroke:#333,stroke-width:1px
+    style G fill:#ffc,stroke:#333,stroke-width:1px
 ```
 
-- **PlumeStakingBase**: Core staking functionality and interface implementation
-- **PlumeStakingValidator**: Validator-specific operations and management
-- **PlumeStakingRewards**: Rewards calculation, distribution, and management
-- **PlumeStakingManager**: Administrative functions and system management
-- **PlumeStaking**: Main contract entry point, inherits all functionality
+- **PlumeStaking (Diamond)**: The main entry point that implements the Diamond standard.
+- **AccessControlFacet**: Manages roles and permissions.
+- **StakingFacet**: Handles staking and unstaking operations.
+- **RewardsFacet**: Manages reward tokens, rates, and distribution.
+- **ValidatorFacet**: Handles validator management.
+- **ManagementFacet**: Provides administrative functions.
+- **PlumeStakingRewardTreasury**: Separate contract for holding and distributing rewards.
+
+## Treasury System
+
+### PlumeStakingRewardTreasury
+
+The protocol uses a separate treasury contract to securely hold and distribute rewards:
+
+- **Separation of Concerns**: By keeping funds in a dedicated treasury contract, we maintain better security and control.
+- **Role-Based Access**: The treasury implements a role-based access control system.
+- **DISTRIBUTOR_ROLE**: Only the Diamond proxy has permission to call the `distributeReward` function, ensuring rewards are properly distributed through the protocol's logic.
+
+### Reward Distribution Flow
+
+1. Users stake their PLUME tokens to validators.
+2. Rewards accrue over time based on configured reward rates.
+3. When users claim rewards:
+   - The RewardsFacet calculates earned rewards.
+   - The treasury verifies the caller has DISTRIBUTOR_ROLE (Diamond proxy).
+   - The treasury transfers tokens directly to the user.
 
 ## Core Functions
 
@@ -133,6 +158,16 @@ plumeStaking.addValidator(
 );
 ```
 
+### Treasury Functions
+
+| Function                                           | Description                                                    |
+| -------------------------------------------------- | -------------------------------------------------------------- |
+| `addRewardToken(address token)`                    | Register a token as a valid reward token in the treasury       |
+| `distributeReward(address token, uint256 amount, address recipient)` | Distribute rewards to a recipient (requires DISTRIBUTOR_ROLE) |
+| `getRewardTokens()`                                | Get the list of registered reward tokens                       |
+| `getBalance(address token)`                        | Get the balance of a specific token in the treasury            |
+| `isRewardToken(address token)`                     | Check if a token is registered as a reward token               |
+
 ## Events
 
 ### Core Staking Events
@@ -224,6 +259,17 @@ The PlumeStaking system uses custom Solidity errors for efficient gas usage and 
 - `AdminTransferFailed()` - Thrown when a native token transfer fails in an admin operation
 - `IndexOutOfRange(uint256 index, uint256 length)` - Thrown when an array index is out of bounds
 - `InvalidIndexRange(uint256 startIndex, uint256 endIndex)` - Thrown when an index range is invalid
+
+### Treasury Errors
+
+- `ZeroAddressToken()` - Thrown when a zero address is provided for a token
+- `TokenAlreadyAdded(address token)` - Thrown when trying to add a token that's already registered
+- `TokenNotRegistered(address token)` - Thrown when trying to operate on an unregistered token
+- `ZeroRecipientAddress()` - Thrown when a zero address is provided as recipient
+- `ZeroAmount()` - Thrown when a zero amount is provided for distribution
+- `InsufficientBalance(address token, uint256 available, uint256 required)` - Thrown when there are insufficient funds for an operation
+- `PlumeTransferFailed(address recipient, uint256 amount)` - Thrown when native PLUME transfer fails
+- `TokenTransferFailed(address token, address recipient, uint256 amount)` - Thrown when token transfer fails
 
 ## Staking Behavior
 
@@ -322,3 +368,11 @@ forge script script/DeployPlumeStaking.s.sol --rpc-url <rpc-url> --private-key <
 ## License
 
 This project is licensed under the MIT License.
+
+## Recent Improvements
+
+- **Enhanced Error Handling**: Updated error types to provide more context, including token addresses in balance-related errors.
+- **Token Support**: The treasury now supports both native PLUME and ERC20 tokens as rewards.
+- **Standardized Approach**: Updated naming conventions to consistently refer to the native token as PLUME instead of ETH.
+- **Diamond Architecture**: Migrated to a Diamond architecture for better modularity and upgradability.
+- **Treasury Separation**: Implemented a separate treasury contract for improved fund security and management.
