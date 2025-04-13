@@ -183,7 +183,7 @@ error InsufficientTokenBalance(address token, uint256 requested, uint256 availab
 error PlumeTransferFailed(address recipient, uint256 amount);
 error VotingPowerProxyCannotBeZero();
 error TransferHelperCannotBeZero();
-error InsufficientBalance(uint256 available, uint256 required);
+error InsufficientBalance(address token, uint256 available, uint256 required);
 error InvalidToken();
 
 /*

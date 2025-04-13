@@ -9,14 +9,6 @@ pragma solidity ^0.8.25;
 interface IPlumeStakingRewardTreasury {
 
     /**
-     * @notice Check if the treasury has enough balance of a token
-     * @param token The token address (use address(0) for native ETH)
-     * @param amount The amount to check
-     * @return Whether the treasury has enough balance
-     */
-    function hasEnoughBalance(address token, uint256 amount) external view returns (bool);
-
-    /**
      * @notice Distribute reward to a recipient
      * @dev Can only be called by an address with DISTRIBUTOR_ROLE
      * @param token The token address (use address(0) for native ETH)

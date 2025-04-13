@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import {
     ArrayLengthMismatch,
     EmptyArray,
+    InsufficientBalance,
     InvalidAmount,
     InvalidRewardRateCheckpoint,
     NativeTransferFailed,
@@ -227,9 +228,19 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address treasury = getTreasuryAddress();
         require(treasury != address(0), "Treasury not set");
 
-        // Check if treasury has sufficient funds
-        bool hasFunds = IPlumeStakingRewardTreasury(treasury).hasEnoughBalance(token, amount);
-        require(hasFunds, "Insufficient funds in treasury");
+        // Check if treasury has sufficient funds - direct balance check
+        if (token == PLUME) {
+            // For native PLUME, check the treasury's ETH balance
+            if (treasury.balance < amount) {
+                revert InsufficientBalance(token, treasury.balance, amount);
+            }
+        } else {
+            // For ERC20 tokens, check the token balance
+            uint256 treasuryBalance = IERC20(token).balanceOf(treasury);
+            if (treasuryBalance < amount) {
+                revert InsufficientBalance(token, treasuryBalance, amount);
+            }
+        }
 
         uint16[] memory validatorIds = $.validatorIds;
         for (uint256 i = 0; i < validatorIds.length; i++) {

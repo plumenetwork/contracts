@@ -86,27 +86,6 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
     }
 
     /**
-     * @notice Check if the treasury has enough balance of a token
-     * @param token The token address (use PLUME_NATIVE for native PLUME)
-     * @param amount The amount to check
-     * @return Whether the treasury has enough balance
-     */
-    function hasEnoughBalance(address token, uint256 amount) external view override returns (bool) {
-        if (amount == 0) {
-            return true;
-        }
-
-        if (token == PLUME_NATIVE) {
-            return address(this).balance >= amount;
-        } else {
-            if (!_isRewardToken[token]) {
-                revert TokenNotRegistered(token);
-            }
-            return IERC20(token).balanceOf(address(this)) >= amount;
-        }
-    }
-
-    /**
      * @notice Distribute reward to a recipient
      * @dev Can only be called by an address with DISTRIBUTOR_ROLE
      * @param token The token address (use PLUME_NATIVE for native PLUME)
