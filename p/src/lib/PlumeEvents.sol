@@ -384,3 +384,9 @@ event ValidatorSlashed(uint16 indexed validatorId, address indexed slasher, uint
  * @param duration New maximum duration in seconds
  */
 event MaxSlashVoteDurationSet(uint256 duration);
+
+/**
+ * @notice Emitted when the treasury address is set
+ * @param treasury Address of the new treasury
+ */
+event TreasurySet(address indexed treasury);
