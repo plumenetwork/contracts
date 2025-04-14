@@ -259,7 +259,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             uint256 plumeAmount = $.plumeAmounts[probability % 3];
             return ("Plume Token", plumeAmount);
         } else if (probability <= 600_000) {
-            return ("Raffle Ticket", $.baseRaffleMultiplier * $.userData[user].streakCount);
+            return ("Raffle Ticket", $.baseRaffleMultiplier * ($.userData[user].streakCount + 1));
         } else if (probability <= 900_000) {
             return ("PP", $.PP_PerSpin);
         }
