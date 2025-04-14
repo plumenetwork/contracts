@@ -36,20 +36,52 @@ graph TD
 
 ### PlumeStakingRewardTreasury
 
-The protocol uses a separate treasury contract to securely hold and distribute rewards:
+The protocol uses a dedicated upgradeable treasury contract to securely hold and distribute rewards:
 
-- **Separation of Concerns**: By keeping funds in a dedicated treasury contract, we maintain better security and control.
-- **Role-Based Access**: The treasury implements a role-based access control system.
-- **DISTRIBUTOR_ROLE**: Only the Diamond proxy has permission to call the `distributeReward` function, ensuring rewards are properly distributed through the protocol's logic.
+- **Upgradeable Design**: Implements UUPS pattern for upgradeability with proper access control
+- **Separation of Concerns**: Dedicated treasury contract for better security and fund management
+- **Role-Based Access**: Implements a comprehensive role system:
+  - `DISTRIBUTOR_ROLE`: Only the Diamond proxy can distribute rewards
+  - `ADMIN_ROLE`: Can add reward tokens and manage other roles
+  - `UPGRADER_ROLE`: Can authorize contract upgrades
+  - `DEFAULT_ADMIN_ROLE`: Super admin role for initial setup
+
+### Treasury Architecture
+
+The treasury system consists of two main components:
+
+1. **PlumeStakingRewardTreasury**: The main implementation contract
+2. **PlumeStakingRewardTreasuryProxy**: ERC1967 proxy that delegates to the implementation
+
+This proxy pattern enables future upgrades while maintaining the same address and state.
 
 ### Reward Distribution Flow
 
-1. Users stake their PLUME tokens to validators.
-2. Rewards accrue over time based on configured reward rates.
+1. Users stake their PLUME tokens to validators
+2. Rewards accrue over time based on configured reward rates
 3. When users claim rewards:
-   - The RewardsFacet calculates earned rewards.
-   - The treasury verifies the caller has DISTRIBUTOR_ROLE (Diamond proxy).
-   - The treasury transfers tokens directly to the user.
+   - The RewardsFacet calculates earned rewards
+   - The RewardsFacet (with DISTRIBUTOR_ROLE) calls the treasury
+   - The treasury verifies the caller's role and transfers tokens directly to the user
+
+### Treasury Functions
+
+| Function                                           | Description                                                    | Access Control |
+| -------------------------------------------------- | -------------------------------------------------------------- | -------------- |
+| `initialize(address admin, address distributor)`    | Initialize the treasury with admin and distributor addresses    | Once only      |
+| `addRewardToken(address token)`                    | Register a token as a valid reward token                       | ADMIN_ROLE     |
+| `distributeReward(address token, uint256 amount, address recipient)` | Distribute rewards to a recipient            | DISTRIBUTOR_ROLE |
+| `getRewardTokens()`                                | Get the list of registered reward tokens                       | Public View    |
+| `getBalance(address token)`                        | Get the balance of a specific token                            | Public View    |
+| `isRewardToken(address token)`                     | Check if a token is registered as a reward token               | Public View    |
+
+### Treasury Events
+
+| Event                                              | Description                                    |
+| -------------------------------------------------- | ---------------------------------------------- |
+| `RewardTokenAdded(address token)`                  | Emitted when a new reward token is registered  |
+| `RewardDistributed(address token, uint256 amount, address recipient)` | Emitted when rewards are distributed |
+| `PlumeReceived(address sender, uint256 amount)`    | Emitted when the treasury receives PLUME       |
 
 ## Core Functions
 
@@ -158,16 +190,6 @@ plumeStaking.addValidator(
 );
 ```
 
-### Treasury Functions
-
-| Function                                           | Description                                                    |
-| -------------------------------------------------- | -------------------------------------------------------------- |
-| `addRewardToken(address token)`                    | Register a token as a valid reward token in the treasury       |
-| `distributeReward(address token, uint256 amount, address recipient)` | Distribute rewards to a recipient (requires DISTRIBUTOR_ROLE) |
-| `getRewardTokens()`                                | Get the list of registered reward tokens                       |
-| `getBalance(address token)`                        | Get the balance of a specific token in the treasury            |
-| `isRewardToken(address token)`                     | Check if a token is registered as a reward token               |
-
 ## Events
 
 ### Core Staking Events
@@ -218,161 +240,4 @@ plumeStaking.addValidator(
 
 | Constant           | Value                                        | Description                             |
 | ------------------ | -------------------------------------------- | --------------------------------------- |
-| `ADMIN_ROLE`       | `keccak256("ADMIN_ROLE")`                    | Role for administrators                 |
-| `UPGRADER_ROLE`    | `keccak256("UPGRADER_ROLE")`                 | Role for contract upgraders             |
-| `MAX_REWARD_RATE`  | `3171 * 1e9`                                 | Maximum reward rate (~100% APY)         |
-| `REWARD_PRECISION` | `1e18`                                       | Scaling factor for reward calculations  |
-| `PLUME`            | `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` | Address constant for native PLUME token |
-| `VALIDATOR_ROLE`   | `keccak256("VALIDATOR_ROLE")`                | Role for validators                     |
-
-## Error Handling
-
-The PlumeStaking system uses custom Solidity errors for efficient gas usage and clear error reporting. Key errors include:
-
-### Core Errors
-
-- `InvalidAmount(uint256 amount)` - Thrown when an invalid amount is provided
-- `NoActiveStake()` - Thrown when trying to perform an operation requiring an active stake, but no stake is active
-- `ZeroAddress(string parameter)` - Thrown when a zero address is provided for a parameter that cannot be zero
-- `TokenDoesNotExist(address token)` - Thrown when trying to perform an operation with a token that doesn't exist
-- `InsufficientFunds(uint256 available, uint256 requested)` - Thrown when attempting to withdraw more funds than available
-
-### Validator Errors
-
-- `ValidatorDoesNotExist(uint16 validatorId)` - Thrown when trying to interact with a non-existent validator
-- `ValidatorAlreadyExists(uint16 validatorId)` - Thrown when trying to add a validator with an ID that already exists
-- `ValidatorInactive(uint16 validatorId)` - Thrown when trying to interact with an inactive validator
-- `NotValidatorAdmin(address caller)` - Thrown when a non-admin tries to perform a validator admin operation
-- `ValidatorCapacityExceeded()` - Thrown when a validator's capacity would be exceeded by an operation
-- `TooManyStakers()` - Thrown when an operation would affect too many stakers at once
-
-### Reward Errors
-
-- `TokenAlreadyExists()` - Thrown when trying to add a token that already exists in the reward token list
-- `CommissionTooHigh()` - Thrown when a validator commission exceeds the maximum allowed value
-- `RewardRateExceedsMax()` - Thrown when a reward rate exceeds the maximum allowed value
-- `NativeTransferFailed()` - Thrown when a native token transfer fails
-
-### Administrative Errors
-
-- `StakerExists(address staker)` - Thrown when attempting to add a staker that already exists
-- `AdminTransferFailed()` - Thrown when a native token transfer fails in an admin operation
-- `IndexOutOfRange(uint256 index, uint256 length)` - Thrown when an array index is out of bounds
-- `InvalidIndexRange(uint256 startIndex, uint256 endIndex)` - Thrown when an index range is invalid
-
-### Treasury Errors
-
-- `ZeroAddressToken()` - Thrown when a zero address is provided for a token
-- `TokenAlreadyAdded(address token)` - Thrown when trying to add a token that's already registered
-- `TokenNotRegistered(address token)` - Thrown when trying to operate on an unregistered token
-- `ZeroRecipientAddress()` - Thrown when a zero address is provided as recipient
-- `ZeroAmount()` - Thrown when a zero amount is provided for distribution
-- `InsufficientBalance(address token, uint256 available, uint256 required)` - Thrown when there are insufficient funds for an operation
-- `PlumeTransferFailed(address recipient, uint256 amount)` - Thrown when native PLUME transfer fails
-- `TokenTransferFailed(address token, address recipient, uint256 amount)` - Thrown when token transfer fails
-
-## Staking Behavior
-
-### Smart Cooling Token Usage
-
-When staking PLUME tokens, the system intelligently manages cooling tokens:
-
-- If the user has tokens in cooling state, the system only uses the necessary amount (up to the staking amount)
-- The cooldown period is only reset if all cooling tokens are used
-- If a user has 50 tokens in cooling and stakes 30 tokens, only 30 are used from cooling, preserving the cooldown period for the remaining 20 tokens
-- This provides a better user experience by allowing partial use of cooling tokens without losing cooldown progress on unused tokens
-
-### Partial Unstaking
-
-The system supports partial unstaking:
-
-- Users can unstake a specific amount from a validator using `unstake(validatorId, amount)`
-- This provides more flexibility compared to unstaking all tokens at once
-- Partially unstaked tokens still go through the cooldown period
-- The original `unstake(validatorId)` function remains as a convenience method to unstake all tokens
-
-## Staking Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant PlumeStaking
-    participant Validator
-
-    User->>PlumeStaking: stake(validatorId)
-    Note over PlumeStaking: Uses cooling tokens intelligently<br>(Preserves cooldown for partially used cooling)
-    PlumeStaking->>Validator: Delegate tokens
-    PlumeStaking-->>User: Staked event
-
-    Note over User,PlumeStaking: Accumulating rewards
-
-    alt Unstake all tokens
-        User->>PlumeStaking: unstake(validatorId)
-    else Unstake specific amount
-        User->>PlumeStaking: unstake(validatorId, amount)
-    end
-
-    PlumeStaking->>PlumeStaking: Start cooldown period
-    PlumeStaking-->>User: Unstaked event
-
-    Note over User,PlumeStaking: Waiting for cooldown
-
-    User->>PlumeStaking: withdraw()
-    PlumeStaking->>User: Transfer unstaked tokens
-    PlumeStaking-->>User: Withdrawn event
-
-    alt Claim rewards from all validators
-        User->>PlumeStaking: claim(token)
-        PlumeStaking->>User: Transfer reward tokens from all validators
-        PlumeStaking-->>User: RewardClaimedFromValidator events
-    else Claim rewards from specific validator
-        User->>PlumeStaking: claim(token, validatorId)
-        PlumeStaking->>User: Transfer reward tokens from specific validator
-        PlumeStaking-->>User: RewardClaimedFromValidator event
-    else Claim all rewards from all tokens and validators
-        User->>PlumeStaking: claimAll()
-        PlumeStaking->>User: Transfer all reward tokens from all validators
-        PlumeStaking-->>User: RewardClaimedFromValidator events for each token/validator
-    end
-```
-
-## Getting Started
-
-### Prerequisites
-
-- [Foundry](https://getfoundry.sh/)
-- Solidity 0.8.25+
-
-### Installation
-
-```bash
-git clone https://github.com/plume/contracts.git
-cd contracts/p
-forge install
-```
-
-### Testing
-
-```bash
-forge test
-```
-
-### Deployment
-
-To deploy PlumeStaking to a target network:
-
-```bash
-forge script script/DeployPlumeStaking.s.sol --rpc-url <rpc-url> --private-key <private-key> --broadcast
-```
-
-## License
-
-This project is licensed under the MIT License.
-
-## Recent Improvements
-
-- **Enhanced Error Handling**: Updated error types to provide more context, including token addresses in balance-related errors.
-- **Token Support**: The treasury now supports both native PLUME and ERC20 tokens as rewards.
-- **Standardized Approach**: Updated naming conventions to consistently refer to the native token as PLUME instead of ETH.
-- **Diamond Architecture**: Migrated to a Diamond architecture for better modularity and upgradability.
-- **Treasury Separation**: Implemented a separate treasury contract for improved fund security and management.
+| `ADMIN_ROLE`       | `
