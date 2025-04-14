@@ -192,7 +192,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
      * @param nonce The nonce associated with the spin request.
      * @param rngList The list of random numbers generated.
      */
-    function handleRandomness(uint256 nonce, uint256[] memory rngList) external onlyRole(SUPRA_ROLE) {
+    function handleRandomness(uint256 nonce, uint256[] memory rngList) external onlyRole(SUPRA_ROLE) canSpin {
         SpinStorage storage $ = _getSpinStorage();
 
         address user = $.userNonce[nonce];
@@ -259,7 +259,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             uint256 plumeAmount = $.plumeAmounts[probability % 3];
             return ("Plume Token", plumeAmount);
         } else if (probability <= 600_000) {
-            return ("Raffle Ticket", $.baseRaffleMultiplier * $.userData[user].streakCount);
+            return ("Raffle Ticket", $.baseRaffleMultiplier * ($.userData[user].streakCount + 1));
         } else if (probability <= 900_000) {
             return ("PP", $.PP_PerSpin);
         }
