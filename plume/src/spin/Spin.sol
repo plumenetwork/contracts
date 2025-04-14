@@ -192,7 +192,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
      * @param nonce The nonce associated with the spin request.
      * @param rngList The list of random numbers generated.
      */
-    function handleRandomness(uint256 nonce, uint256[] memory rngList) external onlyRole(SUPRA_ROLE) canSpin {
+    function handleRandomness(uint256 nonce, uint256[] memory rngList) external onlyRole(SUPRA_ROLE) {
         SpinStorage storage $ = _getSpinStorage();
 
         address user = $.userNonce[nonce];
