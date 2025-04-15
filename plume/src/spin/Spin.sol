@@ -208,11 +208,11 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Jackpot"))) {
             require(block.timestamp >= $.lastJackpotClaim + 7 days, "Jackpot cooldown active");
-            //TODO: Add case for ot enough streak count
             if (_userData.streakCount >= (block.timestamp - $.campaignStartDate) / 7 days + 2) {
                 _userData.nothingCounts += 1;
                 emit NotEnoughStreak("Not enough streak count to claim Jackpot");
             }
+            transferPlume(user, rewardAmount);
             _userData.jackpotWins++;
             $.lastJackpotClaim = block.timestamp;
         } else if (keccak256(abi.encodePacked(rewardCategory)) == keccak256(abi.encodePacked("Raffle Ticket"))) {
