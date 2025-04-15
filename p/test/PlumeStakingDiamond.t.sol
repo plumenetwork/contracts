@@ -1630,4 +1630,330 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("--- Commission & Reward Rate Change Test Complete ---");
     }
 
+    // --- Complex Reward Calculation Test ---
+    function testComplexRewardScenario() public {
+        console2.log("\n--- Starting Complex Reward Scenario Test ---");
+
+        // --- Setup users ---
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+        address user4 = makeAddr("user4");
+
+        // --- Setup validators with different commission rates ---
+        uint16 validator0 = DEFAULT_VALIDATOR_ID; // 0
+        uint16 validator1 = 1;
+        uint16 validator2 = 2;
+        
+        // Add a third validator
+        vm.startPrank(admin);
+        address validator2Admin = makeAddr("validator2Admin");
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            validator2, 15e16, validator2Admin, validator2Admin, "0xval3", "0xacc3", 0x3456
+        );
+        ValidatorFacet(address(diamondProxy)).setValidatorCapacity(validator2, 1_000_000e18);
+        vm.stopPrank();
+        
+        // --- Setup reward rates ---
+        // Use PUSD and PLUME_NATIVE as our tokens
+        address token1 = address(pUSD);
+        address token2 = PLUME_NATIVE;
+        
+        console2.log("Setting up initial commission rates:");
+        // Set initial commission rates
+        vm.startPrank(validatorAdmin); // admin for validator0
+        ValidatorFacet(address(diamondProxy)).updateValidator(validator0, 0, abi.encode(uint256(500))); // 5%
+        vm.stopPrank();
+        
+        vm.startPrank(user2); // admin for validator1 from setUp
+        ValidatorFacet(address(diamondProxy)).updateValidator(validator1, 0, abi.encode(uint256(1000))); // 10%
+        vm.stopPrank();
+        
+        vm.startPrank(validator2Admin);
+        ValidatorFacet(address(diamondProxy)).updateValidator(validator2, 0, abi.encode(uint256(1500))); // 15%
+        vm.stopPrank();
+        
+        console2.log("Setting up initial reward rates:");
+        vm.startPrank(admin);
+        
+        // Check the current reward rates
+        address[] memory rewardTokens = RewardsFacet(address(diamondProxy)).getRewardTokens();
+        console2.log("Number of reward tokens:", rewardTokens.length);
+        for (uint i = 0; i < rewardTokens.length; i++) {
+            address token = rewardTokens[i];
+            uint256 maxRate = RewardsFacet(address(diamondProxy)).getMaxRewardRate(token);
+            console2.log("Token", i, "max rate:", maxRate);
+            (uint256 rate, uint256 available, uint256 lastUpdate) = RewardsFacet(address(diamondProxy)).tokenRewardInfo(token);
+            console2.log("Token", i, "current rate:", rate);
+        }
+        
+        // Explicitly set high max reward rates first
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(token1, 1e18); // 1 PUSD per second
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(token2, 1e17); // 0.1 ETH per second
+        console2.log("Max reward rates increased");
+        
+        // Use much smaller rates for the test to stay well below max
+        address[] memory rewardTokensList = new address[](2);
+        uint256[] memory rates = new uint256[](2);
+        rewardTokensList[0] = token1; // PUSD
+        rewardTokensList[1] = token2; // PLUME_NATIVE
+        rates[0] = 1e15;    // 0.001 PUSD per second (small value) 
+        rates[1] = 1e14;    // 0.0001 ETH per second (small value)
+        RewardsFacet(address(diamondProxy)).setRewardRates(rewardTokensList, rates);
+        console2.log("Reward rates set");
+        
+        // Ensure treasury has sufficient funds
+        pUSD.transfer(address(treasury), 10000 ether);
+        vm.deal(address(treasury), 10000 ether);
+        vm.stopPrank();
+        
+        // --- Initial stakes ---
+        uint256 initialTimestamp = block.timestamp;
+        console2.log("Initial timestamp:", initialTimestamp);
+        console2.log("Initial stakes:");
+        
+        // User 1 stakes with validator 0
+        vm.deal(user1, 1000 ether);
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{value: 100 ether}(validator0);
+        vm.stopPrank();
+        console2.log("User1 staked 100 ETH with Validator0");
+        
+        // User 2 stakes with validator 0 and 1
+        vm.deal(user2, 1000 ether);
+        vm.startPrank(user2);
+        StakingFacet(address(diamondProxy)).stake{value: 200 ether}(validator0);
+        StakingFacet(address(diamondProxy)).stake{value: 150 ether}(validator1);
+        vm.stopPrank();
+        console2.log("User2 staked 200 ETH with Validator0 and 150 ETH with Validator1");
+        
+        // User 3 stakes with validator 1
+        vm.deal(user3, 1000 ether);
+        vm.startPrank(user3);
+        StakingFacet(address(diamondProxy)).stake{value: 250 ether}(validator1);
+        vm.stopPrank();
+        console2.log("User3 staked 250 ETH with Validator1");
+        
+        // User 4 stakes with validator 2
+        vm.deal(user4, 1000 ether);
+        vm.startPrank(user4);
+        StakingFacet(address(diamondProxy)).stake{value: 300 ether}(validator2);
+        vm.stopPrank();
+        console2.log("User4 staked 300 ETH with Validator2");
+        
+        // --- Phase 1: Initial time advancement (1 day) ---
+        console2.log("\n--- Phase 1: Initial time advancement (1 day) ---");
+        uint256 phase1Duration = 1 days;
+        vm.warp(block.timestamp + phase1Duration);
+        vm.roll(block.number + phase1Duration / 12);
+        
+        // Check rewards for user1 after Phase 1
+        console2.log("User1 claimable rewards after Phase 1:");
+        uint256 user1ClaimablePUSD_P1 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token1);
+        uint256 user1ClaimablePLUME_P1 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token2);
+        console2.log(" - PUSD:", user1ClaimablePUSD_P1);
+        console2.log(" - PLUME:", user1ClaimablePLUME_P1);
+        
+        // Check rewards for user2 after Phase 1
+        console2.log("User2 claimable rewards after Phase 1:");
+        uint256 user2ClaimablePUSD_P1 = RewardsFacet(address(diamondProxy)).getClaimableReward(user2, token1);
+        uint256 user2ClaimablePLUME_P1 = RewardsFacet(address(diamondProxy)).getClaimableReward(user2, token2);
+        console2.log(" - PUSD:", user2ClaimablePUSD_P1);
+        console2.log(" - PLUME:", user2ClaimablePLUME_P1);
+        
+        // --- Phase 2: Change reward rates ---
+        console2.log("\n--- Phase 2: Change reward rates ---");
+        vm.startPrank(admin);
+        
+        // Use smaller multipliers for new rates
+        rates[0] = 2e15;    // Double PUSD rate to 0.002 PUSD per second 
+        rates[1] = 2e13;    // Decrease PLUME rate to 0.00002 ETH per second (1/5th)
+        RewardsFacet(address(diamondProxy)).setRewardRates(rewardTokensList, rates);
+        vm.stopPrank();
+        console2.log("Reward rates changed: PUSD doubled, PLUME decreased to 1/5th");
+        
+        // Wait 12 hours
+        uint256 phase2Duration = 12 hours;
+        vm.warp(block.timestamp + phase2Duration);
+        vm.roll(block.number + phase2Duration / 12);
+        
+        console2.log("User1 claimable rewards after Phase 2:");
+        uint256 user1ClaimablePUSD_P2 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token1);
+        uint256 user1ClaimablePLUME_P2 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token2);
+        console2.log(" - PUSD:", user1ClaimablePUSD_P2);
+        console2.log(" - PLUME:", user1ClaimablePLUME_P2);
+        
+        // --- Phase 3: Change commission rates ---
+        console2.log("\n--- Phase 3: Change commission rates ---");
+        
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).updateValidator(validator0, 0, abi.encode(uint256(1500))); // 15%
+        vm.stopPrank();
+        
+        vm.startPrank(user2);
+        ValidatorFacet(address(diamondProxy)).updateValidator(validator1, 0, abi.encode(uint256(2000))); // 20%
+        vm.stopPrank();
+        
+        console2.log("Commission rates changed: Validator0 to 15%, Validator1 to 20%");
+        
+        // Wait 6 hours
+        uint256 phase3Duration = 6 hours;
+        vm.warp(block.timestamp + phase3Duration);
+        vm.roll(block.number + phase3Duration / 12);
+        
+        console2.log("User1 claimable rewards after Phase 3:");
+        uint256 user1ClaimablePUSD_P3 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token1);
+        uint256 user1ClaimablePLUME_P3 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token2);
+        console2.log(" - PUSD:", user1ClaimablePUSD_P3);
+        console2.log(" - PLUME:", user1ClaimablePLUME_P3);
+        
+        // --- Phase 4: User actions (unstake, restake) ---
+        console2.log("\n--- Phase 4: User actions (unstake, restake) ---");
+        
+        // User1 unstakes half from validator0
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).unstake(validator0, 50 ether);
+        vm.stopPrank();
+        console2.log("User1 unstaked 50 ETH from Validator0");
+        
+        // User2 unstakes from validator0 and restakes with validator1
+        vm.startPrank(user2);
+        StakingFacet(address(diamondProxy)).unstake(validator0, 100 ether);
+        vm.warp(block.timestamp + INITIAL_COOLDOWN); // Wait for cooldown
+        console2.log("User2 unstaked 100 ETH from Validator0 and waits for cooldown");
+        uint256 withdrawable = StakingFacet(address(diamondProxy)).amountWithdrawable();
+        StakingFacet(address(diamondProxy)).withdraw();
+        StakingFacet(address(diamondProxy)).stake{value: 100 ether}(validator1);
+        vm.stopPrank();
+        console2.log("User2 restaked 100 ETH to Validator1");
+        
+        // User4 adds more stake to validator2
+        vm.startPrank(user4);
+        StakingFacet(address(diamondProxy)).stake{value: 100 ether}(validator2);
+        vm.stopPrank();
+        console2.log("User4 added 100 ETH to Validator2");
+        
+        // Wait 12 hours
+        uint256 phase4Duration = 12 hours;
+        vm.warp(block.timestamp + phase4Duration);
+        vm.roll(block.number + phase4Duration / 12);
+        
+        // --- Phase 5: Final reward check and claims ---
+        console2.log("\n--- Phase 5: Final reward check and claims ---");
+        
+        // Check final rewards for all users
+        console2.log("Final rewards for User1:");
+        uint256 user1FinalPUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token1);
+        uint256 user1FinalPLUME = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token2);
+        console2.log(" - PUSD:", user1FinalPUSD);
+        console2.log(" - PLUME:", user1FinalPLUME);
+        
+        console2.log("Final rewards for User2:");
+        uint256 user2FinalPUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user2, token1);
+        uint256 user2FinalPLUME = RewardsFacet(address(diamondProxy)).getClaimableReward(user2, token2);
+        console2.log(" - PUSD:", user2FinalPUSD);
+        console2.log(" - PLUME:", user2FinalPLUME);
+        
+        console2.log("Final rewards for User3:");
+        uint256 user3FinalPUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user3, token1);
+        uint256 user3FinalPLUME = RewardsFacet(address(diamondProxy)).getClaimableReward(user3, token2);
+        console2.log(" - PUSD:", user3FinalPUSD);
+        console2.log(" - PLUME:", user3FinalPLUME);
+        
+        console2.log("Final rewards for User4:");
+        uint256 user4FinalPUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user4, token1);
+        uint256 user4FinalPLUME = RewardsFacet(address(diamondProxy)).getClaimableReward(user4, token2);
+        console2.log(" - PUSD:", user4FinalPUSD);
+        console2.log(" - PLUME:", user4FinalPLUME);
+        
+        // Check accrued commission for validators
+        console2.log("Accrued commissions:");
+        uint256 validator0CommissionPUSD = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validator0, token1);
+        uint256 validator0CommissionPLUME = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validator0, token2);
+        console2.log("Validator0:");
+        console2.log(" - PUSD:", validator0CommissionPUSD);
+        console2.log(" - PLUME:", validator0CommissionPLUME);
+        
+        uint256 validator1CommissionPUSD = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validator1, token1);
+        uint256 validator1CommissionPLUME = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validator1, token2);
+        console2.log("Validator1:");
+        console2.log(" - PUSD:", validator1CommissionPUSD);
+        console2.log(" - PLUME:", validator1CommissionPLUME);
+        
+        uint256 validator2CommissionPUSD = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validator2, token1);
+        uint256 validator2CommissionPLUME = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validator2, token2);
+        console2.log("Validator2:");
+        console2.log(" - PUSD:", validator2CommissionPUSD);
+        console2.log(" - PLUME:", validator2CommissionPLUME);
+        
+        // Claim rewards and verify
+        vm.startPrank(user1);
+        uint256 user1PUSDBalanceBefore = pUSD.balanceOf(user1);
+        uint256 user1ETHBalanceBefore = user1.balance;
+        uint256 user1ClaimedPUSD = RewardsFacet(address(diamondProxy)).claim(token1);
+        uint256 user1ClaimedPLUME = RewardsFacet(address(diamondProxy)).claim(token2);
+        uint256 user1PUSDBalanceAfter = pUSD.balanceOf(user1);
+        uint256 user1ETHBalanceAfter = user1.balance;
+        vm.stopPrank();
+        
+        console2.log("User1 claimed:");
+        console2.log(" - PUSD:", user1ClaimedPUSD);
+        console2.log(" - PLUME:", user1ClaimedPLUME);
+        
+        // Verify claim amounts match balance increases
+        assertApproxEqAbs(
+            user1PUSDBalanceAfter - user1PUSDBalanceBefore, 
+            user1ClaimedPUSD, 
+            10**10, 
+            "User1 PUSD claim should match balance increase"
+        );
+        assertApproxEqAbs(
+            user1ETHBalanceAfter - user1ETHBalanceBefore, 
+            user1ClaimedPLUME, 
+            10**10, 
+            "User1 PLUME claim should match balance increase"
+        );
+        
+        // Verify reward rate changes affected accrual by comparing the reward increases
+        // The PUSD reward rate doubled while PLUME decreased to 1/5th
+        // So the rate of increase for PUSD rewards should increase while PLUME decrease
+        uint256 pusdIncreaseP1 = user1ClaimablePUSD_P1; // From 0 to P1
+        uint256 pusdIncreaseP2 = user1ClaimablePUSD_P2 - user1ClaimablePUSD_P1; // From P1 to P2
+        uint256 plumeIncreaseP1 = user1ClaimablePLUME_P1; // From 0 to P1
+        uint256 plumeIncreaseP2 = user1ClaimablePLUME_P2 - user1ClaimablePLUME_P1; // From P1 to P2
+        
+        // Normalize for time (P1 is 1 day, P2 is 12 hours)
+        uint256 pusdRateP1 = pusdIncreaseP1 * 1e18 / phase1Duration;
+        uint256 pusdRateP2 = pusdIncreaseP2 * 1e18 / phase2Duration;
+        uint256 plumeRateP1 = plumeIncreaseP1 * 1e18 / phase1Duration;
+        uint256 plumeRateP2 = plumeIncreaseP2 * 1e18 / phase2Duration;
+        
+        console2.log("Reward rate changes verification:");
+        console2.log("PUSD reward rate (per second):");
+        console2.log(" - Phase 1:", pusdRateP1);
+        console2.log(" - Phase 2:", pusdRateP2);
+        console2.log("PLUME reward rate (per second):");
+        console2.log(" - Phase 1:", plumeRateP1);
+        console2.log(" - Phase 2:", plumeRateP2);
+        
+        // Verify PUSD rate roughly doubled
+        assertApproxEqRel(
+            pusdRateP2,
+            pusdRateP1 * 2,
+            0.1e18, // 10% tolerance
+            "PUSD rate didn't double as expected"
+        );
+        
+        // Verify PLUME rate roughly decreased to 1/5th
+        assertApproxEqRel(
+            plumeRateP2,
+            plumeRateP1 / 5,
+            0.1e18, // 10% tolerance
+            "PLUME rate didn't decrease to 1/5th as expected"
+        );
+        
+        // Similarly, verify commission changes by comparing commission increases
+        console2.log("\n--- Commission & Reward Scenario Test Complete ---");
+    }
+
 }
