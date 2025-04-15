@@ -6,7 +6,6 @@ import { AccessControlInternal } from "@solidstate/access/access_control/AccessC
 import { AccessControlStorage } from "@solidstate/access/access_control/AccessControlStorage.sol";
 
 // Plume Roles & Interface
-
 import { IAccessControl } from "../interfaces/IAccessControl.sol";
 import { PlumeRoles } from "../lib/PlumeRoles.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol"; // For potential shared init flag
@@ -21,28 +20,45 @@ contract AccessControlFacet is IAccessControl, AccessControlInternal {
     // Simple flag to prevent re-initialization within this facet's context
     bool private _initializedAC;
 
-    // Define locally as it's not being resolved via inheritance
+    // Define all roles locally for clarity and direct access
     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+    bytes32 public constant ADMIN_ROLE = PlumeRoles.ADMIN_ROLE;
+    bytes32 public constant UPGRADER_ROLE = PlumeRoles.UPGRADER_ROLE;
+    bytes32 public constant VALIDATOR_ROLE = PlumeRoles.VALIDATOR_ROLE;
+    bytes32 public constant REWARD_MANAGER_ROLE = PlumeRoles.REWARD_MANAGER_ROLE;
 
     /**
-     * @notice Initializes the AccessControl facet, granting DEFAULT_ADMIN_ROLE.
+     * @notice Initializes the AccessControl facet, setting up all roles and their admins.
      * @dev Can only be called once, typically by the diamond owner after cutting the facet.
-     * Grants DEFAULT_ADMIN_ROLE to the caller (expected to be the owner/deployer).
+     * Sets up the complete role hierarchy with DEFAULT_ADMIN_ROLE and ADMIN_ROLE at the top.
      */
     function initializeAccessControl() external {
         require(!_initializedAC, "ACF: init"); // AccessControlFacet: Already initialized
+
         // Grant the essential DEFAULT_ADMIN_ROLE to the caller
-        // Use msg.sender instead of _msgSender() as it's not resolved
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+
+        // Grant ADMIN_ROLE to the caller
+        _grantRole(ADMIN_ROLE, msg.sender);
+
+        // Set up role hierarchy
+        // Make ADMIN_ROLE the admin for all other roles (including itself)
+        _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(UPGRADER_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(VALIDATOR_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(REWARD_MANAGER_ROLE, ADMIN_ROLE);
+
+        // Grant initial roles to the caller
+        _grantRole(UPGRADER_ROLE, msg.sender);
+        _grantRole(REWARD_MANAGER_ROLE, msg.sender);
+
         _initializedAC = true;
-        // Emit an event? Optional.
     }
 
     // --- External Functions ---
 
     /// @inheritdoc IAccessControl
     function hasRole(bytes32 role, address account) external view override returns (bool) {
-        // Directly calls the internal function inherited from AccessControlInternal
         return _hasRole(role, account);
     }
 
@@ -50,7 +66,6 @@ contract AccessControlFacet is IAccessControl, AccessControlInternal {
     function getRoleAdmin(
         bytes32 role
     ) external view override returns (bytes32) {
-        // Directly calls the internal function inherited from AccessControlInternal
         return _getRoleAdmin(role);
     }
 
@@ -59,7 +74,6 @@ contract AccessControlFacet is IAccessControl, AccessControlInternal {
      * @dev Requires the caller to have the admin role for the role being granted.
      */
     function grantRole(bytes32 role, address account) external override onlyRole(_getRoleAdmin(role)) {
-        // Directly calls the internal function inherited from AccessControlInternal
         _grantRole(role, account);
     }
 
@@ -68,29 +82,23 @@ contract AccessControlFacet is IAccessControl, AccessControlInternal {
      * @dev Requires the caller to have the admin role for the role being revoked.
      */
     function revokeRole(bytes32 role, address account) external override onlyRole(_getRoleAdmin(role)) {
-        // Directly calls the internal function inherited from AccessControlInternal
         _revokeRole(role, account);
     }
 
     /**
      * @inheritdoc IAccessControl
-     * @dev Allows an account to renounce their own role. The `_account` parameter is part of the
-     *      interface but the internal function `_renounceRole` uses msg.sender.
+     * @dev Allows an account to renounce their own role.
      */
     function renounceRole(bytes32 role, address account) external override {
         require(account == msg.sender, "AccessControl: can only renounce roles for self");
-        // Directly calls the internal function inherited from AccessControlInternal
         _renounceRole(role);
     }
 
     /**
      * @inheritdoc IAccessControl
-     * @dev Requires the caller to have the PlumeRoles.ADMIN_ROLE to change role admins.
-     *      Note: SolidState's default admin role is 0x00, but we use PlumeRoles.ADMIN_ROLE
-     *      for controlling this specific privileged function.
+     * @dev Requires the caller to have the ADMIN_ROLE to change role admins.
      */
-    function setRoleAdmin(bytes32 role, bytes32 adminRole) external override onlyRole(PlumeRoles.ADMIN_ROLE) {
-        // Directly calls the internal function inherited from AccessControlInternal
+    function setRoleAdmin(bytes32 role, bytes32 adminRole) external override onlyRole(ADMIN_ROLE) {
         _setRoleAdmin(role, adminRole);
     }
 

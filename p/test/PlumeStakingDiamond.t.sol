@@ -35,6 +35,9 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+// Import the proxy contract
+import { PlumeStakingRewardTreasuryProxy } from "../src/proxy/PlumeStakingRewardTreasuryProxy.sol";
+
 // Simple test token for PUSD
 contract MockPUSD is ERC20 {
 
@@ -266,13 +269,29 @@ contract PlumeStakingDiamondTest is Test {
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(address(pUSD), PUSD_REWARD_RATE * 2);
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, PLUME_REWARD_RATE * 2);
 
-        console2.log("Deploying treasury contract...");
-        // Deploy and set up a treasury for testing
-        treasury = new PlumeStakingRewardTreasury(admin, address(diamondProxy));
-        console2.log("Treasury deployed at:", address(treasury));
+        console2.log("Deploying treasury logic contract...");
+        // Deploy the treasury logic contract (no constructor args now)
+        PlumeStakingRewardTreasury treasuryLogic = new PlumeStakingRewardTreasury();
+        console2.log("Treasury logic deployed at:", address(treasuryLogic));
+
+        console2.log("Preparing treasury initialization calldata...");
+        // Encode the initializer function call
+        bytes memory treasuryInitData =
+            abi.encodeWithSelector(treasuryLogic.initialize.selector, admin, address(diamondProxy));
+        console2.log("Initialization calldata prepared.");
+
+        console2.log("Deploying treasury proxy contract...");
+        // Deploy the proxy, pointing to the logic and passing initializer data
+        PlumeStakingRewardTreasuryProxy treasuryProxy =
+            new PlumeStakingRewardTreasuryProxy(address(treasuryLogic), treasuryInitData);
+        console2.log("Treasury proxy deployed at:", address(treasuryProxy));
+
+        // Point the test variable to the proxy address, casting to the correct type
+        treasury = PlumeStakingRewardTreasury(payable(address(treasuryProxy)));
+        console2.log("Test treasury variable points to proxy.");
 
         console2.log("Setting treasury in RewardsFacet...");
-        // Set the treasury in the RewardsFacet
+        // Set the treasury in the RewardsFacet (use proxy address)
         RewardsFacet(address(diamondProxy)).setTreasury(address(treasury));
         console2.log("Treasury set successfully");
 

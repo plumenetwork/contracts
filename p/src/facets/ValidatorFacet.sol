@@ -218,6 +218,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
             _updateRewardsForAllValidatorStakers(validatorId);
             validator.commission = newCommission;
+            // Create commission checkpoint
+            PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
         } else if (updateType == 1) {
             // Update Admin Address
             address currentAdminAddress = validator.l2AdminAddress;

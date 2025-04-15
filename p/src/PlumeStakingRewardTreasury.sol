@@ -2,10 +2,13 @@
 pragma solidity ^0.8.25;
 
 import { IPlumeStakingRewardTreasury } from "./interfaces/IPlumeStakingRewardTreasury.sol";
-import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // Import Plume errors and events
 import {
@@ -24,9 +27,15 @@ import { PlumeReceived, RewardDistributed, RewardTokenAdded, TokenReceived } fro
 /**
  * @title PlumeStakingRewardTreasury
  * @notice Contract responsible for holding and distributing reward tokens for the PlumeStaking system
- * @dev This contract is used by the RewardsFacet to distribute rewards to validators and delegators
+ * @dev This contract is upgradeable using UUPS pattern and uses AccessControl for authorization
  */
-contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessControl, ReentrancyGuard {
+contract PlumeStakingRewardTreasury is
+    IPlumeStakingRewardTreasury,
+    Initializable,
+    AccessControlUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
+{
 
     using SafeERC20 for IERC20;
 
@@ -36,17 +45,23 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
     // Role constants
     bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     // State variables
     address[] private _rewardTokens;
     mapping(address => bool) private _isRewardToken;
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     /**
-     * @dev Constructor that sets up roles
+     * @dev Initializer that sets up roles
      * @param admin The address that will have the admin role
      * @param distributor The address that will have the distributor role (usually the diamond proxy)
      */
-    constructor(address admin, address distributor) {
+    function initialize(address admin, address distributor) public initializer {
         if (admin == address(0)) {
             revert ZeroAddressToken();
         }
@@ -54,12 +69,28 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
             revert ZeroAddressToken();
         }
 
+        __AccessControl_init();
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
+
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(ADMIN_ROLE, admin);
+        _grantRole(UPGRADER_ROLE, admin);
         _grantRole(DISTRIBUTOR_ROLE, distributor);
 
-        // Set ADMIN_ROLE as the admin for DISTRIBUTOR_ROLE
+        // Set ADMIN_ROLE as the admin for DISTRIBUTOR_ROLE and UPGRADER_ROLE
         _setRoleAdmin(DISTRIBUTOR_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(UPGRADER_ROLE, ADMIN_ROLE);
+    }
+
+    /**
+     * @dev Function that should revert when `msg.sender` is not authorized to upgrade the contract.
+     * Called by {upgradeTo} and {upgradeToAndCall}.
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(UPGRADER_ROLE) {
+        // Authorization is handled by the onlyRole modifier
     }
 
     /**
@@ -81,27 +112,6 @@ contract PlumeStakingRewardTreasury is IPlumeStakingRewardTreasury, AccessContro
         _isRewardToken[token] = true;
 
         emit RewardTokenAdded(token);
-    }
-
-    /**
-     * @notice Check if the treasury has enough balance of a token
-     * @param token The token address (use PLUME_NATIVE for native PLUME)
-     * @param amount The amount to check
-     * @return Whether the treasury has enough balance
-     */
-    function hasEnoughBalance(address token, uint256 amount) external view override returns (bool) {
-        if (amount == 0) {
-            return true;
-        }
-
-        if (token == PLUME_NATIVE) {
-            return address(this).balance >= amount;
-        } else {
-            if (!_isRewardToken[token]) {
-                revert TokenNotRegistered(token);
-            }
-            return IERC20(token).balanceOf(address(this)) >= amount;
-        }
     }
 
     /**

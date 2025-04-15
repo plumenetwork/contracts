@@ -88,6 +88,8 @@ library PlumeStakingStorage {
         mapping(address => mapping(uint16 => mapping(address => uint256))) userRewards;
         /// @notice Maps a (validator, token) pair to the commission accumulated
         mapping(uint16 => mapping(address => uint256)) validatorAccruedCommission;
+        /// @notice Maps a validator ID to its history of commission rate checkpoints
+        mapping(uint16 => RateCheckpoint[]) validatorCommissionCheckpoints;
         /// @notice Flag to indicate if epochs are being used
         // TODO - remove epochs
         bool usingEpochs;
