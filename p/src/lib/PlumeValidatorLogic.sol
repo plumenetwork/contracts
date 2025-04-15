@@ -15,6 +15,42 @@ library PlumeValidatorLogic {
     using PlumeStakingStorage for PlumeStakingStorage.Layout;
 
     /**
+     * @notice Get validator info from storage
+     * @param $ The storage layout reference
+     * @param validatorId The ID of the validator to get info for
+     * @return The validator info struct
+     */
+    function getValidatorInfo(
+        PlumeStakingStorage.Layout storage $,
+        uint16 validatorId
+    ) internal view returns (PlumeStakingStorage.ValidatorInfo storage) {
+        return $.validators[validatorId];
+    }
+
+    /**
+     * @notice Check if a validator is active
+     * @param $ The storage layout reference
+     * @param validatorId The ID of the validator to check
+     * @return True if the validator is active, false otherwise
+     */
+    function isValidatorActive(PlumeStakingStorage.Layout storage $, uint16 validatorId) internal view returns (bool) {
+        return $.validators[validatorId].active;
+    }
+
+    /**
+     * @notice Get the total amount staked with a validator
+     * @param $ The storage layout reference
+     * @param validatorId The ID of the validator
+     * @return The total amount staked with the validator
+     */
+    function getValidatorTotalStaked(
+        PlumeStakingStorage.Layout storage $,
+        uint16 validatorId
+    ) internal view returns (uint256) {
+        return $.validatorTotalStaked[validatorId];
+    }
+
+    /**
      * @notice Adds a staker to the validator's list and the user's validator list if not already present.
      * @dev Also ensures the staker is added to the global stakers list if they are new.
      * @param $ The PlumeStaking storage layout.

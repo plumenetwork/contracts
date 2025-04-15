@@ -280,6 +280,11 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             // Reset stored accumulated reward
             $.userRewards[user][validatorId][token] = 0;
 
+            // Update user's last processed timestamp to current time
+            $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token] = block.timestamp;
+            $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
+                $.validatorRewardPerTokenCumulative[validatorId][token];
+
             // Update validator commission
             if (commissionAmount > 0) {
                 $.validatorAccruedCommission[validatorId][token] += commissionAmount;
@@ -322,6 +327,12 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             if (rewardFromValidator > 0) {
                 // Reset stored accumulated reward
                 $.userRewards[user][validatorId][token] = 0;
+
+                // Update user's last processed timestamp to current time
+                $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token] = block.timestamp;
+                $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
+                    $.validatorRewardPerTokenCumulative[validatorId][token];
+
                 totalReward += rewardFromValidator;
 
                 // Update validator commission
@@ -371,6 +382,12 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
                 if (rewardFromValidator > 0) {
                     // Reset stored accumulated reward
                     $.userRewards[user][validatorId][token] = 0;
+
+                    // Update user's last processed timestamp to current time
+                    $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token] = block.timestamp;
+                    $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
+                        $.validatorRewardPerTokenCumulative[validatorId][token];
+
                     totalReward += rewardFromValidator;
 
                     // Update validator commission

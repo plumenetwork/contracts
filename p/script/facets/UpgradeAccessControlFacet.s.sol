@@ -4,17 +4,17 @@ pragma solidity ^0.8.25;
 import { Script, console2 } from "forge-std/Script.sol";
 
 // Diamond Proxy & Base
-import { PlumeStaking } from "../src/PlumeStaking.sol";
+import { PlumeStaking } from "../../src/PlumeStaking.sol";
 
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 import { IERC2535DiamondLoupe } from "@solidstate/interfaces/IERC2535DiamondLoupe.sol";
 import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 
 // Facet and Roles
-import { AccessControlFacet } from "../src/facets/AccessControlFacet.sol";
+import { AccessControlFacet } from "../../src/facets/AccessControlFacet.sol";
 
-import { IAccessControl } from "../src/interfaces/IAccessControl.sol";
-import { PlumeRoles } from "../src/lib/PlumeRoles.sol";
+import { IAccessControl } from "../../src/interfaces/IAccessControl.sol";
+import { PlumeRoles } from "../../src/lib/PlumeRoles.sol";
 
 contract UpgradeAccessControlFacet is Script {
 

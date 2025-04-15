@@ -7,7 +7,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 import { IERC2535DiamondLoupe } from "@solidstate/interfaces/IERC2535DiamondLoupe.sol";
 
 // --- Plume Facet (Needed for selectors) ---
-import { RewardsFacet } from "../src/facets/RewardsFacet.sol";
+import { RewardsFacet } from "../../src/facets/RewardsFacet.sol";
 
 /**
  * @title VerifyRewardsFacetSelectors

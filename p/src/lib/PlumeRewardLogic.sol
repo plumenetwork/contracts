@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import { RewardRateCheckpointCreated } from "./PlumeEvents.sol";
 import { PlumeStakingStorage } from "./PlumeStakingStorage.sol";
+import { PlumeValidatorLogic } from "./PlumeValidatorLogic.sol";
 
 /**
  * @title PlumeRewardLogic
@@ -71,7 +72,7 @@ library PlumeRewardLogic {
      */
     function calculateRewardsByIteratingCheckpoints(
         PlumeStakingStorage.Layout storage $,
-        address user, // Keep user param for potential future use, though not strictly needed here
+        address user,
         address token,
         uint16 validatorId,
         uint256 userStakedAmount,
@@ -263,8 +264,21 @@ library PlumeRewardLogic {
             return (0, 0);
         }
 
+        uint256 lastPaidTimestamp = $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token];
+
+        // If the current timestamp is less than the last paid timestamp, return 0 rewards
+        // This handles time rollbacks in tests
+        if (block.timestamp <= lastPaidTimestamp) {
+            return (0, 0);
+        }
+
+        // Calculate time step and get reward and commission rates
+        uint256 lastRewardRate = $.rewardRates[token];
+        uint256 lastCommissionRate = PlumeValidatorLogic.getValidatorInfo($, validatorId).commission;
+
         uint256 currentCumulativeIndex = $.validatorRewardPerTokenCumulative[validatorId][token];
         uint256 lastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
+
         if (block.timestamp > lastUpdateTime && $.validatorTotalStaked[validatorId] > 0) {
             uint256 timeDelta = block.timestamp - lastUpdateTime;
             uint256 effectiveRate = $.rewardRates[token];

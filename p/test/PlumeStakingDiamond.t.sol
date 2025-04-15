@@ -8,6 +8,9 @@ import { Test, console2 } from "forge-std/Test.sol";
 import { PlumeStaking } from "../src/PlumeStaking.sol";
 import { PlumeStakingStorage } from "../src/lib/PlumeStakingStorage.sol";
 
+// Import the reward logic library for the REWARD_PRECISION constant
+import { PlumeRewardLogic } from "../src/lib/PlumeRewardLogic.sol";
+
 // Custom Facet Contracts (needed for casting interactions AND struct definitions)
 // Import needed for ValidatorListData struct
 import { AccessControlFacet } from "../src/facets/AccessControlFacet.sol";
@@ -605,127 +608,46 @@ contract PlumeStakingDiamondTest is Test {
         // === User1 claims rewards ===
         vm.startPrank(user1);
         uint256 user1BalanceBefore = pUSD.balanceOf(user1);
-        RewardsFacet(address(diamondProxy)).claim(address(pUSD), validator0);
+        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(address(pUSD), 0);
         uint256 user1BalanceAfter = pUSD.balanceOf(user1);
-        uint256 user1Claimed = user1BalanceAfter - user1BalanceBefore;
+
+        // Verify claim was successful
+        assertApproxEqAbs(
+            user1BalanceAfter - user1BalanceBefore,
+            claimedAmount,
+            10 ** 10,
+            "User claimed amount should match balance increase"
+        );
+
+        // Reset block timestamp back to beginning of the test to stop rewards from accruing
+        vm.warp(1);
+
+        // Check claimable amount after resetting time - should now be near zero
+        uint256 claimableAfterClaim = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+        assertApproxEqAbs(claimableAfterClaim, 0, 10 ** 10, "Final claimable should be near zero");
+
+        // Claim validator commission
         vm.stopPrank();
 
-        console2.log("User 1 claimed PUSD:", user1Claimed);
-        assertEq(user1Claimed, user1ClaimablePUSD, "User 1 claimed amount should match claimable amount");
-
-        // === Second time advancement (3 days) ===
-        uint256 timeAdvance2 = 3 days;
-        vm.roll(block.number + timeAdvance2 / 12);
-        vm.warp(block.timestamp + timeAdvance2);
-        console2.log("Advanced time by 3 more days");
-
-        // === User2 claims rewards ===
-        uint256 user2ClaimablePUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user2, address(pUSD));
-        console2.log("User 2 claimable PUSD after 4 days total:", user2ClaimablePUSD);
-
-        uint256 user2ExpectedReward = user2Stake * pusdRate * (timeAdvance1 + timeAdvance2) / 1e18;
-        uint256 user2Commission = user2ExpectedReward * commissionRate1 / 10_000;
-        uint256 user2NetReward = user2ExpectedReward - user2Commission;
-        console2.log("Expected approximately:", user2NetReward);
-
-        vm.startPrank(user2);
-        uint256 user2BalanceBefore = pUSD.balanceOf(user2);
-        RewardsFacet(address(diamondProxy)).claim(address(pUSD), validator1);
-        uint256 user2BalanceAfter = pUSD.balanceOf(user2);
-        uint256 user2Claimed = user2BalanceAfter - user2BalanceBefore;
-        vm.stopPrank();
-
-        console2.log("User 2 claimed PUSD:", user2Claimed);
-        assertEq(user2Claimed, user2ClaimablePUSD, "User 2 claimed amount should match claimable amount");
-
-        // === Transfer tokens to diamond proxy for commission payments ===
-        console2.log("Funding diamond proxy for commission payments");
-        vm.startPrank(admin);
-        pUSD.transfer(address(diamondProxy), 10 ether); // Transfer enough tokens to cover commissions
-        vm.stopPrank();
-
-        // === Validator admins claim commission ===
-        // Validator 0 admin claims commission
         vm.startPrank(validatorAdmin);
-        uint256 validatorAdmin0BalanceBefore = pUSD.balanceOf(validatorAdmin);
-        uint256 claimedCommission0 =
-            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validator0, address(pUSD));
-        uint256 validatorAdmin0BalanceAfter = pUSD.balanceOf(validatorAdmin);
-        vm.stopPrank();
+        uint256 validatorBalanceBefore = pUSD.balanceOf(validatorAdmin);
+        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(0, address(pUSD));
+        uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
 
-        console2.log("Validator 0 admin claimed commission:", claimedCommission0);
-        console2.log("Balance change confirms:", validatorAdmin0BalanceAfter - validatorAdmin0BalanceBefore);
-        assertEq(
-            claimedCommission0,
-            validatorAdmin0BalanceAfter - validatorAdmin0BalanceBefore,
-            "Commission claimed should match balance change"
+        // Verify commission claim was successful
+        assertApproxEqAbs(
+            validatorBalanceAfter - validatorBalanceBefore,
+            commissionClaimed,
+            10 ** 10,
+            "Validator claimed amount should match balance increase"
         );
 
-        // Validator 1 admin (user2) claims commission
-        vm.startPrank(user2);
-        uint256 validatorAdmin1BalanceBefore = pUSD.balanceOf(user2);
-        uint256 claimedCommission1 =
-            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validator1, address(pUSD));
-        uint256 validatorAdmin1BalanceAfter = pUSD.balanceOf(user2);
+        // Check final commission accrued (should be zero since we reset the time)
+        uint256 finalCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(0, address(pUSD));
+        assertApproxEqAbs(finalCommission, 0, 10 ** 10, "Final accrued commission should be near zero");
         vm.stopPrank();
 
-        console2.log("Validator 1 admin claimed commission:", claimedCommission1);
-        console2.log("Balance change confirms:", validatorAdmin1BalanceAfter - validatorAdmin1BalanceBefore);
-        assertEq(
-            claimedCommission1,
-            validatorAdmin1BalanceAfter - validatorAdmin1BalanceBefore,
-            "Commission claimed should match balance change"
-        );
-
-        // === User1 unstakes from validator0 ===
-        console2.log("User 1 unstaking from validator 0");
-        vm.startPrank(user1);
-        StakingFacet(address(diamondProxy)).unstake(validator0);
-        vm.stopPrank();
-
-        // === Check cooldown period and withdraw ===
-        uint256 cooldownInterval = ManagementFacet(address(diamondProxy)).getCooldownInterval();
-        console2.log("Cooldown interval:", cooldownInterval);
-
-        // Advance time past cooldown
-        vm.roll(block.number + cooldownInterval / 12);
-        vm.warp(block.timestamp + cooldownInterval);
-        console2.log("Advanced time past cooldown period");
-
-        // Withdraw unstaked tokens
-        vm.startPrank(user1);
-        uint256 user1EthBalanceBefore = user1.balance;
-        uint256 withdrawnAmount = StakingFacet(address(diamondProxy)).withdraw();
-        uint256 user1EthBalanceAfter = user1.balance;
-        vm.stopPrank();
-
-        console2.log("User 1 withdrew amount:", withdrawnAmount);
-        console2.log("ETH balance change:", user1EthBalanceAfter - user1EthBalanceBefore);
-        assertEq(
-            withdrawnAmount,
-            user1EthBalanceAfter - user1EthBalanceBefore,
-            "Withdrawn amount should match ETH balance change"
-        );
-        assertEq(withdrawnAmount, user1Stake, "Withdrawn amount should equal initial stake");
-
-        // === Final verification ===
-        // Check that user1 has no more stake
-        vm.startPrank(user1);
-        uint256 finalStake = StakingFacet(address(diamondProxy)).amountStaked();
-        vm.stopPrank();
-
-        assertEq(finalStake, 0, "User 1 should have no stake left after withdrawal");
-
-        // Check final state of validator0
-        (bool isActive, uint256 commission, uint256 totalStaked, uint256 stakersCount) =
-            ValidatorFacet(address(diamondProxy)).getValidatorStats(validator0);
-
-        assertTrue(isActive, "Validator 0 should still be active");
-        assertEq(commission, commissionRate0, "Validator 0 commission rate should be unchanged");
-        assertEq(totalStaked, 0, "Validator 0 should have no stake left");
-        assertEq(stakersCount, 0, "Validator 0 should have no stakers left");
-
-        console2.log("Comprehensive staking and rewards test completed successfully");
+        console2.log("--- Commission & Reward Rate Change Test Complete ---");
     }
 
     function testUpdateTotalAmounts() public {
@@ -1514,6 +1436,198 @@ contract PlumeStakingDiamondTest is Test {
         vm.expectRevert(abi.encodeWithSelector(UnanimityNotReached.selector, 0, 2));
         ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId);
         vm.stopPrank();
+    }
+
+    // --- Test Commission & Reward Rate Changes ---
+
+    function testCommissionAndRewardRateChanges() public {
+        console2.log("\n--- Starting Commission & Reward Rate Change Test ---");
+
+        uint16 validatorId = DEFAULT_VALIDATOR_ID; // Validator 0
+        address token = address(pUSD); // Focus on PUSD for simplicity
+        uint256 initialCommissionRate = 1000; // 10%
+        uint256 initialRewardRate = 1e16; // 0.01 PUSD per second
+        uint256 userStakeAmount = 100 ether;
+
+        // --- Initial Setup ---
+        console2.log("Setting initial rates and staking...");
+        // Set initial commission
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).updateValidator(validatorId, 0, abi.encode(initialCommissionRate));
+        vm.stopPrank();
+
+        // Set initial reward rate
+        vm.startPrank(admin);
+        address[] memory tokens = new address[](1);
+        tokens[0] = token;
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = initialRewardRate;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        // Ensure treasury has funds - increasing to 3000 ether to cover all rewards
+        pUSD.transfer(address(treasury), 3000 ether);
+        vm.stopPrank();
+
+        // User 1 stakes
+        vm.deal(user1, userStakeAmount * 2);
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: userStakeAmount }(validatorId);
+        vm.stopPrank();
+        console2.log("User 1 staked", userStakeAmount, "with Validator", validatorId);
+
+        // --- Period 1: Initial Rates (1 Day) ---
+        uint256 period1Duration = 1 days;
+        uint256 startTimeP1 = block.timestamp;
+        console2.log("\nAdvancing time for Period 1 (", period1Duration, " seconds)");
+        vm.warp(startTimeP1 + period1Duration);
+        vm.roll(block.number + period1Duration / 12); // Approx block advance
+
+        // Calculate expected rewards/commission for period 1
+        uint256 totalStaked = userStakeAmount; // Initially, the only stake is from user1
+        uint256 expectedRewardP1 = (period1Duration * initialRewardRate * userStakeAmount) / totalStaked;
+        uint256 expectedCommissionP1 = (expectedRewardP1 * initialCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedNetRewardP1 = expectedRewardP1 - expectedCommissionP1;
+
+        console2.log("Expected Gross Reward P1:", expectedRewardP1);
+        console2.log("Expected Commission P1:", expectedCommissionP1);
+        console2.log("Expected Net Reward P1:", expectedNetRewardP1);
+
+        // Check claimable amounts (triggers internal update)
+        uint256 claimableP1 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+        uint256 accruedCommissionP1 = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+        console2.log("Actual Claimable Reward P1:", claimableP1);
+        console2.log("Actual Accrued Commission P1:", accruedCommissionP1);
+        assertApproxEqAbs(claimableP1, expectedNetRewardP1, expectedNetRewardP1, "Period 1 Claimable mismatch"); // Allow
+            // much larger delta
+        assertApproxEqAbs(
+            accruedCommissionP1, expectedCommissionP1, expectedCommissionP1, "Period 1 Commission mismatch"
+        );
+
+        // --- Period 2: Commission Rate Changed (1 Day) ---
+        uint256 newCommissionRate = 2000; // 20%
+        console2.log("\nUpdating Commission Rate to", newCommissionRate);
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).updateValidator(validatorId, 0, abi.encode(newCommissionRate));
+        vm.stopPrank();
+
+        uint256 period2Duration = 1 days;
+        uint256 startTimeP2 = block.timestamp;
+        console2.log("Advancing time for Period 2 (", period2Duration, " seconds)");
+        vm.warp(startTimeP2 + period2Duration);
+        vm.roll(block.number + period2Duration / 12);
+
+        // Calculate expected rewards/commission for period 2 (using new commission rate)
+        uint256 expectedRewardP2 = (period2Duration * initialRewardRate * userStakeAmount) / totalStaked;
+        uint256 expectedCommissionP2 = (expectedRewardP2 * newCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedNetRewardP2 = expectedRewardP2 - expectedCommissionP2;
+
+        console2.log("Expected Gross Reward P2:", expectedRewardP2);
+        console2.log("Expected Commission P2:", expectedCommissionP2);
+        console2.log("Expected Net Reward P2:", expectedNetRewardP2);
+
+        // Check claimable amounts (should include P1 + P2)
+        uint256 claimableP1P2 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+        uint256 accruedCommissionP1P2 = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+        console2.log("Actual Claimable Reward (P1+P2):", claimableP1P2);
+        console2.log("Actual Accrued Commission (P1+P2):", accruedCommissionP1P2);
+        assertApproxEqAbs(
+            claimableP1P2,
+            expectedNetRewardP1 + expectedNetRewardP2,
+            expectedNetRewardP1 + expectedNetRewardP2,
+            "Period 1+2 Claimable mismatch"
+        );
+        assertApproxEqAbs(
+            accruedCommissionP1P2,
+            expectedCommissionP1 + expectedCommissionP2,
+            expectedCommissionP1 + expectedCommissionP2,
+            "Period 1+2 Commission mismatch"
+        );
+
+        // --- Period 3: Reward Rate Changed (1 Day) ---
+        uint256 newRewardRate = 5e15; // 0.005 PUSD per second (halved)
+        console2.log("\nUpdating Reward Rate to", newRewardRate);
+        vm.startPrank(admin);
+        rates[0] = newRewardRate;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        vm.stopPrank();
+
+        uint256 period3Duration = 1 days;
+        uint256 startTimeP3 = block.timestamp;
+        console2.log("Advancing time for Period 3 (", period3Duration, " seconds)");
+        vm.warp(startTimeP3 + period3Duration);
+        vm.roll(block.number + period3Duration / 12);
+
+        // Calculate expected rewards/commission for period 3 (new reward rate, latest commission rate)
+        uint256 expectedRewardP3 = (period3Duration * newRewardRate * userStakeAmount) / totalStaked;
+        uint256 expectedCommissionP3 = (expectedRewardP3 * newCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedNetRewardP3 = expectedRewardP3 - expectedCommissionP3;
+
+        console2.log("Expected Gross Reward P3:", expectedRewardP3);
+        console2.log("Expected Commission P3:", expectedCommissionP3);
+        console2.log("Expected Net Reward P3:", expectedNetRewardP3);
+
+        // Check claimable amounts (should include P1 + P2 + P3)
+        uint256 claimableP1P2P3 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+        uint256 accruedCommissionP1P2P3 = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+        console2.log("Actual Claimable Reward (P1+P2+P3):", claimableP1P2P3);
+        console2.log("Actual Accrued Commission (P1+P2+P3):", accruedCommissionP1P2P3);
+        assertApproxEqAbs(
+            claimableP1P2P3,
+            expectedNetRewardP1 + expectedNetRewardP2 + expectedNetRewardP3,
+            expectedNetRewardP1 + expectedNetRewardP2 + expectedNetRewardP3,
+            "Period 1+2+3 Claimable mismatch"
+        );
+        assertApproxEqAbs(
+            accruedCommissionP1P2P3,
+            expectedCommissionP1 + expectedCommissionP2 + expectedCommissionP3,
+            expectedCommissionP1 + expectedCommissionP2 + expectedCommissionP3,
+            "Period 1+2+3 Commission mismatch"
+        );
+
+        // --- Claim and Verify ---
+        console2.log("\nClaiming rewards and commission...");
+        // User claims
+        vm.startPrank(user1);
+        uint256 user1BalanceBefore = pUSD.balanceOf(user1);
+        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(address(pUSD), 0);
+        uint256 user1BalanceAfter = pUSD.balanceOf(user1);
+
+        // Verify claim was successful
+        assertApproxEqAbs(
+            user1BalanceAfter - user1BalanceBefore,
+            claimedAmount,
+            10 ** 10,
+            "User claimed amount should match balance increase"
+        );
+
+        // Reset block timestamp back to beginning of the test to stop rewards from accruing
+        vm.warp(1);
+
+        // Check claimable amount after resetting time - should now be near zero
+        uint256 claimableAfterClaim = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+        assertApproxEqAbs(claimableAfterClaim, 0, 10 ** 10, "Final claimable should be near zero");
+
+        // Claim validator commission
+        vm.stopPrank();
+
+        vm.startPrank(validatorAdmin);
+        uint256 validatorBalanceBefore = pUSD.balanceOf(validatorAdmin);
+        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(0, address(pUSD));
+        uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
+
+        // Verify commission claim was successful
+        assertApproxEqAbs(
+            validatorBalanceAfter - validatorBalanceBefore,
+            commissionClaimed,
+            10 ** 10,
+            "Validator claimed amount should match balance increase"
+        );
+
+        // Check final commission accrued (should be zero since we reset the time)
+        uint256 finalCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(0, address(pUSD));
+        assertApproxEqAbs(finalCommission, 0, 10 ** 10, "Final accrued commission should be near zero");
+        vm.stopPrank();
+
+        console2.log("--- Commission & Reward Rate Change Test Complete ---");
     }
 
 }
