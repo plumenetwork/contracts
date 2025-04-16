@@ -133,7 +133,7 @@ contract DeployPlumeStakingDiamond is Script, Test {
         // Validator Facet Selectors (Shifted index to 3)
         bytes4[] memory validatorSigs_Manual = new bytes4[](12);
         validatorSigs_Manual[0] =
-            bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,uint256)")));
+            bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
         validatorSigs_Manual[2] = bytes4(keccak256(bytes("updateValidator(uint16,uint8,bytes)")));
         validatorSigs_Manual[3] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));

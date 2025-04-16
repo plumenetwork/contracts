@@ -88,7 +88,7 @@ contract UpgradePlumeStakingDiamond is Script {
 
     function getValidatorSelectors() internal pure returns (bytes4[] memory) {
         bytes4[] memory selectors = new bytes4[](12);
-        selectors[0] = bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,uint256)")));
+        selectors[0] = bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         selectors[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
         selectors[2] = bytes4(keccak256(bytes("updateValidator(uint16,uint8,bytes)")));
         selectors[3] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));

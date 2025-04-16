@@ -3,7 +3,7 @@ pragma solidity ^0.8.25;
 
 import { PlumeStakingStorage } from "./lib/PlumeStakingStorage.sol";
 import { OwnableInternal } from "@solidstate/access/ownable/Ownable.sol";
-import { ISolidStateDiamond, SolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol"; // Import for
+import { ISolidStateDiamond, SolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol";
 
 /**
  * @title PlumeStaking Diamond Proxy

@@ -48,6 +48,25 @@ error TokensInCoolingPeriod();
  */
 error CooldownPeriodNotEnded();
 
+/**
+ * @notice Error thrown when stake amount is too small
+ * @param providedAmount Amount attempted to stake
+ * @param minAmount Minimum required stake amount
+ */
+error StakeAmountTooSmall(uint256 providedAmount, uint256 minAmount);
+
+/**
+ * @notice Error thrown when trying to restake more than available in cooldown
+ * @param availableAmount Amount available in cooldown
+ * @param requestedAmount Amount requested to restake
+ */
+error InsufficientCooldownBalance(uint256 availableAmount, uint256 requestedAmount);
+
+/**
+ * @notice Error thrown when trying to restake rewards but there are none available
+ */
+error NoRewardsToRestake();
+
 // Validator errors
 /*
  * @notice Thrown when trying to interact with a validator that doesn't exist
@@ -212,3 +231,19 @@ error ZeroAddressProvided();
  * @param available The available amount.
  */
 error TreasuryInsufficientBalance(address token, uint256 requested, uint256 available);
+
+/*** Validator Errors ***/
+
+/**
+ * @notice Error thrown when trying to create a validator with ID 0 that already exists
+ */
+error ValidatorIdExists();
+
+/**
+ * @notice Error thrown when validator capacity would be exceeded
+ * @param validatorId ID of the validator
+ * @param currentAmount Current delegated amount 
+ * @param maxCapacity Maximum capacity of the validator
+ * @param requestedAmount Requested amount to add
+ */
+error ExceedsValidatorCapacity(uint16 validatorId, uint256 currentAmount, uint256 maxCapacity, uint256 requestedAmount);

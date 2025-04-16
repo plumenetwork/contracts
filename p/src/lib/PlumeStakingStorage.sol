@@ -23,6 +23,8 @@ library PlumeStakingStorage {
         address[] stakers;
         /// @notice Array of all reward token addresses
         address[] rewardTokens;
+        /// @notice Maps a token address to a boolean indicating if it's a reward token
+        mapping(address => bool) isRewardToken;
         /// @notice Maps a token address to its reward rate in tokens per second per staked token
         mapping(address => uint256) rewardRates;
         /// @notice Maps a token address to its maximum allowed reward rate
@@ -101,8 +103,6 @@ library PlumeStakingStorage {
         /// @notice Maximum allowed commission for all validators
         // TODO - check where we set this
         uint256 maxValidatorCommission;
-        /// @notice Maximum stake capacity for a validator
-        mapping(uint16 => uint256) validatorCapacity;
         /// @notice Maximum percentage of total staked funds any validator can have (in basis points)
         // TODO - check where we set this
         uint256 maxValidatorPercentage;
@@ -139,7 +139,7 @@ library PlumeStakingStorage {
         address l2WithdrawAddress; // Address for validator rewards
         string l1ValidatorAddress; // L1 validator address (for reference)
         string l1AccountAddress; // L1 account address (for reference)
-        uint256 l1AccountEvmAddress; // EVM address of account on L1 (for reference)
+        address l1AccountEvmAddress; // EVM address of account on L1 (for reference)
         bool active; // Whether the validator is active
         bool slashed; // Whether the validator has been slashed
         uint256 maxCapacity; // Maximum amount of PLUME that can be staked with this validator

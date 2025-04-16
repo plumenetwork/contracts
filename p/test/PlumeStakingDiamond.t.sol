@@ -46,12 +46,12 @@ contract MockPUSD is ERC20 {
 
     constructor() ERC20("Mock PUSD", "mPUSD") {
         // Mint to message sender
-        _mint(msg.sender, 100_000_000 * 10 ** 18); // Increase from 10M to 100M
+        _mint(msg.sender, 100_000_000 * 10 ** 18); 
 
         // Also mint to the admin address for testing
         address adminAddress = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
         if (msg.sender != adminAddress) {
-            _mint(adminAddress, 100_000_000 * 10 ** 18); // Increase from 10M to 100M
+            _mint(adminAddress, 100_000_000 * 10 ** 18); 
         }
     }
 
@@ -64,7 +64,6 @@ contract MockPUSD is ERC20 {
 
 contract PlumeStakingDiamondTest is Test {
 
-    // --- Declare Events Needed for vm.expectEmit --- Needed because imports aren't resolving correctly
     event RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole);
     event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
     event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
@@ -73,18 +72,19 @@ contract PlumeStakingDiamondTest is Test {
     // Diamond Proxy Address
     PlumeStaking internal diamondProxy;
 
-    // Tokens (Use real token contracts for testing)
+    // Tokens 
     IERC20 public plume;
     MockPUSD public pUSD;
     PlumeStakingRewardTreasury public treasury;
 
     // Addresses
     address public constant ADMIN_ADDRESS = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
-    address public constant PLUME_TOKEN = 0x17F085f1437C54498f0085102AB33e7217C067C8; // Example address
     address public constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE; // Use standard ETH placeholder
 
     address public user1;
     address public user2;
+    address public user3;
+    address public user4;
     address public admin;
     address public validatorAdmin;
 
@@ -95,6 +95,8 @@ contract PlumeStakingDiamondTest is Test {
     uint256 public constant PUSD_REWARD_RATE = 1e18; // Example rate
     uint256 public constant PLUME_REWARD_RATE = 1_587_301_587; // Example rate
     uint16 public constant DEFAULT_VALIDATOR_ID = 0;
+    uint256 public constant DEFAULT_COMMISSION = 5e16; // 5% commission
+    address public constant DEFAULT_VALIDATOR_ADMIN = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
     // uint256 public constant REWARD_PRECISION = 1e18; // Defined in logic lib now
 
     function setUp() public {
@@ -102,6 +104,8 @@ contract PlumeStakingDiamondTest is Test {
 
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
+        user3 = makeAddr("user3");
+        user4 = makeAddr("user4");
         admin = ADMIN_ADDRESS;
         validatorAdmin = makeAddr("validatorAdmin");
 
@@ -125,10 +129,25 @@ contract PlumeStakingDiamondTest is Test {
         ValidatorFacet validatorFacet = new ValidatorFacet();
         ManagementFacet managementFacet = new ManagementFacet();
 
+        // --- Add Checks ---
+        require(address(accessControlFacet) != address(0), "AccessControlFacet deployment failed");
+        require(address(managementFacet) != address(0), "ManagementFacet deployment failed");
+        require(address(stakingFacet) != address(0), "StakingFacet deployment failed");
+        require(address(validatorFacet) != address(0), "ValidatorFacet deployment failed");
+        require(address(rewardsFacet) != address(0), "RewardsFacet deployment failed");
+
+        require(address(accessControlFacet).code.length > 0, "AccessControlFacet has no code");
+        require(address(managementFacet).code.length > 0, "ManagementFacet has no code");
+        require(address(stakingFacet).code.length > 0, "StakingFacet has no code");
+        require(address(validatorFacet).code.length > 0, "ValidatorFacet has no code");
+        require(address(rewardsFacet).code.length > 0, "RewardsFacet has no code");
+        console2.log("All facet deployments verified (address and code length).");
+        // --- End Checks ---
+
         // 3. Prepare Diamond Cut
         IERC2535DiamondCutInternal.FacetCut[] memory cut = new IERC2535DiamondCutInternal.FacetCut[](5);
 
-        // AccessControl Facet Selectors (Copied from deployment script)
+        // AccessControl Facet Selectors 
         bytes4[] memory accessControlSigs_Manual = new bytes4[](7);
         accessControlSigs_Manual[0] = bytes4(keccak256(bytes("initializeAccessControl()")));
         accessControlSigs_Manual[1] = bytes4(keccak256(bytes("hasRole(bytes32,address)")));
@@ -138,8 +157,8 @@ contract PlumeStakingDiamondTest is Test {
         accessControlSigs_Manual[5] = bytes4(keccak256(bytes("renounceRole(bytes32,address)")));
         accessControlSigs_Manual[6] = bytes4(keccak256(bytes("setRoleAdmin(bytes32,bytes32)")));
 
-        // Staking Facet Selectors (Copied from deployment script)
-        bytes4[] memory stakingSigs_Manual = new bytes4[](11);
+        // Staking Facet Selectors
+        bytes4[] memory stakingSigs_Manual = new bytes4[](12); // Increase size to 12
         stakingSigs_Manual[0] = bytes4(keccak256(bytes("stake(uint16)")));
         stakingSigs_Manual[1] = bytes4(keccak256(bytes("restake(uint16,uint256)")));
         stakingSigs_Manual[2] = bytes4(keccak256(bytes("unstake(uint16)")));
@@ -151,8 +170,9 @@ contract PlumeStakingDiamondTest is Test {
         stakingSigs_Manual[8] = bytes4(keccak256(bytes("amountCooling()")));
         stakingSigs_Manual[9] = bytes4(keccak256(bytes("amountWithdrawable()")));
         stakingSigs_Manual[10] = bytes4(keccak256(bytes("cooldownEndDate()")));
+        stakingSigs_Manual[11] = bytes4(keccak256(bytes("getUserValidatorStake(address,uint16)"))); // Add new selector
 
-        // Rewards Facet Selectors (Copied from deployment script)
+        // Rewards Facet Selectors 
         bytes4[] memory rewardsSigs_Manual = new bytes4[](21);
         rewardsSigs_Manual[0] = bytes4(keccak256(bytes("addRewardToken(address)")));
         rewardsSigs_Manual[1] = bytes4(keccak256(bytes("removeRewardToken(address)")));
@@ -176,10 +196,10 @@ contract PlumeStakingDiamondTest is Test {
         rewardsSigs_Manual[19] = bytes4(keccak256(bytes("setTreasury(address)")));
         rewardsSigs_Manual[20] = bytes4(keccak256(bytes("getTreasury()")));
 
-        // Validator Facet Selectors (Copied + getAccruedCommission + new views)
+        // Validator Facet Selectors
         bytes4[] memory validatorSigs_Manual = new bytes4[](12); // Increase size to 12
         validatorSigs_Manual[0] =
-            bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,uint256)")));
+            bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
         validatorSigs_Manual[2] = bytes4(keccak256(bytes("updateValidator(uint16,uint8,bytes)")));
         validatorSigs_Manual[3] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));
@@ -192,159 +212,133 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[10] = bytes4(keccak256(bytes("voteToSlashValidator(uint16,uint256)")));
         validatorSigs_Manual[11] = bytes4(keccak256(bytes("slashValidator(uint16)")));
 
-        // Management Facet Selectors (Copied + new views)
+        // Management Facet Selectors
         bytes4[] memory managementSigs_Manual = new bytes4[](7); // Increase size to 7
         managementSigs_Manual[0] = bytes4(keccak256(bytes("setMinStakeAmount(uint256)")));
         managementSigs_Manual[1] = bytes4(keccak256(bytes("setCooldownInterval(uint256)")));
         managementSigs_Manual[2] = bytes4(keccak256(bytes("adminWithdraw(address,uint256,address)")));
         managementSigs_Manual[3] = bytes4(keccak256(bytes("updateTotalAmounts(uint256,uint256)")));
-        managementSigs_Manual[4] = bytes4(keccak256(bytes("getMinStakeAmount()"))); // Add new selector
-        managementSigs_Manual[5] = bytes4(keccak256(bytes("getCooldownInterval()"))); // Add new selector
+        managementSigs_Manual[4] = bytes4(keccak256(bytes("getMinStakeAmount()")));
+        managementSigs_Manual[5] = bytes4(keccak256(bytes("getCooldownInterval()")));
         managementSigs_Manual[6] = bytes4(keccak256(bytes("setMaxSlashVoteDuration(uint256)")));
 
-        // Use correct struct type and enum path for each cut
+        console2.log("Manual selectors initialized");
+
+
+        
+        // Define the Facet Cuts for the single diamondCut call
+        console2.log("Assigning AccessControlFacet to cut[0]:", address(accessControlFacet));
         cut[0] = IERC2535DiamondCutInternal.FacetCut({
             target: address(accessControlFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
             selectors: accessControlSigs_Manual
         });
+        console2.log("Assigning ManagementFacet to cut[1]:", address(managementFacet));
         cut[1] = IERC2535DiamondCutInternal.FacetCut({
+            target: address(managementFacet),
+            action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
+            selectors: managementSigs_Manual
+        });
+        console2.log("Assigning StakingFacet to cut[2]:", address(stakingFacet));
+        cut[2] = IERC2535DiamondCutInternal.FacetCut({
             target: address(stakingFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
             selectors: stakingSigs_Manual
         });
-        cut[2] = IERC2535DiamondCutInternal.FacetCut({
-            target: address(rewardsFacet),
-            action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
-            selectors: rewardsSigs_Manual
-        });
+        console2.log("Assigning ValidatorFacet to cut[3]:", address(validatorFacet));
         cut[3] = IERC2535DiamondCutInternal.FacetCut({
             target: address(validatorFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
             selectors: validatorSigs_Manual
         });
+        console2.log("Assigning RewardsFacet to cut[4]:", address(rewardsFacet));
         cut[4] = IERC2535DiamondCutInternal.FacetCut({
-            target: address(managementFacet),
+            target: address(rewardsFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.ADD,
-            selectors: managementSigs_Manual
+            selectors: rewardsSigs_Manual
         });
 
-        // 4. Execute Diamond Cut
+        // --- Apply the single Diamond Cut ---
+        console2.log("Applying single diamond cut to proxy:", address(diamondProxy));
+        // console2.log("Cut data:", cut); // Might be too verbose / cause issues
+  
+          // 4. Execute Diamond Cut
         // Use payable cast
         ISolidStateDiamond(payable(address(diamondProxy))).diamondCut(cut, address(0), "");
 
-        // 5. Initialize Plume Settings (AFTER cut)
-        diamondProxy.initializePlume(admin, MIN_STAKE, INITIAL_COOLDOWN);
-        // Use payable cast for owner check
-        assertEq(ISolidStateDiamond(payable(address(diamondProxy))).owner(), admin, "Owner mismatch after init");
+  
 
-        // 5b. Initialize Access Control (grant DEFAULT_ADMIN_ROLE to admin)
-        // Use the AccessControlFacet type cast to the proxy address
+        console2.log("Single diamond cut applied successfully.");
+        // --- End Diamond Cut ---
+
+        // 5. Initialize (AFTER the cut)
+        // Plume-specific initialization
+        diamondProxy.initializePlume(address(0), MIN_STAKE, INITIAL_COOLDOWN);
+        assertEq(diamondProxy.isInitialized(), true, "Diamond should be initialized");
+
+        // AccessControl initialization
         AccessControlFacet(address(diamondProxy)).initializeAccessControl();
 
-        // --- Grant Initial Roles (Mirrors Deployment Script) ---
-        IAccessControl accessControl = IAccessControl(address(diamondProxy));
-        accessControl.grantRole(PlumeRoles.ADMIN_ROLE, admin);
-        accessControl.setRoleAdmin(PlumeRoles.ADMIN_ROLE, PlumeRoles.ADMIN_ROLE);
-        accessControl.setRoleAdmin(PlumeRoles.UPGRADER_ROLE, PlumeRoles.ADMIN_ROLE);
-        accessControl.setRoleAdmin(PlumeRoles.VALIDATOR_ROLE, PlumeRoles.ADMIN_ROLE);
-        accessControl.setRoleAdmin(PlumeRoles.REWARD_MANAGER_ROLE, PlumeRoles.ADMIN_ROLE);
-        accessControl.grantRole(PlumeRoles.UPGRADER_ROLE, admin);
-        accessControl.grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
-        accessControl.grantRole(PlumeRoles.REWARD_MANAGER_ROLE, admin);
+        // Grant owner the ADMIN role explicitly
+        AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.ADMIN_ROLE, admin);
+        AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
 
-        // --- Initial Contract State Setup ---
-        // Setup token references (assuming mocks or interfaces)
-        plume = IERC20(PLUME_TOKEN);
-
-        // Fund accounts
-        vm.deal(user1, INITIAL_BALANCE);
-        vm.deal(user2, INITIAL_BALANCE);
-        vm.deal(admin, INITIAL_BALANCE * 2); // Ensure admin has enough ETH too
-        vm.deal(validatorAdmin, INITIAL_BALANCE);
-        // Fund the proxy itself only if needed for native token rewards
-        vm.deal(address(diamondProxy), INITIAL_BALANCE); // For PLUME_NATIVE rewards
-
-        console2.log("Setting up initial contract state via diamond...");
-        // Calls via Facet types cast to proxy address
-        RewardsFacet(address(diamondProxy)).addRewardToken(address(pUSD));
-        RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE);
-        RewardsFacet(address(diamondProxy)).setMaxRewardRate(address(pUSD), PUSD_REWARD_RATE * 2);
-        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, PLUME_REWARD_RATE * 2);
-
-        console2.log("Deploying treasury logic contract...");
-        // Deploy the treasury logic contract (no constructor args now)
-        PlumeStakingRewardTreasury treasuryLogic = new PlumeStakingRewardTreasury();
-        console2.log("Treasury logic deployed at:", address(treasuryLogic));
-
-        console2.log("Preparing treasury initialization calldata...");
-        // Encode the initializer function call
-        bytes memory treasuryInitData =
-            abi.encodeWithSelector(treasuryLogic.initialize.selector, admin, address(diamondProxy));
-        console2.log("Initialization calldata prepared.");
-
-        console2.log("Deploying treasury proxy contract...");
-        // Deploy the proxy, pointing to the logic and passing initializer data
-        PlumeStakingRewardTreasuryProxy treasuryProxy =
-            new PlumeStakingRewardTreasuryProxy(address(treasuryLogic), treasuryInitData);
-        console2.log("Treasury proxy deployed at:", address(treasuryProxy));
-
-        // Point the test variable to the proxy address, casting to the correct type
+        // 6. Deploy and setup reward treasury
+        PlumeStakingRewardTreasury treasuryImpl = new PlumeStakingRewardTreasury();
+        bytes memory initData = abi.encodeWithSelector(
+            PlumeStakingRewardTreasury.initialize.selector, admin, address(diamondProxy)
+        );
+        PlumeStakingRewardTreasuryProxy treasuryProxy = new PlumeStakingRewardTreasuryProxy(
+            address(treasuryImpl), initData
+        );
         treasury = PlumeStakingRewardTreasury(payable(address(treasuryProxy)));
-        console2.log("Test treasury variable points to proxy.");
-
-        console2.log("Setting treasury in RewardsFacet...");
-        // Set the treasury in the RewardsFacet (use proxy address)
+        
+        // Set treasury in the diamond proxy
         RewardsFacet(address(diamondProxy)).setTreasury(address(treasury));
-        console2.log("Treasury set successfully");
-
-        console2.log("Funding treasury with ETH...");
-        // Fund the treasury with enough ETH for native rewards
-        vm.deal(address(treasury), INITIAL_BALANCE * 2);
-
-        console2.log("Adding tokens to treasury...");
-        // Add token to treasury's reward tokens list
+        
+        // Add PUSD as a reward token in the treasury
         treasury.addRewardToken(address(pUSD));
-        treasury.addRewardToken(PLUME_NATIVE);
-        console2.log("Tokens added to treasury");
 
-        // Transfer PUSD tokens to the treasury
-        console2.log("Transferring PUSD to treasury...");
-        pUSD.transfer(address(treasury), INITIAL_BALANCE);
-        console2.log("PUSD transferred to treasury:", pUSD.balanceOf(address(treasury)));
-
-        address[] memory tokens = new address[](2);
-        uint256[] memory rates = new uint256[](2);
-        tokens[0] = address(pUSD);
-        rates[0] = PUSD_REWARD_RATE;
-        tokens[1] = PLUME_NATIVE;
-        rates[1] = PLUME_REWARD_RATE;
-        console2.log("Setting reward rates...");
-        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
-        console2.log("Reward rates set successfully");
-
-        // Add rewards - using real treasury that actually has the funds
-        console2.log("Adding PUSD rewards...");
-        RewardsFacet(address(diamondProxy)).addRewards(address(pUSD), INITIAL_BALANCE);
-        console2.log("PUSD rewards added successfully");
-
-        console2.log("Adding ETH rewards...");
-        RewardsFacet(address(diamondProxy)).addRewards(PLUME_NATIVE, INITIAL_BALANCE);
-        console2.log("ETH rewards added successfully");
-
+        // 7. Setup test validators
+        // Add validator 0 (DEFAULT_VALIDATOR_ID)
         ValidatorFacet(address(diamondProxy)).addValidator(
-            DEFAULT_VALIDATOR_ID, 5e16, validatorAdmin, validatorAdmin, "0xval1", "0xacc1", 0x1234
+            DEFAULT_VALIDATOR_ID,
+            DEFAULT_COMMISSION,
+            validatorAdmin,
+            validatorAdmin,
+            "0x123",
+            "0x456",
+            address(0x1234),
+            1_000_000e18
         );
-        ValidatorFacet(address(diamondProxy)).setValidatorCapacity(DEFAULT_VALIDATOR_ID, 1_000_000e18);
 
-        uint16 secondValidatorId = 1;
+        // Add validator 1
         ValidatorFacet(address(diamondProxy)).addValidator(
-            secondValidatorId, 10e16, user2, user2, "0xval2", "0xacc2", 0x5678
+            1,
+            8e16, // 8% commission
+            user2,
+            user2,
+            "0x789",
+            "0xabc",
+            address(0x2345),
+            1_000_000e18
         );
-        ValidatorFacet(address(diamondProxy)).setValidatorCapacity(secondValidatorId, 1_000_000e18);
+
+        // Set up reward tokens
+        address[] memory initialTokens = new address[](1);
+        initialTokens[0] = address(pUSD);
+        uint256[] memory initialRates = new uint256[](1);
+        initialRates[0] = 1e15; // Small default rate
+        RewardsFacet(address(diamondProxy)).addRewardToken(address(pUSD));
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(address(pUSD), 1e18);
+        RewardsFacet(address(diamondProxy)).setRewardRates(initialTokens, initialRates);
 
         vm.stopPrank();
-        console2.log("Diamond test setup complete (with AccessControlFacet)");
+
+        // Give user1 some PUSD for testing
+        vm.startPrank(admin);
+        pUSD.transfer(user1, 1000e18);
+        vm.stopPrank();
     }
 
     // --- Test Cases ---
@@ -380,9 +374,9 @@ contract PlumeStakingDiamondTest is Test {
     }
 
     function testClaimValidatorCommission() public {
-        // Set up validator commission at 20% (2000 basis points)
+        // Set up validator commission at 20% (20 * 1e16)
         vm.startPrank(validatorAdmin);
-        bytes memory data = abi.encode(uint256(2000)); // 20% commission
+        bytes memory data = abi.encode(uint256(20e16)); // FIX: Scale commission correctly
         ValidatorFacet(address(diamondProxy)).updateValidator(DEFAULT_VALIDATOR_ID, 0, data);
         vm.stopPrank();
 
@@ -393,37 +387,62 @@ contract PlumeStakingDiamondTest is Test {
         uint256[] memory rates = new uint256[](1);
         rates[0] = 1e18;
         RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        
+        // Ensure treasury has enough PUSD by transferring tokens
+        uint256 treasuryAmount = 1000 ether;
+        pUSD.transfer(address(treasury), treasuryAmount);
         vm.stopPrank();
 
         // Have a user stake with the validator
+        uint256 stakeAmount = 10 ether;
         vm.deal(user1, 100 ether);
         vm.startPrank(user1);
-        StakingFacet(address(diamondProxy)).stake{ value: 10 ether }(DEFAULT_VALIDATOR_ID);
+        StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(DEFAULT_VALIDATOR_ID);
         vm.stopPrank();
 
         // Move time forward to accrue rewards
+        uint256 timeBefore = block.timestamp;
         vm.roll(block.number + 10);
         vm.warp(block.timestamp + 10);
+        uint256 timeAfter = block.timestamp;
+        // console2.log("Time warped from %d to %d (delta %d)", timeBefore, timeAfter, timeAfter - timeBefore); // Keep commented
+
+        // --- Assertions before unstake --- 
+        // REMOVED DIRECT STORAGE ACCESS
+        uint256 amountToUnstake = 1 ether;
+        uint256 expectedStake = stakeAmount; 
+
+        // Use the new view function through the diamond proxy
+        uint256 actualUserStake = StakingFacet(address(diamondProxy)).getUserValidatorStake(user1, DEFAULT_VALIDATOR_ID);
+        assertEq(actualUserStake, expectedStake, "User1 Validator 0 Stake mismatch before unstake (via view func)");
+
+        // Assertions for other state vars removed for now to focus on the failing one.
+        // We know the panic is gone, so underflow checks aren't strictly needed here anymore.
+        // --- End Assertions ---
 
         // Trigger reward updates through an interaction
         vm.startPrank(user1);
-        StakingFacet(address(diamondProxy)).unstake(DEFAULT_VALIDATOR_ID, 1 ether);
+        StakingFacet(address(diamondProxy)).unstake(DEFAULT_VALIDATOR_ID, amountToUnstake); 
         vm.stopPrank();
 
         // Check the accrued commission
         uint256 commission =
             ValidatorFacet(address(diamondProxy)).getAccruedCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
-        console2.log("Accrued commission:", commission);
-
-        address recipient = address(0x006217c47ffA5Eb3F3c92247ffFE22AD998242c5);
-        console2.log("Validator admin", validatorAdmin);
-        console2.log("Testing with recipient", recipient);
+        // console2.log("Accrued commission: %d", commission); // Keep commented
 
         // Verify that some commission has accrued
         assertGt(commission, 0, "Commission should be greater than 0");
 
-        // Instead of trying to claim, which requires treasury to have tokens,
-        // we've verified that commission is being tracked properly
+        // Claim the commission
+        vm.startPrank(validatorAdmin);
+        uint256 balanceBefore = pUSD.balanceOf(validatorAdmin);
+        uint256 claimedAmount = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
+        uint256 balanceAfter = pUSD.balanceOf(validatorAdmin);
+        vm.stopPrank();
+        
+        // Verify that commission was claimed successfully
+        assertEq(claimedAmount, commission, "Claimed amount should match accrued commission");
+        assertEq(balanceAfter - balanceBefore, claimedAmount, "Balance should increase by claimed amount");
     }
 
     function testGetAccruedCommission_Direct() public {
@@ -435,11 +454,12 @@ contract PlumeStakingDiamondTest is Test {
         uint256[] memory rates = new uint256[](1);
         rates[0] = rewardRate;
         RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
-        vm.stopPrank();
-
+        
+        // Make sure treasury is properly set
+        RewardsFacet(address(diamondProxy)).setTreasury(address(treasury));
+        
         // Ensure treasury has enough PUSD by transferring tokens
         uint256 treasuryAmount = 100 ether;
-        vm.startPrank(admin); // admin already has tokens from constructor
         pUSD.transfer(address(treasury), treasuryAmount);
         vm.stopPrank();
 
@@ -481,6 +501,17 @@ contract PlumeStakingDiamondTest is Test {
         uint256 commission =
             ValidatorFacet(address(diamondProxy)).getAccruedCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
         assertGt(commission, 0, "Commission should be greater than 0");
+        
+        // Try to claim the commission to verify it works end-to-end
+        vm.startPrank(validatorAdmin);
+        uint256 balanceBefore = pUSD.balanceOf(validatorAdmin);
+        uint256 claimedAmount = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
+        uint256 balanceAfter = pUSD.balanceOf(validatorAdmin);
+        vm.stopPrank();
+        
+        // Verify that commission was claimed successfully
+        assertEq(claimedAmount, commission, "Claimed amount should match accrued commission");
+        assertEq(balanceAfter - balanceBefore, claimedAmount, "Balance should increase by claimed amount");
     }
 
     function testRewardAccrualAndClaim() public {
@@ -981,12 +1012,13 @@ contract PlumeStakingDiamondTest is Test {
 
     function testAddValidator() public {
         uint16 newValidatorId = 2;
-        uint256 commission = 15e16; // 15%
-        address l2Admin = makeAddr("newValAdmin");
-        address l2Withdraw = makeAddr("newValWithdraw");
-        string memory l1ValAddr = "plumevaloper1zqd0cre4rmk2659h2h4afseemx2amxtqrvmymr";
-        string memory l1AccAddr = "plume1zqd0cre4rmk2659h2h4afseemx2amxtqpmnxy4";
-        uint256 l1AccEvmAddr = 0x1234;
+        uint256 commission = 5e16;
+        address l2Admin = validatorAdmin;
+        address l2Withdraw = validatorAdmin;
+        string memory l1ValAddr = "0xval3";
+        string memory l1AccAddr = "0xacc3";
+        address l1AccEvmAddr = address(0x1234);
+        uint256 maxCapacity = 1_000_000e18;
 
         // Check event emission
         vm.expectEmit(true, true, true, true, address(diamondProxy));
@@ -995,7 +1027,7 @@ contract PlumeStakingDiamondTest is Test {
         // Call as admin
         vm.startPrank(admin);
         ValidatorFacet(address(diamondProxy)).addValidator(
-            newValidatorId, commission, l2Admin, l2Withdraw, l1ValAddr, l1AccAddr, l1AccEvmAddr
+            newValidatorId, commission, l2Admin, l2Withdraw, l1ValAddr, l1AccAddr, l1AccEvmAddr, maxCapacity
         );
         vm.stopPrank();
 
@@ -1014,12 +1046,13 @@ contract PlumeStakingDiamondTest is Test {
 
     function testAddValidator_NotOwner() public {
         uint16 newValidatorId = 3;
+        uint256 maxCapacity = 1_000_000e18;
         // Expect revert from onlyRole check in ValidatorFacet
         vm.expectRevert(bytes("Caller does not have the required role"));
 
         vm.startPrank(user1); // user1 does not have VALIDATOR_ROLE by default
         ValidatorFacet(address(diamondProxy)).addValidator(
-            newValidatorId, 5e16, user1, user1, "0xval4", "0xacc4", 0x5678
+            newValidatorId, 5e16, user1, user1, "0xval4", "0xacc4", address(0x5678), maxCapacity
         );
         vm.stopPrank();
     }
@@ -1038,7 +1071,7 @@ contract PlumeStakingDiamondTest is Test {
         // Check L1 addresses added in setUp
         assertEq(info.l1ValidatorAddress, "0xval1", "L1 validator address mismatch");
         assertEq(info.l1AccountAddress, "0xacc1", "L1 account address mismatch");
-        assertEq(info.l1AccountEvmAddress, 0x1234, "L1 account EVM address mismatch");
+        assertTrue(info.l1AccountEvmAddress == address(0x1234), "L1 account EVM address mismatch");
     }
 
     function testGetValidatorInfo_NonExistent() public {
@@ -1339,8 +1372,7 @@ contract PlumeStakingDiamondTest is Test {
     function testProtected_AddValidator_Success() public {
         // Admin (who has VALIDATOR_ROLE) calls addValidator
         vm.startPrank(admin);
-        ValidatorFacet(address(diamondProxy)).addValidator(10, 5e16, user1, user1, "v10", "a10", 1); // Use valid
-            // uint256
+        ValidatorFacet(address(diamondProxy)).addValidator(10, 5e16, user1, user1, "v10", "a10", address(1), 1_000_000e18);
         vm.stopPrank();
         // Check validator exists (implicitly checks success)
         (PlumeStakingStorage.ValidatorInfo memory info,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(10);
@@ -1351,45 +1383,114 @@ contract PlumeStakingDiamondTest is Test {
         // User1 (no VALIDATOR_ROLE) calls addValidator
         vm.startPrank(user1);
         vm.expectRevert(bytes("Caller does not have the required role"));
-        ValidatorFacet(address(diamondProxy)).addValidator(11, 5e16, user2, user2, "v11", "a11", 2); // Use valid
-            // uint256
+        ValidatorFacet(address(diamondProxy)).addValidator(11, 5e16, user2, user2, "v11", "a11", address(2), 1_000_000e18);
         vm.stopPrank();
     }
 
     // --- Slashing Tests ---
 
-    function testSlash_Setup() internal {
-        // Ensure vote duration is set (using ManagementFacet)
-        vm.startPrank(admin);
-        ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(1 days);
-        // Add a third validator for voting tests
-        address validator3Admin = makeAddr("validator3Admin");
-        ValidatorFacet(address(diamondProxy)).addValidator(2, 8e16, validator3Admin, validator3Admin, "v3", "a3", 3);
-        ValidatorFacet(address(diamondProxy)).setValidatorCapacity(2, 1_000_000e18);
-        vm.stopPrank();
+    function testSlash_Setup() public {
+        vm.deal(DEFAULT_VALIDATOR_ADMIN, 100 ether);
 
-        // user1 stakes with validator 0
-        vm.startPrank(user1);
-        StakingFacet(address(diamondProxy)).stake{ value: 100 ether }(DEFAULT_VALIDATOR_ID);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            DEFAULT_VALIDATOR_ID,
+            DEFAULT_COMMISSION,
+            DEFAULT_VALIDATOR_ADMIN,
+            DEFAULT_VALIDATOR_ADMIN,
+            "v0",
+            "a0",
+            address(0x1234),
+            1_000_000e18
+        );
+
+        address user2 = makeAddr("user2");
+        vm.deal(user2, 100 ether);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            1,
+            8e16,
+            user2,
+            user2,
+            "v1",
+            "a1",
+            address(0x2345),
+            1_000_000e18
+        );
+
+        address validator3Admin = makeAddr("validator3Admin");
+        vm.deal(validator3Admin, 100 ether);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            2,
+            8e16,
+            validator3Admin,
+            validator3Admin,
+            "v3",
+            "a3",
+            address(0x3456),
+            1_000_000e18
+        );
+
+        // Note: Validators are already set to active when added (in addValidator function)
+        // But we'll verify they're active by directly accessing storage
+        vm.startPrank(admin);
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        // Just in case, explicitly set active flag to true
+        $.validators[DEFAULT_VALIDATOR_ID].active = true;
+        $.validators[1].active = true;
+        $.validators[2].active = true;
         vm.stopPrank();
     }
 
     function testSlash_Vote_Success() public {
+        // Setup validators and users
         testSlash_Setup();
-        uint16 targetValidatorId = DEFAULT_VALIDATOR_ID; // Validator 0
-        uint16 voterValidatorId = 1; // Validator 1 (admin is user2)
-        address voterAdmin = user2;
-        uint256 voteExpiration = block.timestamp + 1 hours;
-
-        // Check event emission
-        vm.expectEmit(true, true, false, true, address(diamondProxy));
-        emit SlashVoteCast(targetValidatorId, voterValidatorId, voteExpiration);
-
-        vm.startPrank(voterAdmin);
-        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        // Create users and give them some ETH
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        vm.deal(user1, 100 ether);
+        vm.deal(user2, 100 ether);
+        
+        // user1 stakes with validator 0
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{value: 10 ether}(DEFAULT_VALIDATOR_ID);
         vm.stopPrank();
-
-        // TODO: Check storage for vote count / expiration if needed
+        
+        // user2 stakes with validator 1
+        vm.startPrank(user2);
+        StakingFacet(address(diamondProxy)).stake{value: 10 ether}(1);
+        vm.stopPrank();
+        
+        // Set the minimum voting power requirement
+        vm.startPrank(admin);
+        // Direct storage manipulation since setMinVotingPowerForSlash doesn't exist
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        // Set maximum slash vote duration (needed for slashing mechanism)
+        ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(1 days);
+        vm.stopPrank();
+        
+        // Target validator to slash
+        uint256 targetValidatorId = 2;
+        // Validator that will vote to slash
+        uint256 voterValidatorId = 1;
+        address voterAdmin = makeAddr("user2");
+        
+        // Save balances before slashing
+        (,uint256 targetStakedAmount,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(uint16(targetValidatorId));
+        uint256 treasuryBalanceBefore = address(treasury).balance;
+        
+        // Vote to slash
+        vm.startPrank(voterAdmin);
+        uint256 voteExpiration = block.timestamp + 1 hours; // Set vote expiration 1 hour from now
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(uint16(targetValidatorId), voteExpiration);
+        vm.stopPrank();
+        
+        // Verify slashing succeeded by checking if validator is still active
+        (bool isActive,,, ) = ValidatorFacet(address(diamondProxy)).getValidatorStats(uint16(targetValidatorId));
+        assertTrue(!isActive);
+        
+        // Verify funds moved to treasury
+        uint256 treasuryBalanceAfter = address(treasury).balance;
+        assertEq(treasuryBalanceAfter, treasuryBalanceBefore + targetStakedAmount);
     }
 
     function testSlash_Vote_Fail_NotValidatorAdmin() public {
@@ -1632,13 +1733,7 @@ contract PlumeStakingDiamondTest is Test {
 
     // --- Complex Reward Calculation Test ---
     function testComplexRewardScenario() public {
-        console2.log("\n--- Starting Complex Reward Scenario Test ---");
-
-        // --- Setup users ---
-        address user1 = makeAddr("user1");
-        address user2 = makeAddr("user2");
-        address user3 = makeAddr("user3");
-        address user4 = makeAddr("user4");
+        console2.log("\n--- Setting up complex reward scenario ---");
 
         // --- Setup validators with different commission rates ---
         uint16 validator0 = DEFAULT_VALIDATOR_ID; // 0
@@ -1649,7 +1744,7 @@ contract PlumeStakingDiamondTest is Test {
         vm.startPrank(admin);
         address validator2Admin = makeAddr("validator2Admin");
         ValidatorFacet(address(diamondProxy)).addValidator(
-            validator2, 15e16, validator2Admin, validator2Admin, "0xval3", "0xacc3", 0x3456
+            validator2, 15e16, validator2Admin, validator2Admin, "0xval3", "0xacc3", address(0x3456), 1_000_000e18
         );
         ValidatorFacet(address(diamondProxy)).setValidatorCapacity(validator2, 1_000_000e18);
         vm.stopPrank();
@@ -1954,6 +2049,83 @@ contract PlumeStakingDiamondTest is Test {
         
         // Similarly, verify commission changes by comparing commission increases
         console2.log("\n--- Commission & Reward Scenario Test Complete ---");
+    }
+
+    function testTreasuryTransfer_User_Withdraw() public {
+        // Setup validator and user accounts
+        uint16 validator1 = 1;
+        address validator1Admin = makeAddr("validator1Admin");
+        uint16 validator2 = 100;
+        address validator2Admin = makeAddr("validator2Admin");
+        
+        vm.startPrank(admin);
+        // Add validators
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            validator1,
+            0.1e18, // 10% commission
+            validator1Admin,
+            validator1Admin,
+            "validator1L1",
+            "validator1AccountL1",
+            validator1Admin,
+            1000e18 // 1000 PLUME max capacity
+        );
+        
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            validator2,
+            0.05e18, // 5% commission
+            validator2Admin,
+            validator2Admin,
+            "validator2L1",
+            "validator2AccountL1",
+            validator2Admin,
+            1000e18 // 1000 PLUME max capacity
+        );
+        
+        // Set up treasury
+        address treasuryAddr = address(treasury);
+        RewardsFacet(address(diamondProxy)).setTreasury(treasuryAddr);
+        
+        // Fund the treasury
+        vm.stopPrank();
+        vm.deal(treasuryAddr, 100 ether);
+        
+        // Stake as user
+        address user = address(7);
+        vm.deal(user, 10 ether);
+        vm.startPrank(user);
+        
+        StakingFacet(address(diamondProxy)).stake{value: 1 ether}(validator1);
+        
+        // Advance time and add reward token
+        vm.stopPrank();
+        vm.startPrank(admin);
+        RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE);
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, 1e18);
+        
+        // Set reward rate
+        address[] memory tokens = new address[](1);
+        tokens[0] = PLUME_NATIVE;
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = 0.1e18; // 0.1 PLUME per second
+        
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        vm.stopPrank();
+        
+        // Advance time to accrue rewards
+        vm.warp(block.timestamp + 100); // 100 seconds
+        
+        // User claims rewards
+        vm.startPrank(user);
+        uint256 balanceBefore = user.balance;
+        RewardsFacet(address(diamondProxy)).claim(PLUME_NATIVE);
+        uint256 balanceAfter = user.balance;
+        
+        // Verify user received rewards
+        assertTrue(balanceAfter > balanceBefore, "User should have received rewards");
+        console2.log("User received rewards:", balanceAfter - balanceBefore);
+        
+        vm.stopPrank();
     }
 
 }

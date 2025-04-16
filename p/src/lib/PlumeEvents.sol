@@ -203,7 +203,7 @@ event ValidatorAdded(
     address l2WithdrawAddress,
     string l1ValidatorAddress,
     string l1AccountAddress,
-    uint256 l1AccountEvmAddress
+    address l1AccountEvmAddress
 );
 
 /**
@@ -223,7 +223,7 @@ event ValidatorUpdated(
     address l2WithdrawAddress,
     string l1ValidatorAddress,
     string l1AccountAddress,
-    uint256 l1AccountEvmAddress
+    address l1AccountEvmAddress
 );
 
 /**
@@ -423,3 +423,11 @@ event TokenReceived(address indexed token, address indexed sender, uint256 amoun
  * @param amount Amount that failed to transfer
  */
 event TransferFailed(address indexed token, address indexed recipient, uint256 amount);
+
+/**
+ * @notice Emitted when a user restakes their rewards
+ * @param staker Address of the staker who restaked
+ * @param validatorId Validator ID restaked to
+ * @param amount Amount of rewards restaked
+ */
+event RewardsRestaked(address indexed staker, uint16 indexed validatorId, uint256 amount);

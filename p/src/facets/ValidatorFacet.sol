@@ -129,7 +129,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address l2WithdrawAddress,
         string calldata l1ValidatorAddress,
         string calldata l1AccountAddress,
-        uint256 l1AccountEvmAddress
+        address l1AccountEvmAddress,
+        uint256 maxCapacity
     ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
 
@@ -156,6 +157,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         validator.l1AccountAddress = l1AccountAddress;
         validator.l1AccountEvmAddress = l1AccountEvmAddress;
         validator.active = true;
+        validator.maxCapacity = maxCapacity;
 
         $.validatorIds.push(validatorId);
         $.validatorExists[validatorId] = true;

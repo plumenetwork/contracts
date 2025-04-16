@@ -456,7 +456,7 @@ contract PlumeStakingValidator is PlumeStakingBase {
         }
 
         emit ValidatorAdded(
-            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress, 0x0
+            validatorId, commission, l2AdminAddress, l2WithdrawAddress, l1ValidatorAddress, l1AccountAddress, address(0)
         );
     }
 
