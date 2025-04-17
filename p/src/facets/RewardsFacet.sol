@@ -160,24 +160,24 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (!$.isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
-        
+
         // Find the index of the token in the array
         uint256 tokenIndex = _getTokenIndex(token);
-        
+
         // Update rewards using the library before removing
         for (uint256 i = 0; i < $.validatorIds.length; i++) {
             // Needs to update the cumulative index, not user rewards
             PlumeRewardLogic.updateRewardPerTokenForValidator($, token, $.validatorIds[i]);
         }
         $.rewardRates[token] = 0;
-        
+
         // Update the array
         $.rewardTokens[tokenIndex] = $.rewardTokens[$.rewardTokens.length - 1];
         $.rewardTokens.pop();
-        
+
         // Update the mapping
         $.isRewardToken[token] = false;
-        
+
         delete $.maxRewardRates[token];
         emit RewardTokenRemoved(token);
     }
@@ -371,7 +371,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         for (uint256 i = 0; i < tokens.length; i++) {
             address token = tokens[i];
             // No need to check if token is a reward token, as we're iterating through $.rewardTokens
-            
+
             uint16[] memory validatorIds = $.userValidators[msg.sender];
             uint256 totalReward = 0;
 
@@ -454,12 +454,12 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address token
     ) internal view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        
+
         // First check if the token is a reward token
         if (!$.isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
-        
+
         // Find the index in the array
         address[] memory rewardTokens = $.rewardTokens;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -467,7 +467,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
                 return i;
             }
         }
-        
+
         // This should never happen if isRewardToken is properly maintained
         revert("Token not found in array but exists in mapping");
     }

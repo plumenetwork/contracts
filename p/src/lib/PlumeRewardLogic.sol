@@ -80,20 +80,32 @@ library PlumeRewardLogic {
             return (0, 0);
         }
         PlumeStakingStorage.RateCheckpoint[] storage globalCheckpoints = $.rewardRateCheckpoints[token];
-        PlumeStakingStorage.RateCheckpoint[] storage commissionCheckpoints = $.validatorCommissionCheckpoints[validatorId];
+        PlumeStakingStorage.RateCheckpoint[] storage commissionCheckpoints =
+            $.validatorCommissionCheckpoints[validatorId];
         uint256 globalLen = globalCheckpoints.length;
         uint256 commissionLen = commissionCheckpoints.length;
         uint256 globalIdx = findCheckpointIndex(globalCheckpoints, uint64(startTime));
         uint256 commissionIdx = findCheckpointIndex(commissionCheckpoints, uint64(startTime));
-        uint256 currentGlobalRate = (globalLen > 0 && globalCheckpoints[globalIdx].timestamp <= startTime) ? globalCheckpoints[globalIdx].rate : 0;
-        uint256 currentCommissionRate = (commissionLen > 0 && commissionCheckpoints[commissionIdx].timestamp <= startTime) ? commissionCheckpoints[commissionIdx].rate : 0;
+        uint256 currentGlobalRate = (globalLen > 0 && globalCheckpoints[globalIdx].timestamp <= startTime)
+            ? globalCheckpoints[globalIdx].rate
+            : 0;
+        uint256 currentCommissionRate = (
+            commissionLen > 0 && commissionCheckpoints[commissionIdx].timestamp <= startTime
+        ) ? commissionCheckpoints[commissionIdx].rate : 0;
         uint256 currentTime = startTime;
         while (currentTime < endTime) {
-            uint256 nextGlobalTime = (globalIdx + 1 < globalLen) ? globalCheckpoints[globalIdx + 1].timestamp : type(uint256).max;
-            uint256 nextCommissionTime = (commissionIdx + 1 < commissionLen) ? commissionCheckpoints[commissionIdx + 1].timestamp : type(uint256).max;
+            uint256 nextGlobalTime =
+                (globalIdx + 1 < globalLen) ? globalCheckpoints[globalIdx + 1].timestamp : type(uint256).max;
+            uint256 nextCommissionTime = (commissionIdx + 1 < commissionLen)
+                ? commissionCheckpoints[commissionIdx + 1].timestamp
+                : type(uint256).max;
             uint256 nextEventTime = endTime;
-            if (nextGlobalTime < nextEventTime) { nextEventTime = nextGlobalTime; }
-            if (nextCommissionTime < nextEventTime) { nextEventTime = nextCommissionTime; }
+            if (nextGlobalTime < nextEventTime) {
+                nextEventTime = nextGlobalTime;
+            }
+            if (nextCommissionTime < nextEventTime) {
+                nextEventTime = nextCommissionTime;
+            }
             uint256 duration = nextEventTime - currentTime;
             if (duration > 0) {
                 uint256 totalStaked = $.validatorTotalStaked[validatorId];
@@ -103,19 +115,25 @@ library PlumeRewardLogic {
 
                     uint256 grossRewardInterval = (userStakedAmount * rewardPerTokenInterval) / REWARD_PRECISION;
                     uint256 commissionInterval = (grossRewardInterval * currentCommissionRate) / REWARD_PRECISION;
-                    
+
                     if (commissionInterval > grossRewardInterval) {
-                        commissionInterval = grossRewardInterval; 
+                        commissionInterval = grossRewardInterval;
                     }
                     uint256 netRewardInterval = grossRewardInterval - commissionInterval;
-                    
+
                     totalUserRewardDelta += netRewardInterval;
                     totalCommissionDelta += commissionInterval;
                 }
             }
             currentTime = nextEventTime;
-            if (currentTime == nextGlobalTime && currentTime < endTime) { globalIdx++; currentGlobalRate = globalCheckpoints[globalIdx].rate; }
-            if (currentTime == nextCommissionTime && currentTime < endTime) { commissionIdx++; currentCommissionRate = commissionCheckpoints[commissionIdx].rate; }
+            if (currentTime == nextGlobalTime && currentTime < endTime) {
+                globalIdx++;
+                currentGlobalRate = globalCheckpoints[globalIdx].rate;
+            }
+            if (currentTime == nextCommissionTime && currentTime < endTime) {
+                commissionIdx++;
+                currentCommissionRate = commissionCheckpoints[commissionIdx].rate;
+            }
         }
         return (totalUserRewardDelta, totalCommissionDelta);
     }
@@ -232,25 +250,25 @@ library PlumeRewardLogic {
         uint256 lastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
 
         if (block.timestamp > lastUpdateTime && $.validatorTotalStaked[validatorId] > 0) {
-             uint256 timeDelta = block.timestamp - lastUpdateTime;
-             uint256 effectiveRate = $.rewardRates[token];
-             if (effectiveRate > 0) {
-                 uint256 numerator = timeDelta * effectiveRate * REWARD_PRECISION;
-                 currentCumulativeIndex += numerator / $.validatorTotalStaked[validatorId];
-             }
-         }
+            uint256 timeDelta = block.timestamp - lastUpdateTime;
+            uint256 effectiveRate = $.rewardRates[token];
+            if (effectiveRate > 0) {
+                uint256 numerator = timeDelta * effectiveRate * REWARD_PRECISION;
+                currentCumulativeIndex += numerator / $.validatorTotalStaked[validatorId];
+            }
+        }
 
         uint256 lastPaidCumulativeIndex = $.userValidatorRewardPerTokenPaid[user][validatorId][token];
 
         if (currentCumulativeIndex <= lastPaidCumulativeIndex) {
             return (0, 0);
         }
-        
+
         uint256 rewardPerTokenDelta = currentCumulativeIndex - lastPaidCumulativeIndex;
 
         uint256 totalRewardDelta = (userStakedAmount * rewardPerTokenDelta) / REWARD_PRECISION;
-        
-        commissionAmountDelta = (totalRewardDelta * validatorCommission) / REWARD_PRECISION; 
+
+        commissionAmountDelta = (totalRewardDelta * validatorCommission) / REWARD_PRECISION;
 
         if (commissionAmountDelta > totalRewardDelta) {
             commissionAmountDelta = totalRewardDelta;
@@ -277,7 +295,11 @@ library PlumeRewardLogic {
     ) internal {
         updateRewardPerTokenForValidator($, token, validatorId);
         uint256 currentCumulativeIndex = $.validatorRewardPerTokenCumulative[validatorId][token];
-        PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({timestamp: block.timestamp, rate: rate, cumulativeIndex: currentCumulativeIndex});
+        PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({
+            timestamp: block.timestamp,
+            rate: rate,
+            cumulativeIndex: currentCumulativeIndex
+        });
         $.validatorRewardRateCheckpoints[validatorId][token].push(checkpoint);
         uint256 checkpointIndex = $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
         emit RewardRateCheckpointCreated(token, rate, block.timestamp, checkpointIndex, currentCumulativeIndex);
@@ -295,7 +317,8 @@ library PlumeRewardLogic {
         uint16 validatorId,
         uint256 commissionRate
     ) internal {
-        PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({timestamp: block.timestamp, rate: commissionRate, cumulativeIndex: 0 });
+        PlumeStakingStorage.RateCheckpoint memory checkpoint =
+            PlumeStakingStorage.RateCheckpoint({ timestamp: block.timestamp, rate: commissionRate, cumulativeIndex: 0 });
         $.validatorCommissionCheckpoints[validatorId].push(checkpoint);
     }
 

@@ -4,22 +4,22 @@ pragma solidity ^0.8.25;
 import {
     CooldownNotComplete,
     CooldownPeriodNotEnded,
+    ExceedsValidatorCapacity,
+    InsufficientCooldownBalance,
     InvalidAmount,
     NativeTransferFailed,
     NoActiveStake,
+    NoRewardsToRestake,
+    StakeAmountTooSmall,
     TokenDoesNotExist,
     TooManyStakers,
     TransferError,
     ValidatorCapacityExceeded,
     ValidatorDoesNotExist,
     ValidatorInactive,
-    ZeroAddress,
-    StakeAmountTooSmall,
     ValidatorNotActive,
-    ExceedsValidatorCapacity,
-    InsufficientCooldownBalance,
-    NoRewardsToRestake,
     ValidatorPercentageExceeded,
+    ZeroAddress,
     ZeroRecipientAddress
 } from "../lib/PlumeErrors.sol";
 import { CooldownStarted } from "../lib/PlumeEvents.sol";
@@ -89,21 +89,24 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         $.validators[validatorId].delegatedAmount += stakeAmount;
         $.validatorTotalStaked[validatorId] += stakeAmount;
         $.totalStaked += stakeAmount;
-        
+
         // Check if exceeding validator capacity
         uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
         uint256 maxCapacity = $.validators[validatorId].maxCapacity;
-        if (newDelegatedAmount > maxCapacity) {
+        if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
             revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, stakeAmount);
         }
-        
+
         // Check if exceeding validator percentage limit
         if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10000) / $.totalStaked;
+            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
             if (validatorPercentage > $.maxValidatorPercentage) {
                 revert ValidatorPercentageExceeded();
             }
         }
+
+        // Add user to the list of validators they have staked with
+        PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
 
         // Emit stake event with details
         emit Staked(
@@ -126,7 +129,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function restake(uint16 validatorId, uint256 amount) external returns (uint256) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
-        
+
         // Check there's enough in cooldown
         if (amount > info.cooled) {
             revert InsufficientCooldownBalance(info.cooled, amount);
@@ -141,17 +144,17 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         info.cooled -= amount;
         $.totalCooling -= amount;
         $.totalStaked += amount;
-        
+
         // Check if exceeding validator capacity
         uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
         uint256 maxCapacity = $.validators[validatorId].maxCapacity;
-        if (newDelegatedAmount > maxCapacity) {
+        if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
             revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, amount);
         }
-        
+
         // Check if exceeding validator percentage limit
         if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10000) / $.totalStaked;
+            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
             if (validatorPercentage > $.maxValidatorPercentage) {
                 revert ValidatorPercentageExceeded();
             }
@@ -345,17 +348,20 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Check if exceeding validator capacity
         uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
         uint256 maxCapacity = $.validators[validatorId].maxCapacity;
-        if (newDelegatedAmount > maxCapacity) {
+        if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
             revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, stakeAmount);
         }
-        
+
         // Check if exceeding validator percentage limit
         if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10000) / $.totalStaked;
+            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
             if (validatorPercentage > $.maxValidatorPercentage) {
                 revert ValidatorPercentageExceeded();
             }
         }
+
+        // Add user to the list of validators they have staked with
+        PlumeValidatorLogic.addStakerToValidator($, staker, validatorId);
 
         // Emit stake event with details
         emit Staked(
@@ -372,9 +378,11 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         return stakeAmount;
     }
 
-    function restakeRewards(uint16 validatorId) external returns (uint256) {
+    function restakeRewards(
+        uint16 validatorId
+    ) external returns (uint256) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        
+
         if (!$.validatorExists[validatorId]) {
             revert ValidatorNotActive(validatorId);
         }
@@ -389,21 +397,21 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         $.userValidatorStakes[msg.sender][validatorId].staked += pendingRewards;
         $.validators[validatorId].delegatedAmount += pendingRewards;
         $.totalStaked += pendingRewards;
-        
+
         // Reset user's withdrawable amount
         $.stakeInfo[msg.sender].parked = 0;
         $.totalWithdrawable -= pendingRewards;
-        
+
         // Check if exceeding validator capacity
         uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
         uint256 maxCapacity = $.validators[validatorId].maxCapacity;
-        if (newDelegatedAmount > maxCapacity) {
+        if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
             revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, pendingRewards);
         }
-        
+
         // Check if exceeding validator percentage limit
         if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10000) / $.totalStaked;
+            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
             if (validatorPercentage > $.maxValidatorPercentage) {
                 revert ValidatorPercentageExceeded();
             }
@@ -514,10 +522,10 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         address token
     ) external view returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        
+
         // Check if token is a reward token using the mapping
         require($.isRewardToken[token], "Token is not a reward token");
-        
+
         // Return the total claimable amount
         return $.totalClaimableByToken[token];
     }

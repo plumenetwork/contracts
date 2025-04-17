@@ -4,7 +4,7 @@ pragma solidity ^0.8.25;
 import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { Script, console2 } from "forge-std/Script.sol";
 
-import { PlumeStakingRewardTreasury } from "../src/PlumeStakingRewardTreasury.sol";
+import { PlumeStakingRewardTreasury } from "../../src/PlumeStakingRewardTreasury.sol";
 
 contract UpgradePlumeStakingRewardTreasury is Script {
 

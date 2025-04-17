@@ -55,7 +55,8 @@ contract VerifyRewardsFacetSelectors is Script {
         selectors[16] = bytes4(keccak256(bytes("totalAmountStaked()"))); // This function is now in StakingFacet
         selectors[17] = bytes4(keccak256(bytes("totalAmountCooling()"))); // This function is now in StakingFacet
         selectors[18] = bytes4(keccak256(bytes("totalAmountWithdrawable()"))); // This function is now in StakingFacet
-        selectors[19] = bytes4(keccak256(bytes("totalAmountClaimable(address)"))); // This function is now in StakingFacet
+        selectors[19] = bytes4(keccak256(bytes("totalAmountClaimable(address)"))); // This function is now in
+            // StakingFacet
 
         // Index 20 is the last assigned.
         return selectors;

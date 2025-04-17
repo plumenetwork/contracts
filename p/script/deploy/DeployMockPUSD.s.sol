@@ -5,8 +5,8 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
 import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 
-import { MockPUSD } from "../src/mocks/MockPUSD.sol";
-import { MockPUSDProxy } from "../src/proxy/MockPUSDProxy.sol";
+import { MockPUSD } from "../../src/mocks/MockPUSD.sol";
+import { MockPUSDProxy } from "../../src/proxy/MockPUSDProxy.sol";
 
 /**
  * @title DeployMockPUSD

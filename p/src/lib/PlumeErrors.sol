@@ -232,7 +232,9 @@ error ZeroAddressProvided();
  */
 error TreasuryInsufficientBalance(address token, uint256 requested, uint256 available);
 
-/*** Validator Errors ***/
+/**
+ * Validator Errors **
+ */
 
 /**
  * @notice Error thrown when trying to create a validator with ID 0 that already exists
@@ -242,7 +244,7 @@ error ValidatorIdExists();
 /**
  * @notice Error thrown when validator capacity would be exceeded
  * @param validatorId ID of the validator
- * @param currentAmount Current delegated amount 
+ * @param currentAmount Current delegated amount
  * @param maxCapacity Maximum capacity of the validator
  * @param requestedAmount Requested amount to add
  */

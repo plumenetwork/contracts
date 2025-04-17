@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { Plume } from "../src/Plume.sol";
-import { PlumeStaking } from "../src/PlumeStaking.sol";
-import { PlumeStakingProxy } from "../src/proxy/PlumeStakingProxy.sol";
+import { Plume } from "../../src/Plume.sol";
+import { PlumeStaking } from "../../src/PlumeStaking.sol";
+import { PlumeStakingProxy } from "../../src/proxy/PlumeStakingProxy.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Script } from "forge-std/Script.sol";
 import { Test } from "forge-std/Test.sol";

@@ -4,7 +4,7 @@ pragma solidity ^0.8.25;
 import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 
-import { MockPUSD } from "../src/mocks/MockPUSD.sol";
+import { MockPUSD } from "../../src/mocks/MockPUSD.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**

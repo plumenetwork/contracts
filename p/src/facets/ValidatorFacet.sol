@@ -298,8 +298,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address voterAdmin = msg.sender;
         uint16 voterValidatorId = $.adminToValidatorId[voterAdmin];
 
-        // Check 1: Voter is an active validator admin
-        if (voterValidatorId == 0 || !$.validators[voterValidatorId].active) {
+        // Check 1: Voter is an active validator admin for the ID derived from the mapping
+        if ($.validators[voterValidatorId].l2AdminAddress != voterAdmin || !$.validators[voterValidatorId].active) {
             revert NotValidatorAdmin(voterAdmin);
         }
 

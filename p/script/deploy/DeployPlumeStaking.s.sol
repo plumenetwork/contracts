@@ -6,11 +6,11 @@ import { Script } from "forge-std/Script.sol";
 import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
 
-import { Plume } from "../src/Plume.sol";
-import { PlumeStaking_Monolithic } from "../src/PlumeStaking_Monolithic.sol";
+import { Plume } from "../../src/Plume.sol";
+import { PlumeStaking_Monolithic } from "../../src/PlumeStaking_Monolithic.sol";
 
-import { IPlumeStaking } from "../src/interfaces/IPlumeStaking.sol";
-import { PlumeStakingProxy } from "../src/proxy/PlumeStakingProxy.sol";
+import { IPlumeStaking } from "../../src/interfaces/IPlumeStaking.sol";
+import { PlumeStakingProxy } from "../../src/proxy/PlumeStakingProxy.sol";
 
 contract DeployPlumeStaking is Script {
 

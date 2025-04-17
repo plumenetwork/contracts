@@ -3,9 +3,9 @@ pragma solidity ^0.8.25;
 
 import "forge-std/Script.sol";
 
-import { Plume } from "../src/Plume.sol";
-import { IDeployer } from "../src/interfaces/IDeployer.sol";
-import { PlumeProxy } from "../src/proxy/PlumeProxy.sol";
+import { Plume } from "../../src/Plume.sol";
+import { IDeployer } from "../../src/interfaces/IDeployer.sol";
+import { PlumeProxy } from "../../src/proxy/PlumeProxy.sol";
 
 /**
  * @title DeployToken

@@ -3,8 +3,8 @@ pragma solidity ^0.8.25;
 
 import { Script, console2 } from "forge-std/Script.sol";
 
-import { PlumeStakingRewardTreasury } from "../src/PlumeStakingRewardTreasury.sol";
-import { PlumeStakingRewardTreasuryProxy } from "../src/proxy/PlumeStakingRewardTreasuryProxy.sol";
+import { PlumeStakingRewardTreasury } from "../../src/PlumeStakingRewardTreasury.sol";
+import { PlumeStakingRewardTreasuryProxy } from "../../src/proxy/PlumeStakingRewardTreasuryProxy.sol";
 
 contract DeployPlumeStakingRewardTreasury is Script {
 

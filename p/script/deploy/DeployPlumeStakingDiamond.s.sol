@@ -5,24 +5,24 @@ import { Script, console2 } from "forge-std/Script.sol";
 import { Test } from "forge-std/Test.sol"; // Include Test for address helpers if needed
 
 // Diamond Proxy & Base
-import { PlumeStaking } from "../src/PlumeStaking.sol";
+import { PlumeStaking } from "../../src/PlumeStaking.sol";
 import { ISolidStateDiamond, SolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol";
 
 // Custom Facets
-import { AccessControlFacet } from "../src/facets/AccessControlFacet.sol";
-import { ManagementFacet } from "../src/facets/ManagementFacet.sol";
-import { RewardsFacet } from "../src/facets/RewardsFacet.sol";
-import { StakingFacet } from "../src/facets/StakingFacet.sol";
-import { ValidatorFacet } from "../src/facets/ValidatorFacet.sol";
+import { AccessControlFacet } from "../../src/facets/AccessControlFacet.sol";
+import { ManagementFacet } from "../../src/facets/ManagementFacet.sol";
+import { RewardsFacet } from "../../src/facets/RewardsFacet.sol";
+import { StakingFacet } from "../../src/facets/StakingFacet.sol";
+import { ValidatorFacet } from "../../src/facets/ValidatorFacet.sol";
 
 // SolidState Interfaces
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 
 // Plume Roles
-import { PlumeRoles } from "../src/lib/PlumeRoles.sol";
+import { PlumeRoles } from "../../src/lib/PlumeRoles.sol";
 
 // Plume Interface for setup call
-import { IAccessControl } from "../src/interfaces/IAccessControl.sol";
+import { IAccessControl } from "../../src/interfaces/IAccessControl.sol";
 
 contract DeployPlumeStakingDiamond is Script, Test {
 
