@@ -595,4 +595,33 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return getTreasuryAddress();
     }
 
+    // --- NEW PUBLIC WRAPPER ---
+    /**
+     * @notice Calculates the pending reward for a specific user, validator, and token.
+     * @dev Calls the internal PlumeRewardLogic.calculateRewardsWithCheckpoints function.
+     * @param user The user address.
+     * @param validatorId The validator ID.
+     * @param token The reward token address.
+     * @return pendingReward The calculated reward amount for the user (after commission).
+     */
+    function getPendingRewardForValidator(
+        address user,
+        uint16 validatorId,
+        address token
+    ) external view returns (uint256 pendingReward) {
+        PlumeStakingStorage.Layout storage $ = plumeStorage();
+
+        // Required inputs for the internal logic function
+        uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
+        uint256 validatorCommission = $.validators[validatorId].commission;
+
+        // Call the internal logic function - only need the first return value
+        (uint256 userRewardDelta,) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
+            $, user, token, validatorId, userStakedAmount, validatorCommission
+        );
+
+        return userRewardDelta;
+    }
+    // --- END NEW PUBLIC WRAPPER ---
+
 }

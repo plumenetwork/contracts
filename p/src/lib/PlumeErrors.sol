@@ -28,11 +28,6 @@ error ZeroAddress(string parameter);
 error TokenDoesNotExist(address token);
 
 /*
- * @notice Thrown when trying to perform an operation before cooling period is complete
- */
-error CooldownNotComplete();
-
-/*
  * @notice Thrown when a token transfer fails
  */
 error TransferError();
@@ -63,7 +58,14 @@ error StakeAmountTooSmall(uint256 providedAmount, uint256 minAmount);
 error InsufficientCooldownBalance(uint256 availableAmount, uint256 requestedAmount);
 
 /**
- * @notice Error thrown when trying to restake rewards but there are none available
+ * @notice Error thrown when trying to restake amount exceeds available cooled + parked balance.
+ * @param available Total amount available in cooled and parked.
+ * @param requested Amount requested to restake.
+ */
+error InsufficientCooledAndParkedBalance(uint256 available, uint256 requested);
+
+/**
+ * @notice Error thrown when trying to restake rewards but there are none available.
  */
 error NoRewardsToRestake();
 
@@ -249,3 +251,11 @@ error ValidatorIdExists();
  * @param requestedAmount Requested amount to add
  */
 error ExceedsValidatorCapacity(uint16 validatorId, uint256 currentAmount, uint256 maxCapacity, uint256 requestedAmount);
+
+/**
+ * @notice Error thrown when trying to restake from parked/cooled but there is no balance.
+ */
+error NoWithdrawableBalanceToRestake();
+
+/// @notice Emitted when trying to withdraw but the cooldown period is not complete.
+error CooldownNotComplete(uint256 cooldownEnd, uint256 currentTime);

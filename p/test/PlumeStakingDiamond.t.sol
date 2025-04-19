@@ -166,7 +166,7 @@ contract PlumeStakingDiamondTest is Test {
         accessControlSigs_Manual[6] = bytes4(keccak256(bytes("setRoleAdmin(bytes32,bytes32)")));
 
         // Staking Facet Selectors
-        bytes4[] memory stakingSigs_Manual = new bytes4[](12); // Increase size to 12
+        bytes4[] memory stakingSigs_Manual = new bytes4[](13); // Increase size to 13
         stakingSigs_Manual[0] = bytes4(keccak256(bytes("stake(uint16)")));
         stakingSigs_Manual[1] = bytes4(keccak256(bytes("restake(uint16,uint256)")));
         stakingSigs_Manual[2] = bytes4(keccak256(bytes("unstake(uint16)")));
@@ -179,6 +179,7 @@ contract PlumeStakingDiamondTest is Test {
         stakingSigs_Manual[9] = bytes4(keccak256(bytes("amountWithdrawable()")));
         stakingSigs_Manual[10] = bytes4(keccak256(bytes("cooldownEndDate()")));
         stakingSigs_Manual[11] = bytes4(keccak256(bytes("getUserValidatorStake(address,uint16)"))); // Add new selector
+        stakingSigs_Manual[12] = bytes4(keccak256(bytes("restakeRewards(uint16)"))); // <<< ADD MISSING SELECTOR HERE
 
         // Rewards Facet Selectors
         bytes4[] memory rewardsSigs_Manual = new bytes4[](21);
@@ -190,19 +191,19 @@ contract PlumeStakingDiamondTest is Test {
         rewardsSigs_Manual[5] = bytes4(keccak256(bytes("claim(address)")));
         rewardsSigs_Manual[6] = bytes4(keccak256(bytes("claim(address,uint16)")));
         rewardsSigs_Manual[7] = bytes4(keccak256(bytes("claimAll()")));
-        rewardsSigs_Manual[8] = bytes4(keccak256(bytes("restakeRewards(uint16)")));
-        rewardsSigs_Manual[9] = bytes4(keccak256(bytes("earned(address,address)")));
-        rewardsSigs_Manual[10] = bytes4(keccak256(bytes("getClaimableReward(address,address)")));
-        rewardsSigs_Manual[11] = bytes4(keccak256(bytes("getRewardTokens()")));
-        rewardsSigs_Manual[12] = bytes4(keccak256(bytes("getMaxRewardRate(address)")));
-        rewardsSigs_Manual[13] = bytes4(keccak256(bytes("tokenRewardInfo(address)")));
-        rewardsSigs_Manual[14] = bytes4(keccak256(bytes("getRewardRateCheckpointCount(address)")));
-        rewardsSigs_Manual[15] = bytes4(keccak256(bytes("getValidatorRewardRateCheckpointCount(uint16,address)")));
-        rewardsSigs_Manual[16] = bytes4(keccak256(bytes("getUserLastCheckpointIndex(address,uint16,address)")));
-        rewardsSigs_Manual[17] = bytes4(keccak256(bytes("getRewardRateCheckpoint(address,uint256)")));
-        rewardsSigs_Manual[18] = bytes4(keccak256(bytes("getValidatorRewardRateCheckpoint(uint16,address,uint256)")));
-        rewardsSigs_Manual[19] = bytes4(keccak256(bytes("setTreasury(address)")));
-        rewardsSigs_Manual[20] = bytes4(keccak256(bytes("getTreasury()")));
+        rewardsSigs_Manual[8] = bytes4(keccak256(bytes("earned(address,address)")));
+        rewardsSigs_Manual[9] = bytes4(keccak256(bytes("getClaimableReward(address,address)")));
+        rewardsSigs_Manual[10] = bytes4(keccak256(bytes("getRewardTokens()")));
+        rewardsSigs_Manual[11] = bytes4(keccak256(bytes("getMaxRewardRate(address)")));
+        rewardsSigs_Manual[12] = bytes4(keccak256(bytes("tokenRewardInfo(address)")));
+        rewardsSigs_Manual[13] = bytes4(keccak256(bytes("getRewardRateCheckpointCount(address)")));
+        rewardsSigs_Manual[14] = bytes4(keccak256(bytes("getValidatorRewardRateCheckpointCount(uint16,address)")));
+        rewardsSigs_Manual[15] = bytes4(keccak256(bytes("getUserLastCheckpointIndex(address,uint16,address)")));
+        rewardsSigs_Manual[16] = bytes4(keccak256(bytes("getRewardRateCheckpoint(address,uint256)")));
+        rewardsSigs_Manual[17] = bytes4(keccak256(bytes("getValidatorRewardRateCheckpoint(uint16,address,uint256)")));
+        rewardsSigs_Manual[18] = bytes4(keccak256(bytes("setTreasury(address)")));
+        rewardsSigs_Manual[19] = bytes4(keccak256(bytes("getTreasury()")));
+        rewardsSigs_Manual[20] = bytes4(keccak256(bytes("getPendingRewardForValidator(address,uint16,address)")));
 
         // Validator Facet Selectors
         bytes4[] memory validatorSigs_Manual = new bytes4[](12); // Increase size to 12
@@ -733,7 +734,6 @@ contract PlumeStakingDiamondTest is Test {
 
         vm.stopPrank();
     }
-
 
     function testClaimValidatorCommission_NonExistent() public {
         uint16 nonExistentId = 999;
@@ -2124,5 +2124,288 @@ contract PlumeStakingDiamondTest is Test {
 
         vm.stopPrank();
     }
+
+    // <<< ADD NEW TEST CASE HERE >>>
+    function testRestakeDuringCooldown() public {
+        uint256 stakeAmount = 1 ether;
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+
+        // User1 stakes
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId);
+        PlumeStakingStorage.StakeInfo memory stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.staked, stakeAmount, "Initial stake amount mismatch"); // CORRECTED
+        assertEq(stakeInfo.cooled, 0, "Initial cooling amount should be 0"); // CORRECTED
+        console2.log("User1 staked %s ETH to validator %d", stakeAmount, validatorId);
+
+        // User1 unstakes (initiates cooldown)
+        StakingFacet(address(diamondProxy)).unstake(validatorId);
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.staked, 0, "Staked amount should be 0 after unstake"); // CORRECTED
+        assertEq(stakeInfo.cooled, stakeAmount, "Cooling amount mismatch after unstake"); // CORRECTED
+        assertTrue(stakeInfo.cooldownEnd > block.timestamp, "Cooldown end date should be in the future");
+        uint256 cooldownEnd = stakeInfo.cooldownEnd;
+        console2.log("User1 unstaked %s ETH, now in cooldown until %s", stakeAmount, cooldownEnd);
+
+        // Before cooldown ends, User1 restakes the cooling amount to the *same* validator
+        assertTrue(block.timestamp < cooldownEnd, "Attempting restake before cooldown ends");
+        // CORRECTED: Destructure 4 values
+        (bool activeBefore, uint256 commissionBefore, uint256 totalStakedBefore, uint256 stakersCountBefore) =
+            ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+
+        console2.log("User1 attempting to restake %s ETH during cooldown...", stakeAmount);
+        StakingFacet(address(diamondProxy)).restake(validatorId, stakeAmount);
+
+        // Verify state after restake
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        // CORRECTED: Use cooldownEnd
+        console2.log(
+            "State after restake: Staked=%s, Cooling=%s, CooldownEnd=%s",
+            stakeInfo.staked,
+            stakeInfo.cooled,
+            stakeInfo.cooldownEnd
+        );
+
+        // EXPECTED CORRECT BEHAVIOR:
+        assertEq(stakeInfo.cooled, 0, "Cooling amount should be 0 after restake"); // CORRECTED
+        assertEq(stakeInfo.staked, stakeAmount, "Staked amount should be restored after restake"); // CORRECTED (THIS IS
+            // LIKELY TO FAIL)
+        // Cooldown should be cancelled/reset
+        assertEq(stakeInfo.cooldownEnd, 0, "Cooldown end date should be reset after restake");
+
+        // Verify validator's total stake increased
+        // CORRECTED: Destructure 4 values
+        (bool activeAfter, uint256 commissionAfter, uint256 totalStakedAfter, uint256 stakersCountAfter) =
+            ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+        assertEq(
+            totalStakedAfter, totalStakedBefore + stakeAmount, "Validator total stake should increase after restake"
+        ); // <<< THIS MIGHT ALSO FAIL
+
+        vm.stopPrank();
+        console2.log("Restake during cooldown test completed.");
+    }
+    // <<< END NEW TEST CASE >>>
+
+    // <<< ADD NEW COMPLEX TEST CASE HERE >>>
+    function testComplexStakeUnstakeRestakeWithdrawScenario() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        uint256 initialStake = 10 ether;
+        uint256 firstUnstake = 5 ether;
+        uint256 firstRestake = 2 ether;
+        uint256 withdrawAmount = 3 ether; // = firstUnstake - firstRestake
+        uint256 secondStake = 2 ether;
+        uint256 secondUnstake = 4 ether;
+        uint256 finalRestake = 4 ether; // = secondUnstake
+
+        // Ensure PUSD rewards are set up for the claim step
+        vm.startPrank(admin);
+        address token = address(pUSD);
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, 1e18);
+        address[] memory tokens = new address[](1);
+        tokens[0] = token;
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = 1e15; // Small PUSD rate
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        pUSD.transfer(address(treasury), 2000 ether); // Fund treasury
+        vm.stopPrank();
+
+        vm.startPrank(user1);
+
+        // 1. Stake 10 ETH
+        console2.log("1. Staking %s ETH...", initialStake);
+        StakingFacet(address(diamondProxy)).stake{ value: initialStake }(validatorId);
+        PlumeStakingStorage.StakeInfo memory stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.staked, initialStake, "State Error after Step 1");
+        assertEq(stakeInfo.cooled, 0, "State Error after Step 1");
+
+        // 2. Unstake 5 ETH
+        console2.log("2. Unstaking %s ETH...", firstUnstake);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, firstUnstake);
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        uint256 cooldownEnd1 = stakeInfo.cooldownEnd;
+        assertTrue(cooldownEnd1 > block.timestamp, "Cooldown 1 not set");
+        assertEq(stakeInfo.staked, initialStake - firstUnstake, "State Error after Step 2 (Staked)");
+        assertEq(stakeInfo.cooled, firstUnstake, "State Error after Step 2 (Cooled)");
+        console2.log("   Cooldown ends at: %s", cooldownEnd1);
+
+        // 3. Advance time (partway through cooldown) & Restake 2 ETH from cooling
+        vm.warp(block.timestamp + (cooldownEnd1 - block.timestamp) / 2);
+        console2.log("3. Restaking %s ETH from cooling...", firstRestake);
+        StakingFacet(address(diamondProxy)).restake(validatorId, firstRestake);
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.staked, initialStake - firstUnstake + firstRestake, "State Error after Step 3 (Staked)");
+        assertEq(stakeInfo.cooled, firstUnstake - firstRestake, "State Error after Step 3 (Cooled)");
+        assertEq(stakeInfo.cooldownEnd, cooldownEnd1, "Cooldown 1 should NOT reset yet"); // Cooldown timer continues
+
+        // 4. Advance time past original cooldown end
+        console2.log("4. Advancing time past cooldown 1 (%s)...", cooldownEnd1);
+        vm.warp(cooldownEnd1 + 1);
+
+        // 5. Withdraw the 3 ETH that finished cooling
+        console2.log("5. Withdrawing %s ETH...", withdrawAmount);
+        uint256 balanceBeforeWithdraw = user1.balance;
+        StakingFacet(address(diamondProxy)).withdraw();
+        assertEq(user1.balance, balanceBeforeWithdraw + withdrawAmount, "Withdraw amount mismatch");
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.staked, initialStake - firstUnstake + firstRestake, "State Error after Step 5 (Staked)");
+        assertEq(stakeInfo.cooled, 0, "State Error after Step 5 (Cooled)");
+        assertEq(stakeInfo.parked, 0, "State Error after Step 5 (Parked)");
+        assertEq(stakeInfo.cooldownEnd, 0, "Cooldown 1 should be reset after withdrawing all cooled");
+
+        // 6. Stake another 2 ETH normally
+        console2.log("6. Staking %s ETH normally...", secondStake);
+        StakingFacet(address(diamondProxy)).stake{ value: secondStake }(validatorId);
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(
+            stakeInfo.staked,
+            initialStake - firstUnstake + firstRestake + secondStake,
+            "State Error after Step 6 (Staked)"
+        );
+        assertEq(stakeInfo.cooled, 0, "State Error after Step 6 (Cooled)");
+
+        // 7. Unstake 4 ETH
+        console2.log("7. Unstaking %s ETH...", secondUnstake);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, secondUnstake);
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        uint256 cooldownEnd2 = stakeInfo.cooldownEnd;
+        assertTrue(cooldownEnd2 > block.timestamp, "Cooldown 2 not set");
+        assertEq(
+            stakeInfo.staked,
+            initialStake - firstUnstake + firstRestake + secondStake - secondUnstake,
+            "State Error after Step 7 (Staked)"
+        );
+        assertEq(stakeInfo.cooled, secondUnstake, "State Error after Step 7 (Cooled)");
+        console2.log("   Cooldown ends at: %s", cooldownEnd2);
+
+        // 8. Advance time past second cooldown end
+        console2.log("8. Advancing time past cooldown 2 (%s)...", cooldownEnd2);
+        vm.warp(cooldownEnd2 + 1);
+
+        // 9. Verify state: 4 ETH should be withdrawable (cooled moved to parked implicitly on check)
+        console2.log("9. Verifying view functions and internal state...");
+        // Check VIEW functions first
+        uint256 withdrawable = StakingFacet(address(diamondProxy)).amountWithdrawable();
+        uint256 cooling = StakingFacet(address(diamondProxy)).amountCooling();
+        assertEq(withdrawable, secondUnstake, "amountWithdrawable() mismatch after cooldown 2");
+        assertEq(cooling, 0, "amountCooling() mismatch after cooldown 2"); // Should be 0 as time has passed
+
+        // Check internal STATE
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.cooled, secondUnstake, "Internal State Error after Step 9 (Cooled)"); // Raw cooled should
+            // still hold the value
+        assertEq(stakeInfo.parked, 0, "Internal State Error after Step 9 (Parked)"); // Parked only updated by
+            // withdraw/restakeParked
+        assertTrue(stakeInfo.cooldownEnd <= block.timestamp, "Cooldown 2 end date should be in the past");
+
+        // 10. Attempt `restakeParked` when parked and available cooled are 0 (expect revert)
+        console2.log("10. Attempting restakeParked after withdrawing available balance (expect revert)...");
+        // First, actually withdraw the funds to move them out of cooled/parked state
+        uint256 balanceBeforeWithdrawStep10 = user1.balance;
+        StakingFacet(address(diamondProxy)).withdraw();
+        assertEq(user1.balance, balanceBeforeWithdrawStep10 + withdrawable, "Withdraw amount mismatch in Step 10");
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.parked, 0, "Parked should be 0 after withdraw");
+        assertEq(stakeInfo.cooled, 0, "Cooled should be 0 after withdraw");
+        assertEq(stakeInfo.cooldownEnd, 0, "Cooldown should be reset after withdraw");
+
+        // Now expect revert when calling restakeParked as there is nothing to restake
+        vm.expectRevert(abi.encodeWithSelector(NoRewardsToRestake.selector));
+        StakingFacet(address(diamondProxy)).restakeRewards(validatorId); // Use correct function name
+
+        // --- Steps 11-13 Re-evaluated ---
+        // The original intent was to restake the withdrawable amount. Let's redo this part.
+        // Reset state slightly by staking again and unstaking to get funds into cooled/parked state.
+
+        // Re-stake 4 ETH
+        console2.log("10b. Re-staking %s ETH to set up for restakeParked test", finalRestake);
+        StakingFacet(address(diamondProxy)).stake{ value: finalRestake }(validatorId);
+
+        // Unstake 4 ETH again
+        console2.log("10c. Unstaking %s ETH again...", finalRestake);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, finalRestake);
+        uint256 cooldownEnd3 = StakingFacet(address(diamondProxy)).cooldownEndDate();
+        assertTrue(cooldownEnd3 > block.timestamp, "Cooldown 3 not set");
+        console2.log("   Cooldown ends at: %s", cooldownEnd3);
+
+        // Advance time past cooldown 3
+        console2.log("10d. Advancing time past cooldown 3 (%s)...", cooldownEnd3);
+        vm.warp(cooldownEnd3 + 1);
+
+        // Verify 4 ETH is withdrawable (in cooled state, but past end date)
+        withdrawable = StakingFacet(address(diamondProxy)).amountWithdrawable();
+        assertEq(withdrawable, finalRestake, "Withdrawable amount mismatch before final restake");
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.cooled, finalRestake, "Cooled amount mismatch before final restake");
+        assertEq(stakeInfo.parked, 0, "Parked amount mismatch before final restake");
+
+        // 11. Activate PLUME rewards and advance time to accrue rewards
+        console2.log("11. Activating PLUME rewards and advancing time...");
+        uint256 plumeRate = 1e16; // 0.01 PLUME per second
+        vm.startPrank(admin);
+        // RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE); // Ensure native token is added <-- COMMENT
+        // OUT THIS LINE
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, plumeRate * 2); // Set max rate
+        address[] memory nativeTokenArr = new address[](1);
+        nativeTokenArr[0] = PLUME_NATIVE;
+        uint256[] memory nativeRateArr = new uint256[](1);
+        nativeRateArr[0] = plumeRate;
+        RewardsFacet(address(diamondProxy)).setRewardRates(nativeTokenArr, nativeRateArr);
+        vm.stopPrank();
+
+        uint256 timeAdvance = 100 seconds;
+        vm.warp(block.timestamp + timeAdvance); // Advance time to accrue PLUME rewards
+
+        // 12. Call restakeRewards - this should take pending PLUME and add to stake
+        console2.log("12. Calling restakeRewards(%s)...", validatorId);
+        // uint256 stakedBeforeRestake = StakingFacet(address(diamondProxy)).amountStaked(); // <-- MOVE THIS LINE
+        uint256 pendingPlumeReward = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, PLUME_NATIVE);
+        assertTrue(pendingPlumeReward > 0, "Should have accrued some PLUME reward");
+        console2.log("   Pending PLUME reward: %s", pendingPlumeReward);
+
+        vm.startPrank(user1);
+        uint256 stakedBeforeRestake = StakingFacet(address(diamondProxy)).amountStaked(); // <-- MOVE TO HERE
+        uint256 restakedAmount = StakingFacet(address(diamondProxy)).restakeRewards(validatorId);
+        assertEq(restakedAmount, pendingPlumeReward, "restakeRewards returned incorrect amount");
+
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.staked, stakedBeforeRestake + restakedAmount, "State Error after Step 12 (Staked)");
+        assertEq(stakeInfo.cooled, finalRestake, "State Error after Step 12 (Cooled - should be unchanged)");
+        assertEq(stakeInfo.parked, 0, "State Error after Step 12 (Parked - should be unchanged)");
+
+        // Verify pending PLUME reward is now zero
+        uint256 pendingPlumeAfter = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, PLUME_NATIVE);
+        assertEq(pendingPlumeAfter, 0, "Pending PLUME reward should be zero after restakeRewards");
+
+        // 13. Withdraw the 4 ETH that finished cooling earlier
+        console2.log("13. Withdrawing %s ETH (from finished cooldown)...", finalRestake);
+        uint256 withdrawableNow = StakingFacet(address(diamondProxy)).amountWithdrawable();
+        assertEq(withdrawableNow, finalRestake, "Withdrawable amount incorrect before final withdraw");
+        uint256 finalBalanceBeforeWithdraw = user1.balance; // RENAMED variable
+        StakingFacet(address(diamondProxy)).withdraw();
+        assertEq(user1.balance, finalBalanceBeforeWithdraw + finalRestake, "Withdraw amount mismatch in Step 13");
+
+        // 14. Final Checks
+        console2.log("14. Final checks...");
+        stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(stakeInfo.staked, stakedBeforeRestake + restakedAmount, "Final Staked amount incorrect");
+        assertEq(stakeInfo.cooled, 0, "Final Cooled amount should be 0");
+        assertEq(stakeInfo.parked, 0, "Final Parked amount should be 0");
+        assertEq(StakingFacet(address(diamondProxy)).amountWithdrawable(), 0, "Final Withdrawable should be 0");
+
+        // Can optionally claim PUSD rewards accumulated throughout the test as well
+        console2.log("   Claiming any remaining PUSD rewards...");
+        uint256 claimablePUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+        if (claimablePUSD > 0) {
+            uint256 pusdBalanceBefore = pUSD.balanceOf(user1);
+            RewardsFacet(address(diamondProxy)).claim(address(pUSD));
+            assertEq(
+                pUSD.balanceOf(user1), pusdBalanceBefore + claimablePUSD, "PUSD balance mismatch after final claim"
+            );
+        }
+
+        vm.stopPrank();
+        console2.log("Complex stake/unstake/restake/withdraw scenario test completed.");
+    }
+    // <<< END NEW COMPLEX TEST CASE >>>
 
 }

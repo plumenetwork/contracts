@@ -431,3 +431,11 @@ event TransferFailed(address indexed token, address indexed recipient, uint256 a
  * @param amount Amount of rewards restaked
  */
 event RewardsRestaked(address indexed staker, uint16 indexed validatorId, uint256 amount);
+
+/**
+ * @notice Emitted when a user restakes their parked/cooled balance.
+ * @param user The address of the user.
+ * @param validatorId The ID of the validator the user restaked to.
+ * @param amount The amount of PLUME restaked.
+ */
+event ParkedRestaked(address indexed user, uint16 indexed validatorId, uint256 amount);

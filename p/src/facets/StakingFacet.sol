@@ -6,10 +6,13 @@ import {
     CooldownPeriodNotEnded,
     ExceedsValidatorCapacity,
     InsufficientCooldownBalance,
+    InsufficientCooledAndParkedBalance,
     InvalidAmount,
     NativeTransferFailed,
     NoActiveStake,
     NoRewardsToRestake,
+    NoWithdrawableBalanceToRestake,
+    NoWithdrawableBalanceToRestake,
     StakeAmountTooSmall,
     TokenDoesNotExist,
     TooManyStakers,
@@ -28,10 +31,13 @@ import { StakedOnBehalf } from "../lib/PlumeEvents.sol";
 import { Unstaked } from "../lib/PlumeEvents.sol";
 import { Withdrawn } from "../lib/PlumeEvents.sol";
 import { RewardsRestaked } from "../lib/PlumeEvents.sol";
+import { ParkedRestaked } from "../lib/PlumeEvents.sol";
+import { RewardClaimedFromValidator } from "../lib/PlumeEvents.sol";
 
 import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { PlumeValidatorLogic } from "../lib/PlumeValidatorLogic.sol";
+import { RewardsFacet } from "./RewardsFacet.sol";
 
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -50,8 +56,10 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
     using Address for address payable;
 
+    // Define PLUME_NATIVE constant
+    address internal constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
     // Constants moved from Base - needed here
-    address internal constant PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint256 internal constant REWARD_PRECISION = 1e18; // Needed for commission calc in _earned? No, _earned is
         // elsewhere
 
@@ -124,27 +132,66 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     /**
      * @notice Restake PLUME to a specific validator, using funds only from cooling and parked balances
      * @param validatorId ID of the validator to stake to
-     * @param amount Amount of tokens to restake (can be 0 to use all available cooling/parked funds)
+     * @param amount Amount of tokens to restake
      */
     function restake(uint16 validatorId, uint256 amount) external returns (uint256) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
+        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender]; // Global info
 
-        // Check there's enough in cooldown
-        if (amount > info.cooled) {
-            revert InsufficientCooldownBalance(info.cooled, amount);
+        if (amount == 0) {
+            revert InvalidAmount(amount);
         }
         if (!$.validatorExists[validatorId]) {
             revert ValidatorNotActive(validatorId);
         }
 
-        // Update stake and cooldown amount
-        $.userValidatorStakes[msg.sender][validatorId].staked += amount;
-        $.validators[validatorId].delegatedAmount += amount;
-        info.cooled -= amount;
-        $.totalCooling -= amount;
-        $.totalStaked += amount;
+        // Check available balances
+        uint256 availableCooled = info.cooled;
+        uint256 availableParked = info.parked;
+        uint256 totalAvailable = availableCooled + availableParked;
 
+        if (amount > totalAvailable) {
+            revert InsufficientCooledAndParkedBalance(totalAvailable, amount);
+        }
+
+        // Determine amounts from each source
+        uint256 fromCooled = amount <= availableCooled ? amount : availableCooled;
+        uint256 fromParked = amount - fromCooled;
+
+        // --- Update State ---
+        // 1. Decrease source balances
+        if (fromCooled > 0) {
+            info.cooled -= fromCooled;
+            if ($.totalCooling >= fromCooled) {
+                $.totalCooling -= fromCooled;
+            } else {
+                $.totalCooling = 0;
+            }
+            // Reset cooldown only if cooled balance becomes zero AFTER this operation
+            if (info.cooled == 0) {
+                info.cooldownEnd = 0;
+            }
+        }
+        if (fromParked > 0) {
+            info.parked -= fromParked;
+            if ($.totalWithdrawable >= fromParked) {
+                $.totalWithdrawable -= fromParked;
+            } else {
+                $.totalWithdrawable = 0;
+            }
+        }
+
+        // 2. Increase staked amounts
+        info.staked += amount; // User's global staked
+        $.userValidatorStakes[msg.sender][validatorId].staked += amount; // User's stake FOR THIS VALIDATOR
+        $.validators[validatorId].delegatedAmount += amount; // Validator's delegated amount
+        $.validatorTotalStaked[validatorId] += amount; // Validator's total staked
+        $.totalStaked += amount; // Global total staked
+
+        // Add staker to validator list if not already there
+        PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
+
+        // --- Checks ---
         // Check if exceeding validator capacity
         uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
         uint256 maxCapacity = $.validators[validatorId].maxCapacity;
@@ -160,15 +207,18 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             }
         }
 
+        // --- Events ---
         // Emit stake event with details
         emit Staked(
             msg.sender,
             validatorId,
-            amount,
-            amount, // fromCooled
-            0, // fromParked
-            0
+            amount, // Total amount restaked
+            fromCooled, // Amount from cooled
+            fromParked, // Amount from parked
+            amount // Treat the restaked amount as newly active stake
         );
+
+        // Note: No RewardsRestaked event here, as this isn't specifically rewards
 
         return amount;
     }
@@ -378,38 +428,93 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         return stakeAmount;
     }
 
-    function restakeRewards(
+    /**
+     * @notice Restakes the user's entire *pending native PLUME rewards* (accrued across all validators)
+     *         to a specific validator.
+     * @param validatorId ID of the validator to stake the rewards to.
+     * @return amountRestaked The total amount of pending rewards successfully restaked.
+     */
+    function restakeRewards( // Kept original name, implement logic based on old function
         uint16 validatorId
-    ) external returns (uint256) {
+    ) external nonReentrant returns (uint256 amountRestaked) {
+        // Added nonReentrant, changed return name
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
 
+        // Verify target validator exists and is active
         if (!$.validatorExists[validatorId]) {
-            revert ValidatorNotActive(validatorId);
+            revert ValidatorDoesNotExist(validatorId); // Use correct error
+        }
+        PlumeStakingStorage.ValidatorInfo storage targetValidator = $.validators[validatorId];
+        if (!targetValidator.active) {
+            revert ValidatorInactive(validatorId); // Use correct error
         }
 
-        // Get pending rewards to restake
-        uint256 pendingRewards = $.stakeInfo[msg.sender].parked;
-        if (pendingRewards == 0) {
-            revert NoRewardsToRestake();
+        // Native token is represented by PLUME_NATIVE constant
+        address token = PLUME_NATIVE;
+
+        // Check if PLUME_NATIVE is actually configured as a reward token
+        if (!$.isRewardToken[token]) {
+            revert TokenDoesNotExist(token); // Or specific error like "NativeTokenNotReward"
         }
 
-        // Update stake amount
-        $.userValidatorStakes[msg.sender][validatorId].staked += pendingRewards;
-        $.validators[validatorId].delegatedAmount += pendingRewards;
-        $.totalStaked += pendingRewards;
+        // Calculate total pending native rewards across all validators
+        amountRestaked = 0;
+        uint16[] memory userValidators = $.userValidators[msg.sender];
 
-        // Reset user's withdrawable amount
-        $.stakeInfo[msg.sender].parked = 0;
-        $.totalWithdrawable -= pendingRewards;
+        for (uint256 i = 0; i < userValidators.length; i++) {
+            uint16 userValidatorId = userValidators[i];
 
-        // Check if exceeding validator capacity
-        uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
-        uint256 maxCapacity = $.validators[validatorId].maxCapacity;
+            // Calculate earned rewards for this specific validator by calling the public wrapper
+            // Note: This requires casting the diamond proxy address to RewardsFacet
+            uint256 validatorReward =
+                RewardsFacet(payable(address(this))).getPendingRewardForValidator(msg.sender, userValidatorId, token);
+
+            if (validatorReward > 0) {
+                amountRestaked += validatorReward;
+
+                // Update internal reward states as if claimed
+                // This ensures reward-per-token tracking is current before zeroing
+                PlumeRewardLogic.updateRewardsForValidator($, msg.sender, userValidatorId);
+
+                // Reset rewards for this validator/token
+                $.userRewards[msg.sender][userValidatorId][token] = 0;
+
+                // Update total claimable (decrease)
+                if ($.totalClaimableByToken[token] >= validatorReward) {
+                    $.totalClaimableByToken[token] -= validatorReward;
+                } else {
+                    $.totalClaimableByToken[token] = 0;
+                }
+
+                // Emit event indicating reward was 'claimed' internally for restaking
+                emit RewardClaimedFromValidator(msg.sender, token, userValidatorId, validatorReward);
+            }
+        }
+
+        // Check if any rewards were found
+        if (amountRestaked == 0) {
+            revert NoRewardsToRestake(); // Use original error
+        }
+
+        // --- Update Stake State ---
+        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender]; // Global info
+
+        // Increase staked amounts
+        info.staked += amountRestaked; // User's global staked
+        $.userValidatorStakes[msg.sender][validatorId].staked += amountRestaked; // User's stake FOR THIS VALIDATOR
+        targetValidator.delegatedAmount += amountRestaked; // Validator's delegated amount
+        $.validatorTotalStaked[validatorId] += amountRestaked; // Validator's total staked
+        $.totalStaked += amountRestaked; // Global total staked
+
+        // Add staker relationship if needed
+        PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
+
+        // --- Checks (copied from stake) ---
+        uint256 newDelegatedAmount = targetValidator.delegatedAmount;
+        uint256 maxCapacity = targetValidator.maxCapacity;
         if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
-            revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, pendingRewards);
+            revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, amountRestaked);
         }
-
-        // Check if exceeding validator percentage limit
         if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
             uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
             if (validatorPercentage > $.maxValidatorPercentage) {
@@ -417,19 +522,21 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             }
         }
 
-        // Emit stake event with details
+        // --- Events ---
+        // Emit stake event - specifying that the amount came from pending rewards
         emit Staked(
             msg.sender,
             validatorId,
-            pendingRewards,
+            amountRestaked, // Total amount added to stake
             0, // fromCooled
             0, // fromParked
-            0
+            amountRestaked // Amount came from pending rewards
         );
 
-        emit RewardsRestaked(msg.sender, validatorId, pendingRewards);
+        // Emit the specific restake event
+        emit RewardsRestaked(msg.sender, validatorId, amountRestaked);
 
-        return pendingRewards;
+        return amountRestaked;
     }
 
     // --- View Functions ---
