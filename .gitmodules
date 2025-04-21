@@ -43,3 +43,6 @@
 [submodule "p/lib/solidstate-solidity"]
 	path = p/lib/solidstate-solidity
 	url = https://github.com/solidstate-network/solidstate-solidity
+[submodule "lib/solady"]
+	path = lib/solady
+	url = https://github.com/vectorized/solady
