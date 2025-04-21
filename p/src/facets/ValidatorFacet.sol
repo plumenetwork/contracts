@@ -5,13 +5,16 @@ import {
     AlreadyVotedToSlash,
     CannotVoteForSelf,
     CommissionTooHigh,
+    InvalidUpdateType,
     NativeTransferFailed,
     NotValidatorAdmin,
     SlashConditionsNotMet,
     SlashVoteDurationTooLong,
     SlashVoteExpired,
     TooManyStakers,
+    TreasuryNotSet,
     UnanimityNotReached,
+    Unauthorized,
     ValidatorAlreadyExists,
     ValidatorAlreadySlashed,
     ValidatorDoesNotExist,
@@ -93,8 +96,9 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     modifier onlyValidatorAdmin(
         uint16 validatorId
     ) {
-        // Access Plume storage to find validator admin
-        require(msg.sender == _getPlumeStorage().validators[validatorId].l2AdminAddress, "Not validator admin");
+        if (msg.sender != _getPlumeStorage().validators[validatorId].l2AdminAddress) {
+            revert NotValidatorAdmin(msg.sender);
+        }
         _;
     }
 
@@ -106,7 +110,9 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     modifier onlyRole(
         bytes32 _role
     ) {
-        require(IAccessControl(address(this)).hasRole(_role, msg.sender), "Caller does not have the required role");
+        if (!IAccessControl(address(this)).hasRole(_role, msg.sender)) {
+            revert Unauthorized(msg.sender, _role);
+        }
         _;
     }
 
@@ -241,7 +247,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
             validator.l2WithdrawAddress = newWithdrawAddress;
         } else {
-            revert("Invalid update type");
+            revert InvalidUpdateType(updateType);
         }
 
         emit ValidatorUpdated(
@@ -276,7 +282,9 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
             // Get the treasury address
             address treasury = getTreasuryAddress();
-            require(treasury != address(0), "Treasury not set");
+            if (treasury == address(0)) {
+                revert TreasuryNotSet();
+            }
 
             // Use the treasury to distribute reward instead of direct transfer
             IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);

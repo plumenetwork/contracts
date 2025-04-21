@@ -439,3 +439,6 @@ event RewardsRestaked(address indexed staker, uint16 indexed validatorId, uint25
  * @param amount The amount of PLUME restaked.
  */
 event ParkedRestaked(address indexed user, uint16 indexed validatorId, uint256 amount);
+
+// --- Management Facet Events ---
+event AdminStakeCorrection(address indexed user, uint256 oldTotalStake, uint256 newTotalStake);

@@ -259,3 +259,11 @@ error NoWithdrawableBalanceToRestake();
 
 /// @notice Emitted when trying to withdraw but the cooldown period is not complete.
 error CooldownNotComplete(uint256 cooldownEnd, uint256 currentTime);
+
+// Core errors
+error Unauthorized(address caller, bytes32 requiredRole);
+error TreasuryNotSet();
+error InternalInconsistency(string message);
+
+// Validator errors
+error InvalidUpdateType(uint8 providedType);

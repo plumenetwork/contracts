@@ -598,8 +598,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return amount Total amount of PLUME staked.
      */
     function totalAmountStaked() external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        return $.totalStaked;
+        return _getPlumeStorage().totalStaked;
     }
 
     /**
@@ -607,8 +606,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return amount Total amount of PLUME cooling.
      */
     function totalAmountCooling() external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        return $.totalCooling;
+        return _getPlumeStorage().totalCooling;
     }
 
     /**
@@ -616,8 +614,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return amount Total amount of PLUME withdrawable.
      */
     function totalAmountWithdrawable() external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        return $.totalWithdrawable;
+        return _getPlumeStorage().totalWithdrawable;
     }
 
     /**
@@ -649,5 +646,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         return $.userValidatorStakes[user][validatorId].staked;
     }
     // --- END NEW VIEW FUNCTION ---
+
+    // --- Internal Helper Functions ---
 
 }

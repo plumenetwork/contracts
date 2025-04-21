@@ -5,16 +5,20 @@ import {
     ArrayLengthMismatch,
     EmptyArray,
     InsufficientBalance,
+    InternalInconsistency,
     InvalidAmount,
     InvalidRewardRateCheckpoint,
     NativeTransferFailed,
     RewardRateExceedsMax,
     TokenAlreadyExists,
     TokenDoesNotExist,
+    TreasuryNotSet,
+    Unauthorized,
     ValidatorDoesNotExist,
     ValidatorInactive,
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
+
 import {
     MaxRewardRateUpdated,
     RewardClaimed,
@@ -96,7 +100,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     modifier onlyRole(
         bytes32 _role
     ) {
-        require(IAccessControl(address(this)).hasRole(_role, msg.sender), "Caller does not have the required role");
+        if (!IAccessControl(address(this)).hasRole(_role, msg.sender)) {
+            revert Unauthorized(msg.sender, _role);
+        }
         _;
     }
 
@@ -130,7 +136,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function setTreasury(
         address _treasury
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        require(_treasury != address(0), "Treasury cannot be zero address");
+        if (_treasury == address(0)) {
+            revert ZeroAddress("treasury");
+        }
         setTreasuryAddress(_treasury);
         emit TreasurySet(_treasury);
     }
@@ -236,7 +244,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
 
         address treasury = getTreasuryAddress();
-        require(treasury != address(0), "Treasury not set");
+        if (treasury == address(0)) {
+            revert TreasuryNotSet();
+        }
 
         // Check if treasury has sufficient funds - direct balance check
         if (token == PLUME) {
@@ -433,7 +443,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      */
     function _transferRewardFromTreasury(address token, uint256 amount, address recipient) internal {
         address treasury = getTreasuryAddress();
-        require(treasury != address(0), "Treasury not set");
+        if (treasury == address(0)) {
+            revert TreasuryNotSet();
+        }
 
         // Make the treasury send the rewards directly to the user
         IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);
@@ -469,7 +481,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
 
         // This should never happen if isRewardToken is properly maintained
-        revert("Token not found in array but exists in mapping");
+        revert InternalInconsistency("Reward token map/array mismatch");
     }
 
     // --- Public View Functions ---

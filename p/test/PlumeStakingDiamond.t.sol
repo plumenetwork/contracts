@@ -29,7 +29,7 @@ import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535Diamo
 import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 
 // Libs & Errors/Events
-
+import { NotValidatorAdmin, Unauthorized } from "../src/lib/PlumeErrors.sol"; // Added Unauthorized, NotValidatorAdmin
 import "../src/lib/PlumeErrors.sol";
 import "../src/lib/PlumeEvents.sol";
 import { PlumeRoles } from "../src/lib/PlumeRoles.sol";
@@ -741,7 +741,8 @@ contract PlumeStakingDiamondTest is Test {
 
         vm.startPrank(validatorAdmin); // Prank as a valid admin for *some* validator (e.g., ID 0)
         // Expect revert from onlyValidatorAdmin(nonExistentId) as validator 999 data doesn't exist to check admin
-        vm.expectRevert(bytes("Not validator admin"));
+        // vm.expectRevert(bytes("Not validator admin"));
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, validatorAdmin));
         ValidatorFacet(address(diamondProxy)).claimValidatorCommission(nonExistentId, token);
         vm.stopPrank();
     }
@@ -751,7 +752,8 @@ contract PlumeStakingDiamondTest is Test {
         address token = address(pUSD);
 
         vm.startPrank(user1); // user1 is not the admin for validator 0
-        vm.expectRevert(bytes("Not validator admin"));
+        // vm.expectRevert(bytes("Not validator admin"));
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
         ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validatorId, token);
         vm.stopPrank();
     }
@@ -797,7 +799,8 @@ contract PlumeStakingDiamondTest is Test {
         uint8 fieldCode = 0;
 
         // Expect revert from the validator admin check
-        vm.expectRevert(bytes("Not validator admin"));
+        // vm.expectRevert(bytes("Not validator admin"));
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
         vm.startPrank(user1); // user1 is not the validator admin for validator 0
         ValidatorFacet(address(diamondProxy)).updateValidator(validatorId, fieldCode, data);
         vm.stopPrank();
@@ -845,7 +848,8 @@ contract PlumeStakingDiamondTest is Test {
 
         // Expect revert from the validator admin check
         // vm.expectEmit(...) removed as call should revert before emitting
-        vm.expectRevert(bytes("Not validator admin"));
+        // vm.expectRevert(bytes("Not validator admin"));
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
         vm.startPrank(user1); // user1 is not the validator admin for validator 0
         ValidatorFacet(address(diamondProxy)).updateValidator(validatorId, fieldCode, data);
         vm.stopPrank();
@@ -859,7 +863,8 @@ contract PlumeStakingDiamondTest is Test {
 
         vm.startPrank(validatorAdmin); // Call as an admin of *some* validator
         // Expect revert from onlyValidatorAdmin(nonExistentId)
-        vm.expectRevert(bytes("Not validator admin"));
+        // vm.expectRevert(bytes("Not validator admin"));
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, validatorAdmin));
         ValidatorFacet(address(diamondProxy)).updateValidator(nonExistentId, fieldCode, data);
         vm.stopPrank();
     }
@@ -971,7 +976,8 @@ contract PlumeStakingDiamondTest is Test {
 
         // Call as non-admin and expect revert
         vm.startPrank(user1);
-        vm.expectRevert(bytes("Caller does not have the required role"));
+        // vm.expectRevert(bytes("Caller does not have the required role"));
+        vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user1, PlumeRoles.ADMIN_ROLE));
         ManagementFacet(address(diamondProxy)).adminWithdraw(token, withdrawAmount, recipient);
         vm.stopPrank();
     }
@@ -1037,7 +1043,8 @@ contract PlumeStakingDiamondTest is Test {
         uint16 newValidatorId = 3;
         uint256 maxCapacity = 1_000_000e18;
         // Expect revert from onlyRole check in ValidatorFacet
-        vm.expectRevert(bytes("Caller does not have the required role"));
+        // vm.expectRevert(bytes("Caller does not have the required role"));
+        vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user1, PlumeRoles.VALIDATOR_ROLE));
 
         vm.startPrank(user1); // user1 does not have VALIDATOR_ROLE by default
         ValidatorFacet(address(diamondProxy)).addValidator(
@@ -1379,7 +1386,8 @@ contract PlumeStakingDiamondTest is Test {
     function testProtected_AddValidator_Fail() public {
         // User1 (no VALIDATOR_ROLE) calls addValidator
         vm.startPrank(user1);
-        vm.expectRevert(bytes("Caller does not have the required role"));
+        // vm.expectRevert(bytes("Caller does not have the required role"));
+        vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user1, PlumeRoles.VALIDATOR_ROLE));
         ValidatorFacet(address(diamondProxy)).addValidator(
             11, 5e16, user2, user2, "v11", "a11", address(2), 1_000_000e18
         );
