@@ -2262,8 +2262,7 @@ contract ForkTestPlumeStaking is Test {
         console2.log("11. Activating PLUME rewards and advancing time...");
         uint256 plumeRate = 1e16; // 0.01 PLUME per second
         vm.startPrank(admin);
-        // RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE); // Ensure native token is added <-- COMMENT
-        // OUT THIS LINE
+        // RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE); // Ensure native token is added <-- COMMENT OUT THIS LINE
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, plumeRate * 2); // Set max rate
         address[] memory nativeTokenArr = new address[](1);
         nativeTokenArr[0] = PLUME_NATIVE;
@@ -2275,12 +2274,19 @@ contract ForkTestPlumeStaking is Test {
         vm.stopPrank();
 
         uint256 timeAdvance = 100 seconds;
+        uint256 timeBeforeWarp = block.timestamp;
+        console2.log("   Time before warp: %s", timeBeforeWarp);
         vm.warp(block.timestamp + timeAdvance); // Advance time to accrue PLUME rewards
+        uint256 timeAfterWarp = block.timestamp;
+        console2.log("   Time after warp: %s (Advanced %s s)", timeAfterWarp, timeAfterWarp - timeBeforeWarp);
 
         // 12. Call restakeRewards - this should take pending PLUME and add to stake
         console2.log("12. Calling restakeRewards(%s)...", validatorId);
         // uint256 stakedBeforeRestake = StakingFacet(address(diamondProxy)).amountStaked(); // <-- MOVE THIS LINE
         uint256 pendingPlumeReward = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, PLUME_NATIVE);
+        // <<< ADD LOGGING >>>
+        console2.log("Result of getClaimableReward(user1, PLUME_NATIVE):", pendingPlumeReward);
+        // <<< END LOGGING >>>
         assertTrue(pendingPlumeReward > 0, "Should have accrued some PLUME reward");
         console2.log("   Pending PLUME reward: %s", pendingPlumeReward);
 
