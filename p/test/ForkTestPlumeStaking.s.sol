@@ -104,7 +104,8 @@ contract ForkTestPlumeStaking is Test {
         vm.createSelectFork(mainnetRpcUrl);
 
         // Now, deal funds on the selected fork
-        uint256 adminPusdAmount = 5000 * 1e6; // Corrected for 6 decimals
+        // uint256 adminPusdAmount = 5000 * 1e6; // Corrected for 6 decimals
+        uint256 adminPusdAmount = 50_000 * 1e6; // INCREASED FURTHER
         deal(address(pUSD), admin, adminPusdAmount);
         console2.log("Admin pUSD balance immediately after deal (and fork selection) in setUp:", pUSD.balanceOf(admin));
 
@@ -125,12 +126,17 @@ contract ForkTestPlumeStaking is Test {
 
         vm.deal(user1, 1000 ether);
         vm.deal(user2, 1000 ether);
+        vm.deal(user3, 1000 ether);
+        vm.deal(user4, 1000 ether);
+
+        // Fund admin AFTER initializing treasury, just in case order matters
+        // uint256 adminPusdAmount = 20_000 * 1e6;
 
         try rewardsFacet.getTreasury() returns (address treasuryAddr) {
             if (treasuryAddr != address(0)) {
                 treasury = IPlumeStakingRewardTreasury(treasuryAddr);
 
-                deal(address(pUSD), treasuryAddr, 2e15);
+                deal(address(pUSD), treasuryAddr, 2e24); // Keep treasury funding high
                 vm.deal(treasuryAddr, 1000 ether);
 
                 console2.log("Using Mainnet Treasury at:", treasuryAddr);
@@ -140,6 +146,10 @@ contract ForkTestPlumeStaking is Test {
         } catch {
             console2.log("WARNING: Could not call getTreasury() or it reverted.");
         }
+
+        // Deal to admin *after* treasury setup
+        deal(address(pUSD), admin, adminPusdAmount);
+        console2.log("Admin pUSD balance AFTER dealing in setUp:", pUSD.balanceOf(admin));
 
         console2.log("Fork setup complete. Testing against Diamond:", DIAMOND_PROXY_ADDRESS);
     }
@@ -476,7 +486,7 @@ contract ForkTestPlumeStaking is Test {
         // === User1 claims rewards ===
         vm.startPrank(user1);
         uint256 user1BalanceBefore = pUSD.balanceOf(user1);
-        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(address(pUSD), 0);
+        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(address(pUSD), DEFAULT_VALIDATOR_ID);
         uint256 user1BalanceAfter = pUSD.balanceOf(user1);
 
         // Verify claim was successful
@@ -498,9 +508,14 @@ contract ForkTestPlumeStaking is Test {
         vm.stopPrank();
 
         vm.startPrank(admin); // Use KNOWN_ADMIN assumed to be L2 admin for validator 1
-        uint256 validatorBalanceBefore = pUSD.balanceOf(validatorAdmin);
-        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(0, address(pUSD));
-        uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
+        // uint256 validatorBalanceBefore = pUSD.balanceOf(validatorAdmin);
+        uint256 validatorBalanceBefore = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of actual admin for
+            // validatorId 1
+        uint256 commissionClaimed =
+            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
+        // uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
+        uint256 validatorBalanceAfter = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of actual admin for
+            // validatorId 1
 
         // Verify commission claim was successful
         assertApproxEqAbs(
@@ -511,7 +526,8 @@ contract ForkTestPlumeStaking is Test {
         );
 
         // Check final commission accrued (should be zero since we reset the time)
-        uint256 finalCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(0, address(pUSD));
+        uint256 finalCommission =
+            ValidatorFacet(address(diamondProxy)).getAccruedCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
         assertApproxEqAbs(finalCommission, 0, 10 ** 10, "Final accrued commission should be near zero");
         vm.stopPrank();
 
@@ -1509,8 +1525,9 @@ contract ForkTestPlumeStaking is Test {
         vm.startPrank(admin);
         rates[0] = newRewardRate;
         // Ensure max rate allows the *new* desired rate
-        RewardsFacet(address(diamondProxy)).setMaxRewardRate(address(pUSD), newRewardRate);
-        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        // RewardsFacet(address(diamondProxy)).setMaxRewardRate(address(pUSD), newRewardRate); // <<< MOVE THIS DOWN
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates); // <<< SET CURRENT RATE FIRST
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(address(pUSD), newRewardRate); // <<< THEN SET MAX RATE
         vm.stopPrank();
 
         uint256 period3Duration = 1 days;
@@ -1551,7 +1568,7 @@ contract ForkTestPlumeStaking is Test {
         // User claims
         vm.startPrank(user1);
         uint256 user1BalanceBefore = pUSD.balanceOf(user1);
-        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(address(pUSD), 0);
+        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(address(pUSD), DEFAULT_VALIDATOR_ID);
         uint256 user1BalanceAfter = pUSD.balanceOf(user1);
 
         // Verify claim was successful
@@ -1573,9 +1590,14 @@ contract ForkTestPlumeStaking is Test {
         vm.stopPrank();
 
         vm.startPrank(admin); // Use KNOWN_ADMIN assumed to be L2 admin for validator 1
-        uint256 validatorBalanceBefore = pUSD.balanceOf(validatorAdmin);
-        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(0, address(pUSD));
-        uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
+        // uint256 validatorBalanceBefore = pUSD.balanceOf(validatorAdmin);
+        uint256 validatorBalanceBefore = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of actual admin for
+            // validatorId 1
+        uint256 commissionClaimed =
+            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
+        // uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
+        uint256 validatorBalanceAfter = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of actual admin for
+            // validatorId 1
 
         // Verify commission claim was successful
         assertApproxEqAbs(
@@ -1586,7 +1608,8 @@ contract ForkTestPlumeStaking is Test {
         );
 
         // Check final commission accrued (should be zero since we reset the time)
-        uint256 finalCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(0, address(pUSD));
+        uint256 finalCommission =
+            ValidatorFacet(address(diamondProxy)).getAccruedCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
         assertApproxEqAbs(finalCommission, 0, 10 ** 10, "Final accrued commission should be near zero");
         vm.stopPrank();
 
@@ -1623,7 +1646,8 @@ contract ForkTestPlumeStaking is Test {
         ValidatorFacet(address(diamondProxy)).updateValidator(validator0, 0, abi.encode(uint256(5e16))); // 5% scaled
         vm.stopPrank();
 
-        vm.startPrank(user2); // admin for validator1 from setUp
+        // vm.startPrank(user2); // admin for validator1 from setUp <-- INCORRECT, admin is KNOWN_ADMIN
+        vm.startPrank(admin); // <<< CHANGE: Use KNOWN_ADMIN for validator1
         // ValidatorFacet(address(diamondProxy)).updateValidator(validator1, 0, abi.encode(uint256(1000))); // 10%
         ValidatorFacet(address(diamondProxy)).updateValidator(validator1, 0, abi.encode(uint256(10e16))); // 10% scaled
         vm.stopPrank();
@@ -1713,10 +1737,14 @@ contract ForkTestPlumeStaking is Test {
         // Use smaller multipliers for new rates
         rates[0] = 2e15; // Double PUSD rate to 0.002 PUSD per second
         rates[1] = 2e13; // Decrease PLUME rate to 0.00002 ETH per second (1/5th)
-        // Ensure max rates allow the new rates
+
+        // <<< SWAPPED ORDER >>>
+        // Set the CURRENT rates first
+        RewardsFacet(address(diamondProxy)).setRewardRates(rewardTokensList, rates);
+        // THEN set the MAX rates to match (or exceed) the current rates
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(token1, rates[0]);
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(token2, rates[1]);
-        RewardsFacet(address(diamondProxy)).setRewardRates(rewardTokensList, rates);
+
         vm.stopPrank();
         console2.log("Reward rates changed: PUSD doubled, PLUME decreased to 1/5th");
 
@@ -1734,12 +1762,14 @@ contract ForkTestPlumeStaking is Test {
         // --- Phase 3: Change commission rates ---
         console2.log("\n--- Phase 3: Change commission rates ---");
 
-        vm.startPrank(validatorAdmin);
+        // vm.startPrank(validatorAdmin); // <<< CHANGE: Use actual admin for validator0 (ID 1)
+        vm.startPrank(admin);
         // ValidatorFacet(address(diamondProxy)).updateValidator(validator0, 0, abi.encode(uint256(1500))); // 15%
         ValidatorFacet(address(diamondProxy)).updateValidator(validator0, 0, abi.encode(uint256(15e16))); // 15% scaled
         vm.stopPrank();
 
-        vm.startPrank(user2);
+        // vm.startPrank(user2); // <<< CHANGE: Use actual admin for validator1 (ID 1)
+        vm.startPrank(admin);
         // ValidatorFacet(address(diamondProxy)).updateValidator(validator1, 0, abi.encode(uint256(2000))); // 20%
         ValidatorFacet(address(diamondProxy)).updateValidator(validator1, 0, abi.encode(uint256(20e16))); // 20% scaled
         vm.stopPrank();
