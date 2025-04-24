@@ -39,7 +39,7 @@ contract VerifyRewardsFacetSelectors is Script {
         selectors[6] = bytes4(keccak256(bytes("claim(address)")));
         selectors[7] = bytes4(keccak256(bytes("claim(address,uint16)")));
         selectors[8] = RewardsFacet.claimAll.selector;
-        selectors[9] = RewardsFacet.restakeRewards.selector;
+        selectors[9] = bytes4(keccak256(bytes("restakeRewards(uint16)")));
 
         // View Functions (User-specific) (Indices 10-11)
         selectors[10] = RewardsFacet.earned.selector;
@@ -52,10 +52,11 @@ contract VerifyRewardsFacetSelectors is Script {
         selectors[15] = RewardsFacet.getTreasury.selector;
 
         // Global View Functions (Added) (Indices 16-19)
-        selectors[16] = RewardsFacet.totalAmountStaked.selector;
-        selectors[17] = RewardsFacet.totalAmountCooling.selector;
-        selectors[18] = RewardsFacet.totalAmountWithdrawable.selector;
-        selectors[19] = RewardsFacet.totalAmountClaimable.selector;
+        selectors[16] = bytes4(keccak256(bytes("totalAmountStaked()"))); // This function is now in StakingFacet
+        selectors[17] = bytes4(keccak256(bytes("totalAmountCooling()"))); // This function is now in StakingFacet
+        selectors[18] = bytes4(keccak256(bytes("totalAmountWithdrawable()"))); // This function is now in StakingFacet
+        selectors[19] = bytes4(keccak256(bytes("totalAmountClaimable(address)"))); // This function is now in
+            // StakingFacet
 
         // Index 20 is the last assigned.
         return selectors;

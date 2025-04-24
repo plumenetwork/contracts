@@ -173,7 +173,8 @@ The `addValidator` function requires the following parameters:
 | `l2WithdrawAddress`   | `address` | Address to receive validator commission rewards                                                    |
 | `l1ValidatorAddress`  | `string`  | L1 validator address (informational)                                                               |
 | `l1AccountAddress`    | `string`  | L1 account address (informational)                                                                 |
-| `l1AccountEvmAddress` | `string`  | L1 account address (informational)                                                                 |
+| `l1AccountEvmAddress` | `address` | EVM address of account on L1 (informational)                                                       |
+| `maxCapacity`         | `uint256` | Maximum staking capacity of the validator                                                          |
 
 **Example:**
 
@@ -186,7 +187,8 @@ plumeStaking.addValidator(
     0xWithdrawAddress,                                      // l2WithdrawAddress
     "plumevaloper1zqd0cre4rmk2659h2h4afseemx2amxtqrvmymr",  // l1ValidatorAddress
     "plume1zqd0cre4rmk2659h2h4afseemx2amxtqpmnxy4",         // l1AccountAddress
-    0x1234                                                  // l1AccountEvmAddress
+    0x1234,                                                 // l1AccountEvmAddress
+    1000000e18                                              // maxCapacity (1 million PLUME)
 );
 ```
 
@@ -218,8 +220,8 @@ plumeStaking.addValidator(
 
 | Event                                                                                                                                                                                          | Description                                  |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `ValidatorAdded(uint16 validatorId, uint256 commission, address l2AdminAddress, address l2WithdrawAddress, string l1ValidatorAddress, string l1AccountAddress, uint256 l1AccountEvmAddress)`   | Emitted when a validator is added            |
-| `ValidatorUpdated(uint16 validatorId, uint256 commission, address l2AdminAddress, address l2WithdrawAddress, string l1ValidatorAddress, string l1AccountAddress, uint256 l1AccountEvmAddress)` | Emitted when a validator is updated          |
+| `ValidatorAdded(uint16 validatorId, uint256 commission, address l2AdminAddress, address l2WithdrawAddress, string l1ValidatorAddress, string l1AccountAddress, address l1AccountEvmAddress)`   | Emitted when a validator is added            |
+| `ValidatorUpdated(uint16 validatorId, uint256 commission, address l2AdminAddress, address l2WithdrawAddress, string l1ValidatorAddress, string l1AccountAddress, address l1AccountEvmAddress)` | Emitted when a validator is updated          |
 | `ValidatorCommissionClaimed(uint16 validatorId, address token, uint256 amount)`                                                                                                                | Emitted when validator commission is claimed |
 | `ValidatorDeactivated(uint16 validatorId)`                                                                                                                                                     | Emitted when a validator is deactivated      |
 | `ValidatorActivated(uint16 validatorId)`                                                                                                                                                       | Emitted when a validator is activated        |

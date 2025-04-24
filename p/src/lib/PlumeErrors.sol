@@ -28,11 +28,6 @@ error ZeroAddress(string parameter);
 error TokenDoesNotExist(address token);
 
 /*
- * @notice Thrown when trying to perform an operation before cooling period is complete
- */
-error CooldownNotComplete();
-
-/*
  * @notice Thrown when a token transfer fails
  */
 error TransferError();
@@ -47,6 +42,32 @@ error TokensInCoolingPeriod();
  * @notice Thrown when trying to withdraw tokens before the cooldown period has ended
  */
 error CooldownPeriodNotEnded();
+
+/**
+ * @notice Error thrown when stake amount is too small
+ * @param providedAmount Amount attempted to stake
+ * @param minAmount Minimum required stake amount
+ */
+error StakeAmountTooSmall(uint256 providedAmount, uint256 minAmount);
+
+/**
+ * @notice Error thrown when trying to restake more than available in cooldown
+ * @param availableAmount Amount available in cooldown
+ * @param requestedAmount Amount requested to restake
+ */
+error InsufficientCooldownBalance(uint256 availableAmount, uint256 requestedAmount);
+
+/**
+ * @notice Error thrown when trying to restake amount exceeds available cooled + parked balance.
+ * @param available Total amount available in cooled and parked.
+ * @param requested Amount requested to restake.
+ */
+error InsufficientCooledAndParkedBalance(uint256 available, uint256 requested);
+
+/**
+ * @notice Error thrown when trying to restake rewards but there are none available.
+ */
+error NoRewardsToRestake();
 
 // Validator errors
 /*
@@ -212,3 +233,37 @@ error ZeroAddressProvided();
  * @param available The available amount.
  */
 error TreasuryInsufficientBalance(address token, uint256 requested, uint256 available);
+
+/**
+ * Validator Errors **
+ */
+
+/**
+ * @notice Error thrown when trying to create a validator with ID 0 that already exists
+ */
+error ValidatorIdExists();
+
+/**
+ * @notice Error thrown when validator capacity would be exceeded
+ * @param validatorId ID of the validator
+ * @param currentAmount Current delegated amount
+ * @param maxCapacity Maximum capacity of the validator
+ * @param requestedAmount Requested amount to add
+ */
+error ExceedsValidatorCapacity(uint16 validatorId, uint256 currentAmount, uint256 maxCapacity, uint256 requestedAmount);
+
+/**
+ * @notice Error thrown when trying to restake from parked/cooled but there is no balance.
+ */
+error NoWithdrawableBalanceToRestake();
+
+/// @notice Emitted when trying to withdraw but the cooldown period is not complete.
+error CooldownNotComplete(uint256 cooldownEnd, uint256 currentTime);
+
+// Core errors
+error Unauthorized(address caller, bytes32 requiredRole);
+error TreasuryNotSet();
+error InternalInconsistency(string message);
+
+// Validator errors
+error InvalidUpdateType(uint8 providedType);

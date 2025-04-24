@@ -5,16 +5,20 @@ import {
     ArrayLengthMismatch,
     EmptyArray,
     InsufficientBalance,
+    InternalInconsistency,
     InvalidAmount,
     InvalidRewardRateCheckpoint,
     NativeTransferFailed,
     RewardRateExceedsMax,
     TokenAlreadyExists,
     TokenDoesNotExist,
+    TreasuryNotSet,
+    Unauthorized,
     ValidatorDoesNotExist,
     ValidatorInactive,
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
+
 import {
     MaxRewardRateUpdated,
     RewardClaimed,
@@ -96,7 +100,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     modifier onlyRole(
         bytes32 _role
     ) {
-        require(IAccessControl(address(this)).hasRole(_role, msg.sender), "Caller does not have the required role");
+        if (!IAccessControl(address(this)).hasRole(_role, msg.sender)) {
+            revert Unauthorized(msg.sender, _role);
+        }
         _;
     }
 
@@ -130,7 +136,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function setTreasury(
         address _treasury
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        require(_treasury != address(0), "Treasury cannot be zero address");
+        if (_treasury == address(0)) {
+            revert ZeroAddress("treasury");
+        }
         setTreasuryAddress(_treasury);
         emit TreasurySet(_treasury);
     }
@@ -142,10 +150,11 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (token == address(0)) {
             revert ZeroAddress("token");
         }
-        if (_isRewardToken(token)) {
+        if ($.isRewardToken[token]) {
             revert TokenAlreadyExists();
         }
         $.rewardTokens.push(token);
+        $.isRewardToken[token] = true;
         for (uint256 i = 0; i < $.validatorIds.length; i++) {
             $.validatorLastUpdateTimes[$.validatorIds[i]][token] = block.timestamp;
         }
@@ -156,18 +165,27 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address token
     ) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        uint256 tokenIndex = _getTokenIndex(token);
-        if (tokenIndex >= $.rewardTokens.length) {
+        if (!$.isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
+
+        // Find the index of the token in the array
+        uint256 tokenIndex = _getTokenIndex(token);
+
         // Update rewards using the library before removing
         for (uint256 i = 0; i < $.validatorIds.length; i++) {
             // Needs to update the cumulative index, not user rewards
             PlumeRewardLogic.updateRewardPerTokenForValidator($, token, $.validatorIds[i]);
         }
         $.rewardRates[token] = 0;
+
+        // Update the array
         $.rewardTokens[tokenIndex] = $.rewardTokens[$.rewardTokens.length - 1];
         $.rewardTokens.pop();
+
+        // Update the mapping
+        $.isRewardToken[token] = false;
+
         delete $.maxRewardRates[token];
         emit RewardTokenRemoved(token);
     }
@@ -187,7 +205,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         for (uint256 i = 0; i < tokens.length; i++) {
             address token = tokens[i];
             uint256 rate = rewardRates_[i];
-            if (!_isRewardToken(token)) {
+            if (!$.isRewardToken[token]) {
                 revert TokenDoesNotExist(token);
             }
             uint256 maxRate = $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
@@ -206,7 +224,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     function setMaxRewardRate(address token, uint256 newMaxRate) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        if (!_isRewardToken(token)) {
+        if (!$.isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
         if ($.rewardRates[token] > newMaxRate) {
@@ -221,12 +239,14 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint256 amount
     ) external payable virtual nonReentrant onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        if (!_isRewardToken(token)) {
+        if (!$.isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
 
         address treasury = getTreasuryAddress();
-        require(treasury != address(0), "Treasury not set");
+        if (treasury == address(0)) {
+            revert TreasuryNotSet();
+        }
 
         // Check if treasury has sufficient funds - direct balance check
         if (token == PLUME) {
@@ -257,7 +277,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     function claim(address token, uint16 validatorId) external nonReentrant returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        if (!_isRewardToken(token)) {
+        if (!$.isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
         if (!$.validatorExists[validatorId]) {
@@ -302,7 +322,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address token
     ) external nonReentrant returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        if (!_isRewardToken(token)) {
+        if (!$.isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
         uint16[] memory validatorIds = $.userValidators[msg.sender];
@@ -360,6 +380,8 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         for (uint256 i = 0; i < tokens.length; i++) {
             address token = tokens[i];
+            // No need to check if token is a reward token, as we're iterating through $.rewardTokens
+
             uint16[] memory validatorIds = $.userValidators[msg.sender];
             uint256 totalReward = 0;
 
@@ -421,7 +443,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      */
     function _transferRewardFromTreasury(address token, uint256 amount, address recipient) internal {
         address treasury = getTreasuryAddress();
-        require(treasury != address(0), "Treasury not set");
+        if (treasury == address(0)) {
+            revert TreasuryNotSet();
+        }
 
         // Make the treasury send the rewards directly to the user
         IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);
@@ -435,26 +459,29 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address token
     ) internal view returns (bool) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        address[] memory rewardTokens = $.rewardTokens;
-        for (uint256 i = 0; i < rewardTokens.length; i++) {
-            if (rewardTokens[i] == token) {
-                return true;
-            }
-        }
-        return false;
+        return $.isRewardToken[token];
     }
 
     function _getTokenIndex(
         address token
     ) internal view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
+
+        // First check if the token is a reward token
+        if (!$.isRewardToken[token]) {
+            revert TokenDoesNotExist(token);
+        }
+
+        // Find the index in the array
         address[] memory rewardTokens = $.rewardTokens;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
             if (rewardTokens[i] == token) {
                 return i;
             }
         }
-        revert TokenDoesNotExist(token);
+
+        // This should never happen if isRewardToken is properly maintained
+        revert InternalInconsistency("Reward token map/array mismatch");
     }
 
     // --- Public View Functions ---
@@ -485,6 +512,11 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return $.rewardTokens;
     }
 
+    /**
+     * @notice Get the maximum reward rate for a specific token.
+     * @param token Address of the token to check.
+     * @return The maximum reward rate for the token.
+     */
     function getMaxRewardRate(
         address token
     ) external view returns (uint256) {
@@ -492,6 +524,25 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
     }
 
+    /**
+     * @notice Get the current reward rate for a specific token.
+     * @param token Address of the token to check.
+     * @return The current reward rate for the token.
+     */
+    function getRewardRate(
+        address token
+    ) external view returns (uint256) {
+        PlumeStakingStorage.Layout storage $ = plumeStorage();
+        return $.rewardRates[token];
+    }
+
+    /**
+     * @notice Get detailed reward information for a specific token.
+     * @param token Address of the token to check.
+     * @return rewardRate Current reward rate for the token.
+     * @return rewardsAvailable Amount of rewards available for this token.
+     * @return lastUpdateTime Timestamp when the reward was last updated.
+     */
     function tokenRewardInfo(
         address token
     ) external view returns (uint256 rewardRate, uint256 rewardsAvailable, uint256 lastUpdateTime) {
@@ -549,164 +600,40 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     /**
-     * @notice Gets the current treasury address
-     * @return The address of the current treasury contract
+     * @notice Get the treasury address.
+     * @return The address of the treasury contract.
      */
     function getTreasury() external view returns (address) {
         return getTreasuryAddress();
     }
 
-    function _distributeReward(address token, uint256 amount, address recipient) internal {
-        address treasury = getTreasuryAddress();
-        require(treasury != address(0), "Treasury not set");
-        IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);
-    }
-
+    // --- NEW PUBLIC WRAPPER ---
     /**
-     * @notice Stakes native token (PLUME) rewards without withdrawing them first.
-     * @dev Calculates claimable native rewards from *all* validators the user is staked with,
-     *      marks them as claimed internally, and stakes the total amount to the specified target validator.
-     * @param targetValidatorId ID of the validator to stake the rewards to.
-     * @return stakedAmount Amount of native PLUME rewards that were successfully staked.
+     * @notice Calculates the pending reward for a specific user, validator, and token.
+     * @dev Calls the internal PlumeRewardLogic.calculateRewardsWithCheckpoints function.
+     * @param user The user address.
+     * @param validatorId The validator ID.
+     * @param token The reward token address.
+     * @return pendingReward The calculated reward amount for the user (after commission).
      */
-    function restakeRewards(
-        uint16 targetValidatorId
-    ) external nonReentrant returns (uint256 stakedAmount) {
-        PlumeStakingStorage.Layout storage $ = plumeStorage();
-
-        // --- Validation ---
-        // Verify target validator exists and is active
-        require($.validatorExists[targetValidatorId], "Target validator does not exist");
-        PlumeStakingStorage.ValidatorInfo storage targetValidator = $.validators[targetValidatorId];
-        require(targetValidator.active, "Target validator is inactive");
-
-        // Verify native token is a reward token
-        address nativeToken = PLUME; // Use constant defined in this contract
-        require(_isRewardToken(nativeToken), "Native token is not a reward token");
-
-        // --- Calculate Total Native Rewards ---
-        stakedAmount = 0;
-        uint16[] memory userValidators = $.userValidators[msg.sender];
-
-        for (uint256 i = 0; i < userValidators.length; i++) {
-            uint16 currentValidatorId = userValidators[i];
-            // Update rewards before calculating earned amount
-            PlumeRewardLogic.updateRewardPerTokenForValidator($, nativeToken, currentValidatorId);
-            uint256 earnedAmount = _earned(msg.sender, nativeToken, currentValidatorId);
-
-            if (earnedAmount > 0) {
-                stakedAmount += earnedAmount;
-                // Mark rewards as claimed internally by resetting the user's reward state
-                _resetUserRewards(msg.sender, nativeToken, currentValidatorId);
-                emit RewardClaimedFromValidator(msg.sender, nativeToken, currentValidatorId, earnedAmount);
-            }
-        }
-
-        // --- Stake the Calculated Amount ---
-        if (stakedAmount > 0) {
-            // Update rewards for the *target* validator before modifying its stake
-            PlumeRewardLogic.updateRewardPerTokenForValidator($, nativeToken, targetValidatorId);
-
-            // Update Storage (direct manipulation as internal stake call is complex)
-            // Use .staked field from PlumeStakingStorage.StakeInfo
-            PlumeStakingStorage.StakeInfo storage targetStakeInfo = $.userValidatorStakes[msg.sender][targetValidatorId];
-            targetStakeInfo.staked += stakedAmount;
-            // Use .staked field from PlumeStakingStorage.UserInfo
-            $.stakeInfo[msg.sender].staked += stakedAmount; // Update global user stake info
-
-            targetValidator.delegatedAmount += stakedAmount; // Update validator info
-            $.validatorTotalStaked[targetValidatorId] += stakedAmount;
-            $.totalStaked += stakedAmount; // Update global total staked
-
-            // Ensure user is tracked as staker for target validator (simplified - assume exists or stake logic handles)
-            // This logic might need refinement based on StakingFacet's handling of new stakers.
-            bool found = false;
-            for (uint256 i = 0; i < $.validatorStakers[targetValidatorId].length; i++) {
-                if ($.validatorStakers[targetValidatorId][i] == msg.sender) {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                $.validatorStakers[targetValidatorId].push(msg.sender);
-                // Check if user needs to be added to global list too - depends on StakingFacet
-                bool userListed = false;
-                for (uint256 i = 0; i < $.userValidators[msg.sender].length; i++) {
-                    if ($.userValidators[msg.sender][i] == targetValidatorId) {
-                        userListed = true;
-                        break;
-                    }
-                }
-                if (!userListed) {
-                    $.userValidators[msg.sender].push(targetValidatorId);
-                }
-            }
-
-            // Update rewards for the *target* validator again *after* modifying its stake
-            PlumeRewardLogic.updateRewardPerTokenForValidator($, nativeToken, targetValidatorId);
-
-            // Emit Staked event (Note: fromWallet/Cooling/Parked are 0 as it comes from rewards)
-            emit Staked(msg.sender, targetValidatorId, stakedAmount, 0, 0, 0);
-        }
-
-        return stakedAmount;
-    }
-
-    /**
-     * @notice Internal function to reset user's reward state after claiming or restaking.
-     * @dev Updates the user's paid index to the current validator cumulative index.
-     */
-    function _resetUserRewards(address user, address token, uint16 validatorId) internal {
-        PlumeStakingStorage.Layout storage $ = plumeStorage();
-        // Update the 'paid' marker to the current cumulative index for the validator
-        // Access the correct mapping directly
-        $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
-            $.validatorRewardPerTokenCumulative[validatorId][token];
-        // Clear any previously calculated, stored rewards (as they are now accounted for)
-        $.userRewards[user][validatorId][token] = 0;
-    }
-
-    // --- Global View Functions ---
-
-    /**
-     * @notice Get the total amount of PLUME staked in the contract.
-     * @return amount Total amount of PLUME staked.
-     */
-    function totalAmountStaked() external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = plumeStorage();
-        return $.totalStaked;
-    }
-
-    /**
-     * @notice Get the total amount of PLUME cooling in the contract.
-     * @return amount Total amount of PLUME cooling.
-     */
-    function totalAmountCooling() external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = plumeStorage();
-        return $.totalCooling;
-    }
-
-    /**
-     * @notice Get the total amount of PLUME withdrawable in the contract.
-     * @return amount Total amount of PLUME withdrawable.
-     */
-    function totalAmountWithdrawable() external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = plumeStorage();
-        return $.totalWithdrawable;
-    }
-
-    /**
-     * @notice Get the total amount of a specific token claimable across all users.
-     * @param token Address of the token to check.
-     * @return amount Total amount of the token claimable.
-     */
-    function totalAmountClaimable(
+    function getPendingRewardForValidator(
+        address user,
+        uint16 validatorId,
         address token
-    ) external view returns (uint256 amount) {
+    ) external view returns (uint256 pendingReward) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        require(_isRewardToken(token), "Token is not a reward token");
-        // Note: This value relies on being correctly updated during claim/restake operations.
-        return $.totalClaimableByToken[token];
+
+        // Required inputs for the internal logic function
+        uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
+        uint256 validatorCommission = $.validators[validatorId].commission;
+
+        // Call the internal logic function - only need the first return value
+        (uint256 userRewardDelta,) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
+            $, user, token, validatorId, userStakedAmount, validatorCommission
+        );
+
+        return userRewardDelta;
     }
+    // --- END NEW PUBLIC WRAPPER ---
 
 }

@@ -1,6 +1,7 @@
 [profile.default]
 solc = "0.8.25"
 evm_version = "cancun"
+evm_version = "cancun"
 src = "src"
 out = "out"
 libs = ["lib"]
@@ -9,7 +10,7 @@ ast = true
 build_info = true
 extra_output = ["storageLayout"]
 optimizer = true
-optimizer_runs = 200 # used default optimization level when deploying $PLUME to mainnet
+optimizer_runs = 200
 
 [fmt]
 single_line_statement_blocks = "multi"
@@ -21,3 +22,4 @@ int_types = "long"
 quote_style = "double"
 number_underscore = "thousands"
 wrap_comments = true
+
