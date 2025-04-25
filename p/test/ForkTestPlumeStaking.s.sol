@@ -13,6 +13,7 @@ import { PlumeRewardLogic } from "../src/lib/PlumeRewardLogic.sol";
 import { PlumeRoles } from "../src/lib/PlumeRoles.sol";
 import "../src/lib/PlumeRoles.sol";
 import { PlumeStakingStorage } from "../src/lib/PlumeStakingStorage.sol";
+
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 
@@ -101,7 +102,7 @@ contract ForkTestPlumeStaking is Test {
 
         // Select the fork FIRST
         //console2.log("Forking Mainnet from block:", forkBlockNumber);
-        vm.createSelectFork(mainnetRpcUrl);
+        vm.createSelectFork(mainnetRpcUrl,950206);
 
         // Now, deal funds on the selected fork
         // uint256 adminPusdAmount = 5000 * 1e6; // Corrected for 6 decimals
@@ -2137,6 +2138,7 @@ contract ForkTestPlumeStaking is Test {
         PlumeStakingStorage.StakeInfo memory stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(stakeInfo.staked, initialStake, "State Error after Step 1");
         assertEq(stakeInfo.cooled, 0, "State Error after Step 1");
+        vm.warp(block.timestamp + 5 days);
 
         // 2. Unstake 5 ETH
         console2.log("2. Unstaking %s ETH...", firstUnstake);
@@ -2146,7 +2148,7 @@ contract ForkTestPlumeStaking is Test {
         assertTrue(cooldownEnd1 > block.timestamp, "Cooldown 1 not set");
         assertEq(stakeInfo.staked, initialStake - firstUnstake, "State Error after Step 2 (Staked)");
         assertEq(stakeInfo.cooled, firstUnstake, "State Error after Step 2 (Cooled)");
-        console2.log("   Cooldown ends at: %s", cooldownEnd1);
+        console2.log("   Cooldown ends at: %d", cooldownEnd1);
 
         // 3. Advance time (partway through cooldown) & Restake 2 ETH from cooling
         vm.warp(block.timestamp + (cooldownEnd1 - block.timestamp) / 2);
@@ -2262,18 +2264,18 @@ contract ForkTestPlumeStaking is Test {
         console2.log("11. Activating PLUME rewards and advancing time...");
         uint256 plumeRate = 1e16; // 0.01 PLUME per second
         vm.startPrank(admin);
-        // RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE); // Ensure native token is added <-- COMMENT OUT THIS LINE
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, plumeRate * 2); // Set max rate
         address[] memory nativeTokenArr = new address[](1);
         nativeTokenArr[0] = PLUME_NATIVE;
         uint256[] memory nativeRateArr = new uint256[](1);
         nativeRateArr[0] = plumeRate;
+        
         // Ensure max rate allows the desired rate
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, plumeRate);
         RewardsFacet(address(diamondProxy)).setRewardRates(nativeTokenArr, nativeRateArr);
         vm.stopPrank();
 
-        uint256 timeAdvance = 100 seconds;
+        uint256 timeAdvance = 5 days;
         uint256 timeBeforeWarp = block.timestamp;
         console2.log("   Time before warp: %s", timeBeforeWarp);
         vm.warp(block.timestamp + timeAdvance); // Advance time to accrue PLUME rewards
@@ -2282,7 +2284,34 @@ contract ForkTestPlumeStaking is Test {
 
         // 12. Call restakeRewards - this should take pending PLUME and add to stake
         console2.log("12. Calling restakeRewards(%s)...", validatorId);
-        // uint256 stakedBeforeRestake = StakingFacet(address(diamondProxy)).amountStaked(); // <-- MOVE THIS LINE
+
+        // <<< ADD DETAILED LOGGING BEFORE CLAIM >>>
+        console2.log("   --- Logging State Before Claim (Step 12) --- ");
+        console2.log(block.timestamp);
+
+        // Validator Stats
+        (bool vActive, uint256 vCommission, uint256 vTotalStaked, uint256 vStakersCount) = validatorFacet.getValidatorStats(validatorId);
+
+
+        // User Stake Info
+        uint256 userStake = stakingFacet.getUserValidatorStake(user1, validatorId);
+
+        // Reward Token Info (PLUME_NATIVE)
+        try rewardsFacet.tokenRewardInfo(PLUME_NATIVE) returns (uint256 rewardRate, uint256 rewardsAvailable, uint256 lastUpdateTime) {
+            console2.log("   PLUME Reward Info: rewardRate=%d, rewardsAvailable=%d, lastUpdateTime=%d, ", rewardRate, rewardsAvailable, lastUpdateTime);
+        } catch Error(string memory reason) {
+            console2.log("   Could not get PLUME tokenRewardInfo: %s", reason);
+        } catch {
+            console2.log("   Could not get PLUME tokenRewardInfo (Unknown error).");
+        }
+
+        // Pre-check Claimable Reward
+        uint256 claimableBeforeExplicitCall = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, PLUME_NATIVE);
+        console2.log("   Claimable PLUME (via getClaimableReward) just before explicit claim: %s", claimableBeforeExplicitCall);
+        console2.log("   --- End Logging State --- ");
+        // <<< END DETAILED LOGGING >>>
+
+        // <<< ADD INTERACTION TO TRIGGER UPDATE >>>
         uint256 pendingPlumeReward = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, PLUME_NATIVE);
         // <<< ADD LOGGING >>>
         console2.log("Result of getClaimableReward(user1, PLUME_NATIVE):", pendingPlumeReward);
