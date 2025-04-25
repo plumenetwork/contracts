@@ -132,7 +132,7 @@ library PlumeStakingStorage {
 
     // Validator info struct to store validator details
     struct ValidatorInfo {
-        uint16 validatorId; // Fixed UUID for the validator
+        uint16 validatorId; // Validator ID
         uint256 commission; // Commission rate (BASE = 1e18, so 5% = 5e16)
         uint256 delegatedAmount; // Total amount delegated to this validator
         address l2AdminAddress; // Admin address (multisig)

@@ -27,6 +27,7 @@ import {
     ValidatorCapacityUpdated,
     ValidatorCommissionClaimed,
     ValidatorSlashed,
+    ValidatorStatusUpdated,
     ValidatorUpdated
 } from "../lib/PlumeEvents.sol";
 
@@ -47,8 +48,6 @@ import { IAccessControl } from "../interfaces/IAccessControl.sol";
 
 import { IPlumeStakingRewardTreasury } from "../interfaces/IPlumeStakingRewardTreasury.sol";
 import { PlumeRoles } from "../lib/PlumeRoles.sol";
-
-// Struct definition REMOVED from file level
 
 /**
  * @title ValidatorFacet
@@ -96,6 +95,9 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     modifier onlyValidatorAdmin(
         uint16 validatorId
     ) {
+        if (!_getPlumeStorage().validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
         if (msg.sender != _getPlumeStorage().validators[validatorId].l2AdminAddress) {
             revert NotValidatorAdmin(msg.sender);
         }
@@ -116,7 +118,19 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         _;
     }
 
-    // --- Validator Management (Owner) ---
+    /**
+     * @dev Modifier to check if a validator exists.
+     */
+    modifier _validateValidatorExists(
+        uint16 validatorId
+    ) {
+        if (!_getPlumeStorage().validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        _;
+    }
+
+    // --- Validator Management (Owner/Admin) ---
 
     /**
      * @notice Add a new validator (Owner only)
@@ -163,6 +177,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         validator.l1AccountAddress = l1AccountAddress;
         validator.l1AccountEvmAddress = l1AccountEvmAddress;
         validator.active = true;
+        validator.slashed = false;
         validator.maxCapacity = maxCapacity;
 
         $.validatorIds.push(validatorId);
@@ -189,67 +204,132 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function setValidatorCapacity(
         uint16 validatorId,
         uint256 maxCapacity
-    ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
+    ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) _validateValidatorExists(validatorId) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-
-        if (!$.validatorExists[validatorId]) {
-            revert ValidatorDoesNotExist(validatorId);
-        }
-
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
         uint256 oldCapacity = validator.maxCapacity;
         validator.maxCapacity = maxCapacity;
 
         emit ValidatorCapacityUpdated(validatorId, oldCapacity, maxCapacity);
     }
 
-    // --- Validator Operations (Specific Validator Admin) ---
-
     /**
-     * @notice Update validator settings (commission, admin address, withdraw address)
-     * @dev Caller must be the current l2AdminAddress for the specific validatorId.
+     * @notice Set the active/inactive status for a validator
+     * @dev Caller must have ADMIN_ROLE.
+     * @param validatorId ID of the validator
+     * @param newActiveStatus The desired active status (true for active, false for inactive)
      */
-    function updateValidator(
+    function setValidatorStatus(
         uint16 validatorId,
-        uint8 updateType,
-        bytes calldata data
-    ) external onlyValidatorAdmin(validatorId) {
+        bool newActiveStatus
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) _validateValidatorExists(validatorId) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        // Existence check done by modifier implicitly via storage access
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
-        if (updateType == 0) {
-            // Update Commission
-            uint256 newCommission = abi.decode(data, (uint256));
-            if (newCommission > REWARD_PRECISION) {
-                revert CommissionTooHigh();
-            }
-            _updateRewardsForAllValidatorStakers(validatorId);
-            validator.commission = newCommission;
-            // Create commission checkpoint
-            PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
-        } else if (updateType == 1) {
-            // Update Admin Address
-            address currentAdminAddress = validator.l2AdminAddress;
-            address newAdminAddress = abi.decode(data, (address));
-            if (newAdminAddress == address(0)) {
-                revert ZeroAddress("newAdminAddress");
-            }
-            validator.l2AdminAddress = newAdminAddress;
-            // Update admin to ID mapping
-            delete $.adminToValidatorId[currentAdminAddress];
-            $.adminToValidatorId[newAdminAddress] = validatorId;
-        } else if (updateType == 2) {
-            // Update Withdraw Address
-            address newWithdrawAddress = abi.decode(data, (address));
-            if (newWithdrawAddress == address(0)) {
-                revert ZeroAddress("newWithdrawAddress");
-            }
-            validator.l2WithdrawAddress = newWithdrawAddress;
-        } else {
-            revert InvalidUpdateType(updateType);
+        // Prevent activating an already slashed validator through this function
+        if (newActiveStatus && validator.slashed) {
+            revert ValidatorAlreadySlashed(validatorId);
         }
 
+        validator.active = newActiveStatus;
+
+        // Use the new specific event for status changes
+        emit ValidatorStatusUpdated(validatorId, validator.active, validator.slashed);
+    }
+
+    /**
+     * @notice Set the commission rate for a specific validator.
+     * @dev Caller must be the l2AdminAddress for the validator.
+     *      Triggers reward updates for stakers and creates a commission checkpoint.
+     * @param validatorId ID of the validator to update.
+     * @param newCommission The new commission rate (scaled by 1e18).
+     */
+    function setValidatorCommission(
+        uint16 validatorId,
+        uint256 newCommission
+    ) external onlyValidatorAdmin(validatorId) {
+        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+        if (newCommission > REWARD_PRECISION) {
+            revert CommissionTooHigh();
+        }
+
+        _updateRewardsForAllValidatorStakers(validatorId);
+        validator.commission = newCommission;
+        // Create commission checkpoint
+        PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
+
+        // Emit generic update event, as commission is part of general info
+        emit ValidatorUpdated(
+            validatorId,
+            validator.commission,
+            validator.l2AdminAddress,
+            validator.l2WithdrawAddress,
+            validator.l1ValidatorAddress,
+            validator.l1AccountAddress,
+            validator.l1AccountEvmAddress
+        );
+    }
+
+    /**
+     * @notice Set various addresses associated with a validator.
+     * @dev Caller must be the l2AdminAddress for the validator.
+     *      Updates are optional: pass address(0) or "" to keep the current value.
+     * @param validatorId ID of the validator to update.
+     * @param newL2AdminAddress The new admin address (or address(0) to keep current).
+     * @param newL2WithdrawAddress The new withdraw address (or address(0) to keep current).
+     * @param newL1ValidatorAddress The new L1 validator address string (or "" to keep current).
+     * @param newL1AccountAddress The new L1 account address string (or "" to keep current).
+     * @param newL1AccountEvmAddress The new L1 account EVM address (or address(0) to keep current).
+     */
+    function setValidatorAddresses(
+        uint16 validatorId,
+        address newL2AdminAddress,
+        address newL2WithdrawAddress,
+        string calldata newL1ValidatorAddress,
+        string calldata newL1AccountAddress,
+        address newL1AccountEvmAddress
+    ) external onlyValidatorAdmin(validatorId) {
+        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+        // Update L2 Admin Address if provided and different
+        if (newL2AdminAddress != address(0) && newL2AdminAddress != validator.l2AdminAddress) {
+            address currentAdminAddress = validator.l2AdminAddress;
+            validator.l2AdminAddress = newL2AdminAddress;
+            // Update admin to ID mapping
+            delete $.adminToValidatorId[currentAdminAddress];
+            $.adminToValidatorId[newL2AdminAddress] = validatorId;
+        }
+
+        // Update L2 Withdraw Address if provided and different
+        if (newL2WithdrawAddress != address(0) && newL2WithdrawAddress != validator.l2WithdrawAddress) {
+            if (newL2WithdrawAddress == address(0)) {
+                // Add specific check for zero address
+                revert ZeroAddress("newL2WithdrawAddress");
+            }
+            validator.l2WithdrawAddress = newL2WithdrawAddress;
+        }
+
+        // Update L1 Validator Address string if provided
+        if (bytes(newL1ValidatorAddress).length > 0) {
+            validator.l1ValidatorAddress = newL1ValidatorAddress;
+        }
+
+        // Update L1 Account Address string if provided
+        if (bytes(newL1AccountAddress).length > 0) {
+            validator.l1AccountAddress = newL1AccountAddress;
+        }
+
+        // Update L1 Account EVM Address if provided
+        // No need to check for zero address here, as address(0) might be valid representation
+        if (newL1AccountEvmAddress != address(0)) {
+            validator.l1AccountEvmAddress = newL1AccountEvmAddress;
+        }
+
+        // Emit event with potentially updated values
         emit ValidatorUpdated(
             validatorId,
             validator.commission,

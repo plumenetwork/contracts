@@ -442,3 +442,28 @@ event ParkedRestaked(address indexed user, uint16 indexed validatorId, uint256 a
 
 // --- Management Facet Events ---
 event AdminStakeCorrection(address indexed user, uint256 oldTotalStake, uint256 newTotalStake);
+
+/**
+ * @notice Emitted when a validator's active/slashed status is updated
+ * @param validatorId ID of the validator
+ * @param active The new active status
+ * @param slashed The current slashed status
+ */
+event ValidatorStatusUpdated(uint16 indexed validatorId, bool active, bool slashed);
+
+// Validator Events
+event ValidatorCommissionSet(uint16 indexed validatorId, uint256 oldCommission, uint256 newCommission);
+
+event ValidatorAddressesSet(
+    uint16 indexed validatorId,
+    address oldL2Admin,
+    address newL2Admin,
+    address oldL2Withdraw,
+    address newL2Withdraw,
+    string oldL1Validator,
+    string newL1Validator,
+    string oldL1Account,
+    string newL1Account,
+    address oldL1AccountEvm,
+    address newL1AccountEvm
+);
