@@ -45,7 +45,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
     // Constants
 
     /// @notice Magic constant to represent the address of the gas token on Plume
-    address public constant ETH_ADDRESS = address(1);
+    address public constant PLUME_ADDRESS = address(1);
 
     // Events
 
@@ -162,12 +162,12 @@ contract Faucet is Initializable, UUPSUpgradeable {
         FaucetStorage storage $ = _getFaucetStorage();
         $.owner = owner;
 
-        bytes32 ethHash = keccak256(abi.encodePacked("ETH"));
+        bytes32 ethHash = keccak256(abi.encodePacked("PLUME"));
         uint256 length = tokens.length;
         for (uint256 i = 0; i < length; ++i) {
             if (keccak256(bytes(tokens[i])) == ethHash) {
-                $.tokens[tokens[i]] = ETH_ADDRESS;
-                $.dripAmounts[ETH_ADDRESS] = 0.001 ether;
+                $.tokens[tokens[i]] = PLUME_ADDRESS;
+                $.dripAmounts[PLUME_ADDRESS] = 0.001 ether;
             } else {
                 $.tokens[tokens[i]] = tokenAddresses[i];
                 $.dripAmounts[tokenAddresses[i]] = 1e9; // $1000 USDT (6 decimals)
@@ -210,7 +210,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
 
         uint256 amount = _calculateDripAmount(baseAmount, flightClass);
 
-        if (tokenAddress == ETH_ADDRESS) {
+        if (tokenAddress == PLUME_ADDRESS) {
             if (address(this).balance < amount) {
                 revert InsufficientBalance(amount, token);
             }
@@ -243,7 +243,7 @@ contract Faucet is Initializable, UUPSUpgradeable {
             revert InvalidToken();
         }
 
-        if (tokenAddress == ETH_ADDRESS) {
+        if (tokenAddress == PLUME_ADDRESS) {
             if (address(this).balance < amount) {
                 revert InsufficientBalance(amount, token);
             }
@@ -276,9 +276,9 @@ contract Faucet is Initializable, UUPSUpgradeable {
     function _calculateDripAmount(uint256 baseAmount, uint256 flightClass) internal pure returns (uint256) {
         uint256 multiplier;
         if (flightClass == 1) {
-            multiplier = 1; // 1x
+            multiplier = 100; // 1x
         } else if (flightClass == 2) {
-            multiplier = 11; // 1.1x (scaled by 10)
+            multiplier = 110; // 1.1x (scaled by 10)
         } else if (flightClass == 3) {
             multiplier = 125; // 1.25x (scaled by 100)
         } else if (flightClass == 4) {
