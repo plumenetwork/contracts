@@ -7,7 +7,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 import { IERC2535DiamondLoupe } from "@solidstate/interfaces/IERC2535DiamondLoupe.sol";
 import { IERC2535DiamondLoupeInternal } from "@solidstate/interfaces/IERC2535DiamondLoupeInternal.sol";
-import { ISolidStateDiamondProxy} from "@solidstate/proxy/diamond/ISolidStateDiamondProxysol";
+import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 
 // --- Plume Facets ---
 import { AccessControlFacet } from "../../src/facets/AccessControlFacet.sol";
@@ -370,7 +370,7 @@ contract UpgradeStakingAndRewardsFacets is Script {
         // --- Step 3: Execute Diamond Cut ---
         if (finalCut.length > 0) {
             console2.log("\n3. Executing Diamond Cut with %d operations...", finalCut.length);
-            ISolidStateDiamondProxypayable(DIAMOND_PROXY_ADDRESS)).diamondCut(finalCut, address(0), "");
+            ISolidStateDiamond(payable(DIAMOND_PROXY_ADDRESS)).diamondCut(finalCut, address(0), "");
             console2.log("  Diamond Cut executed successfully.");
         } else {
             console2.log("\n3. No Diamond Cut operations required.");

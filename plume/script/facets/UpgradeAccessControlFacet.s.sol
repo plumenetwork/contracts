@@ -8,8 +8,7 @@ import { PlumeStaking } from "../../src/PlumeStaking.sol";
 
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 import { IERC2535DiamondLoupe } from "@solidstate/interfaces/IERC2535DiamondLoupe.sol";
-import { ISolidStateDiamondProxy} from "@solidstate/proxy/diamond/ISolidStateDiamondProxysol";
-
+import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 // Facet and Roles
 import { AccessControlFacet } from "../../src/facets/AccessControlFacet.sol";
 
@@ -90,7 +89,7 @@ contract UpgradeAccessControlFacet is Script {
         // 5. Execute the diamond cut
         console2.log("\nExecuting diamond cut to add role constant getters...");
         console2.log("Target implementation:", IMPLEMENTATION);
-        ISolidStateDiamondProxypayable(DIAMOND_PROXY)).diamondCut(cut, address(0), "");
+        ISolidStateDiamond(payable(DIAMOND_PROXY)).diamondCut(cut, address(0), "");
         console2.log("Diamond cut executed successfully.");
 
         // 6. Verify the facet was properly added to the diamond

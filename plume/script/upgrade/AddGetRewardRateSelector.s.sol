@@ -6,7 +6,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 // --- SolidState Diamond Interfaces ---
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 import { IERC2535DiamondLoupe } from "@solidstate/interfaces/IERC2535DiamondLoupe.sol";
-import { ISolidStateDiamondProxy} from "@solidstate/proxy/diamond/ISolidStateDiamondProxysol";
+import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 
 /**
  * @title AddGetRewardRateSelector
@@ -51,7 +51,7 @@ contract AddGetRewardRateSelector is Script {
 
         // --- Execute Diamond Cut ---
         console2.log("Executing diamond cut (Action: ADD)...");
-        try ISolidStateDiamondProxypayable(DIAMOND_PROXY_ADDRESS)).diamondCut(cut, address(0), "") {
+        try ISolidStateDiamond(payable(DIAMOND_PROXY_ADDRESS)).diamondCut(cut, address(0), "") {
             console2.log("  Diamond cut executed successfully.");
         } catch Error(string memory reason) {
             console2.log("  ERROR: Diamond cut failed: %s", reason);
