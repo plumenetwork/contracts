@@ -43,6 +43,3 @@
 [submodule "plume/lib/solidstate-solidity"]
 	path = plume/lib/solidstate-solidity
 	url = https://github.com/solidstate-network/solidstate-solidity
-[submodule "lib/solady"]
-	path = lib/solady
-	url = https://github.com/vectorized/solady
