@@ -166,7 +166,7 @@ contract PlumeStakingDiamondTest is Test {
         accessControlSigs_Manual[6] = bytes4(keccak256(bytes("setRoleAdmin(bytes32,bytes32)")));
 
         // Staking Facet Selectors
-        bytes4[] memory stakingSigs_Manual = new bytes4[](13); // Increase size to 13
+        bytes4[] memory stakingSigs_Manual = new bytes4[](14); // <<< FIX: Increase size to 14
         stakingSigs_Manual[0] = bytes4(keccak256(bytes("stake(uint16)")));
         stakingSigs_Manual[1] = bytes4(keccak256(bytes("restake(uint16,uint256)")));
         stakingSigs_Manual[2] = bytes4(keccak256(bytes("unstake(uint16)")));
@@ -178,8 +178,9 @@ contract PlumeStakingDiamondTest is Test {
         stakingSigs_Manual[8] = bytes4(keccak256(bytes("amountCooling()")));
         stakingSigs_Manual[9] = bytes4(keccak256(bytes("amountWithdrawable()")));
         stakingSigs_Manual[10] = bytes4(keccak256(bytes("cooldownEndDate()")));
-        stakingSigs_Manual[11] = bytes4(keccak256(bytes("getUserValidatorStake(address,uint16)"))); // Add new selector
-        stakingSigs_Manual[12] = bytes4(keccak256(bytes("restakeRewards(uint16)"))); // <<< ADD MISSING SELECTOR HERE
+        stakingSigs_Manual[11] = bytes4(keccak256(bytes("getUserValidatorStake(address,uint16)")));
+        stakingSigs_Manual[12] = bytes4(keccak256(bytes("restakeRewards(uint16)")));
+        stakingSigs_Manual[13] = bytes4(keccak256(bytes("totalAmountStaked()"))); // <<< ADD MISSING SELECTOR
 
         // Rewards Facet Selectors
         bytes4[] memory rewardsSigs_Manual = new bytes4[](21);
@@ -206,7 +207,7 @@ contract PlumeStakingDiamondTest is Test {
         rewardsSigs_Manual[20] = bytes4(keccak256(bytes("getPendingRewardForValidator(address,uint16,address)")));
 
         // Validator Facet Selectors
-        bytes4[] memory validatorSigs_Manual = new bytes4[](12); // Increase size to 12
+        bytes4[] memory validatorSigs_Manual = new bytes4[](14); // <<< FIX: Increase size to 14
         validatorSigs_Manual[0] =
             bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
@@ -221,6 +222,9 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[9] = bytes4(keccak256(bytes("getValidatorsList()")));
         validatorSigs_Manual[10] = bytes4(keccak256(bytes("getActiveValidatorCount()")));
         validatorSigs_Manual[11] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));
+        validatorSigs_Manual[12] = bytes4(keccak256(bytes("voteToSlashValidator(uint16,uint256)"))); // <<< ADD MISSING
+            // SELECTOR
+        validatorSigs_Manual[13] = bytes4(keccak256(bytes("slashValidator(uint16)"))); // <<< ADD MISSING SELECTOR
 
         // Management Facet Selectors
         bytes4[] memory managementSigs_Manual = new bytes4[](7); // Increase size to 7
@@ -383,6 +387,80 @@ contract PlumeStakingDiamondTest is Test {
 
         vm.stopPrank();
     }
+
+    // <<< NEW TEST CASE >>>
+    function testStakeOnBehalf() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        address sender = user2; // User2 sends the tx
+        address staker = user1; // User1 receives the stake
+        uint256 stakeAmount = 50 ether;
+
+        // Ensure sender has enough ETH
+        vm.deal(sender, stakeAmount + 1 ether); // +1 for gas
+
+        // Get initial state for comparison
+        PlumeStakingStorage.StakeInfo memory stakerInfoBefore = StakingFacet(address(diamondProxy)).stakeInfo(staker);
+        uint256 userValidatorStakeBefore =
+            StakingFacet(address(diamondProxy)).getUserValidatorStake(staker, validatorId);
+        (bool activeBefore, uint256 commissionBefore, uint256 validatorTotalStakedBefore, uint256 stakersCountBefore) =
+            ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+        uint256 totalStakedBefore = StakingFacet(address(diamondProxy)).totalAmountStaked(); // <<< USE view function
+        uint16[] memory userValidatorsBefore = ValidatorFacet(address(diamondProxy)).getUserValidators(staker);
+
+        // Expect events
+        vm.expectEmit(true, true, true, true, address(diamondProxy));
+        emit Staked(staker, validatorId, stakeAmount, 0, 0, stakeAmount);
+
+        vm.expectEmit(true, true, true, true, address(diamondProxy));
+        emit StakedOnBehalf(sender, staker, validatorId, stakeAmount);
+
+        // Execute stakeOnBehalf
+        vm.startPrank(sender);
+        StakingFacet(address(diamondProxy)).stakeOnBehalf{ value: stakeAmount }(validatorId, staker);
+        vm.stopPrank();
+
+        // --- Verification ---
+
+        // 1. Check user's stake on this specific validator
+        uint256 userValidatorStakeAfter = StakingFacet(address(diamondProxy)).getUserValidatorStake(staker, validatorId);
+        assertEq(userValidatorStakeAfter, userValidatorStakeBefore + stakeAmount, "User validator stake mismatch");
+
+        // 2. Check staker's global stake info
+        PlumeStakingStorage.StakeInfo memory stakerInfoAfter = StakingFacet(address(diamondProxy)).stakeInfo(staker);
+        assertEq(stakerInfoAfter.staked, stakerInfoBefore.staked + stakeAmount, "Staker global stake mismatch");
+
+        // 3. Check validator stats
+        (bool activeAfter, uint256 commissionAfter, uint256 validatorTotalStakedAfter, uint256 stakersCountAfter) =
+            ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+        assertTrue(activeAfter, "Validator should remain active");
+        assertEq(commissionAfter, commissionBefore, "Commission should not change");
+        assertEq(validatorTotalStakedAfter, validatorTotalStakedBefore + stakeAmount, "Validator total staked mismatch");
+        // Staker count increases only if the staker wasn't previously staking with this validator
+        bool wasStakingBefore = false;
+        for (uint256 i = 0; i < userValidatorsBefore.length; i++) {
+            if (userValidatorsBefore[i] == validatorId) {
+                wasStakingBefore = true;
+                break;
+            }
+        }
+        assertEq(stakersCountAfter, stakersCountBefore + (wasStakingBefore ? 0 : 1), "Staker count mismatch");
+
+        // 4. Check global total staked
+        uint256 totalStakedAfter = StakingFacet(address(diamondProxy)).totalAmountStaked(); // <<< USE view function
+        assertEq(totalStakedAfter, totalStakedBefore + stakeAmount, "Global total staked mismatch");
+
+        // 5. Check staker is in validator's list
+        uint16[] memory userValidatorsAfter = ValidatorFacet(address(diamondProxy)).getUserValidators(staker);
+        bool foundInList = false;
+        for (uint256 i = 0; i < userValidatorsAfter.length; i++) {
+            if (userValidatorsAfter[i] == validatorId) {
+                foundInList = true;
+                break;
+            }
+        }
+        assertTrue(foundInList, "Staker not found in validator list after stakeOnBehalf");
+    }
+    // <<< END NEW TEST CASE >>>
 
     function testClaimValidatorCommission() public {
         // Set up validator commission at 20% (20 * 1e16)
@@ -742,7 +820,9 @@ contract PlumeStakingDiamondTest is Test {
         vm.startPrank(validatorAdmin); // Prank as a valid admin for *some* validator (e.g., ID 0)
         // Expect revert from onlyValidatorAdmin(nonExistentId) as validator 999 data doesn't exist to check admin
         // vm.expectRevert(bytes("Not validator admin"));
-        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, validatorAdmin));
+        // vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, validatorAdmin));
+        vm.expectRevert(abi.encodeWithSelector(ValidatorDoesNotExist.selector, nonExistentId)); // <<< FIX: Expect
+            // ValidatorDoesNotExist
         ValidatorFacet(address(diamondProxy)).claimValidatorCommission(nonExistentId, token);
         vm.stopPrank();
     }
@@ -862,20 +942,29 @@ contract PlumeStakingDiamondTest is Test {
     }
 
     function testUpdateValidator_L2Admin_NotOwner() public {
+        // Add assertion:
+        assertNotEq(user1, validatorAdmin, "user1 and validatorAdmin should be different addresses");
+
         uint16 validatorId = DEFAULT_VALIDATOR_ID;
         address newAdmin = makeAddr("newAdminForVal0");
-        bytes memory data = abi.encode(newAdmin);
-        uint8 fieldCode = 1;
+        // bytes memory data = abi.encode(newAdmin); // Not used
+        // uint8 fieldCode = 1; // Not used
+
+        // Need to fetch current info to provide parameters, even though it will revert.
+        // Fetch this info *before* pranking as user1
+        (PlumeStakingStorage.ValidatorInfo memory infoBefore,,) =
+            ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
+        // Assert the admin fetched is indeed validatorAdmin
+        assertEq(infoBefore.l2AdminAddress, validatorAdmin, "Fetched l2AdminAddress mismatch");
 
         // Expect revert from the validator admin check
-        // vm.expectRevert(bytes("Not validator admin"));
         vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
         vm.startPrank(user1); // user1 is not the validator admin for validator 0
         // ValidatorFacet(address(diamondProxy)).updateValidator(validatorId, fieldCode, data);
         // --- ADD: Call setValidatorAddresses (it should still fail due to admin check) ---
         // Need to fetch current info to provide parameters, even though it will revert.
-        (PlumeStakingStorage.ValidatorInfo memory infoBefore,,) = // Fetch needed info
-         ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
+        // (PlumeStakingStorage.ValidatorInfo memory infoBefore,,) = // Fetch needed info <-- REMOVE, MOVED EARLIER
+        //  ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
         ValidatorFacet(address(diamondProxy)).setValidatorAddresses(
             validatorId,
             newAdmin, // The intended new admin
@@ -896,7 +985,9 @@ contract PlumeStakingDiamondTest is Test {
         vm.startPrank(validatorAdmin); // Call as an admin of *some* validator
         // Expect revert from onlyValidatorAdmin(nonExistentId)
         // vm.expectRevert(bytes("Not validator admin"));
-        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, validatorAdmin));
+        // vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, validatorAdmin));
+        // <<< FIX: Expect ValidatorDoesNotExist instead >>>
+        vm.expectRevert(abi.encodeWithSelector(ValidatorDoesNotExist.selector, nonExistentId));
         // ValidatorFacet(address(diamondProxy)).updateValidator(nonExistentId, fieldCode, data); <-- REMOVE
         ValidatorFacet(address(diamondProxy)).setValidatorCommission(nonExistentId, newCommission);
         vm.stopPrank();

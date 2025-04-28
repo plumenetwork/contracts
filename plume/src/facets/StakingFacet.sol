@@ -392,7 +392,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Update stake amount
         $.userValidatorStakes[staker][validatorId].staked += stakeAmount;
+        $.stakeInfo[staker].staked += stakeAmount;
         $.validators[validatorId].delegatedAmount += stakeAmount;
+        $.validatorTotalStaked[validatorId] += stakeAmount;
         $.totalStaked += stakeAmount;
 
         // Check if exceeding validator capacity
