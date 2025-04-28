@@ -26,7 +26,7 @@ import { IPlumeStakingRewardTreasury } from "../src/interfaces/IPlumeStakingRewa
 // SolidState Diamond Interface & Cut Interface
 
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
-import { ISolidStateDiamondProxy} from "@solidstate/proxy/diamond/ISolidStateDiamondProxysol";
+import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 
 // Libs & Errors/Events
 import { NotValidatorAdmin, Unauthorized } from "../src/lib/PlumeErrors.sol"; // Added Unauthorized, NotValidatorAdmin
@@ -127,7 +127,7 @@ contract PlumeStakingDiamondTest is Test {
         diamondProxy = new PlumeStaking();
         // Use payable cast for owner check
         assertEq(
-            ISolidStateDiamondProxypayable(address(diamondProxy))).owner(), admin, "Deployer should be owner initially"
+            ISolidStateDiamond(payable(address(diamondProxy))).owner(), admin, "Deployer should be owner initially"
         );
 
         // 2. Deploy Custom Facets
@@ -272,7 +272,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // 4. Execute Diamond Cut
         // Use payable cast
-        ISolidStateDiamondProxypayable(address(diamondProxy))).diamondCut(cut, address(0), "");
+        ISolidStateDiamond(payable(address(diamondProxy))).diamondCut(cut, address(0), "");
 
         console2.log("Single diamond cut applied successfully.");
         // --- End Diamond Cut ---

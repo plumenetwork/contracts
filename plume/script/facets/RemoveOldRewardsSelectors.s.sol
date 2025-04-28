@@ -7,7 +7,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 import { IERC2535DiamondLoupe } from "@solidstate/interfaces/IERC2535DiamondLoupe.sol";
-import { ISolidStateDiamondProxy} from "@solidstate/proxy/diamond/ISolidStateDiamondProxysol";
+import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 
 /**
  * @title RemoveOldRewardsSelectors
@@ -49,7 +49,7 @@ contract RemoveOldRewardsSelectors is Script {
 
         // --- Step 3: Execute Diamond Cut ---
         console2.log("\n3. Executing Diamond Cut...");
-        ISolidStateDiamondProxypayable(DIAMOND_PROXY_ADDRESS)).diamondCut(cut, address(0), "");
+        ISolidStateDiamond(payable(DIAMOND_PROXY_ADDRESS)).diamondCut(cut, address(0), "");
         console2.log("  Diamond Cut executed successfully.");
 
         // --- Step 4: Verification ---

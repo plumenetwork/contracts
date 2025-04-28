@@ -4,10 +4,14 @@ pragma solidity ^0.8.25;
 import { Script, console2 } from "forge-std/Script.sol";
 
 // --- SolidState Diamond Interfaces ---
-import { IERC2535DiamondCutInternal } from "solidstate-solidity/interfaces/IERC2535DiamondCutInternal.sol";
+// REMOVE the direct import - it will be picked up via ISolidStateDiamond
+// import { IERC2535DiamondCutInternal } from "@solidstate//interfaces/IERC2535DiamondCutInternal.sol"; 
 
-import { IERC2535DiamondLoupe } from "solidstate-solidity/interfaces/IERC2535DiamondLoupe.sol";
-import { ISolidStateDiamondProxy} from "solidstate-solidity/proxy/diamond/SolidStateDiamondProxysol"; // For verification
+import { IERC2535DiamondLoupe } from "@solidstate/interfaces/IERC2535DiamondLoupe.sol";
+import { ISolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol";
+// Import the struct definition explicitly from the same path used by ISolidStateDiamond if needed
+// (Often unnecessary if ISolidStateDiamond imports it)
+import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 
 contract FixAccessControlRoles is Script {
 
@@ -46,7 +50,7 @@ contract FixAccessControlRoles is Script {
 
         // --- Execute ADD Diamond Cut ---
         console2.log("\nExecuting ADD Diamond Cut...");
-        ISolidStateDiamondProxypayable(DIAMOND_PROXY_ADDRESS)).diamondCut(addCut, address(0), "");
+        ISolidStateDiamond(payable(DIAMOND_PROXY_ADDRESS)).diamondCut(addCut, address(0), "");
         console2.log("  ADD Diamond Cut executed successfully.");
 
         // --- Verification (Optional but Recommended) ---
@@ -83,3 +87,4 @@ contract FixAccessControlRoles is Script {
     }
 
 }
+
