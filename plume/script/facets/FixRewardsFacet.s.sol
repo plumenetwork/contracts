@@ -7,7 +7,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 import { IERC2535DiamondCutInternal } from "solidstate-solidity/interfaces/IERC2535DiamondCutInternal.sol";
 
 import { IERC2535DiamondLoupe } from "solidstate-solidity/interfaces/IERC2535DiamondLoupe.sol";
-import { ISolidStateDiamond } from "solidstate-solidity/proxy/diamond/SolidStateDiamond.sol"; // For verification
+import { ISolidStateDiamondProxy} from "solidstate-solidity/proxy/diamond/SolidStateDiamondProxysol"; // For verification
 
 contract FixRewardsFacet is Script {
 
@@ -42,7 +42,7 @@ contract FixRewardsFacet is Script {
 
         // --- Execute ADD Diamond Cut ---
         console2.log("\nExecuting ADD Diamond Cut...");
-        ISolidStateDiamond(payable(DIAMOND_PROXY_ADDRESS)).diamondCut(addCut, address(0), "");
+        ISolidStateDiamondProxypayable(DIAMOND_PROXY_ADDRESS)).diamondCut(addCut, address(0), "");
         console2.log("  ADD Diamond Cut executed successfully.");
 
         // --- Verification (Optional but Recommended) ---

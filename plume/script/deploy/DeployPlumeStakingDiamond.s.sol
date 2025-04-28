@@ -6,7 +6,7 @@ import { Test } from "forge-std/Test.sol"; // Include Test for address helpers i
 
 // Diamond Proxy & Base
 import { PlumeStaking } from "../../src/PlumeStaking.sol";
-import { ISolidStateDiamond, SolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol";
+import { ISolidStateDiamondProxy SolidStateDiamondProxy} from "@solidstate/proxy/diamond/SolidStateDiamondProxysol";
 
 // Custom Facets
 import { AccessControlFacet } from "../../src/facets/AccessControlFacet.sol";
@@ -39,16 +39,16 @@ contract DeployPlumeStakingDiamond is Script, Test {
 
         console2.log("Deploying Plume Staking Diamond...");
 
-        // 1. Deploy Diamond Proxy (inherits SolidStateDiamond)
+        // 1. Deploy Diamond Proxy (inherits SolidStateDiamondProxy
         PlumeStaking diamondProxy = new PlumeStaking();
         console2.log("Diamond Proxy deployed at:", address(diamondProxy));
-        console2.log("Initial Owner (Deployer):", ISolidStateDiamond(payable(address(diamondProxy))).owner());
+        console2.log("Initial Owner (Deployer):", ISolidStateDiamondProxypayable(address(diamondProxy))).owner());
 
         // 2. Initialize Plume-specific settings
         console2.log("Initializing Plume Settings...");
         diamondProxy.initializePlume(DEPLOYER_OWNER, INITIAL_MIN_STAKE, INITIAL_COOLDOWN);
         console2.log("Plume Settings Initialized.");
-        console2.log("Final Owner after init:", ISolidStateDiamond(payable(address(diamondProxy))).owner());
+        console2.log("Final Owner after init:", ISolidStateDiamondProxypayable(address(diamondProxy))).owner());
 
         // 3. Deploy Custom Facets ONLY
         console2.log("Deploying Custom Facets...");
@@ -170,7 +170,7 @@ contract DeployPlumeStakingDiamond is Script, Test {
 
         // 5. Execute Diamond Cut
         console2.log("Executing Diamond Cut for Custom Facets...");
-        ISolidStateDiamond(payableProxy).diamondCut(cut, address(0), "");
+        ISolidStateDiamondProxypayableProxy).diamondCut(cut, address(0), "");
         console2.log("Diamond Cut executed.");
 
         // --- Initialize AccessControl Facet --- (NEW STEP)
@@ -226,7 +226,7 @@ contract DeployPlumeStakingDiamond is Script, Test {
             deployer = msg.sender;
         }
         // Use the payable variable for the assertion
-        assertEq(ISolidStateDiamond(payableProxy).owner(), deployer);
+        assertEq(ISolidStateDiamondProxypayableProxy).owner(), deployer);
         console2.log("- Owner verified.");
 
         // Log deployed addresses

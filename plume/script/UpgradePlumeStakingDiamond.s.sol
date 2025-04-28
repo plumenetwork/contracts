@@ -8,7 +8,7 @@ import { IERC2535DiamondCutInternal } from "solidstate-solidity/interfaces/IERC2
 import { IERC2535DiamondLoupe } from "solidstate-solidity/interfaces/IERC2535DiamondLoupe.sol";
 
 import { IERC2535DiamondLoupeInternal } from "solidstate-solidity/interfaces/IERC2535DiamondLoupeInternal.sol";
-import { ISolidStateDiamond } from "solidstate-solidity/proxy/diamond/SolidStateDiamond.sol";
+import { ISolidStateDiamondProxy} from "solidstate-solidity/proxy/diamond/SolidStateDiamondProxysol";
 
 // --- Plume Facets ---
 import { AccessControlFacet } from "../src/facets/AccessControlFacet.sol";
@@ -42,7 +42,7 @@ contract UpgradePlumeStakingDiamond is Script {
     ) internal view returns (bytes4[] memory) {
         // Get all function selectors from the facet
         bytes4[] memory selectors;
-        try ISolidStateDiamond(payable(facet)).supportsInterface("") returns (bool) {
+        try ISolidStateDiamondProxypayable(facet)).supportsInterface("") returns (bool) {
             // If this fails, it means the contract doesn't implement ERC165
             selectors = new bytes4[](1);
         } catch {
@@ -304,7 +304,7 @@ contract UpgradePlumeStakingDiamond is Script {
             }
 
             // Execute the diamond cut
-            ISolidStateDiamond(payable(DIAMOND_PROXY_ADDRESS)).diamondCut(finalCut, address(0), "");
+            ISolidStateDiamondProxypayable(DIAMOND_PROXY_ADDRESS)).diamondCut(finalCut, address(0), "");
             console2.log("  Diamond Cut executed successfully.");
 
             // --- Step 5: Verification ---

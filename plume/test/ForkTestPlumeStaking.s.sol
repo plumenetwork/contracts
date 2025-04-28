@@ -15,7 +15,7 @@ import "../src/lib/PlumeRoles.sol";
 import { PlumeStakingStorage } from "../src/lib/PlumeStakingStorage.sol";
 
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
-import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
+import { ISolidStateDiamondProxy} from "@solidstate/proxy/diamond/ISolidStateDiamondProxysol";
 
 import { PlumeStaking } from "../src/PlumeStaking.sol";
 import { PlumeStakingRewardTreasury } from "../src/PlumeStakingRewardTreasury.sol";
@@ -56,7 +56,7 @@ contract ForkTestPlumeStaking is Test {
     address public constant VALIDATOR_1_ADMIN = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5; // Admin for ID 1 from fork
 
     // --- Interfaces to Diamond Facets & Treasury ---
-    ISolidStateDiamond public diamondProxy;
+    ISolidStateDiamondProxypublic diamondProxy;
     IERC2535DiamondCutInternal public diamondCut;
     IAccessControl public accessControlFacet;
     ManagementFacet public managementFacet;
@@ -101,7 +101,7 @@ contract ForkTestPlumeStaking is Test {
         deal(address(pUSD), admin, adminPusdAmount);
         console2.log("Admin pUSD balance immediately after deal (and fork selection) in setUp:", pUSD.balanceOf(admin));
 
-        diamondProxy = ISolidStateDiamond(payable(DIAMOND_PROXY_ADDRESS));
+        diamondProxy = ISolidStateDiamondProxypayable(DIAMOND_PROXY_ADDRESS));
         diamondCut = IERC2535DiamondCutInternal(DIAMOND_PROXY_ADDRESS);
         accessControlFacet = IAccessControl(DIAMOND_PROXY_ADDRESS);
         managementFacet = ManagementFacet(DIAMOND_PROXY_ADDRESS);

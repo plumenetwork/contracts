@@ -6,7 +6,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 // --- Diamond Interfaces & Base Contract ---
 
 import { PlumeStaking } from "../src/PlumeStaking.sol";
-import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol"; // Needed for PlumeStaking
+import { ISolidStateDiamondProxy} from "@solidstate/proxy/diamond/ISolidStateDiamondProxysol"; // Needed for PlumeStaking
     // specific views like isInitialized
 
 // --- Facet Interfaces (or full contracts for easy casting) ---

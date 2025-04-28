@@ -6,7 +6,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 // --- SolidState Diamond Interfaces ---
 import { IERC2535DiamondCutInternal } from "solidstate-solidity/interfaces/IERC2535DiamondCutInternal.sol";
 import { IERC2535DiamondLoupe } from "solidstate-solidity/interfaces/IERC2535DiamondLoupe.sol";
-import { ISolidStateDiamond } from "solidstate-solidity/proxy/diamond/SolidStateDiamond.sol";
+import { ISolidStateDiamondProxy} from "solidstate-solidity/proxy/diamond/SolidStateDiamondProxysol";
 
 // --- Plume Facets ---
 import { ValidatorFacet } from "../../src/facets/ValidatorFacet.sol";
@@ -105,7 +105,7 @@ contract UpgradeValidatorFacet is Script {
 
         // --- Step 3: Execute Diamond Cut ---
         console2.log("\n3. Executing Diamond Cut...");
-        ISolidStateDiamond(payable(DIAMOND_PROXY_ADDRESS)).diamondCut(cut, address(0), "");
+        ISolidStateDiamondProxypayable(DIAMOND_PROXY_ADDRESS)).diamondCut(cut, address(0), "");
         console2.log("  Diamond Cut executed successfully.");
 
         // --- Step 4: Verification (Optional but Recommended) ---
