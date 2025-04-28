@@ -60,8 +60,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     address internal constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     // Constants moved from Base - needed here
-    uint256 internal constant REWARD_PRECISION = 1e18; // Needed for commission calc in _earned? No, _earned is
-        // elsewhere
+    uint256 internal constant REWARD_PRECISION = 1e18; 
 
     // --- Storage Access ---
     bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
@@ -218,7 +217,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             amount // Treat the restaked amount as newly active stake
         );
 
-        // Note: No RewardsRestaked event here, as this isn't specifically rewards
 
         return amount;
     }
@@ -248,7 +246,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return amountUnstaked The amount actually unstaked
      */
     function unstake(uint16 validatorId, uint256 amount) external returns (uint256 amountUnstaked) {
-        // Call internal _unstake which is now part of this facet
         return _unstake(validatorId, amount);
     }
 
@@ -324,7 +321,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @notice Withdraw PLUME that has completed the cooldown period
      * @return amount Amount of PLUME withdrawn
      */
-    function withdraw() external /* nonReentrant - Add Reentrancy Guard later if needed */ returns (uint256 amount) {
+    function withdraw() external nonReentrant returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
 
@@ -333,6 +330,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             uint256 cooledAmount = info.cooled; // Store before zeroing
             amount += cooledAmount;
             info.cooled = 0;
+
             // Need to adjust totalCooling if it exists and is accurate
             if ($.totalCooling >= cooledAmount) {
                 $.totalCooling -= cooledAmount;
@@ -350,13 +348,13 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         }
 
         info.parked = 0;
-        info.lastUpdateTimestamp = block.timestamp; // Update timestamp? Check if Base did this. Yes.
+        info.lastUpdateTimestamp = block.timestamp;
 
         // Update total withdrawable amount
         if ($.totalWithdrawable >= amount) {
             $.totalWithdrawable -= amount;
         } else {
-            $.totalWithdrawable = 0; // Avoid underflow
+            $.totalWithdrawable = 0; 
         }
 
         // Transfer PLUME to user

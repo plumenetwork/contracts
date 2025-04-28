@@ -137,7 +137,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     /**
      * @notice Add a new validator (Owner only)
-     * @param validatorId Fixed UUID for the validator
+     * @param validatorId UUID for the validator
      * @param commission Commission rate (as fraction of REWARD_PRECISION)
      * @param l2AdminAddress Admin address for the validator
      * @param l2WithdrawAddress Withdrawal address for validator rewards
