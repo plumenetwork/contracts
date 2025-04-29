@@ -118,7 +118,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address token,
         uint256 amount,
         address recipient
-    ) external onlyRole(PlumeRoles.ADMIN_ROLE) nonReentrant {
+    ) external onlyRole(PlumeRoles.TIMELOCK_ROLE) nonReentrant {
         // <-- Use ADMIN_ROLE
         // Validate inputs
         if (token == address(0)) {

@@ -135,7 +135,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      */
     function setTreasury(
         address _treasury
-    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+    ) external onlyRole(PlumeRoles.TIMELOCK_ROLE) {
         if (_treasury == address(0)) {
             revert ZeroAddress("treasury");
         }

@@ -26,12 +26,13 @@ contract AccessControlFacet is IAccessControl, AccessControlInternal {
     bytes32 public constant UPGRADER_ROLE = PlumeRoles.UPGRADER_ROLE;
     bytes32 public constant VALIDATOR_ROLE = PlumeRoles.VALIDATOR_ROLE;
     bytes32 public constant REWARD_MANAGER_ROLE = PlumeRoles.REWARD_MANAGER_ROLE;
-
+    bytes32 public constant TIMELOCK_ROLE = PlumeRoles.TIMELOCK_ROLE;
     /**
      * @notice Initializes the AccessControl facet, setting up all roles and their admins.
      * @dev Can only be called once, typically by the diamond owner after cutting the facet.
      * Sets up the complete role hierarchy with DEFAULT_ADMIN_ROLE and ADMIN_ROLE at the top.
      */
+
     function initializeAccessControl() external {
         require(!_initializedAC, "ACF: init"); // AccessControlFacet: Already initialized
 
@@ -44,6 +45,7 @@ contract AccessControlFacet is IAccessControl, AccessControlInternal {
         // Set up role hierarchy
         // Make ADMIN_ROLE the admin for all other roles (including itself)
         _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(TIMELOCK_ROLE, ADMIN_ROLE);
         _setRoleAdmin(UPGRADER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(VALIDATOR_ROLE, ADMIN_ROLE);
         _setRoleAdmin(REWARD_MANAGER_ROLE, ADMIN_ROLE);

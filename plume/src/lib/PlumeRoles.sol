@@ -19,4 +19,7 @@ library PlumeRoles {
     // Role for managing reward settings and distribution
     bytes32 public constant REWARD_MANAGER_ROLE = keccak256("REWARD_MANAGER_ROLE");
 
+    // Role for managing time-locked actions
+    bytes32 public constant TIMELOCK_ROLE = keccak256("TIMELOCK_ROLE");
+
 }

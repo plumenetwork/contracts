@@ -291,7 +291,7 @@ contract PlumeStakingDiamondTest is Test {
         // Grant owner the ADMIN role explicitly
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.ADMIN_ROLE, admin);
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
-
+        AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.TIMELOCK_ROLE, admin);
         // 6. Deploy and setup reward treasury
         PlumeStakingRewardTreasury treasuryImpl = new PlumeStakingRewardTreasury();
         bytes memory initData =
@@ -1065,7 +1065,7 @@ contract PlumeStakingDiamondTest is Test {
         // Call as non-admin and expect revert
         vm.startPrank(user1);
         // vm.expectRevert(bytes("Caller does not have the required role"));
-        vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user1, PlumeRoles.ADMIN_ROLE));
+        vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user1, PlumeRoles.TIMELOCK_ROLE));
         ManagementFacet(address(diamondProxy)).adminWithdraw(token, withdrawAmount, recipient);
         vm.stopPrank();
     }

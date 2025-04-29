@@ -451,7 +451,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      */
     function slashValidator(
         uint16 validatorId
-    ) external nonReentrant onlyRole(PlumeRoles.ADMIN_ROLE) {
+    ) external nonReentrant onlyRole(PlumeRoles.TIMELOCK_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
 
         // Check 1: Target validator exists, is active, and not already slashed
