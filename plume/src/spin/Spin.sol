@@ -153,7 +153,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         $.supraRouter = ISupraRouterContract(supraRouterAddress);
         $.dateTime = IDateTime(dateTimeAddress);
         $.admin = msg.sender;
-        $.enableSpin = false;
+        $.enableSpin = true;  /// change to false for launch and add the way to make it true
         //$.campaignStartDate = block.timestamp;
 
         $.jackpotProbabilities = [1, 2, 3, 5, 7, 10, 20];

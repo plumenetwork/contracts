@@ -2,9 +2,28 @@
 pragma solidity ^0.8.25;
 
 import "../src/interfaces/ISupraRouterContract.sol";
+import "forge-std/Test.sol";
+
+/// @notice Test‐only stub for the Supra router; emits a RequestSent log
+contract StubSupra {
+    event RequestSent(uint256 indexed nonce);
+
+    uint256 private next = 1;
+    function generateRequest(
+        string calldata, uint8, uint256, uint256, address
+    ) external returns (uint256) {
+        uint256 n = next++;
+        emit RequestSent(n);
+        return n;
+    }
+    // no-op stub for the other interface fn
+    function rngCallback(
+        uint256[] memory, uint256[] memory, uint256[] memory, uint256[] memory
+    ) external {}
+}
+
 import "../src/spin/DateTime.sol";
 import "../src/spin/Spin.sol";
-import "forge-std/Test.sol";
 import "forge-std/console.sol";
 
 interface IDepositContract {
@@ -49,6 +68,8 @@ contract SpinTest is Test {
     function setUp() public payable {
         // Fork from mainnet for testing with the deployed Supra Oracle
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
+
+        vm.etch(SUPRA_ORACLE, type(StubSupra).runtimeCode);
 
         // Deploy the DateTime contract from src/DateTime.sol
         dateTime = new DateTime();
