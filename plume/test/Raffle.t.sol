@@ -196,8 +196,6 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.claimPrize(1);
     }
     
-    // ---- Additional tests from RaffleTest.t.sol ----
-
     function testRemovePrizeFlow() public {
         vm.prank(ADMIN);
         raffle.addPrize("Test","Desc",1);
@@ -406,8 +404,6 @@ contract RaffleFlowTest is PlumeTestBase {
         assertEq(counts[0], 3);
         assertEq(wlist[0], 1);
     }
-
-    // ---- Additional tests from RaffleWinnerTest.t.sol ----
 
     function testGetWinner() public {
         // Draw winner with ticket #2 (USER1)
