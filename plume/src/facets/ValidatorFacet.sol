@@ -294,7 +294,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
-        // <<< FIX: Declare and capture old L2 addresses >>>
         address oldL2AdminAddress = validator.l2AdminAddress;
         address oldL2WithdrawAddress = validator.l2WithdrawAddress;
         string memory oldL1ValidatorAddress = validator.l1ValidatorAddress;
