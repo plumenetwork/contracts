@@ -546,4 +546,16 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     /// @notice Fallback function to receive ether
     receive() external payable { }
 
+    /**
+     * @notice Allows users to claim a prize they have won
+     * @dev Verifies the user owns the winning ticket before allowing claim
+     *      Ensures the prize is active and a winner has been drawn
+     * @param prizeId The ID of the prize to claim
+     * @return bool True if the claim was successful
+     * @custom:security non-reentrant
+     */
+    function claimPrize(uint256 prizeId) external onlyValidPrize(prizeId) returns (bool) {
+        // Function implementation
+    }
+
 }

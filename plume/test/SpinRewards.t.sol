@@ -87,6 +87,8 @@ contract SpinRewardsTest is Test {
         assertEq(streak, 1);
     }
 
+    // If a user hits the Jackpot but doesn't have enough streak, they should get nothing
+    // If they then hit the Jackpot with enough streak, they should get the Jackpot
     function testJackpotInsufficientThenSufficientStreak() public {
         // Day 0, streak=0 => Nothing
         uint256 n0 = _startSpin(dt.toTimestamp(2025, 3, 8, 10, 0, 0));
