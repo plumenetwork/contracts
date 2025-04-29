@@ -291,19 +291,29 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         $.validatorTotalStaked[validatorId] -= amountUnstaked;
         $.totalStaked -= amountUnstaked;
 
-        // Handle cooling period
-        if (globalInfo.cooldownEnd != 0 && block.timestamp < globalInfo.cooldownEnd) {
-            globalInfo.cooled += amountUnstaked;
-            globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
-        } else {
-            globalInfo.cooled = amountUnstaked;
-            globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
+        // 1. Check if existing cooled balance has finished its cooldown
+        if (globalInfo.cooldownEnd != 0 && block.timestamp >= globalInfo.cooldownEnd) {
+            uint256 finishedCoolingAmount = globalInfo.cooled;
+            if (finishedCoolingAmount > 0) {
+                globalInfo.parked += finishedCoolingAmount;
+                $.totalWithdrawable += finishedCoolingAmount;
+                // Adjust totalCooling (decrease finished amount)
+                if ($.totalCooling >= finishedCoolingAmount) {
+                    $.totalCooling -= finishedCoolingAmount;
+                } else {
+                    $.totalCooling = 0;
+                }
+                globalInfo.cooled = 0; // Reset cooled amount as it's now parked
+            }
+            // CooldownEnd is reset below anyway
         }
 
-        // Update validator-specific cooling totals - No, this seems specific to validator?
-        // $.validatorTotalCooling[validatorId] += amountUnstaked; // Let's comment this out for now. Seems validator
-        // specific.
-        $.totalCooling += amountUnstaked; // Global total cooling is needed
+        // 2. Add the newly unstaked amount to the (potentially zeroed) cooled balance
+        globalInfo.cooled += amountUnstaked;
+        $.totalCooling += amountUnstaked; // Global total cooling increases by new amount
+
+        // 3. Set/Reset the cooldown timer for the current cooled balance
+        globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
 
         // If the user's stake with this validator is now zero, remove them from the validator's staker list
         if (info.staked == 0) {
@@ -633,7 +643,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         return $.totalClaimableByToken[token];
     }
 
-    // --- NEW VIEW FUNCTION ---
     /**
      * @notice Get the staked amount for a specific user on a specific validator.
      * @param user The address of the user.
@@ -644,8 +653,5 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         return $.userValidatorStakes[user][validatorId].staked;
     }
-    // --- END NEW VIEW FUNCTION ---
-
-    // --- Internal Helper Functions ---
 
 }

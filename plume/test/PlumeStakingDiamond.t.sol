@@ -79,7 +79,7 @@ contract PlumeStakingDiamondTest is Test {
 
     // Addresses
     address public constant ADMIN_ADDRESS = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
-    address public constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE; // Use standard ETH placeholder
+    address public constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     address public user1;
     address public user2;
@@ -97,7 +97,6 @@ contract PlumeStakingDiamondTest is Test {
     uint16 public constant DEFAULT_VALIDATOR_ID = 0;
     uint256 public constant DEFAULT_COMMISSION = 5e16; // 5% commission
     address public constant DEFAULT_VALIDATOR_ADMIN = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
-    // uint256 public constant REWARD_PRECISION = 1e18; // Defined in logic lib now
 
     function setUp() public {
         console2.log("Starting Diamond test setup (Correct Path)");
@@ -360,8 +359,6 @@ contract PlumeStakingDiamondTest is Test {
 
     function testInitialState() public {
         // Directly check the initialized flag using the new view function
-        // Need to cast diamondProxy to PlumeStaking to call isInitialized
-        // Note: Directly accessing storage layout might not work reliably with Diamonds
         assertTrue(PlumeStaking(payable(address(diamondProxy))).isInitialized(), "Contract should be initialized");
 
         // Use the new view functions from ManagementFacet for other checks
@@ -388,7 +385,6 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
     }
 
-    // <<< NEW TEST CASE >>>
     function testStakeOnBehalf() public {
         uint16 validatorId = DEFAULT_VALIDATOR_ID;
         address sender = user2; // User2 sends the tx
@@ -460,7 +456,6 @@ contract PlumeStakingDiamondTest is Test {
         }
         assertTrue(foundInList, "Staker not found in validator list after stakeOnBehalf");
     }
-    // <<< END NEW TEST CASE >>>
 
     function testClaimValidatorCommission() public {
         // Set up validator commission at 20% (20 * 1e16)
@@ -577,8 +572,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // Interact again to update rewards once more
         vm.startPrank(user1);
-        // Get claimable rewards - this should call updateRewardsForValidator internally
-        // RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+
         // Unstake a minimal amount to trigger reward update
         StakingFacet(address(diamondProxy)).unstake(DEFAULT_VALIDATOR_ID, 1); // Unstake 1 wei
         vm.stopPrank();
@@ -970,7 +964,6 @@ contract PlumeStakingDiamondTest is Test {
         uint256 oldMinStake = ManagementFacet(address(diamondProxy)).getMinStakeAmount();
 
         // Check event emission - Use the correct event name 'MinStakeAmountSet'
-        // Note: MinStakeAmountSet only emits the new amount, not old and new.
         vm.expectEmit(true, false, false, true, address(diamondProxy)); // Check data only
         emit MinStakeAmountSet(newMinStake);
 
@@ -1499,11 +1492,9 @@ contract PlumeStakingDiamondTest is Test {
         );
         vm.stopPrank();
 
-        // Note: Validators are already set to active when added (in addValidator function)
-        // But we'll verify they're active by directly accessing storage
         vm.startPrank(admin);
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        // Just in case, explicitly set active flag to true
+
         $.validators[DEFAULT_VALIDATOR_ID].active = true;
         $.validators[1].active = true;
         $.validators[2].active = true;
@@ -1515,9 +1506,9 @@ contract PlumeStakingDiamondTest is Test {
         testSlash_Setup();
 
         // Create users and give them some ETH
-        address user1_slash = makeAddr("user1_slash"); // Use different name to avoid conflicts
+        address user1_slash = makeAddr("user1_slash");
         address user2_slash = makeAddr("user2_slash");
-        vm.deal(user1_slash, 100 ether); // Fund these specific users for this test
+        vm.deal(user1_slash, 100 ether);
         vm.deal(user2_slash, 100 ether);
 
         // user1 stakes with validator 0
@@ -1532,9 +1523,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // Set the minimum voting power requirement
         vm.startPrank(admin);
-        // Direct storage manipulation since setMinVotingPowerForSlash doesn't exist
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        // Set maximum slash vote duration (needed for slashing mechanism)
         ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(1 days);
         vm.stopPrank();
 
@@ -2131,7 +2120,6 @@ contract PlumeStakingDiamondTest is Test {
     function testTreasuryTransfer_User_Withdraw() public {
         // Setup validator and user accounts
         uint16 validator1 = 1;
-        // address validator1Admin = makeAddr("validator1Admin"); // Not needed, validator 1 exists
         uint16 validator2 = 100;
         address validator2Admin = makeAddr("validator2Admin");
 
@@ -2233,9 +2221,9 @@ contract PlumeStakingDiamondTest is Test {
             stakeInfo.cooldownEnd
         );
 
-        // EXPECTED CORRECT BEHAVIOR:
         assertEq(stakeInfo.cooled, 0, "Cooling amount should be 0 after restake");
         assertEq(stakeInfo.staked, stakeAmount, "Staked amount should be restored after restake");
+
         // Cooldown should be cancelled/reset
         assertEq(stakeInfo.cooldownEnd, 0, "Cooldown end date should be reset after restake");
 
@@ -2249,9 +2237,27 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
         console2.log("Restake during cooldown test completed.");
     }
-    // <<< END NEW TEST CASE >>>
 
-    // <<< ADD NEW COMPLEX TEST CASE HERE >>>
+    /**
+     * @notice Tests a complex sequence with state tracking:
+     *          (S=Staked, C=Cooled, P=Parked, CE=CooldownEnd)
+     * Initial: S=0, C=0, P=0, CE=0
+     * 1. Stake 10 ETH         -> S=10, C=0, P=0, CE=0
+     * 2. Unstake 5 ETH        -> S=5,  C=5, P=0, CE=T+cd (cooldownEnd1)
+     * 3. Restake 2 ETH        -> S=7,  C=3, P=0, CE=T+cd (cooldownEnd1 unchanged)
+     * 4. Wait past CE1, Withdraw 3 ETH -> S=7,  C=0, P=0, CE=0 (Withdraw moves C->P then clears P, resets CE)
+     * 5. Stake 2 ETH          -> S=9,  C=0, P=0, CE=0
+     * 6. Unstake 4 ETH        -> S=5,  C=4, P=0, CE=T'+cd (cooldownEnd2)
+     * 7. Wait past CE2        -> State unchanged until interaction
+     * 8. Withdraw 4 ETH       -> S=5,  C=0, P=0, CE=0 (Withdraw checks C, moves C->P, clears P, resets CE)
+     * 9. Stake 4 ETH          -> S=9,  C=0, P=0, CE=0
+     * 10. Unstake 4 ETH       -> S=5,  C=4, P=0, CE=T''+cd (cooldownEnd3)
+     * 11. Wait past CE3       -> State unchanged
+     * 12. Accrue rewards
+     * 13. Restake Rewards     -> S=5+R, C=4, P=0, CE=T''+cd (Rewards R added to stake)
+     * 14. Withdraw 4 ETH      -> S=5+R, C=0, P=0, CE=0
+     * 15. Final checks
+     */
     function testComplexStakeUnstakeRestakeWithdrawScenario() public {
         uint16 validatorId = DEFAULT_VALIDATOR_ID;
         uint256 initialStake = 10 ether;
@@ -2334,13 +2340,33 @@ contract PlumeStakingDiamondTest is Test {
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         uint256 cooldownEnd2 = stakeInfo.cooldownEnd;
         assertTrue(cooldownEnd2 > block.timestamp, "Cooldown 2 not set");
+        assertTrue(cooldownEnd2 > cooldownEnd1, "Cooldown 2 end should be later than cooldown 1 end");
+        // --- FIX: Correct expected staked amount ---
         assertEq(
-            stakeInfo.staked,
-            initialStake - firstUnstake + firstRestake + secondStake - secondUnstake,
-            "State Error after Step 7 (Staked)"
+            StakingFacet(address(diamondProxy)).amountStaked(),
+            5 ether,
+            "Stake amount should be 5 ether after second unstake"
         );
-        assertEq(stakeInfo.cooled, secondUnstake, "State Error after Step 7 (Cooled)");
-        console2.log("   Cooldown ends at: %s", cooldownEnd2);
+
+        // Check internal state immediately after second unstake
+        PlumeStakingStorage.StakeInfo memory infoAfterSecondUnstake =
+            StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(infoAfterSecondUnstake.cooled, secondUnstake, "Internal cooled amount mismatch after second unstake");
+        assertEq(infoAfterSecondUnstake.parked, 0, "Internal parked amount should be 0 after second unstake");
+
+        // Check cooling amount view function (should reflect the *new* cooldown)
+        assertEq(
+            StakingFacet(address(diamondProxy)).amountCooling(),
+            secondUnstake,
+            "Cooling view amount wrong after second unstake"
+        );
+        assertEq(
+            StakingFacet(address(diamondProxy)).amountWithdrawable(),
+            0,
+            "Withdrawable view amount should be 0 after second unstake (new cooldown)"
+        ); // FIX: MUST Expect 0
+        // --- END FIX ---
+        console2.log("   Cooldown 2 ends at: %s", cooldownEnd2);
 
         // 8. Advance time past second cooldown end
         console2.log("8. Advancing time past cooldown 2 (%s)...", cooldownEnd2);
@@ -2375,10 +2401,9 @@ contract PlumeStakingDiamondTest is Test {
 
         // Now expect revert when calling restakeParked as there is nothing to restake
         vm.expectRevert(abi.encodeWithSelector(NoRewardsToRestake.selector));
-        StakingFacet(address(diamondProxy)).restakeRewards(validatorId); // Use correct function name
+        StakingFacet(address(diamondProxy)).restakeRewards(validatorId);
 
         // --- Steps 11-13 Re-evaluated ---
-        // The original intent was to restake the withdrawable amount. Let's redo this part.
         // Reset state slightly by staking again and unstaking to get funds into cooled/parked state.
 
         // Re-stake 4 ETH
@@ -2470,5 +2495,108 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("Complex stake/unstake/restake/withdraw scenario test completed.");
     }
     // <<< END NEW COMPLEX TEST CASE >>>
+
+    /**
+     * @notice Tests  multiple unstakes:
+     *          (S=Staked, C=Cooled, P=Parked)
+     * Initial: S=0, C=0, P=0
+     * 1. Stake 10 ETH         -> S=10, C=0, P=0
+     * 2. Unstake 6 ETH        -> S=4,  C=6, P=0
+     * 3. Unstake 4 ETH        -> S=0,  C=4, P=6
+     */
+    function testUnstakeAccumulatesAfterCooldown() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        uint256 initialStake = 10 ether;
+        uint256 firstUnstake = 6 ether;
+        uint256 secondUnstake = 4 ether;
+        uint256 totalUnstaked = firstUnstake + secondUnstake;
+
+        vm.startPrank(user1);
+
+        // 1. Stake initial amount
+        console2.log("1. Staking %s ETH...", initialStake);
+        StakingFacet(address(diamondProxy)).stake{ value: initialStake }(validatorId);
+        assertEq(StakingFacet(address(diamondProxy)).amountStaked(), initialStake, "Initial stake failed");
+
+        // 2. Unstake first portion
+        console2.log("2. Unstaking first portion: %s ETH...", firstUnstake);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, firstUnstake);
+        uint256 cooldownEnd1 = StakingFacet(address(diamondProxy)).cooldownEndDate();
+        assertTrue(cooldownEnd1 > block.timestamp, "Cooldown 1 not started");
+        assertEq(
+            StakingFacet(address(diamondProxy)).amountStaked(),
+            initialStake - firstUnstake,
+            "Stake amount wrong after first unstake"
+        );
+        assertEq(
+            StakingFacet(address(diamondProxy)).amountCooling(),
+            firstUnstake,
+            "Cooling amount wrong after first unstake"
+        );
+        console2.log("   Cooldown 1 ends at: %s", cooldownEnd1);
+
+        // 3. Advance time *past* the first cooldown end
+        console2.log("3. Advancing time past cooldown 1 (%s)...", cooldownEnd1);
+        vm.warp(cooldownEnd1 + 10); // Add 10 seconds buffer
+        assertTrue(block.timestamp > cooldownEnd1, "Time did not advance past cooldown 1");
+
+        // Verify withdrawable amount before second unstake
+        assertEq(
+            StakingFacet(address(diamondProxy)).amountWithdrawable(),
+            firstUnstake,
+            "Withdrawable should be firstUnstake before second unstake"
+        );
+        assertEq(StakingFacet(address(diamondProxy)).amountCooling(), 0, "Cooling should be 0 before second unstake");
+
+        // 4. Unstake second portion
+        console2.log("4. Unstaking second portion: %s ETH...", secondUnstake);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, secondUnstake);
+        uint256 cooldownEnd2 = StakingFacet(address(diamondProxy)).cooldownEndDate();
+        assertTrue(cooldownEnd2 > block.timestamp, "Cooldown 2 not started");
+        assertTrue(cooldownEnd2 > cooldownEnd1, "Cooldown 2 end should be later than cooldown 1 end");
+        assertEq(StakingFacet(address(diamondProxy)).amountStaked(), 0, "Stake amount should be 0 after second unstake");
+
+        // Check internal state immediately after second unstake
+        PlumeStakingStorage.StakeInfo memory infoAfterSecondUnstake =
+            StakingFacet(address(diamondProxy)).stakeInfo(user1);
+
+        // Check cooling amount view function (should reflect the *new* cooldown)
+        assertEq(
+            StakingFacet(address(diamondProxy)).amountCooling(),
+            secondUnstake,
+            "Cooling view amount wrong after second unstake"
+        );
+        assertEq(
+            StakingFacet(address(diamondProxy)).amountWithdrawable(),
+            6 ether,
+            "Withdrawable should be 0 after second unstake (new cooldown)"
+        );
+        console2.log("   Cooldown 2 ends at: %s", cooldownEnd2);
+
+        // 5. Advance time past the second cooldown
+        console2.log("5. Advancing time past cooldown 2 (%s)...", cooldownEnd2);
+        vm.warp(cooldownEnd2 + 10);
+
+        // 6. Withdraw
+        console2.log("6. Withdrawing...");
+        uint256 withdrawableFinal = StakingFacet(address(diamondProxy)).amountWithdrawable();
+        assertEq(withdrawableFinal, totalUnstaked, "Final withdrawable amount incorrect");
+
+        uint256 balanceBefore = user1.balance;
+        StakingFacet(address(diamondProxy)).withdraw();
+        uint256 balanceAfter = user1.balance;
+
+        // 7. Verify withdrawal amount
+        assertEq(balanceAfter - balanceBefore, totalUnstaked, "Withdrawn amount does not match total unstaked");
+        assertEq(StakingFacet(address(diamondProxy)).amountWithdrawable(), 0, "Withdrawable should be 0 after withdraw");
+        assertEq(StakingFacet(address(diamondProxy)).amountCooling(), 0, "Cooling should be 0 after withdraw");
+        PlumeStakingStorage.StakeInfo memory finalInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(finalInfo.cooled, 0, "Internal cooled should be 0 after withdraw");
+        assertEq(finalInfo.parked, 0, "Internal parked should be 0 after withdraw");
+        assertEq(finalInfo.cooldownEnd, 0, "Cooldown should be reset after withdraw");
+
+        vm.stopPrank();
+        console2.log("Unstake accumulation test completed.");
+    }
 
 }
