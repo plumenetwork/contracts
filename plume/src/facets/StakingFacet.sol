@@ -60,7 +60,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     address internal constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     // Constants moved from Base - needed here
-    uint256 internal constant REWARD_PRECISION = 1e18; 
+    uint256 internal constant REWARD_PRECISION = 1e18;
 
     // --- Storage Access ---
     bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
@@ -217,7 +217,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             amount // Treat the restaked amount as newly active stake
         );
 
-
         return amount;
     }
 
@@ -354,7 +353,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         if ($.totalWithdrawable >= amount) {
             $.totalWithdrawable -= amount;
         } else {
-            $.totalWithdrawable = 0; 
+            $.totalWithdrawable = 0;
         }
 
         // Transfer PLUME to user
