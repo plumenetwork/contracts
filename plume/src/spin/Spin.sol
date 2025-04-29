@@ -54,6 +54,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         mapping(uint8 => uint256) jackpotPrizes;
         /// @dev Mapping to bypass cooldown period
         mapping(address => bool) whitelists;
+        /// @dev Flag to enable spinning
+        bool enableSpin;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.Spin")) - 1)) & ~bytes32(uint256(0xff))
@@ -87,6 +89,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     error AlreadySpunToday();
     /// @notice Revert if the nonce is invalid
     error InvalidNonce();
+    /// @notice Revert if spinning is not enabled
+    error CampaignNotStarted();
 
     // Modifiers
 
@@ -149,6 +153,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         $.supraRouter = ISupraRouterContract(supraRouterAddress);
         $.dateTime = IDateTime(dateTimeAddress);
         $.admin = msg.sender;
+        $.enableSpin = false;
         //$.campaignStartDate = block.timestamp;
 
         $.jackpotProbabilities = [1, 2, 3, 5, 7, 10, 20];
@@ -165,15 +170,19 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         $.jackpotPrizes[10] = 50_000;
         $.jackpotPrizes[11] = 100_000;
 
-        $.baseRaffleMultiplier = 100;
+        $.baseRaffleMultiplier = 8;
         $.PP_PerSpin = 100;
-        $.plumeAmounts = [2, 5, 10];
+        $.plumeAmounts = [1, 1, 1];
     }
 
     /// @notice Starts the spin process by generating a random number and recording the spin date.
     /// @dev This function is called by the user to initiate a spin.
     function startSpin() external whenNotPaused canSpin {
         SpinStorage storage $ = _getSpinStorage();
+        if (!$.enableSpin) {
+            revert CampaignNotStarted();
+        }
+        
         string memory callbackSignature = "handleRandomness(uint256,uint256[])";
         uint8 rngCount = 1;
         uint256 numConfirmations = 1;
