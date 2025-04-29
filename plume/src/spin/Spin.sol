@@ -10,9 +10,7 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "../interfaces/IDateTime.sol";
 import "../interfaces/ISupraRouterContract.sol";
 
-/// @custom:oz-upgrades-from Spin
 contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable {
-
     // Storage
     struct UserData {
         uint256 jackpotWins;
@@ -25,91 +23,93 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 nothingCounts;
     }
 
-    /// @custom:storage-location erc7201:plume.storage.Spin
-    struct SpinStorage {
-        /// @dev Address of the admin managing the Spin contract
-        address admin;
-        /// @dev Last Jackpot claim timestamp
-        uint256 lastJackpotClaim;
-        /// @dev Mapping of wallet address to rewards
-        mapping(address => UserData) userData;
-        /// @dev Mapping of Week daya to Jackpot probabilities
-        uint256[7] jackpotProbabilities;
-        /// @dev Raffle Multiplier
-        uint256 baseRaffleMultiplier;
-        /// @dev PP gained per spin
-        uint256 PP_PerSpin;
-        /// @dev Plume Token Rewards
-        uint256[3] plumeAmounts;
-        /// @dev Mapping of nonce to user
-        mapping(uint256 => address) userNonce;
-        /// @dev Reference to the Supra VRF interface
-        ISupraRouterContract supraRouter;
-        /// @dev Reference to the DateTime contract
-        IDateTime dateTime;
-        /// @dev Address of the Raffle contract
-        address raffleContract;
-        /// @dev Timestamp of campaign start
-        uint256 campaignStartDate;
-        /// @dev Mapping of Week to Jackpot Prizes
-        mapping(uint8 => uint256) jackpotPrizes;
-        /// @dev Mapping to bypass cooldown period
-        mapping(address => bool) whitelists;
-        /// @dev Flag to enable spinning
-        bool enableSpin;
-    }
-
-    // keccak256(abi.encode(uint256(keccak256("plume.storage.Spin")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant SPIN_STORAGE_LOCATION = 0x35fc247836aa7388208f5bf12c548be42b83fa7b653b6690498b1d90754d0b00;
-
-    function _getSpinStorage() internal pure returns (SpinStorage storage $) {
-        assembly {
-            $.slot := SPIN_STORAGE_LOCATION
-        }
-    }
-
     // Roles
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant SUPRA_ROLE = keccak256("SUPRA_ROLE");
     uint256 public constant SECONDS_PER_DAY = 86_400;
 
-    // Events
-    /// @notice Emitted when a spin is requested
-    event SpinRequested(uint256 indexed nonce, address indexed user);
-    /// @notice Emitted when a spin is completed
-    event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
+    // State variables
+    address public admin;
+    uint256 public lastJackpotClaim;
+    mapping(address => UserData) public userData;
+    uint256[7] public jackpotProbabilities;
+    uint256 public baseRaffleMultiplier;
+    uint256 public PP_PerSpin;
+    uint256[3] public plumeAmounts;
+    mapping(uint256 => address) public userNonce;
+    ISupraRouterContract public supraRouter;
+    IDateTime public dateTime;
+    address public raffleContract;
+    uint256 public campaignStartDate;
+    mapping(uint8 => uint256) public jackpotPrizes;
+    mapping(address => bool) public whitelists;
+    bool public enableSpin;
 
+    // Reserved storage gap for future upgrades
+    uint256[50] private __gap;
+
+    // Events
+    event SpinRequested(uint256 indexed nonce, address indexed user);
+    event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
     event RaffleTicketsUpdated(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
-    /// @notice Emitted when a user does not have enough streak count to claim the jackpot
     event NotEnoughStreak(string message);
 
     // Errors
-    /// @notice Revert if the caller is not an admin
     error NotAdmin();
-    /// @notice Revert if the user has already spun today
     error AlreadySpunToday();
-    /// @notice Revert if the nonce is invalid
     error InvalidNonce();
-    /// @notice Revert if spinning is not enabled
     error CampaignNotStarted();
 
-    // Modifiers
+    /**
+     * @notice Initializes the Spin contract.
+     * @param supraRouterAddress The address of the Supra Router contract.
+     * @param dateTimeAddress The address of the DateTime contract.
+     */
+    function initialize(address supraRouterAddress, address dateTimeAddress) public initializer {
+        __AccessControl_init();
+        __UUPSUpgradeable_init();
+        __Pausable_init();
+        __ReentrancyGuard_init();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
+        _grantRole(SUPRA_ROLE, supraRouterAddress);
+
+        supraRouter = ISupraRouterContract(supraRouterAddress);
+        dateTime = IDateTime(dateTimeAddress);
+        admin = msg.sender;
+        enableSpin = false;  // Start disabled until explicitly enabled
+
+        // Set default values
+        jackpotProbabilities = [1, 2, 3, 5, 7, 10, 20];
+        jackpotPrizes[0] = 5000;
+        jackpotPrizes[1] = 5000;
+        jackpotPrizes[2] = 10_000;
+        jackpotPrizes[3] = 10_000;
+        jackpotPrizes[4] = 20_000;
+        jackpotPrizes[5] = 20_000;
+        jackpotPrizes[6] = 30_000;
+        jackpotPrizes[7] = 30_000;
+        jackpotPrizes[8] = 40_000;
+        jackpotPrizes[9] = 40_000;
+        jackpotPrizes[10] = 50_000;
+        jackpotPrizes[11] = 100_000;
+
+        baseRaffleMultiplier = 8;
+        PP_PerSpin = 100;
+        plumeAmounts = [1, 1, 1];
+    }
 
     /// @notice Ensures that the user can only spin once per day by checking their last spin date.
-    ///      This modifier retrieves the last recorded spin date from storage, compares it with
-    ///      the current date using the `isSameDay` function, and reverts if the user has already spun today.
     modifier canSpin() {
-        SpinStorage storage $ = _getSpinStorage();
-
         // Early return if the user is whitelisted
-        if ($.whitelists[msg.sender]) {
+        if (whitelists[msg.sender]) {
             _;
             return;
         }
 
-        IDateTime dateTime = $.dateTime;
-        UserData storage userData = $.userData[msg.sender];
-        uint256 _lastSpinTimestamp = userData.lastSpinTimestamp;
+        UserData storage userDataStorage = userData[msg.sender];
+        uint256 _lastSpinTimestamp = userDataStorage.lastSpinTimestamp;
 
         // Retrieve last spin date components
         (uint16 lastSpinYear, uint8 lastSpinMonth, uint8 lastSpinDay) = (
@@ -131,68 +131,25 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     }
 
     modifier onlyRaffleContract() {
-        SpinStorage storage $ = _getSpinStorage();
-        require(msg.sender == $.raffleContract, "Only Raffle contract can call this");
+        require(msg.sender == raffleContract, "Only Raffle contract can call this");
         _;
-    }
-
-    /**
-     * @notice Initializes the Spin contract.
-     * @param supraRouterAddress The address of the Supra Router contract.
-     * @param dateTimeAddress The address of the DateTime contract.
-     */
-    function initialize(address supraRouterAddress, address dateTimeAddress) public initializer {
-        __AccessControl_init();
-        __UUPSUpgradeable_init();
-        __Pausable_init();
-        __ReentrancyGuard_init();
-
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(ADMIN_ROLE, msg.sender);
-        _grantRole(SUPRA_ROLE, supraRouterAddress);
-
-        SpinStorage storage $ = _getSpinStorage();
-        $.supraRouter = ISupraRouterContract(supraRouterAddress);
-        $.dateTime = IDateTime(dateTimeAddress);
-        $.admin = msg.sender;
-        $.enableSpin = true;  /// change to false for launch and add the way to make it true
-        //$.campaignStartDate = block.timestamp;
-
-        $.jackpotProbabilities = [1, 2, 3, 5, 7, 10, 20];
-        $.jackpotPrizes[0] = 5000;
-        $.jackpotPrizes[1] = 5000;
-        $.jackpotPrizes[2] = 10_000;
-        $.jackpotPrizes[3] = 10_000;
-        $.jackpotPrizes[4] = 20_000;
-        $.jackpotPrizes[5] = 20_000;
-        $.jackpotPrizes[6] = 30_000;
-        $.jackpotPrizes[7] = 30_000;
-        $.jackpotPrizes[8] = 40_000;
-        $.jackpotPrizes[9] = 40_000;
-        $.jackpotPrizes[10] = 50_000;
-        $.jackpotPrizes[11] = 100_000;
-
-        $.baseRaffleMultiplier = 8;
-        $.PP_PerSpin = 100;
-        $.plumeAmounts = [1, 1, 1];
     }
 
     /// @notice Starts the spin process by generating a random number and recording the spin date.
     /// @dev This function is called by the user to initiate a spin.
     function startSpin() external whenNotPaused canSpin {
-        SpinStorage storage $ = _getSpinStorage();
-        if (!$.enableSpin) {
+        if (!enableSpin) {
             revert CampaignNotStarted();
         }
 
         string memory callbackSignature = "handleRandomness(uint256,uint256[])";
         uint8 rngCount = 1;
         uint256 numConfirmations = 1;
-        uint256 clientSeed = uint256(keccak256(abi.encodePacked($.admin, block.timestamp)));
+        uint256 clientSeed = uint256(keccak256(abi.encodePacked(admin, block.timestamp)));
 
         uint256 nonce =
-            $.supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, $.admin);
-        $.userNonce[nonce] = msg.sender;
+            supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, admin);
+        userNonce[nonce] = msg.sender;
 
         emit SpinRequested(nonce, msg.sender);
     }
@@ -204,9 +161,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
      * @param rngList The list of random numbers generated.
      */
     function handleRandomness(uint256 nonce, uint256[] memory rngList) external onlyRole(SUPRA_ROLE) nonReentrant {
-        SpinStorage storage $ = _getSpinStorage();
-
-        address user = $.userNonce[nonce];
+        address user = userNonce[nonce];
         if (user == address(0)) {
             revert InvalidNonce();
         }
@@ -215,33 +170,33 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         (string memory rewardCategory, uint256 rewardAmount) = determineReward(randomness, user);
 
         // Apply reward logic
-        UserData storage _userData = $.userData[user];
+        UserData storage userDataStorage = userData[user];
 
         // ----------  Effects: update storage first  ----------
         if (keccak256(bytes(rewardCategory)) == keccak256("Jackpot")) {
-            require(block.timestamp >= $.lastJackpotClaim + 7 days, "Jackpot cooldown");
-            if (_userData.streakCount < ((block.timestamp - $.campaignStartDate) / 7 days) + 2) {
-                _userData.nothingCounts += 1;
+            require(block.timestamp >= lastJackpotClaim + 7 days, "Jackpot cooldown");
+            if (userDataStorage.streakCount < ((block.timestamp - campaignStartDate) / 7 days) + 2) {
+                userDataStorage.nothingCounts += 1;
                 emit NotEnoughStreak("Not enough streak count to claim Jackpot");
                 rewardCategory = "Nothing";
                 rewardAmount = 0;
             } else {
-                _userData.jackpotWins++;
-                $.lastJackpotClaim = block.timestamp;
+                userDataStorage.jackpotWins++;
+                lastJackpotClaim = block.timestamp;
             }
         } else if (keccak256(bytes(rewardCategory)) == keccak256("Raffle Ticket")) {
-            _userData.raffleTicketsGained += rewardAmount;
-            _userData.raffleTicketsBalance += rewardAmount;
+            userDataStorage.raffleTicketsGained += rewardAmount;
+            userDataStorage.raffleTicketsBalance += rewardAmount;
         } else if (keccak256(bytes(rewardCategory)) == keccak256("PP")) {
-            _userData.PPGained += rewardAmount;
+            userDataStorage.PPGained += rewardAmount;
         } else if (keccak256(bytes(rewardCategory)) == keccak256("Plume Token")) {
-            _userData.plumeTokens += rewardAmount;
+            userDataStorage.plumeTokens += rewardAmount;
         } else {
-            _userData.nothingCounts += 1;
+            userDataStorage.nothingCounts += 1;
         }
 
-        _userData.streakCount = _computeStreak(user, block.timestamp);
-        _userData.lastSpinTimestamp = block.timestamp;
+        userDataStorage.streakCount = _computeStreak(user, block.timestamp);
+        userDataStorage.lastSpinTimestamp = block.timestamp;
 
         // ----------  Interactions: transfer ETH last ----------
         if (
@@ -259,11 +214,10 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
      * @param randomness The random number generated by the Supra Router.
      */
     function determineReward(uint256 randomness, address user) internal view returns (string memory, uint256) {
-        SpinStorage storage $ = _getSpinStorage();
         uint256 probability = randomness % 1_000_000; // Normalize VRF range to 1M
 
         // Determine the current week in the 12-week campaign
-        uint256 daysSinceStart = (block.timestamp - $.campaignStartDate) / 1 days;
+        uint256 daysSinceStart = (block.timestamp - campaignStartDate) / 1 days;
         uint8 weekNumber = uint8(daysSinceStart / 7);
         if (weekNumber > 11) {
             // TODO: Handle Default case
@@ -272,17 +226,17 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         uint8 dayOfWeek = uint8(daysSinceStart % 7);
 
-        uint256 jackpotThreshold = $.jackpotProbabilities[dayOfWeek];
+        uint256 jackpotThreshold = jackpotProbabilities[dayOfWeek];
 
         if (probability < jackpotThreshold) {
-            return ("Jackpot", $.jackpotPrizes[weekNumber]);
+            return ("Jackpot", jackpotPrizes[weekNumber]);
         } else if (probability <= 200_000) {
-            uint256 plumeAmount = $.plumeAmounts[probability % 3];
+            uint256 plumeAmount = plumeAmounts[probability % 3];
             return ("Plume Token", plumeAmount);
         } else if (probability <= 600_000) {
-            return ("Raffle Ticket", $.baseRaffleMultiplier * ($.userData[user].streakCount + 1));
+            return ("Raffle Ticket", baseRaffleMultiplier * (userData[user].streakCount + 1));
         } else if (probability <= 900_000) {
-            return ("PP", $.PP_PerSpin);
+            return ("PP", PP_PerSpin);
         }
 
         return ("Nothing", 0); // Default case
@@ -290,20 +244,18 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     // ----------  Unified streak calculation ----------
     function _computeStreak(address user, uint256 nowTs) internal view returns (uint256) {
-        SpinStorage storage $ = _getSpinStorage();
-        uint256 lastSpinTs = $.userData[user].lastSpinTimestamp;
+        uint256 lastSpinTs = userData[user].lastSpinTimestamp;
         if (lastSpinTs == 0) return 1;
         uint256 lastDay = lastSpinTs / SECONDS_PER_DAY;
         uint256 today   = nowTs     / SECONDS_PER_DAY;
-        if (today == lastDay) return $.userData[user].streakCount; // same day
-        if (today == lastDay + 1)   return $.userData[user].streakCount + 1; // consecutive
+        if (today == lastDay) return userData[user].streakCount; // same day
+        if (today == lastDay + 1)   return userData[user].streakCount + 1; // consecutive
         return 1; // broken streak
     }
 
     function currentStreak(address user) public view returns (uint256) {
         return _computeStreak(user, block.timestamp);
     }
-
 
     function _safeTransferPlume(address to, uint256 weiAmount) internal {
         require(address(this).balance >= weiAmount, "insufficient Plume in the Spin contract");
@@ -312,13 +264,11 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     }
 
     function updateRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
-        SpinStorage storage $ = _getSpinStorage();
-
-        uint256 bal = $.userData[user].raffleTicketsBalance;
+        uint256 bal = userData[user].raffleTicketsBalance;
         require(bal >= ticketsUsed, "ticket underflow");
-        $.userData[user].raffleTicketsBalance = bal - ticketsUsed;
+        userData[user].raffleTicketsBalance = bal - ticketsUsed;
 
-        emit RaffleTicketsUpdated(user, ticketsUsed, $.userData[user].raffleTicketsBalance);
+        emit RaffleTicketsUpdated(user, ticketsUsed, userData[user].raffleTicketsBalance);
     }
 
     /**
@@ -382,8 +332,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint8 currentMonth,
         uint8 currentDay
     ) internal view returns (bool) {
-        SpinStorage storage $ = _getSpinStorage();
-        IDateTime dateTime = $.dateTime;
         uint256 lastDateTimestamp = dateTime.toTimestamp(lastYear, lastMonth, lastDay);
         uint256 nextDayTimestamp = lastDateTimestamp + SECONDS_PER_DAY;
 
@@ -414,17 +362,16 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             uint256 smallPlumeTokens
         )
     {
-        SpinStorage storage $ = _getSpinStorage();
-        UserData storage userData = $.userData[user];
+        UserData storage userDataStorage = userData[user];
 
         return (
             _computeStreak(user, block.timestamp),
-            userData.lastSpinTimestamp,
-            userData.jackpotWins,
-            userData.raffleTicketsGained,
-            userData.raffleTicketsBalance,
-            userData.PPGained,
-            userData.plumeTokens
+            userDataStorage.lastSpinTimestamp,
+            userDataStorage.jackpotWins,
+            userDataStorage.raffleTicketsGained,
+            userDataStorage.raffleTicketsBalance,
+            userDataStorage.PPGained,
+            userDataStorage.plumeTokens
         );
     }
 
@@ -436,23 +383,21 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         view
         returns (uint256 weekNumber, uint256 jackpotPrize, uint256 requiredStreak)
     {
-        SpinStorage storage $ = _getSpinStorage();
-        require($.campaignStartDate > 0, "Campaign not started");
+        require(campaignStartDate > 0, "Campaign not started");
 
-        uint256 daysSinceStart = (block.timestamp - $.campaignStartDate) / 1 days;
+        uint256 daysSinceStart = (block.timestamp - campaignStartDate) / 1 days;
         weekNumber = daysSinceStart / 7;
 
         if (weekNumber > 11) {
             return (weekNumber, 0, 0);
         }
 
-        jackpotPrize = $.jackpotPrizes[uint8(weekNumber)];
+        jackpotPrize = jackpotPrizes[uint8(weekNumber)];
         requiredStreak = weekNumber + 2;
     }
 
     function getCampaignStartDate() external view returns (uint256) {
-        SpinStorage storage $ = _getSpinStorage();
-        return $.campaignStartDate;
+        return campaignStartDate;
     }
 
     function getContractBalance() external view returns (uint256) {
@@ -465,21 +410,18 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function setJackpotProbabilities(
         uint8[7] memory _jackpotProbabilities
     ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.jackpotProbabilities = _jackpotProbabilities;
+        jackpotProbabilities = _jackpotProbabilities;
     }
 
     /// @notice Sets the jackpot prize for a specific week.
     /// @param week The week number (0-11).
     /// @param prize The jackpot prize amount.
     function setJackpotPrizes(uint8 week, uint256 prize) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.jackpotPrizes[week] = prize;
+        jackpotPrizes[week] = prize;
     }
 
     function setCampaignStartDate(uint256 start) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.campaignStartDate = start == 0 ? block.timestamp : start;
+        campaignStartDate = start == 0 ? block.timestamp : start;
     }
 
     /// @notice Sets the base value for raffle.
@@ -487,8 +429,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function setBaseRaffleMultiplier(
         uint256 _baseRaffleMultiplier
     ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.baseRaffleMultiplier = _baseRaffleMultiplier;
+        baseRaffleMultiplier = _baseRaffleMultiplier;
     }
 
     /// @notice Sets the PP gained per spin.
@@ -496,8 +437,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function setPP_PerSpin(
         uint256 _PP_PerSpin
     ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.PP_PerSpin = _PP_PerSpin;
+        PP_PerSpin = _PP_PerSpin;
     }
 
     /// @notice Sets the Plume Token amounts.
@@ -505,17 +445,15 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function setPlumeAmounts(
         uint256[3] memory _plumeAmounts
     ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.plumeAmounts = _plumeAmounts;
+        plumeAmounts = _plumeAmounts;
     }
 
     /// @notice Sets the Raffle contract address.
-    /// @param raffleContract The address of the Raffle contract.
+    /// @param _raffleContract The address of the Raffle contract.
     function setRaffleContract(
-        address raffleContract
+        address _raffleContract
     ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.raffleContract = raffleContract;
+        raffleContract = _raffleContract;
     }
 
     /// @notice Whitelist address to bypass cooldown period.
@@ -523,15 +461,13 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function whitelist(
         address user
     ) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.whitelists[user] = true;
+        whitelists[user] = true;
     }
 
     /// @notice Enable or disable spinning
     /// @param _enableSpin The flag to enable/disable spinning
     function setEnableSpin(bool _enableSpin) external onlyRole(ADMIN_ROLE) {
-        SpinStorage storage $ = _getSpinStorage();
-        $.enableSpin = _enableSpin;
+        enableSpin = _enableSpin;
     }
 
     // UUPS Authorization
@@ -545,5 +481,4 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     /// @notice Fallback function to receive ether
     receive() external payable { }
-
 }
