@@ -110,6 +110,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         __UUPSUpgradeable_init();
 
         RaffleStorage storage $ = _getRaffleStorage();
+        $.admin = msg.sender;
 
         $.spinContract = ISpin(_spinContract);
         $.supraRouter = ISupraRouterContract(_supraRouter);
@@ -121,19 +122,16 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     /**
      * @notice Adds a new prize with an initial total ticket pool of 0.
      */
+    /// @notice Adds a new prize (ID autoincrements: `prizeIds.length + 1`)
     function addPrize(
-        uint256 prizeId,
         string memory name,
         string memory description,
         uint256 value
     ) external onlyRole(ADMIN_ROLE) {
         RaffleStorage storage $ = _getRaffleStorage();
-        if ($.prizes[prizeId].isActive) {
-            revert PrizeAlreadyExists();
-        }
 
-        // Add prize to the list
-        $.prizeIds.push(prizeId);
+        uint256 prizeId = $.prizeIds.length + 1;
+        $.prizeIds.push(prizeId);          // track active IDs
 
         $.prizes[prizeId] = Prize({
             name: name,
@@ -158,6 +156,16 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     ) external onlyRole(ADMIN_ROLE) onlyValidPrize(prizeId) {
         RaffleStorage storage $ = _getRaffleStorage();
         $.prizes[prizeId].isActive = false;
+
+        // remove the ID from prizeIds[]
+        uint256 len = $.prizeIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            if ($.prizeIds[i] == prizeId) {
+                $.prizeIds[i] = $.prizeIds[len - 1];
+                $.prizeIds.pop();
+                break;
+            }
+        }
         emit PrizeRemoved(prizeId);
     }
 
@@ -359,11 +367,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         return ($.prizeIds, ticketCounts, $.winnings[user]);
     }
 
-    function getSpinContract() external view returns (address) {
-        RaffleStorage storage $ = _getRaffleStorage();
-        return address($.spinContract);
-    }
-
     function updatePrizeEndTimestamp(
         uint256 prizeId,
         uint256 endtimestamp
@@ -372,13 +375,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         Prize storage prize = $.prizes[prizeId];
 
         prize.endTimestamp = endtimestamp;
-    }
-
-    function setSpinContract(
-        address spinContract
-    ) external onlyRole(ADMIN_ROLE) {
-        RaffleStorage storage $ = _getRaffleStorage();
-        $.spinContract = ISpin(spinContract);
     }
 
     // UUPS Authorization
