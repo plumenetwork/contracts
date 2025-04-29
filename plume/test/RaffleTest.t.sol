@@ -287,3 +287,4 @@ contract RaffleExtraTests is Test {
         assertEq(wlist[0], 1);
     }
 }
+
