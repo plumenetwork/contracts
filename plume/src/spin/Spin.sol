@@ -198,7 +198,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         userDataStorage.streakCount = _computeStreak(user, block.timestamp);
         userDataStorage.lastSpinTimestamp = block.timestamp;
 
-        // ----------  Interactions: transfer ETH last ----------
+        // ----------  Interactions: transfer Plume last ----------
         if (
             keccak256(bytes(rewardCategory)) == keccak256("Jackpot")
                 || keccak256(bytes(rewardCategory)) == keccak256("Plume Token")
@@ -219,10 +219,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         // Determine the current week in the 12-week campaign
         uint256 daysSinceStart = (block.timestamp - campaignStartDate) / 1 days;
         uint8 weekNumber = uint8(daysSinceStart / 7);
-        if (weekNumber > 11) {
-            // TODO: Handle Default case
-            return ("Nothing", 0);
-        }
 
         uint8 dayOfWeek = uint8(daysSinceStart % 7);
 
