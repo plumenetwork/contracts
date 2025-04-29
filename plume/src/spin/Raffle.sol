@@ -189,6 +189,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 
         bool isNewUser = (userEntries.length == 0); // Check if it's a new user entry
 
+        // next ticket = currentTotal + 1   (1-index-based)
         userEntries.push(Index({ startIndex: prize.totalTickets + 1, ticketCount: ticketAmount }));
 
         // Update total tickets in prize pool
@@ -242,7 +243,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256 prizeId = $.pendingVRFRequests[requestId];
 
         // Select a random ticket from the pool
-        uint256 winnerIndex = rngList[0] % $.prizes[prizeId].totalTickets;
+        uint256 winnerIndex = (rngList[0] % $.prizes[prizeId].totalTickets) + 1; // add 1 since index is 1-based
         $.prizes[prizeId].winnerIndex = winnerIndex;
 
         emit WinnerSelected(prizeId, winnerIndex);
