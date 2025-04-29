@@ -3,45 +3,116 @@ pragma solidity ^0.8.25;
 
 import "../src/spin/Spin.sol";
 import "../src/spin/DateTime.sol";
+import "../src/helpers/ArbSys.sol";
+import "../src/interfaces/ISupraRouterContract.sol";
 import "forge-std/Test.sol";
+import "forge-std/console.sol";
 
-/// @notice Stub for Supra VRF
-contract StubSupra {
-    event RequestSent(uint256 indexed nonce);
-    uint256 private next = 1;
-    function generateRequest(
-        string calldata, uint8, uint256, uint256, address
-    ) external returns (uint256) {
-        uint256 n = next++;
-        emit RequestSent(n);
-        return n;
+/// @notice Mock for Arbitrum's ArbSys precompile
+contract ArbSysMock is ArbSys {
+    uint256 blockNumber;
+    
+    constructor() {
+        blockNumber = 100;
     }
+    
+    function arbBlockNumber() external view returns (uint256) {
+        return blockNumber;
+    }
+    
+    function arbBlockHash(uint256 arbBlockNum) external view returns (bytes32) {
+        return blockhash(arbBlockNum);
+    }
+}
+
+interface IDepositContract {
+    function addContractToWhitelist(
+        address contractAddress
+    ) external;
+    function addClientToWhitelist(address clientAddress, bool snap) external;
+    function depositFundClient() external payable;
+    function isClientWhitelisted(
+        address clientAddress
+    ) external view returns (bool);
+    function isContractWhitelisted(address client, address contractAddress) external view returns (bool);
+    function checkEffectiveBalance(
+        address clientAddress
+    ) external view returns (uint256);
+    function isContractEligible(address client, address contractAddress) external view returns (bool);
+    function setMinBalanceClient(
+        uint256 minBalance
+    ) external;
 }
 
 contract SpinContractTests is Test {
     Spin public spin;
     DateTime public dt;
-    StubSupra public vrfStub;
+    ISupraRouterContract public supraRouter;
+    ArbSysMock public arbSys;
 
     address constant ADMIN = address(0x1);
     address payable constant USER = payable(address(0x2));
-    address constant SUPRA = address(0x6D46C098996AD584c9C40D6b4771680f54cE3726);
+    address constant SUPRA_ORACLE = address(0x6D46C098996AD584c9C40D6b4771680f54cE3726);
+    address constant DEPOSIT_CONTRACT = address(0x3B5F96986389f6BaCF58d5b69425fab000D3551e);
+    address constant SUPRA_OWNER = address(0x578DD059Ec425F83cCCC3149ed594d4e067A5307);
+    address constant ARB_SYS_ADDRESS = address(100); // 0x0000000000000000000000000000000000000064
 
     /// @dev Deploy and initialize Spin
     function setUp() public {
+        // Fork from the test RPC
+        vm.createSelectFork(vm.envString("PLUME_TEST_RPC_URL"));
+        
+        // Setup ArbSys mock at the special address
+        arbSys = new ArbSysMock();
+        vm.etch(ARB_SYS_ADDRESS, address(arbSys).code);
+        
         // Deploy DateTime and set start point
         dt = new DateTime();
         vm.warp(dt.toTimestamp(2025, 4, 1, 0, 0, 0));
-
-        // Deploy VRF stub and etch at SUPRA address
-        vrfStub = new StubSupra();
-        vm.etch(SUPRA, address(vrfStub).code);
 
         // Deploy Spin as ADMIN
         vm.prank(ADMIN);
         spin = new Spin();
         vm.prank(ADMIN);
-        spin.initialize(SUPRA, address(dt));
+        spin.initialize(SUPRA_ORACLE, address(dt));
+
+        // Set up Supra Oracle integration
+        vm.prank(SUPRA_OWNER);
+        IDepositContract(DEPOSIT_CONTRACT).addClientToWhitelist(ADMIN, true);
+        
+        // Verify admin is whitelisted
+        bool isWhitelisted = IDepositContract(DEPOSIT_CONTRACT).isClientWhitelisted(ADMIN);
+        assertTrue(isWhitelisted, "Admin is not whitelisted");
+        
+        // Fund admin account for deposit
+        vm.deal(ADMIN, 200 ether);
+        
+        // Deposit funds
+        vm.prank(ADMIN);
+        IDepositContract(DEPOSIT_CONTRACT).depositFundClient{ value: 0.1 ether }();
+        
+        // Add spin contract to whitelist
+        vm.prank(ADMIN);
+        IDepositContract(DEPOSIT_CONTRACT).addContractToWhitelist(address(spin));
+        
+        // Verify spin contract is whitelisted
+        vm.prank(SUPRA_OWNER);
+        bool isContractWhitelisted = IDepositContract(DEPOSIT_CONTRACT).isContractWhitelisted(ADMIN, address(spin));
+        assertTrue(isContractWhitelisted, "Spin contract is not whitelisted under ADMIN");
+        
+        // Set minimum balance
+        vm.prank(ADMIN);
+        IDepositContract(DEPOSIT_CONTRACT).setMinBalanceClient(0.05 ether);
+        
+        // Verify balance is sufficient
+        vm.prank(SUPRA_OWNER);
+        uint256 effectiveBalance = IDepositContract(DEPOSIT_CONTRACT).checkEffectiveBalance(ADMIN);
+        assertGt(effectiveBalance, 0, "Insufficient balance in Supra Deposit Contract");
+        
+        // Verify contract is eligible
+        vm.prank(SUPRA_OWNER);
+        bool contractEligible = IDepositContract(DEPOSIT_CONTRACT).isContractEligible(ADMIN, address(spin));
+        assertTrue(contractEligible, "Spin contract is not eligible for VRF");
 
         // Set campaign start date to now
         vm.prank(ADMIN);
@@ -75,11 +146,20 @@ contract SpinContractTests is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         require(logs.length > 0, "No logs emitted");
         
-        uint256 nonce = uint256(logs[0].topics[1]);
+        uint256 nonce = 0;
+        // Find the nonce in the logs
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("SpinRequested(uint256,address)")) {
+                nonce = uint256(logs[i].topics[1]);
+                break;
+            }
+        }
+        require(nonce != 0, "Nonce not found in logs");
+        
         uint256[] memory rng = new uint256[](1);
         rng[0] = 999_999;
 
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce, rng);
 
         // Attempt second spin same day
@@ -102,29 +182,20 @@ contract SpinContractTests is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         require(logs.length > 0, "No logs emitted");
         
-        // Check both events are emitted
-        bool foundRequestSent = false;
-        bool foundSpinRequested = false;
+        // Find nonce in logs
         uint256 nonce1 = 0;
-        
         for (uint i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == keccak256("RequestSent(uint256)")) {
-                foundRequestSent = true;
-                nonce1 = uint256(logs[i].topics[1]);
-            }
             if (logs[i].topics[0] == keccak256("SpinRequested(uint256,address)")) {
-                foundSpinRequested = true;
-                assertEq(logs[i].topics[2], bytes32(uint256(uint160(address(USER)))), "User address in event doesn't match");
+                nonce1 = uint256(logs[i].topics[1]);
+                break;
             }
         }
-        
-        assertTrue(foundRequestSent, "RequestSent event not emitted");
-        assertTrue(foundSpinRequested, "SpinRequested event not emitted");
+        require(nonce1 != 0, "Nonce not found in logs");
         
         // Complete first spin
         uint256[] memory rng = new uint256[](1);
         rng[0] = 999_999;
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce1, rng);
 
         // Second spin same day
@@ -133,21 +204,16 @@ contract SpinContractTests is Test {
         spin.startSpin();
         logs = vm.getRecordedLogs();
         
-        // Check both events are emitted for second spin too
-        foundRequestSent = false;
-        foundSpinRequested = false;
-        
+        // Verify second spin request was successful
+        bool foundSpinRequested = false;
         for (uint i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == keccak256("RequestSent(uint256)")) {
-                foundRequestSent = true;
-            }
             if (logs[i].topics[0] == keccak256("SpinRequested(uint256,address)")) {
                 foundSpinRequested = true;
                 assertEq(logs[i].topics[2], bytes32(uint256(uint160(address(USER)))), "User address in event doesn't match");
+                break;
             }
         }
         
-        assertTrue(foundRequestSent, "RequestSent event not emitted for second spin");
         assertTrue(foundSpinRequested, "SpinRequested event not emitted for second spin");
     }
 
@@ -168,21 +234,16 @@ contract SpinContractTests is Test {
         spin.startSpin();
         Vm.Log[] memory logs = vm.getRecordedLogs();
         
-        // Check both events are emitted
-        bool foundRequestSent = false;
+        // With the real Supra Oracle integration, we only need to check for SpinRequested event
         bool foundSpinRequested = false;
         
         for (uint i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == keccak256("RequestSent(uint256)")) {
-                foundRequestSent = true;
-            }
             if (logs[i].topics[0] == keccak256("SpinRequested(uint256,address)")) {
                 foundSpinRequested = true;
                 assertEq(logs[i].topics[2], bytes32(uint256(uint160(address(USER)))), "User address in event doesn't match");
             }
         }
         
-        assertTrue(foundRequestSent, "RequestSent event not emitted after unpause");
         assertTrue(foundSpinRequested, "SpinRequested event not emitted after unpause");
     }
 
@@ -193,7 +254,7 @@ contract SpinContractTests is Test {
         vm.prank(ADMIN);
         fresh = new Spin();
         vm.prank(ADMIN);
-        fresh.initialize(SUPRA, address(dt));
+        fresh.initialize(SUPRA_ORACLE, address(dt));
 
         vm.expectRevert(bytes("Campaign not started"));
         fresh.getWeeklyJackpot();
@@ -240,7 +301,7 @@ contract SpinContractTests is Test {
         uint256[] memory rng = new uint256[](1);
         rng[0] = 999_999;
         
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce, rng);
         assertEq(spin.currentStreak(USER), 1);
 
@@ -270,7 +331,7 @@ contract SpinContractTests is Test {
         uint256[] memory rng = new uint256[](1);
         rng[0] = 300_000;
         
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce, rng);
         
         // raffleTicketsBalance should be 8
@@ -322,7 +383,7 @@ contract SpinContractTests is Test {
         assertEq(USER.balance, 50 ether);
     }
 
-    /// @notice handleRandomness should revert when called by non-SUPRA address
+    /// @notice handleRandomness should revert when called by non-SUPRA_ORACLE address
     function testHandleRandomnessAccessControl() public {
         vm.recordLogs();
         vm.prank(USER);
@@ -334,15 +395,15 @@ contract SpinContractTests is Test {
         // Create a dummy nonce that will be considered valid
         uint256 nonce = 1;
         vm.mockCall(
-            SUPRA,
-            abi.encodeWithSelector(StubSupra.generateRequest.selector),
+            SUPRA_ORACLE,
+            abi.encodeWithSelector(ArbSysMock.arbBlockNumber.selector),
             abi.encode(nonce)
         );
         
         uint256[] memory rng = new uint256[](1);
         rng[0] = 999_999;
         
-        // Call from non-SUPRA address should revert with access control
+        // Call from non-SUPRA_ORACLE address should revert with access control
         vm.prank(USER);
         vm.expectRevert(); // Just expect a generic revert since error name might change
         spin.handleRandomness(nonce, rng);
@@ -354,7 +415,7 @@ contract SpinContractTests is Test {
         rng[0] = 999_999;
         
         // Bogus nonce should revert
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         vm.expectRevert(abi.encodeWithSelector(Spin.InvalidNonce.selector));
         spin.handleRandomness(999, rng);
     }
@@ -382,7 +443,7 @@ contract SpinContractTests is Test {
         uint256 nonce1 = uint256(vm.getRecordedLogs()[0].topics[1]);
         uint256[] memory rng1 = new uint256[](1);
         rng1[0] = 900_000; // Something other than jackpot
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce1, rng1);
         
         // Move to next day and spin again to build streak
@@ -393,7 +454,7 @@ contract SpinContractTests is Test {
         uint256 nonce2 = uint256(vm.getRecordedLogs()[0].topics[1]);
         uint256[] memory rng2 = new uint256[](1);
         rng2[0] = 900_000; // Something other than jackpot
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce2, rng2);
         
         // Now we have streak of 2, wait for next day and try jackpot
@@ -411,7 +472,7 @@ contract SpinContractTests is Test {
         rngJackpot[0] = 0; // Force jackpot win
         
         // Should revert with insufficient balance
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         vm.expectRevert(bytes("insufficient Plume in the Spin contract"));
         spin.handleRandomness(nonce3, rngJackpot);
     }
@@ -442,7 +503,7 @@ contract SpinContractTests is Test {
         // Timestamp for this spin
         uint256 ts1 = block.timestamp;
         
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce1, rng1);
         
         (uint256 streak1, uint256 lastSpin1, , , , uint256 ppGained1, ) = spin.getUserData(USER);
@@ -462,7 +523,7 @@ contract SpinContractTests is Test {
         // Timestamp for this spin
         uint256 ts2 = block.timestamp;
         
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce2, rng2);
         
         (uint256 streak2, uint256 lastSpin2, , uint256 raffleGained2, 
@@ -511,7 +572,7 @@ contract SpinContractTests is Test {
         uint256[] memory rng1 = new uint256[](1);
         rng1[0] = 700_000; // PP reward
         
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce1, rng1);
         
         (, , , , , uint256 ppGained, ) = spin.getUserData(USER);
@@ -526,7 +587,7 @@ contract SpinContractTests is Test {
         uint256[] memory rng2 = new uint256[](1);
         rng2[0] = 300_000; // Raffle ticket
         
-        vm.prank(SUPRA);
+        vm.prank(SUPRA_ORACLE);
         spin.handleRandomness(nonce2, rng2);
         
         (, , , uint256 raffleGained, uint256 raffleBalance, , ) = spin.getUserData(USER);

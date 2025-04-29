@@ -2,32 +2,30 @@
 pragma solidity ^0.8.25;
 
 import "../src/interfaces/ISupraRouterContract.sol";
-import "forge-std/Test.sol";
-
-/// @notice Test‐only stub for the Supra router; emits a RequestSent log
-contract StubSupra {
-    event RequestSent(uint256 indexed nonce);
-
-    uint256 private next = 1;
-    function generateRequest(
-        string calldata, uint8, uint256, uint256, address
-    ) external returns (uint256) {
-        uint256 n = next++;
-        emit RequestSent(n);
-        return n;
-    }
-    // no-op stub for the other interface fn
-    function rngCallback(
-        uint256[] memory, uint256[] memory, uint256[] memory, uint256[] memory
-    ) external {}
-}
-
+import "../src/interfaces/IDateTime.sol";
 import "../src/spin/DateTime.sol";
 import "../src/spin/Spin.sol";
+import "../src/helpers/ArbSys.sol";
+import "forge-std/Test.sol";
 import "forge-std/console.sol";
 
-interface IDepositContract {
+contract ArbSysMock is ArbSys {
+    uint256 blockNumber;
+    
+    constructor() {
+        blockNumber = 100;
+    }
+    
+    function arbBlockNumber() external view returns (uint256) {
+        return blockNumber;
+    }
+    
+    function arbBlockHash(uint256 arbBlockNum) external view returns (bytes32) {
+        return blockhash(arbBlockNum);
+    }
+}
 
+interface IDepositContract {
     function addContractToWhitelist(
         address contractAddress
     ) external;
@@ -44,21 +42,21 @@ interface IDepositContract {
     function setMinBalanceClient(
         uint256 minBalance
     ) external;
-
 }
 
 contract SpinTest is Test {
-
     Spin spin;
     ISupraRouterContract supraRouter;
     IDepositContract depositContract;
     DateTime dateTime;
+    ArbSysMock arbSys;
 
     address payable constant ADMIN = payable(address(0x1));
     address constant USER = address(0x2);
     address constant SUPRA_ORACLE = address(0x6D46C098996AD584c9C40D6b4771680f54cE3726);
     address constant DEPOSIT_CONTRACT = address(0x3B5F96986389f6BaCF58d5b69425fab000D3551e);
     address constant SUPRA_OWNER = address(0x578DD059Ec425F83cCCC3149ed594d4e067A5307);
+    address constant ARB_SYS_ADDRESS = address(100); // 0x0000000000000000000000000000000000000064
 
     uint256 constant COOLDOWN_PERIOD = 86_400; // 1 day
     uint8 constant RNG_COUNT = 1;
@@ -67,9 +65,11 @@ contract SpinTest is Test {
 
     function setUp() public payable {
         // Fork from mainnet for testing with the deployed Supra Oracle
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
+        vm.createSelectFork(vm.envString("PLUME_TEST_RPC_URL"));
 
-        vm.etch(SUPRA_ORACLE, type(StubSupra).runtimeCode);
+        // Deploy and set up ArbSysMock at the special address
+        arbSys = new ArbSysMock();
+        vm.etch(ARB_SYS_ADDRESS, address(arbSys).code);
 
         // Deploy the DateTime contract from src/DateTime.sol
         dateTime = new DateTime();
@@ -147,7 +147,4 @@ contract SpinTest is Test {
 
         assertGt(nonce, 0, "Nonce should be greater than 0");
     }
-
-    
-
 }
