@@ -140,6 +140,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         if (amount == 0) {
             revert InvalidAmount(amount);
         }
+        if (amount < $.minStakeAmount) {
+            revert StakeAmountTooSmall(amount, $.minStakeAmount);
+        }
         if (!$.validatorExists[validatorId]) {
             revert ValidatorNotActive(validatorId);
         }
@@ -280,6 +283,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Update user's staked amount for this validator
         info.staked -= amountUnstaked;
+
+        // Ensure remaining stake is either 0 or meets the minimum requirement
+        if (info.staked != 0 && info.staked < $.minStakeAmount) {
+            revert StakeAmountTooSmall(info.staked, $.minStakeAmount); // Revert if remaining stake is below minimum
+                // (but not zero)
+        }
 
         // Update global stake info
         globalInfo.staked -= amountUnstaked;
@@ -443,7 +452,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param validatorId ID of the validator to stake the rewards to.
      * @return amountRestaked The total amount of pending rewards successfully restaked.
      */
-    function restakeRewards( // Kept original name, implement logic based on old function
+    function restakeRewards(
         uint16 validatorId
     ) external nonReentrant returns (uint256 amountRestaked) {
         // Added nonReentrant, changed return name
@@ -451,11 +460,11 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Verify target validator exists and is active
         if (!$.validatorExists[validatorId]) {
-            revert ValidatorDoesNotExist(validatorId); // Use correct error
+            revert ValidatorDoesNotExist(validatorId);
         }
         PlumeStakingStorage.ValidatorInfo storage targetValidator = $.validators[validatorId];
         if (!targetValidator.active) {
-            revert ValidatorInactive(validatorId); // Use correct error
+            revert ValidatorInactive(validatorId);
         }
 
         // Native token is represented by PLUME_NATIVE constant
@@ -463,7 +472,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Check if PLUME_NATIVE is actually configured as a reward token
         if (!$.isRewardToken[token]) {
-            revert TokenDoesNotExist(token); // Or specific error like "NativeTokenNotReward"
+            revert TokenDoesNotExist(token);
         }
 
         // Calculate total pending native rewards across all validators
@@ -474,7 +483,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             uint16 userValidatorId = userValidators[i];
 
             // Calculate earned rewards for this specific validator by calling the public wrapper
-            // Note: This requires casting the diamond proxy address to RewardsFacet
             uint256 validatorReward =
                 RewardsFacet(payable(address(this))).getPendingRewardForValidator(msg.sender, userValidatorId, token);
 
@@ -502,7 +510,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Check if any rewards were found
         if (amountRestaked == 0) {
-            revert NoRewardsToRestake(); // Use original error
+            revert NoRewardsToRestake();
         }
 
         // --- Update Stake State ---
