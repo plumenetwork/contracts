@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import {
     AlreadyVotedToSlash,
     CannotVoteForSelf,
+    CommissionRateTooHigh,
     CommissionTooHigh,
     InvalidUpdateType,
     NativeTransferFailed,
@@ -24,8 +25,10 @@ import {
 import {
     SlashVoteCast,
     ValidatorAdded,
+    ValidatorAddressesSet,
     ValidatorCapacityUpdated,
     ValidatorCommissionClaimed,
+    ValidatorCommissionSet,
     ValidatorSlashed,
     ValidatorStatusUpdated,
     ValidatorUpdated
@@ -134,7 +137,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     /**
      * @notice Add a new validator (Owner only)
-     * @param validatorId Fixed UUID for the validator
+     * @param validatorId UUID for the validator
      * @param commission Commission rate (as fraction of REWARD_PRECISION)
      * @param l2AdminAddress Admin address for the validator
      * @param l2WithdrawAddress Withdrawal address for validator rewards
@@ -252,25 +255,21 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
-        if (newCommission > REWARD_PRECISION) {
-            revert CommissionTooHigh();
+        uint256 oldCommission = validator.commission;
+
+        // Check for maximum commission rate if needed (e.g., 100% = 1e18)
+        if (newCommission > 1e18) {
+            revert CommissionRateTooHigh(newCommission, 1e18);
         }
 
         _updateRewardsForAllValidatorStakers(validatorId);
+
         validator.commission = newCommission;
         // Create commission checkpoint
         PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
 
-        // Emit generic update event, as commission is part of general info
-        emit ValidatorUpdated(
-            validatorId,
-            validator.commission,
-            validator.l2AdminAddress,
-            validator.l2WithdrawAddress,
-            validator.l1ValidatorAddress,
-            validator.l1AccountAddress,
-            validator.l1AccountEvmAddress
-        );
+        // Emit correct event with old and new values
+        emit ValidatorCommissionSet(validatorId, oldCommission, newCommission);
     }
 
     /**
@@ -294,6 +293,12 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     ) external onlyValidatorAdmin(validatorId) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+        address oldL2AdminAddress = validator.l2AdminAddress;
+        address oldL2WithdrawAddress = validator.l2WithdrawAddress;
+        string memory oldL1ValidatorAddress = validator.l1ValidatorAddress;
+        string memory oldL1AccountAddress = validator.l1AccountAddress;
+        address oldL1AccountEvmAddress = validator.l1AccountEvmAddress;
 
         // Update L2 Admin Address if provided and different
         if (newL2AdminAddress != address(0) && newL2AdminAddress != validator.l2AdminAddress) {
@@ -329,14 +334,18 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             validator.l1AccountEvmAddress = newL1AccountEvmAddress;
         }
 
-        // Emit event with potentially updated values
-        emit ValidatorUpdated(
+        // Emit the correct event with old and new values
+        emit ValidatorAddressesSet(
             validatorId,
-            validator.commission,
+            oldL2AdminAddress,
             validator.l2AdminAddress,
+            oldL2WithdrawAddress,
             validator.l2WithdrawAddress,
+            oldL1ValidatorAddress,
             validator.l1ValidatorAddress,
+            oldL1AccountAddress,
             validator.l1AccountAddress,
+            oldL1AccountEvmAddress,
             validator.l1AccountEvmAddress
         );
     }
@@ -441,7 +450,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      */
     function slashValidator(
         uint16 validatorId
-    ) external nonReentrant onlyRole(PlumeRoles.ADMIN_ROLE) {
+    ) external nonReentrant onlyRole(PlumeRoles.TIMELOCK_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
 
         // Check 1: Target validator exists, is active, and not already slashed

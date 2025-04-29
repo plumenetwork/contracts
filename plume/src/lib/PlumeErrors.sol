@@ -130,6 +130,13 @@ error EmptyArray();
  */
 error CommissionTooHigh();
 
+/**
+ * @notice Error thrown when commission rate exceeds maximum allowed (100%)
+ * @param requested The commission rate requested (scaled by 1e18)
+ * @param max The maximum allowed commission rate (1e18)
+ */
+error CommissionRateTooHigh(uint256 requested, uint256 max);
+
 /*
  * @notice Thrown when a reward rate exceeds the maximum allowed value
  */

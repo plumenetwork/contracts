@@ -211,7 +211,7 @@ contract ForkTestPlumeStaking is Test {
         // Set up validator commission at 20% (20 * 1e16)
         vm.startPrank(admin); // Use KNOWN_ADMIN assumed to be L2 admin for validator 1
         uint256 newCommission20 = 20e16;
-        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, newCommission20); // <-- ADD
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, newCommission20);
         vm.stopPrank();
 
         // Set reward rate for PUSD to 1e18 (1 token per second)
@@ -300,7 +300,7 @@ contract ForkTestPlumeStaking is Test {
         // Set a 10% commission rate for the validator
         vm.startPrank(admin); // Use admin assumed to be L2 admin for validator 1
         uint256 newCommission10 = 10e16; // 10% commission (scaled by 1e18)
-        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, newCommission10); // <-- ADD
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, newCommission10);
         vm.stopPrank();
 
         // Create validator with 10% commission
@@ -325,8 +325,6 @@ contract ForkTestPlumeStaking is Test {
 
         // Interact again to update rewards once more
         vm.startPrank(user1);
-        // Get claimable rewards - this should call updateRewardsForValidator internally
-        // RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
         // Unstake a minimal amount to trigger reward update
         StakingFacet(address(diamondProxy)).unstake(DEFAULT_VALIDATOR_ID, 1); // Unstake 1 wei
         vm.stopPrank();
@@ -337,12 +335,10 @@ contract ForkTestPlumeStaking is Test {
         assertGt(commission, 0, "Commission should be greater than 0");
 
         // Try to claim the commission to verify it works end-to-end
-        vm.startPrank(admin); // Use KNOWN_ADMIN assumed to be L2 admin for validator 1
-        // uint256 balanceBefore = pUSD.balanceOf(validatorAdmin); <-- CHANGE
+        vm.startPrank(admin);
         uint256 balanceBefore = pUSD.balanceOf(admin);
         uint256 claimedAmount =
             ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
-        // uint256 balanceAfter = pUSD.balanceOf(validatorAdmin); <-- CHANGE
         uint256 balanceAfter = pUSD.balanceOf(admin);
         vm.stopPrank();
 
@@ -570,9 +566,7 @@ contract ForkTestPlumeStaking is Test {
 
         // No staking, no time warp -> commission should be 0
         vm.startPrank(user1); // user1 is NOT the admin for validator 1
-        // vm.expectRevert(bytes("Not validator admin")); <-- REMOVE OLD
-        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1)); // <-- ADD CORRECT CUSTOM ERROR
-
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
         ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validatorId, token);
         vm.stopPrank();
     }
@@ -582,9 +576,7 @@ contract ForkTestPlumeStaking is Test {
         address token = address(pUSD);
 
         vm.startPrank(validatorAdmin); // Prank as a valid admin for *some* validator (e.g., ID 0)
-        // vm.expectRevert(bytes("Not validator admin")); <-- REMOVE OLD
-        vm.expectRevert(abi.encodeWithSelector(ValidatorDoesNotExist.selector, nonExistentId)); // <-- ADD CORRECT
-            // CUSTOM ERROR
+        vm.expectRevert(abi.encodeWithSelector(ValidatorDoesNotExist.selector, nonExistentId));
         ValidatorFacet(address(diamondProxy)).claimValidatorCommission(nonExistentId, token);
         vm.stopPrank();
     }
@@ -594,8 +586,7 @@ contract ForkTestPlumeStaking is Test {
         address token = address(pUSD);
 
         vm.startPrank(user1); // user1 is not the admin for validator 0
-        // vm.expectRevert(bytes("Not validator admin")); <-- REMOVE OLD
-        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1)); // <-- ADD CORRECT CUSTOM ERROR
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
         ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validatorId, token);
         vm.stopPrank();
     }
@@ -628,7 +619,7 @@ contract ForkTestPlumeStaking is Test {
         // Verify
         (PlumeStakingStorage.ValidatorInfo memory infoAfter,,) =
             ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
-        assertEq(infoAfter.commission, newCommission, "Commission not updated"); // Fix assertion check
+        assertEq(infoAfter.commission, newCommission, "Commission not updated");
     }
 
     function testUpdateValidator_Commission_NotOwner() public {
@@ -638,10 +629,10 @@ contract ForkTestPlumeStaking is Test {
         // Expect revert from the validator admin check
 
         vm.startPrank(user1); // user1 is not the validator admin for validator 0
-        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1)); // <-- ADD CORRECT CUSTOM ERROR
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
 
-        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, newCommission); // <-- ADD (Call the
-            // correct function)
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, newCommission);
+        // correct function)
         vm.stopPrank();
     }
 
@@ -885,10 +876,7 @@ contract ForkTestPlumeStaking is Test {
     function testAddValidator_NotOwner() public {
         uint16 newValidatorId = 3;
         uint256 maxCapacity = 1_000_000e18;
-        // Expect revert from onlyRole check in ValidatorFacet
-        // vm.expectRevert(bytes("Caller does not have the required role"));
-        // Updated to expect string revert based on trace
-        // vm.expectRevert(bytes("Caller does not have the required role")); <-- REMOVE OLD
+
         vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user1, PlumeRoles.VALIDATOR_ROLE));
 
         vm.startPrank(user1); // user1 does not have VALIDATOR_ROLE by default
@@ -1320,25 +1308,22 @@ contract ForkTestPlumeStaking is Test {
         uint256 voteExpiration = block.timestamp + 1 hours;
 
         // Vote from validator 1 (ID 1, admin: VALIDATOR_1_ADMIN)
-        vm.startPrank(admin); // <<< FIX: Use correct voter admin
-        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration); // <<< FIX:
-            // Target ID 2
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
         vm.stopPrank();
 
         // Vote from validator 1 (ID 1, admin: VALIDATOR_1_ADMIN)
-        vm.startPrank(validator2Admin); // <<< FIX: Use correct voter admin
-        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration); // <<< FIX:
-            // Target ID 2
+        vm.startPrank(validator2Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
         vm.stopPrank();
 
         // --- Now, actually perform the slash --- (Requires ADMIN_ROLE)
         vm.startPrank(admin);
-        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId); // <<< FIX: Target ID 2
+        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId);
         vm.stopPrank();
 
         // Verify slashing succeeded
-        (bool isActive,,,) = ValidatorFacet(address(diamondProxy)).getValidatorStats(targetValidatorId); // <<< FIX:
-            // Target ID 2
+        (bool isActive,,,) = ValidatorFacet(address(diamondProxy)).getValidatorStats(targetValidatorId);
         assertTrue(!isActive, "Validator should be inactive after slashing");
 
         // Verify stake was burned
@@ -1623,20 +1608,17 @@ contract ForkTestPlumeStaking is Test {
         address token2 = PLUME_NATIVE;
 
         console2.log("Setting up initial commission rates:");
+
         // Set initial commission rates
-        vm.startPrank(admin); // Use KNOWN_ADMIN assumed to be L2 admin for validator 0
-        // ValidatorFacet(address(diamondProxy)).updateValidator(validator0, 0, abi.encode(uint256(500))); // 5%
+        vm.startPrank(admin);
         ValidatorFacet(address(diamondProxy)).setValidatorCommission(validator0, 5e15); // 5% scaled
         vm.stopPrank();
 
-        // vm.startPrank(user2); // admin for validator1 from setUp <-- INCORRECT, admin is KNOWN_ADMIN
-        vm.startPrank(validator2Admin); // <<< CHANGE: Use KNOWN_ADMIN for validator1
-        // ValidatorFacet(address(diamondProxy)).updateValidator(validator1, 0, abi.encode(uint256(1000))); // 10%
+        vm.startPrank(validator2Admin);
         ValidatorFacet(address(diamondProxy)).setValidatorCommission(validator1, 10e15); // 10% scaled
         vm.stopPrank();
 
         vm.startPrank(admin);
-        // ValidatorFacet(address(diamondProxy)).updateValidator(validator2, 0, abi.encode(uint256(1500))); // 15%
         ValidatorFacet(address(diamondProxy)).setValidatorCommission(validator2, 15e15); // 15% scaled
         vm.stopPrank();
 
@@ -1659,8 +1641,7 @@ contract ForkTestPlumeStaking is Test {
         console2.log("Reward rates set");
 
         // Ensure treasury has sufficient funds
-        pUSD.transfer(address(treasury), 10_000 * 1e6); // Corrected for 6 decimals, Fund treasury
-        // vm.deal(address(treasury), 10000 ether); // <<< REMOVE THIS - MOVED TO setUp >>>
+        pUSD.transfer(address(treasury), 10_000 * 1e6); // Fund treasury
         vm.stopPrank();
 
         // --- Initial stakes ---
@@ -1960,7 +1941,6 @@ contract ForkTestPlumeStaking is Test {
         // Advance time and add reward token
         vm.stopPrank();
         vm.startPrank(admin);
-        // RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE); // Remove: Already added in setUp
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, 1e18);
 
         // Set reward rate
@@ -2306,7 +2286,7 @@ contract ForkTestPlumeStaking is Test {
         console2.log("   Pending PLUME reward: %s", pendingPlumeReward);
 
         vm.startPrank(user1);
-        uint256 stakedBeforeRestake = StakingFacet(address(diamondProxy)).amountStaked(); // <-- MOVE TO HERE
+        uint256 stakedBeforeRestake = StakingFacet(address(diamondProxy)).amountStaked();
         uint256 restakedAmount = StakingFacet(address(diamondProxy)).restakeRewards(validatorId);
         assertEq(restakedAmount, pendingPlumeReward, "restakeRewards returned incorrect amount");
 
