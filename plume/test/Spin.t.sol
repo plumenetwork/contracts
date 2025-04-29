@@ -1,11 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { ArbSys } from "../src/helpers/ArbSys.sol";
 import "../src/interfaces/ISupraRouterContract.sol";
 import "../src/spin/DateTime.sol";
 import "../src/spin/Spin.sol";
+
 import "forge-std/Test.sol";
 import "forge-std/console.sol";
+
+contract ArbSysMock is ArbSys {
+
+    function arbBlockNumber() external view returns (uint256) {
+        return block.number;
+    }
+
+    function arbBlockHash(
+        uint256 arbBlockNum
+    ) external view returns (bytes32) {
+        return blockhash(arbBlockNum);
+    }
+
+}
 
 interface IDepositContract {
 
@@ -48,7 +64,7 @@ contract SpinTest is Test {
 
     function setUp() public payable {
         // Fork from mainnet for testing with the deployed Supra Oracle
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
+        vm.createSelectFork(vm.envString("PLUME_TEST_RPC_URL"));
 
         // Deploy the DateTime contract from src/DateTime.sol
         dateTime = new DateTime();
@@ -93,6 +109,9 @@ contract SpinTest is Test {
         assertTrue(contractEligible, "Spin contract is not eligible for VRF");
 
         assertTrue(spin.hasRole(spin.DEFAULT_ADMIN_ROLE(), ADMIN), "ADMIN is not the contract admin");
+
+        ArbSysMock arbSys = new ArbSysMock();
+        vm.etch(address(100), address(arbSys).code);
     }
 
     function testStartSpin() public {
