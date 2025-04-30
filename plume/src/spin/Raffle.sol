@@ -111,7 +111,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         _;
     }
     
-    modifier onlyPrize(uint256 prizeId) {
+    modifier prizeIsActive(uint256 prizeId) {
         require(prizes[prizeId].isActive, "Prize not available");
         _;
     }
@@ -183,7 +183,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         string calldata name,
         string calldata description,
         uint256 value
-    ) external onlyRole(ADMIN_ROLE) onlyPrize(prizeId) {
+    ) external onlyRole(ADMIN_ROLE) prizeIsActive(prizeId) {
         // Update prize details without affecting tickets or active status
         Prize storage prize = prizes[prizeId];
         prize.name = name;
@@ -193,7 +193,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit PrizeEdited(prizeId, name, description, value);
     }
 
-    function removePrize(uint256 prizeId) external onlyRole(ADMIN_ROLE) onlyPrize(prizeId) {
+    function removePrize(uint256 prizeId) external onlyRole(ADMIN_ROLE) prizeIsActive(prizeId) {
         prizes[prizeId].isActive = false;
         
         // Remove from prizeIds array
@@ -210,7 +210,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // User is spending raffle tickets to enter a prize
-    function spendRaffle(uint256 prizeId, uint256 ticketAmount) external onlyPrize(prizeId) {
+    function spendRaffle(uint256 prizeId, uint256 ticketAmount) external prizeIsActive(prizeId) {
         require(ticketAmount > 0, "Must spend at least 1 ticket");
 
         // Verify and deduct tickets from user balance
@@ -235,7 +235,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // Admin requests a winner to be selected by VRF
-    function requestWinner(uint256 prizeId) external onlyRole(ADMIN_ROLE) onlyPrize(prizeId) {
+    function requestWinner(uint256 prizeId) external onlyRole(ADMIN_ROLE) prizeIsActive(prizeId) {
         if (prizeRanges[prizeId].length == 0) revert EmptyTicketPool();
         if (prizes[prizeId].winner != address(0)) revert WinnerDrawn(prizes[prizeId].winner);
 
@@ -260,6 +260,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 
         uint256 idx = (rng[0] % totalTickets[prizeId]) + 1;
         prizes[prizeId].winnerIndex = idx;
+        prizes[prizeId].isActive = false;
+    
         emit WinnerSelected(prizeId, idx);
     }
 
@@ -302,14 +304,14 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // User claims their prize, we mark it as claimed and deactivate the prize
-    function claimPrize(uint256 prizeId) external onlyPrize(prizeId) {
+    function claimPrize(uint256 prizeId) external {
         Prize storage prize = prizes[prizeId];
+        if (prize.isActive) revert();
         if (prize.winnerIndex == 0) revert WinnerNotDrawn();
         if (prize.claimed) revert WinnerClaimed();
         if (msg.sender != prize.winner) revert NotAWinner();
 
         prize.claimed = true;
-        prize.isActive = false;
         winnings[msg.sender].push(prizeId);
         
         emit PrizeClaimed(msg.sender, prizeId);
@@ -412,7 +414,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         return prizeArray;
     }
     // Timestamp update for prizes
-    function updatePrizeEndTimestamp(uint256 prizeId, uint256 endTimestamp) external onlyRole(ADMIN_ROLE) onlyPrize(prizeId) {
+    function updatePrizeEndTimestamp(uint256 prizeId, uint256 endTimestamp) external onlyRole(ADMIN_ROLE) prizeIsActive(prizeId) {
         prizes[prizeId].endTimestamp = endTimestamp;
     }
 
@@ -423,7 +425,9 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
      * @param active The new active status to set
      */
     function setPrizeActive(uint256 prizeId, bool active) external onlyRole(ADMIN_ROLE) {
-        require(bytes(prizes[prizeId].name).length != 0, "Prize does not exist");
+        Prize storage prize = prizes[prizeId];
+        require(bytes(prize.name).length != 0, "Prize does not exist");
+        require(prize.winnerIndex == 0, "Winner already selected");
         prizes[prizeId].isActive = active;
     }
 
