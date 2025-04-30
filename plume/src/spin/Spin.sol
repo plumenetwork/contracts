@@ -51,7 +51,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     // Events
     event SpinRequested(uint256 indexed nonce, address indexed user);
     event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
-    event RaffleTicketsUpdated(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
+    event RaffleTicketsSpent(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
     event NotEnoughStreak(string message);
     event JackpotAlreadyClaimed(string message);
 
@@ -276,12 +276,12 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         require(ok, "Plume transfer failed");
     }
 
-    function updateRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
+    function spendRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
         uint256 bal = userData[user].raffleTicketsBalance;
         require(bal >= ticketsUsed, "ticket underflow");
         userData[user].raffleTicketsBalance = bal - ticketsUsed;
 
-        emit RaffleTicketsUpdated(user, ticketsUsed, userData[user].raffleTicketsBalance);
+        emit RaffleTicketsSpent(user, ticketsUsed, userData[user].raffleTicketsBalance);
     }
 
     /**

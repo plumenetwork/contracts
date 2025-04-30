@@ -185,8 +185,8 @@ contract SpinTest is SpinTestBase {
         assertEq(spin.currentStreak(USER), 1);
     }
 
-    /// @notice updateRaffleTickets onlyRaffleContract
-    function testUpdateRaffleTicketsAccessAndEffect() public {
+    /// @notice spendRaffleTickets onlyRaffleContract
+    function testspendRaffleTicketsAccessAndEffect() public {
         // Whitelist and give a ticket via RNG
         vm.prank(ADMIN);
         spin.whitelist(USER);
@@ -204,16 +204,16 @@ contract SpinTest is SpinTestBase {
 
         // Expect event and new balance
         vm.recordLogs();
-        spin.updateRaffleTickets(USER, 3);
+        spin.spendRaffleTickets(USER, 3);
         Vm.Log[] memory L = vm.getRecordedLogs();
-        assertEq(L[0].topics[0], keccak256("RaffleTicketsUpdated(address,uint256,uint256)"));
+        assertEq(L[0].topics[0], keccak256("RaffleTicketsSpent(address,uint256,uint256)"));
         (, , , , uint256 newBal, , ) = spin.getUserData(USER);
         assertEq(newBal, 5);
 
         // Non-raffleContract caller should revert
         vm.prank(USER);
         vm.expectRevert();
-        spin.updateRaffleTickets(USER, 1);
+        spin.spendRaffleTickets(USER, 1);
     }
 
     /// @notice Plume withdraw flows and reverts

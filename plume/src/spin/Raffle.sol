@@ -8,7 +8,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "../interfaces/ISupraRouterContract.sol";
 
 interface ISpin {
-    function updateRaffleTickets(address _user, uint256 _amount) external;
+    function spendRaffleTickets(address _user, uint256 _amount) external;
     function getUserData(
         address _user
     ) external view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256);
@@ -69,6 +69,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     event WinnerSelected(uint256 indexed prizeId, uint256 winnerIndex);
     event PrizeClaimed(address indexed user, uint256 indexed prizeId);
     event PrizeMigrated(uint256 indexed prizeId, uint256 migratedEntries, uint256 totalTickets);
+    event PrizeEdited(uint256 indexed prizeId, string name, string description, uint256 value);
+
 
     // Errors
     error EmptyTicketPool();
@@ -109,6 +111,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // Migration function - preserved for migrating ticket data
+    // @notice this function is not planned to be used in production, is for 
+    // moving data from the previous pre-production test to this data structure
     function migrateTickets(
         uint256 prizeId,
         address[] calldata users,
@@ -165,6 +169,21 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit PrizeAdded(prizeId, name);
     }
 
+    function editPrize(
+        uint256 prizeId,
+        string calldata name,
+        string calldata description,
+        uint256 value
+    ) external onlyRole(ADMIN_ROLE) onlyPrize(prizeId) {
+        // Update prize details without affecting tickets or active status
+        Prize storage prize = prizes[prizeId];
+        prize.name = name;
+        prize.description = description;
+        prize.value = value;
+        
+        emit PrizeEdited(prizeId, name, description, value);
+    }
+
     function removePrize(uint256 prizeId) external onlyRole(ADMIN_ROLE) onlyPrize(prizeId) {
         prizes[prizeId].isActive = false;
         
@@ -188,11 +207,10 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         // Verify and deduct tickets from user balance
         (,,,, uint256 userRaffleTickets,,) = spinContract.getUserData(msg.sender);
         if (userRaffleTickets < ticketAmount) revert InsufficientTickets();
-        spinContract.updateRaffleTickets(msg.sender, ticketAmount);
+        spinContract.spendRaffleTickets(msg.sender, ticketAmount);
 
         // Append range
-        uint256 prevTotal = totalTickets[prizeId];
-        uint256 newTotal = prevTotal + ticketAmount;
+        uint256 newTotal = totalTickets[prizeId] + ticketAmount;
         prizeRanges[prizeId].push(
             Range({ user: msg.sender, cumulativeEnd: newTotal })
         );
@@ -262,6 +280,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     // Claim prize
     function claimPrize(uint256 prizeId) external onlyPrize(prizeId) {
         if (prizes[prizeId].winnerIndex == 0) revert WinnerNotDrawn();
+        if (prizes[prizeId].winner != address(0)) revert WinnerDrawn(prizes[prizeId].winner);
         address winner = getWinner(prizeId);
         if (msg.sender != winner) revert NotAWinner();
 
@@ -396,6 +415,17 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     // Timestamp update for prizes
     function updatePrizeEndTimestamp(uint256 prizeId, uint256 endTimestamp) external onlyRole(ADMIN_ROLE) onlyPrize(prizeId) {
         prizes[prizeId].endTimestamp = endTimestamp;
+    }
+
+    /**
+     * @notice Set the active status of a prize manually
+     * @dev This function is primarily intended for testing and administrative purposes
+     * @param prizeId The ID of the prize to modify
+     * @param active The new active status to set
+     */
+    function setPrizeActive(uint256 prizeId, bool active) external onlyRole(ADMIN_ROLE) {
+        require(prizeId <= prizeIds.length, "Prize does not exist");
+        prizes[prizeId].isActive = active;
     }
 
     // UUPS Authorization

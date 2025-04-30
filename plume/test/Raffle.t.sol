@@ -576,6 +576,191 @@ contract RaffleFlowTest is PlumeTestBase {
         assertEq(unclaimed.length, 1);
         assertEq(unclaimed[0], 2);
     }
+
+    function testEditPrize() public {
+        // Add a prize first
+        vm.prank(ADMIN);
+        raffle.addPrize("Original", "Original description", 100);
+        
+        // Add some tickets to verify they remain after edit
+        spinStub.setBalance(USER, 5);
+        vm.prank(USER);
+        raffle.spendRaffle(1, 5);
+        
+        // Record the number of tickets before editing
+        (, , uint256 poolBefore, , , , ) = raffle.getPrizeDetails(1);
+        assertEq(poolBefore, 5, "Tickets should be in the pool");
+        
+        // Edit the prize
+        vm.recordLogs();
+        vm.prank(ADMIN);
+        raffle.editPrize(1, "Updated", "Updated description", 200);
+        
+        // Verify the edit event was emitted
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool foundEvent = false;
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("PrizeEdited(uint256,string,string,uint256)")) {
+                foundEvent = true;
+                break;
+            }
+        }
+        assertTrue(foundEvent, "PrizeEdited event not found");
+        
+        // Verify the prize details were updated but tickets remain
+        (string memory n, string memory d, uint256 poolAfter, bool active, address w, , ) = 
+            raffle.getPrizeDetails(1);
+        
+        assertEq(n, "Updated", "Name should be updated");
+        assertEq(d, "Updated description", "Description should be updated");
+        assertEq(poolAfter, 5, "Ticket pool should remain unchanged");
+        assertTrue(active, "Prize should remain active");
+        assertEq(w, address(0), "Winner should remain unchanged");
+        
+        // Verify we can still request a winner with the updated prize
+        vm.prank(ADMIN);
+        raffle.requestWinner(1);
+    }
+
+    function testEditPrizeNotAdmin() public {
+        // Add a prize first
+        vm.prank(ADMIN);
+        raffle.addPrize("Original", "Original description", 100);
+        
+        // Try to edit as non-admin
+        vm.prank(USER);
+        vm.expectRevert(); // Just expect any revert
+        raffle.editPrize(1, "Updated", "Updated description", 200);
+    }
+
+    function testEditInactivePrize() public {
+        // Add and remove a prize
+        vm.prank(ADMIN);
+        raffle.addPrize("Original", "Original description", 100);
+        vm.prank(ADMIN);
+        raffle.removePrize(1);
+        
+        // Try to edit inactive prize
+        vm.prank(ADMIN);
+        vm.expectRevert("Prize not available");
+        raffle.editPrize(1, "Updated", "Updated description", 200);
+    }
+
+    function testClaimPrizeAlreadyClaimedReverts() public {
+        // Setup - add prize and spend raffle
+        vm.prank(ADMIN);
+        raffle.addPrize("Prize", "Test prize", 100);
+        
+        spinStub.setBalance(USER, 1);
+        vm.prank(USER);
+        raffle.spendRaffle(1, 1);
+        
+        // Request winner
+        vm.recordLogs();
+        vm.prank(ADMIN);
+        raffle.requestWinner(1);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        
+        // Find request ID
+        uint256 req = 0;
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
+                req = uint256(logs[i].topics[2]);
+                break;
+            }
+        }
+        require(req != 0, "Request ID not found in logs");
+        
+        // Select winner
+        uint256[] memory rng = new uint256[](1);
+        rng[0] = 0; // Will select USER
+        vm.prank(SUPRA_ORACLE);
+        raffle.handleWinnerSelection(req, rng);
+        
+        // Get the winner manually and verify it's USER
+        address winner = raffle.getWinner(1);
+        assertEq(winner, USER);
+        
+        // First claim should succeed
+        vm.prank(USER);
+        raffle.claimPrize(1);
+        
+        // Prize should now be inactive and have winner set
+        (, , , bool active, address prizewinner, , ) = raffle.getPrizeDetails(1);
+        assertFalse(active, "Prize should be inactive after claiming");
+        assertEq(prizewinner, USER, "Winner should be set to USER");
+        
+        // Second claim by the same user should revert with "Prize not available"
+        vm.prank(USER);
+        vm.expectRevert("Prize not available");
+        raffle.claimPrize(1);
+    }
+
+    function testClaimPrizeWinnerAlreadySetReverts() public {
+        // Setup test prize
+        vm.prank(ADMIN);
+        raffle.addPrize("Prize", "Test prize", 100);
+        
+        // Add tickets
+        spinStub.setBalance(USER, 3);
+        vm.prank(USER);
+        raffle.spendRaffle(1, 3);
+        
+        // Request winner
+        vm.recordLogs();
+        vm.prank(ADMIN);
+        raffle.requestWinner(1);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        
+        // Find request ID
+        uint256 req = 0;
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
+                req = uint256(logs[i].topics[2]);
+                break;
+            }
+        }
+        require(req != 0, "Request ID not found in logs");
+        
+        // Select winner
+        uint256[] memory rng = new uint256[](1);
+        rng[0] = 1; // Will select USER's ticket
+        vm.prank(SUPRA_ORACLE);
+        raffle.handleWinnerSelection(req, rng);
+        
+        // Verify the winner index is set
+        (, , , , , uint256 winnerIdx, ) = raffle.getPrizeDetails(1);
+        assertGt(winnerIdx, 0, "Winner index should be set");
+        
+        // Claim the prize first time (this will set winner and deactivate the prize)
+        vm.prank(USER);
+        raffle.claimPrize(1);
+        
+        // Verify prize is now inactive and has winner set
+        (, , , bool active, address winner, , ) = raffle.getPrizeDetails(1);
+        assertFalse(active, "Prize should be inactive after claiming");
+        assertEq(winner, USER, "Winner should be set to USER");
+        
+        // Manually set the prize back to active while keeping the winner set
+        vm.prank(ADMIN);
+        raffle.setPrizeActive(1, true);
+        
+        // Verify prize is now active again but still has winner set
+        (, , , active, winner, , ) = raffle.getPrizeDetails(1);
+        assertTrue(active, "Prize should be active after setPrizeActive");
+        assertEq(winner, USER, "Winner should still be set to USER");
+        
+        // Try to claim again - this should revert with WinnerDrawn
+        vm.prank(USER);
+        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerDrawn.selector, USER));
+        raffle.claimPrize(1);
+        
+        // Even USER2 should not be able to claim it
+        vm.prank(USER2);
+        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerDrawn.selector, USER));
+        raffle.claimPrize(1);
+    }
+
 }
 
 

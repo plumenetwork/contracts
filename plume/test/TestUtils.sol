@@ -52,7 +52,7 @@ interface IDepositContract {
 
 /// @notice Interface for the Spin contract used in Raffle tests
 interface ISpin {
-    function updateRaffleTickets(address _user, uint256 _amount) external;
+    function spendRaffleTickets(address _user, uint256 _amount) external;
     function getUserData(
         address _user
     ) external view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256);
@@ -66,7 +66,7 @@ contract SpinStub is ISpin {
         balances[user] = amount;
     }
     
-    function updateRaffleTickets(address user, uint256 amount) external override {
+    function spendRaffleTickets(address user, uint256 amount) external override {
         require(balances[user] >= amount, "stub underflow");
         balances[user] -= amount;
     }
