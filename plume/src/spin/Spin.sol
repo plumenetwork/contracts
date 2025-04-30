@@ -23,6 +23,14 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 nothingCounts;
     }
 
+    struct RewardProbabilities {
+        uint256 jackpotThreshold;    // 0 to jackpotThreshold
+        uint256 plumeTokenThreshold; // jackpotThreshold to plumeTokenThreshold
+        uint256 raffleTicketThreshold; // plumeTokenThreshold to raffleTicketThreshold
+        uint256 ppThreshold;         // raffleTicketThreshold to ppThreshold
+        // anything above ppThreshold is "Nothing"
+    }
+
     // Roles
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant SUPRA_ROLE = keccak256("SUPRA_ROLE");
@@ -44,6 +52,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     mapping(uint8 => uint256) public jackpotPrizes;
     mapping(address => bool) public whitelists;
     bool public enableSpin;
+    RewardProbabilities public rewardProbabilities;
 
     // Reserved storage gap for future upgrades
     uint256[50] private __gap;
@@ -101,6 +110,15 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         plumeAmounts = [1, 1, 1];
 
         lastJackpotClaimWeek = 999;  // start with arbitrary non-zero value
+
+        // Set default probabilities
+        rewardProbabilities = RewardProbabilities({
+            jackpotThreshold: 200,        // 0-200 (0.02% but further modified by the daily odds to much lower)
+            plumeTokenThreshold: 200_000,  // 201-200,000 (20%)
+            raffleTicketThreshold: 600_000, // 200,001-600,000 (40%)
+            ppThreshold: 900_000           // 600,001-900,000 (30%)
+                                           // 900,001-1,000,000 is "Nothing" (10%)
+        });
     }
 
     /// @notice Ensures that the user can only spin once per day by checking their last spin date.
@@ -234,19 +252,19 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         // Determine the current week in the 12-week campaign
         uint256 daysSinceStart = (block.timestamp - campaignStartDate) / 1 days;
         uint8 weekNumber = uint8(getCurrentWeek());
-
         uint8 dayOfWeek = uint8(daysSinceStart % 7);
 
+        // Get jackpot threshold for the day of week
         uint256 jackpotThreshold = jackpotProbabilities[dayOfWeek];
 
         if (probability < jackpotThreshold) {
             return ("Jackpot", jackpotPrizes[weekNumber]);
-        } else if (probability <= 200_000) {
+        } else if (probability <= rewardProbabilities.plumeTokenThreshold) {
             uint256 plumeAmount = plumeAmounts[probability % 3];
             return ("Plume Token", plumeAmount);
-        } else if (probability <= 600_000) {
+        } else if (probability <= rewardProbabilities.raffleTicketThreshold) {
             return ("Raffle Ticket", baseRaffleMultiplier * (userData[user].streakCount + 1));
-        } else if (probability <= 900_000) {
+        } else if (probability <= rewardProbabilities.ppThreshold) {
             return ("PP", PP_PerSpin);
         }
 
@@ -481,6 +499,26 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     /// @param _enableSpin The flag to enable/disable spinning
     function setEnableSpin(bool _enableSpin) external onlyRole(ADMIN_ROLE) {
         enableSpin = _enableSpin;
+    }
+
+    /**
+     * @notice Updates the reward probabilities.
+     * @param _plumeTokenThreshold The upper threshold for Plume Token rewards.
+     * @param _raffleTicketThreshold The upper threshold for Raffle Ticket rewards.
+     * @param _ppThreshold The upper threshold for PP rewards.
+     */
+    function setRewardProbabilities(
+        uint256 _plumeTokenThreshold,
+        uint256 _raffleTicketThreshold,
+        uint256 _ppThreshold
+    ) external onlyRole(ADMIN_ROLE) {
+        require(_plumeTokenThreshold < _raffleTicketThreshold, "Invalid thresholds order");
+        require(_raffleTicketThreshold < _ppThreshold, "Invalid thresholds order");
+        require(_ppThreshold <= 1_000_000, "Threshold exceeds maximum");
+        
+        rewardProbabilities.plumeTokenThreshold = _plumeTokenThreshold;
+        rewardProbabilities.raffleTicketThreshold = _raffleTicketThreshold;
+        rewardProbabilities.ppThreshold = _ppThreshold;
     }
 
     // UUPS Authorization

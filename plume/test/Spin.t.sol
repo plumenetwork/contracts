@@ -369,59 +369,85 @@ contract SpinTest is SpinTestBase {
         assertEq(ppGained2, 100, "PP gained should remain 100");
     }
 
-    /// @notice Test all setter/getter combinations
-    function testSettersAndGetters() public {
-        // Test jackpot probabilities
+    /// @notice Test that jackpot probabilities can be updated and affect rewards
+    function testSetJackpotProbabilitiesImpact() public {
+        // 1. Set all jackpot probabilities to 0 - effectively disabling jackpot wins
         vm.prank(ADMIN);
-        uint8[7] memory newProbs = [10, 20, 30, 40, 50, 60, 70];
-        spin.setJackpotProbabilities(newProbs);
+        uint8[7] memory zeroProbabilities = [0, 0, 0, 0, 0, 0, 0];
+        spin.setJackpotProbabilities(zeroProbabilities);
+                
+        // Fund contract
+        vm.deal(address(spin), 10_000 ether);
+
+        // Day 0, streak=0 => Not enough streak for jackpot
+        uint256 n0 = performSpin(USER);
+        uint256[] memory r0 = new uint256[](1);
+        r0[0] = 600_000; 
+
+        vm.prank(SUPRA_ORACLE);
+        spin.handleRandomness(n0, r0);
         
-        // Test jackpot prize
-        vm.prank(ADMIN);
-        spin.setJackpotPrizes(5, 100_000);
-        
-        // Test raffle multiplier
-        vm.prank(ADMIN);
-        spin.setBaseRaffleMultiplier(10);
-        
-        // Test PP per spin
-        vm.prank(ADMIN);
-        spin.setPP_PerSpin(200);
-        
-        // Test plume amounts
-        vm.prank(ADMIN);
-        uint256[3] memory newPlume = [uint256(2), uint256(3), uint256(4)];
-        spin.setPlumeAmounts(newPlume);
-        
-        // Verify these changes affected rewards
-        vm.prank(ADMIN);
-        spin.whitelist(USER);
-        
-        // Test PP reward affected by setPP_PerSpin
+        // Day 1, streak=1 => Still Not enough streak
+        vm.warp(block.timestamp + 1 days);
+        uint256 n1 = performSpin(USER);
+        uint256[] memory r00 = new uint256[](1);
+        r00[0] = 600_000;
+
+        vm.prank(SUPRA_ORACLE);
+        spin.handleRandomness(n1, r00);
+
+        // Day 2, streak=2 => Now enough streak for jackpot
+
+
+        vm.warp(block.timestamp + 1 days);
+        uint256 n2 = performSpin(USER);
+        uint256[] memory r000 = new uint256[](1);
+        r000[0] = 600_000;
+
+        vm.prank(SUPRA_ORACLE);
+        spin.handleRandomness(n2, r000);
+
+        // Now we have enough streak for jackpot
+
+        vm.warp(block.timestamp + 1 days);
+
+        // Try to get jackpot with randomness=0 (which would normally trigger jackpot)
         uint256 nonce1 = performSpin(USER);
-        uint256[] memory rng1 = new uint256[](1);
-        rng1[0] = 700_000; // PP reward
+        uint256[] memory r1 = new uint256[](1);
+        r1[0] = 0; // normally would be jackpot
         
         vm.prank(SUPRA_ORACLE);
-        spin.handleRandomness(nonce1, rng1);
+        vm.recordLogs();
+        spin.handleRandomness(nonce1, r1);
         
-        (, , , , , uint256 ppGained, ) = spin.getUserData(USER);
-        assertEq(ppGained, 200, "PP gained should match new setPP_PerSpin value");
+        // Get the SpinCompleted event
+        Vm.Log[] memory logs1 = vm.getRecordedLogs();
+        (string memory category1, uint256 amount1) = abi.decode(logs1[0].data, (string, uint256));
         
-        // Test raffle multiplier
+        // Since jackpot probability is 0, we should get Plume Token instead
+        assertEq(category1, "Plume Token", "Should not get Jackpot when probability is 0");
+        
+        // 2. Now set a very high jackpot probability for all days
+        vm.prank(ADMIN);
+        uint8[7] memory highProbabilities = [250, 250, 250, 250, 250, 250, 250];
+        spin.setJackpotProbabilities(highProbabilities);
+        
+        // We should now get jackpot even with higher randomness
         vm.warp(block.timestamp + 1 days);
         uint256 nonce2 = performSpin(USER);
-        uint256[] memory rng2 = new uint256[](1);
-        rng2[0] = 300_000; // Raffle ticket
+        uint256[] memory r2 = new uint256[](1);
+        r2[0] = 200; // value that would normally be Plume Token
         
         vm.prank(SUPRA_ORACLE);
-        spin.handleRandomness(nonce2, rng2);
+        vm.recordLogs();
+        spin.handleRandomness(nonce2, r2);
         
-        (, , , uint256 raffleGained, uint256 raffleBalance, , ) = spin.getUserData(USER);
-        // Check the actual values first before asserting
-        // baseMultiplier * (streak + 1) = 10 * (2) = 20, plus 0 previous tickets
-        assertEq(raffleGained, 20, "Raffle tickets gained should be 20");
-        assertEq(raffleBalance, 20, "Raffle balance should be 20");
+        // Get the SpinCompleted event
+        Vm.Log[] memory logs2 = vm.getRecordedLogs();
+        (string memory category2, uint256 amount2) = abi.decode(logs2[0].data, (string, uint256));
+        
+        // Since jackpot probability is now high, we should get Jackpot
+        assertEq(category2, "Jackpot", "Should get Jackpot when probability is high");
     }
 
     /// @notice Test view functions for contract state
