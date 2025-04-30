@@ -574,21 +574,21 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     /**
-     * @notice Get essential statistics about a validator
+     * @notice Get key statistics for a specific validator.
+     * @param validatorId ID of the validator.
+     * @return active Whether the validator is currently active.
+     * @return commission The validator\'s commission rate (scaled by REWARD_PRECISION).
+     * @return stakersCount The number of unique stakers for this validator.
      */
     function getValidatorStats(
         uint16 validatorId
-    ) external view returns (bool active, uint256 commission, uint256 totalStaked, uint256 stakersCount) {
+    ) external view _validateValidatorExists(validatorId) returns (bool active, uint256 commission, uint256 stakersCount) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        if (!$.validatorExists[validatorId]) {
-            revert ValidatorDoesNotExist(validatorId);
-        }
+
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
-        active = validator.active;
-        commission = validator.commission;
-        totalStaked = $.validatorTotalStaked[validatorId];
-        stakersCount = $.validatorStakers[validatorId].length;
-        return (active, commission, totalStaked, stakersCount);
+        uint256 _stakersCount = $.validatorStakers[validatorId].length;
+
+        return (validator.active, validator.commission, _stakersCount);
     }
 
     /**
