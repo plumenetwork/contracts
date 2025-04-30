@@ -567,11 +567,11 @@ contract RaffleFlowTest is PlumeTestBase {
         
         // Second claim should revert with "Prize not available"
         vm.prank(USER2);
-        vm.expectRevert("Prize not available");
+        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerClaimed.selector));
         raffle.claimPrize(1);
     }
 
-    function testClaimPrizeWinnerAlreadySetReverts() public {
+    function testSetInactiveWinnerAlreadySetReverts() public {
         // Setup test prize
         vm.prank(ADMIN);
         raffle.addPrize("Prize", "Test prize", 100);
@@ -622,22 +622,9 @@ contract RaffleFlowTest is PlumeTestBase {
         
         // Manually set the prize back to active while keeping the winner set
         vm.prank(ADMIN);
+        vm.expectRevert("Winner already selected");
         raffle.setPrizeActive(1, true);
         
-        // Verify prize is now active again but still has winner set
-        (, , , active, winner, , ) = raffle.getPrizeDetails(1);
-        assertTrue(active, "Prize should be active after setPrizeActive");
-        assertEq(winner, USER, "Winner should still be set to USER");
-        
-        // Try to claim again - this should revert with WinnerDrawn
-        vm.prank(USER);
-        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerClaimed.selector));
-        raffle.claimPrize(1);
-        
-        // Also check USER2 should not be able to claim it
-        vm.prank(USER2);
-        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerClaimed.selector));
-        raffle.claimPrize(1);
     }
 
     function testWinnerFlow() public {
