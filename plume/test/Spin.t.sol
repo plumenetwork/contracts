@@ -2,6 +2,8 @@
 pragma solidity ^0.8.25;
 
 import "./TestUtils.sol";
+import "forge-std/console.sol";
+
 
 contract SpinTest is SpinTestBase {
     uint256 constant COOLDOWN_PERIOD = 86_400; // 1 day
@@ -14,6 +16,7 @@ contract SpinTest is SpinTestBase {
         setupSpin(2025, 3, 8, 10, 0, 0);
     }
 
+    /// @notice startSpin happy case test for a spin
     function testStartSpin() public {
         vm.recordLogs();
 
@@ -45,8 +48,8 @@ contract SpinTest is SpinTestBase {
         spin.startSpin();
     }
 
-    /// @notice Non-whitelisted daily cooldown enforcement
-    function testDailyCooldownEnforced() public {
+    /// @notice Non-whitelisted daily spin limit enforcement
+    function testDailySpinLimitEnforced() public {
         // First spin
         uint256 nonce = performSpin(USER);
         completeSpin(nonce, 999_999);
@@ -129,6 +132,7 @@ contract SpinTest is SpinTestBase {
         fresh.getWeeklyJackpot();
     }
 
+    /// @notice getWeeklyJackpot: test weekly jackpot values across weeks works. NOTE: hardcoded values, brittle test
     function testGetWeeklyJackpotValues() public {
         // week 0
         vm.warp(spin.getCampaignStartDate() + 3 days);
@@ -152,23 +156,32 @@ contract SpinTest is SpinTestBase {
         assertEq(req12, 0);
     }
 
-    /// @notice currentStreak and _computeStreak behavior
+    /// @notice currentStreak computations
     function testStreakComputationAcrossDays() public {
-        // No previous spin => streak = 1
-        assertEq(spin.currentStreak(USER), 1);
+        // No previous spin => streak = 0
+        assertEq(spin.currentStreak(USER), 0);
 
         // Spin day 1
         uint256 ts1 = block.timestamp;
         uint256 nonce = performSpin(USER);
         completeSpin(nonce, 999_999);
+        // after first spin, streak = 1
         assertEq(spin.currentStreak(USER), 1);
 
         // Next day
-        vm.warp(ts1 + 1 days + 1);
+        vm.warp(ts1 + 1 days);
+        // next day, no spin yet, streak = 1
+        assertEq(spin.currentStreak(USER), 1);
+        completeSpin(nonce, 999_999);
+        // next day, spin again, streak = 2
         assertEq(spin.currentStreak(USER), 2);
 
         // Skip a day
         vm.warp(ts1 + 3 days);
+        // skip a day, no spin yet, streak = 0
+        assertEq(spin.currentStreak(USER), 0);
+        completeSpin(nonce, 999_999);
+        // skip a day, spin again, streak = 1
         assertEq(spin.currentStreak(USER), 1);
     }
 
@@ -203,9 +216,9 @@ contract SpinTest is SpinTestBase {
         spin.updateRaffleTickets(USER, 1);
     }
 
-    /// @notice withdraw flows and reverts
+    /// @notice Plume withdraw flows and reverts
     function testWithdrawSuccessAndFailures() public {
-        // Ensure contract has 100 ether
+        // Ensure contract has 100 plume
         assertEq(address(spin).balance, 100 ether);
 
         // Non-admin cannot withdraw
@@ -218,7 +231,7 @@ contract SpinTest is SpinTestBase {
         vm.expectRevert(bytes("Invalid recipient address"));
         spin.withdraw(payable(address(0)), 1 ether);
 
-        // Too much fails
+        // Too much fails on balance check
         vm.prank(ADMIN);
         vm.expectRevert(bytes("Insufficient contract balance"));
         spin.withdraw(payable(ADMIN), 200 ether);
@@ -229,6 +242,8 @@ contract SpinTest is SpinTestBase {
         assertEq(address(spin).balance, 50 ether);
         assertEq(USER.balance, 50 ether);
     }
+
+    /// NOTE: SUCCESSFUL handleRandomness for complex case at end of test file
 
     /// @notice handleRandomness should revert when called by non-SUPRA_ORACLE address
     function testHandleRandomnessAccessControl() public {
@@ -267,9 +282,8 @@ contract SpinTest is SpinTestBase {
         vm.prank(ADMIN);
         spin.withdraw(payable(ADMIN), 100 ether);
         
-        // Now use whitelisted user to get jackpot
+        // Now set up user to get jackpot
         vm.prank(ADMIN);
-        spin.whitelist(USER);
         
         // We need to set the streak high enough to win jackpot
         // Jump to a point where we're still in week 0
@@ -286,11 +300,10 @@ contract SpinTest is SpinTestBase {
         uint256 nonce2 = performSpin(USER);
         completeSpin(nonce2, 900_000); // Something other than jackpot
         
+        assertEq(spin.currentStreak(USER), 2, "User streak should be 2 at this point");
+
         // Now we have streak of 2, wait for next day and try jackpot
         vm.warp(startTs + 3 days);
-        
-        // Verify the streak is 3 now
-        assertEq(spin.currentStreak(USER), 3, "User streak should be 3 at this point");
         
         // Now try for jackpot with a jackpot-winning RNG
         uint256 nonce3 = performSpin(USER);
@@ -310,7 +323,7 @@ contract SpinTest is SpinTestBase {
          uint256 raffleGained0, uint256 raffleBalance0, 
          uint256 ppGained0, uint256 plumeTokens0) = spin.getUserData(USER);
         
-        assertEq(streak0, 1, "Initial streak should be 1");
+        assertEq(streak0, 0, "Initial streak should be 0");
         assertEq(lastSpin0, 0, "Initial lastSpin should be 0");
         assertEq(jackpotWins0, 0, "Initial jackpotWins should be 0");
         assertEq(raffleGained0, 0, "Initial raffleGained should be 0");
@@ -428,9 +441,7 @@ contract SpinTest is SpinTestBase {
         assertEq(requiredStreak, 2, "Required streak for week 0 should be 2");
     }
 
-    /// @notice Tests from SpinRewards.t.sol
-
-    /// @notice Test that "Nothing" reward keeps streak alive
+    /// @notice Test that "Nothing" reward counts for streak
     function testNothingKeepsStreakAlive() public {
         uint256 nonce = performSpin(USER);
         
@@ -469,10 +480,9 @@ contract SpinTest is SpinTestBase {
         Vm.Log[] memory L0 = vm.getRecordedLogs();
         
         // Log[0] = NotEnoughStreak, Log[1] = SpinCompleted
-        (string memory cat0, uint256 amt0) = abi.decode(
-            L0[1].data,
-            (string, uint256)
-        );
+        assertEq(L0[0].topics[0], keccak256("NotEnoughStreak(string)"), "NotEnoughStreak event not emitted");
+        // Check the SpinCompleted event
+        (string memory cat0, uint256 amt0) = abi.decode(L0[1].data, (string, uint256));
         assertEq(cat0, "Nothing");
         assertEq(amt0, 0);
 
@@ -486,6 +496,7 @@ contract SpinTest is SpinTestBase {
         vm.recordLogs();
         spin.handleRandomness(n1, r1);
         Vm.Log[] memory L1 = vm.getRecordedLogs();
+        assertEq(L1[0].topics[0], keccak256("NotEnoughStreak(string)"), "NotEnoughStreak event not emitted");
         (string memory cat1, uint256 amt1) = abi.decode(
             L1[1].data,
             (string, uint256)
@@ -571,5 +582,263 @@ contract SpinTest is SpinTestBase {
 
         (, , , , , uint256 pp, ) = spin.getUserData(USER);
         assertEq(pp, 100);
+    }
+
+    /// @notice Test the probability, week tracking, and jackpot claiming logic over multiple days with two users
+    function testJackpotProbabilityAndWeekTrackingWithTwoUsers() public {
+        // Fund the contract sufficiently for jackpot payouts
+        vm.deal(address(spin), 200_000 ether);
+        
+        // Define the default jackpot probabilities used in the contract
+        uint256[7] memory defaultProbabilities = [uint256(1), 2, 3, 5, 7, 10, 20];
+        
+        uint256 startTimestamp = block.timestamp;
+        uint256 campaignStartDate = spin.getCampaignStartDate();
+
+        emit log_string(string(
+              abi.encodePacked(
+                "START! ",       vm.toString(campaignStartDate),
+                " chain: ",     vm.toString(block.timestamp)
+            )
+            ));
+        
+        // Track streak-building days (days 1-7, first week) for both users
+        for (uint8 day = 1; day < 8; day++) {
+            
+            // Check we're still in week 0
+            assertEq(spin.getCurrentWeek(), 0, string(abi.encodePacked("Day ", vm.toString(day), " should be in week 0, timestamp: ", vm.toString(block.timestamp), ", startTimestamp: ", vm.toString(campaignStartDate))));
+            
+            // USER 4: Spin to build streak
+            uint256 nonce1 = performSpin(USER4);
+            completeSpin(nonce1, 999_999);
+            
+            // USER 5: Spin to build streak
+            uint256 nonce2 = performSpin(USER5);
+            completeSpin(nonce2, 999_999);
+            
+            // Check streak is building properly for both users
+            assertEq(spin.currentStreak(USER4), day, string(abi.encodePacked("USER4 streak should be ", vm.toString(day), " after spin on day ", vm.toString(day))));
+            assertEq(spin.currentStreak(USER5), day, string(abi.encodePacked("USER5 streak should be ", vm.toString(day), " after spin on day ", vm.toString(day))));
+
+            // move to next day 
+            vm.warp(block.timestamp + 1 days);
+        }
+
+        //**  Now its day 8 **/
+        
+        // Check we're now in week 2 (1 based on zero indexing)
+        assertEq(spin.getCurrentWeek(), 1, string(abi.encodePacked("Should be in week 2 on day 8, block.timestamp: ", vm.toString(block.timestamp))));
+        assertEq(spin.currentStreak(USER4), 7, "USER4 streak should be 7 on day 7 before spin");
+        assertEq(spin.currentStreak(USER5), 7, "USER5 streak should be 7 on day 7 before spin");
+        
+        // USER4: Test with probability > threshold (should fail)
+        uint256 nonce8a = performSpin(USER4);
+        
+        vm.recordLogs();
+        completeSpin(nonce8a, 1); // Use 1 which is > day 0's probability of < 1
+
+        assertEq(spin.currentStreak(USER4), 8, "USER4 streak should be 8 on day 7 after spin");
+
+        // Check the result was "Nothing" not a jackpot
+        Vm.Log[] memory logs8a = vm.getRecordedLogs();
+        (string memory cat8a, uint256 amt8a) = abi.decode(logs8a[0].data, (string, uint256));
+        assertEq(cat8a, "Plume Token", "USER4 should get Plume Token for probability > threshold");
+        assertEq(amt8a, 1, "Amount should be 1 for Plume Token");
+        
+        // USER5: Test with probability < threshold (should win jackpot)
+        uint256 nonce8b = performSpin(USER5);
+        
+        vm.recordLogs();
+        completeSpin(nonce8b, 0); // Use 0 which is < day 0's probability of < 1
+        
+        assertEq(spin.currentStreak(USER5), 8, "USER5 streak should be 8 on day 7 after spin");
+
+        // Check the result was a jackpot
+        Vm.Log[] memory logs8b = vm.getRecordedLogs();
+        (string memory cat8b, uint256 amt8b) = abi.decode(logs8b[0].data, (string, uint256));
+        assertEq(cat8b, "Jackpot", "USER5 should get Jackpot for probability < threshold");
+        (, uint256 week1Prize, ) = spin.getWeeklyJackpot();
+        assertEq(amt8b, 5000, "Amount should be week 1's jackpot prize");
+        assertEq(week1Prize, 5000, "Week1 jackpot amount is wrong"); // note this is brittle and might change
+        
+        // Day 9 - second day of week 1
+        vm.warp(block.timestamp + 1 days);
+
+        //**  Now its day 9 **/
+        
+        // USER4: Try with probability > threshold (should fail naturally)
+        uint256 nonce9a = performSpin(USER4);
+        
+        vm.recordLogs();
+        completeSpin(nonce9a, 2); // Use 2 which is > day 1's probability of <2
+        
+        // Check the result was "Nothing" without NotEnoughStreak
+        Vm.Log[] memory logs9a = vm.getRecordedLogs();
+        bool emittedNotEnoughStreak9a = false;
+        
+        for (uint i = 0; i < logs9a.length; i++) {
+            if (logs9a[i].topics[0] == keccak256("NotEnoughStreak(string)")) {
+                emittedNotEnoughStreak9a = true;
+                break;
+            }
+        }
+        
+        assertFalse(emittedNotEnoughStreak9a, "Should not emit NotEnoughStreak for probability > threshold");
+        
+        // Parse the SpinCompleted event
+        (string memory cat9a, uint256 amt9a) = abi.decode(logs9a[0].data, (string, uint256));
+        assertEq(cat9a, "Plume Token", "Should get Plume Token for probability > threshold");
+        
+        // USER5: Try with probability < threshold (should hit jackpot threshold but fail due to one per week)
+        uint256 nonce9b = performSpin(USER5);
+        
+        vm.recordLogs();
+        completeSpin(nonce9b, 1); // Use 1 which is < day 1's probability of < 2
+        
+        // Check we got JackpotAlreadyClaimed
+        Vm.Log[] memory logs9b = vm.getRecordedLogs();
+        bool foundJackpotAlreadyClaimed9b = false;
+        
+        for (uint i = 0; i < logs9b.length; i++) {
+            if (logs9b[i].topics[0] == keccak256("JackpotAlreadyClaimed(string)")) {
+                foundJackpotAlreadyClaimed9b = true;
+                break;
+            }
+        }
+        
+        assertTrue(foundJackpotAlreadyClaimed9b, "Should emit JackpotAlreadyClaimed when second jackpot hit in same week");
+        
+        // Check the result was "Nothing"
+        (string memory cat9b, uint256 amt9b) = abi.decode(logs9b[logs9b.length - 1].data, (string, uint256));
+        assertEq(cat9b, "Nothing", "Should get Nothing for second jackpot in same week");
+        
+        // Test remaining days of week 1 with progressively higher probabilities
+        for (uint8 day = 3; day < 8; day++) {
+            vm.warp(block.timestamp + 1 days);
+
+            //**  Now its day 10-14 (day+7) **/
+
+            
+            // Check we're still in week 2 (match 1 based on zero indexing)
+            assertEq(spin.getCurrentWeek(), 1, string(abi.encodePacked("Day ", vm.toString(day+7), " should be in week 2s")));
+            
+            // USER4: Try with above threshold (should fail naturally)
+            uint256 nonceUserAbove = performSpin(USER4);
+            
+            vm.recordLogs();
+            completeSpin(nonceUserAbove, defaultProbabilities[day-1]); // use the probability for the day which should not win
+            
+            // Check USER4 got Plume Token without NotEnoughStreak
+            Vm.Log[] memory logsUser = vm.getRecordedLogs();
+            bool userEmittedNotEnoughStreak = false;
+
+            for (uint i = 0; i < logsUser.length; i++) {
+                if (logsUser[i].topics[0] == keccak256("NotEnoughStreak(string)")) {
+                    userEmittedNotEnoughStreak = true;
+                    break;
+                }
+            }
+            assertFalse(userEmittedNotEnoughStreak, "USER4 should not emit NotEnoughStreak for probability > threshold");
+            (string memory catUser, uint256 amtUser) = abi.decode(logsUser[logsUser.length-1].data, (string, uint256));
+            assertEq(catUser, "Plume Token", "Should get Plume Token for probability > threshold");
+
+            
+            // USER5: Try with below threshold (should get JackpotAlreadyClaimed)
+            uint256 nonceUser2Below = performSpin(USER5);
+            
+            vm.recordLogs();
+            completeSpin(nonceUser2Below, defaultProbabilities[day-1] - 1);
+            
+            // Check USER5 got JackpotAlreadyClaimed
+            Vm.Log[] memory logsUser2 = vm.getRecordedLogs();
+            bool user2FoundClaimed = false;
+            
+            for (uint i = 0; i < logsUser2.length; i++) {
+                if (logsUser2[i].topics[0] == keccak256("JackpotAlreadyClaimed(string)")) {
+                    user2FoundClaimed = true;
+                    break;
+                }
+            }
+            
+            assertTrue(user2FoundClaimed, string(abi.encodePacked("USER5 should emit JackpotAlreadyClaimed on day ", vm.toString(day + 7))));
+            // Check the result was "Nothing"
+            (string memory catUser2, uint256 amtUser2) = abi.decode(logsUser2[logsUser2.length - 1].data, (string, uint256));
+            assertEq(catUser2, "Nothing", "Should get Nothing for second jackpot in same week");
+        }
+        
+        // Now test week 2, day 0 (which is day 14 overall)
+        vm.warp(block.timestamp + 1 days);
+
+        //**  Now its day 15 **/
+        
+        // Check we're now in week 3 (2 based on zero indexing)
+        assertEq(spin.getCurrentWeek(), 2, "Should be in week 3 on day 15");
+        
+        // USER4: Try with probability > threshold (should fail)
+        uint256 nonce14a = performSpin(USER4);
+        
+        vm.recordLogs();
+        completeSpin(nonce14a, 1); // Use 1 which is > day 0's probability of < 1
+        
+        // Check the result was "Nothing"
+        Vm.Log[] memory logs14a = vm.getRecordedLogs();
+        (string memory cat14a, uint256 amt14a) = abi.decode(logs14a[0].data, (string, uint256));
+        assertEq(cat14a, "Plume Token", "USER4 should get Plume Token for probability > threshold in week 2");
+        
+        // USER5: Try with probability < threshold (should win as we're on day 0 of week 2)
+        uint256 nonce14b = performSpin(USER5);
+        
+        vm.recordLogs();
+        completeSpin(nonce14b, 0); // Use 0 which is < day 0's probability of 1
+        
+        // Check the result was a jackpot
+        Vm.Log[] memory logs14b = vm.getRecordedLogs();
+        (string memory cat14b, uint256 amt14b) = abi.decode(logs14b[0].data, (string, uint256));
+        assertEq(cat14b, "Jackpot", "USER5 should get Jackpot for probability < threshold in week 2");
+        assertEq(amt14b, 10_000, "Amount should be week 2's jackpot prize");
+    }
+
+    /// @notice Test that streak calculation is based on calendar days, not 24-hour periods
+    function testStreakByCalendarDay() public {
+        // First check the initial streak
+        assertEq(spin.currentStreak(USER), 0, "Initial streak should be 0");
+
+        // Get the start date from the contract to make sure we're using compatible dates
+        uint256 campaignStartDate = spin.getCampaignStartDate();
+        
+        // Day 0 @ 7am - Use the campaign start date but set time to 11:00 AM
+        uint16 year = dateTime.getYear(campaignStartDate);
+        uint8 month = dateTime.getMonth(campaignStartDate);
+        uint8 day = dateTime.getDay(campaignStartDate);
+        vm.warp(dateTime.toTimestamp(year, month, day, 11, 0, 0));
+        
+        uint256 nonce1 = performSpin(USER);
+        completeSpin(nonce1, 999_999); // Complete spin with "Nothing" reward
+        assertEq(spin.currentStreak(USER), 1, "Streak should be 1 after first spin");
+        
+        // Day 1 @ 1am - Next day early morning
+        vm.warp(dateTime.toTimestamp(year, month, day + 1, 1, 0, 0));
+        uint256 nonce2 = performSpin(USER);
+        completeSpin(nonce2, 999_999);
+        assertEq(spin.currentStreak(USER), 2, "Streak should be 2 after consecutive day spin (early morning)");
+        
+        // Day 2 @ 11pm - Next day late evening
+        vm.warp(dateTime.toTimestamp(year, month, day + 2, 23, 0, 0));
+        uint256 nonce3 = performSpin(USER);
+        completeSpin(nonce3, 999_999);
+        assertEq(spin.currentStreak(USER), 3, "Streak should be 3 after consecutive day spin (late night)");
+        
+        // Day 4 @ 1am - Skip day 3, go to day 4 early morning
+        vm.warp(dateTime.toTimestamp(year, month, day + 4, 1, 0, 0));
+        
+        // Check streak BEFORE spin - should be reset to 1 due to missed day
+        assertEq(spin.currentStreak(USER), 0, "Streak should reset to 0 after skipping a day");
+        
+        // Now spin on day 4
+        uint256 nonce4 = performSpin(USER);
+        completeSpin(nonce4, 999_999);
+        
+        // Streak should still be 1 after spinning on day 4 (not consecutive with day 2)
+        assertEq(spin.currentStreak(USER), 1, "Streak should remain 1 after spinning on non-consecutive day");
     }
 }

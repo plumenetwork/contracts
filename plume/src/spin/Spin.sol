@@ -30,7 +30,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     // State variables
     address public admin;
-    uint256 public lastJackpotClaim;
+    uint256 public lastJackpotClaimWeek;
     mapping(address => UserData) public userData;
     uint256[7] public jackpotProbabilities;
     uint256 public baseRaffleMultiplier;
@@ -53,6 +53,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
     event RaffleTicketsUpdated(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
     event NotEnoughStreak(string message);
+    event JackpotAlreadyClaimed(string message);
 
     // Errors
     error NotAdmin();
@@ -98,6 +99,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         baseRaffleMultiplier = 8;
         PP_PerSpin = 100;
         plumeAmounts = [1, 1, 1];
+
+        lastJackpotClaimWeek = 999;  // start with arbitrary non-zero value
     }
 
     /// @notice Ensures that the user can only spin once per day by checking their last spin date.
@@ -154,6 +157,10 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         emit SpinRequested(nonce, msg.sender);
     }
 
+    function getCurrentWeek() public view returns (uint256) {
+        return (block.timestamp - campaignStartDate) / 7 days;
+    }
+
     /**
      * @notice Handles the randomness callback from the Supra Router.
      * @dev This function is called by the Supra Router to provide the random number and determine the reward.
@@ -172,17 +179,24 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         // Apply reward logic
         UserData storage userDataStorage = userData[user];
 
+        
+
         // ----------  Effects: update storage first  ----------
         if (keccak256(bytes(rewardCategory)) == keccak256("Jackpot")) {
-            require(block.timestamp >= lastJackpotClaim + 7 days, "Jackpot cooldown");
-            if (userDataStorage.streakCount < ((block.timestamp - campaignStartDate) / 7 days) + 2) {
+            uint256 currentWeek = getCurrentWeek();
+            if (currentWeek == lastJackpotClaimWeek) {
                 userDataStorage.nothingCounts += 1;
-                emit NotEnoughStreak("Not enough streak count to claim Jackpot");
                 rewardCategory = "Nothing";
                 rewardAmount = 0;
+                emit JackpotAlreadyClaimed("Jackpot already claimed this week");
+            } else if (userDataStorage.streakCount < (currentWeek + 2)) {
+                userDataStorage.nothingCounts += 1;
+                rewardCategory = "Nothing";
+                rewardAmount = 0;
+                emit NotEnoughStreak("Not enough streak count to claim Jackpot");
             } else {
                 userDataStorage.jackpotWins++;
-                lastJackpotClaim = block.timestamp;
+                lastJackpotClaimWeek = currentWeek;
             }
         } else if (keccak256(bytes(rewardCategory)) == keccak256("Raffle Ticket")) {
             userDataStorage.raffleTicketsGained += rewardAmount;
@@ -195,7 +209,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             userDataStorage.nothingCounts += 1;
         }
 
-        userDataStorage.streakCount = _computeStreak(user, block.timestamp);
+        // update the streak count after their spin
+        userDataStorage.streakCount = _computeStreak(user, block.timestamp, true);
         userDataStorage.lastSpinTimestamp = block.timestamp;
 
         // ----------  Interactions: transfer Plume last ----------
@@ -218,7 +233,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         // Determine the current week in the 12-week campaign
         uint256 daysSinceStart = (block.timestamp - campaignStartDate) / 1 days;
-        uint8 weekNumber = uint8(daysSinceStart / 7);
+        uint8 weekNumber = uint8(getCurrentWeek());
 
         uint8 dayOfWeek = uint8(daysSinceStart % 7);
 
@@ -239,18 +254,20 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     }
 
     // ----------  Unified streak calculation ----------
-    function _computeStreak(address user, uint256 nowTs) internal view returns (uint256) {
+    function _computeStreak(address user, uint256 nowTs, bool justSpun) internal view returns (uint256) {
+        // if a user just spun, we need to increment the streak its a new day or a broken streak
+        uint256 streakAdjustment = justSpun ? 1 : 0;
         uint256 lastSpinTs = userData[user].lastSpinTimestamp;
-        if (lastSpinTs == 0) return 1;
-        uint256 lastDay = lastSpinTs / SECONDS_PER_DAY;
+        if (lastSpinTs == 0) return 0 + streakAdjustment;
+        uint256 lastDaySpun = lastSpinTs / SECONDS_PER_DAY;
         uint256 today   = nowTs     / SECONDS_PER_DAY;
-        if (today == lastDay) return userData[user].streakCount; // same day
-        if (today == lastDay + 1)   return userData[user].streakCount + 1; // consecutive
-        return 1; // broken streak
+        if (today == lastDaySpun) return userData[user].streakCount; // same day
+        if (today == lastDaySpun + 1)   return userData[user].streakCount + streakAdjustment; // streak not broken yet
+        return 0 + streakAdjustment; // broken streak
     }
 
     function currentStreak(address user) public view returns (uint256) {
-        return _computeStreak(user, block.timestamp);
+        return _computeStreak(user, block.timestamp, false);
     }
 
     function _safeTransferPlume(address to, uint256 weiAmount) internal {
@@ -361,7 +378,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         UserData storage userDataStorage = userData[user];
 
         return (
-            _computeStreak(user, block.timestamp),
+            currentStreak(user),
             userDataStorage.lastSpinTimestamp,
             userDataStorage.jackpotWins,
             userDataStorage.raffleTicketsGained,
