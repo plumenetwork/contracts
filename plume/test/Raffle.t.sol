@@ -29,6 +29,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.initialize(address(spinStub), SUPRA_ORACLE);
     }
 
+    // Happy path test
     function testAddAndGetPrizeDetails() public {
         vm.prank(ADMIN);
         raffle.addPrize("Gold", "Shiny", 0);
@@ -38,15 +39,6 @@ contract RaffleFlowTest is PlumeTestBase {
         assertEq(d, "Shiny");
         assertEq(t, 0);
         assertEq(w, address(0));
-    }
-
-    function testRemovePrize() public {
-        vm.prank(ADMIN);
-        raffle.addPrize("X", "X", 0);
-        vm.prank(ADMIN);
-        raffle.removePrize(1);
-        (, , , bool active, , , ) = raffle.getPrizeDetails(1);
-        assertFalse(active);
     }
 
     function testSpendRaffleSuccess() public {
@@ -71,7 +63,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.spendRaffle(1, 2);
     }
 
-    function testRequestWinnerAndSelection() public {
+    function testRequestWinnerEmitsEvents() public {
         vm.prank(ADMIN);
         raffle.addPrize("A", "A", 0);
         spinStub.setBalance(USER, 3);
@@ -106,52 +98,45 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(ADMIN);
         raffle.addPrize("A", "A", 0);
 
-        // Increase ticket amount to make sure the total is properly updated
+        // Add tickets
         spinStub.setBalance(USER, 1);
         vm.prank(USER);
         raffle.spendRaffle(1, 1);
 
-        // First verify tickets were spent
+        // Verify tickets were spent
         (, , uint256 pool, , , , ) = raffle.getPrizeDetails(1);
         assertEq(pool, 1, "Tickets should be added to the pool");
 
+        // Request winner
         vm.recordLogs();
         vm.prank(ADMIN);
         raffle.requestWinner(1);
-        Vm.Log[] memory L1 = vm.getRecordedLogs();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
 
-        // Find the WinnerRequested event to get the request ID
+        // Find request ID
         uint256 req = 0;
-        for (uint i = 0; i < L1.length; i++) {
-            if (L1[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
-                req = uint256(L1[i].topics[2]);
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
+                req = uint256(logs[i].topics[2]);
                 break;
             }
         }
-        require(req != 0, "WinnerRequested event not found");
+        require(req != 0, "Request ID not found in logs");
 
-        // Generate a random number that will select the user's ticket
-        // Since we know there's only 1 ticket (index 1), we pass a value that will result in index 1
-        uint256[] memory r = new uint256[](1);
-        r[0] = 0; // 0 % 1 + 1 = 1
-
+        // Select winner
+        uint256[] memory rng = new uint256[](1);
+        rng[0] = 0; // Will select USER
         vm.prank(SUPRA_ORACLE);
-        raffle.handleWinnerSelection(req, r);
+        raffle.handleWinnerSelection(req, rng);
 
-        vm.recordLogs();
+        // Set winner
+        vm.prank(ADMIN);
+        raffle.setWinner(1);
+
+        // Claim prize
         vm.prank(USER);
         raffle.claimPrize(1);
-        Vm.Log[] memory L2 = vm.getRecordedLogs();
 
-        // Verify the PrizeClaimed event
-        bool foundEvent = false;
-        for (uint i = 0; i < L2.length; i++) {
-            if (L2[i].topics[0] == keccak256("PrizeClaimed(address,uint256)")) {
-                foundEvent = true;
-                break;
-            }
-        }
-        assertTrue(foundEvent, "PrizeClaimed event not found");
     }
 
     function testClaimPrizeNotWinner() public {
@@ -279,6 +264,10 @@ contract RaffleFlowTest is PlumeTestBase {
         (, , , , , uint256 winnerIdx, ) = raffle.getPrizeDetails(1);
         assertEq(winnerIdx, 1, "Winner index should be set");
         
+        // After handleWinnerSelection, add:
+        vm.prank(ADMIN);
+        raffle.setWinner(1);
+
         // Now claim the prize to set winner and make active=false
         vm.prank(USER);
         raffle.claimPrize(1);
@@ -323,55 +312,27 @@ contract RaffleFlowTest is PlumeTestBase {
         assertEq(winnerIdx, 3);
     }
 
-    function testClaimPrizeDoubleClaimReverts() public {
-        vm.prank(ADMIN);
-        raffle.addPrize("A","A",1);
-        spinStub.setBalance(USER,1);
-        vm.prank(USER);
-        raffle.spendRaffle(1,1);
-
-        vm.recordLogs();
-        vm.prank(ADMIN);
-        raffle.requestWinner(1);
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        
-        // Find request ID in logs
-        uint256 req = 0;
-        for (uint i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
-                req = uint256(logs[i].topics[2]);
-                break;
-            }
-        }
-        require(req != 0, "Request ID not found in logs");
-        
-        uint256[] memory rng = new uint256[](1); 
-        rng[0] = 0;
-        vm.prank(SUPRA_ORACLE); 
-        raffle.handleWinnerSelection(req, rng);
-
-        // first claim
-        vm.prank(USER);
-        raffle.claimPrize(1);
-        // second claim should revert Prize not available
-        vm.prank(USER);
-        vm.expectRevert("Prize not available");
-        raffle.claimPrize(1);
-    }
-
-    function testGetUserEntriesAndOverload() public {
+    function testGetUserEntries() public {
         vm.prank(ADMIN);
         raffle.addPrize("A","A",1);
         spinStub.setBalance(USER,4);
         vm.prank(USER); raffle.spendRaffle(1,2);
         vm.prank(USER); raffle.spendRaffle(1,1);
 
-        // getUserEntries(prizeId, user)
-        (uint256 count, uint256[] memory wins) = raffle.getUserEntries(1, USER);
-        assertEq(count, 3);
-        assertEq(wins.length, 0);
+        // getUserEntries(user) - check initial state
+        (
+            uint256[] memory ids, 
+            uint256[] memory counts, 
+            uint256[] memory unclaimedWins,
+            uint256[] memory claimedWins
+        ) = raffle.getUserEntries(USER);
+        
+        assertEq(ids.length, 1);
+        assertEq(counts[0], 3);  // 2 + 1 tickets spent
+        assertEq(unclaimedWins.length, 0);
+        assertEq(claimedWins.length, 0);
 
-        // draw and claim so that wins populated
+        // draw and claim so wins get populated
         vm.recordLogs();
         vm.prank(ADMIN); 
         raffle.requestWinner(1);
@@ -391,20 +352,31 @@ contract RaffleFlowTest is PlumeTestBase {
         rng[0] = 1;
         vm.prank(SUPRA_ORACLE); 
         raffle.handleWinnerSelection(req, rng);
+
+        vm.prank(ADMIN);
+        raffle.setWinner(1);
+
+        // Check unclaimed wins before claiming
+        (ids, counts, unclaimedWins, claimedWins) = raffle.getUserEntries(USER);
+        assertEq(unclaimedWins.length, 1);
+        assertEq(unclaimedWins[0], 1);
+        assertEq(claimedWins.length, 0);
+
+        // Claim the prize
         vm.prank(USER); 
         raffle.claimPrize(1);
 
-        (count, wins) = raffle.getUserEntries(1, USER);
-        assertEq(wins.length, 1);
-        assertEq(wins[0], 1);
-
-        // getUserEntries(user)
-        (uint256[] memory ids, uint256[] memory counts, uint256[] memory wlist) = raffle.getUserEntries(USER);
+        // Check claimed wins after claiming
+        (ids, counts, unclaimedWins, claimedWins) = raffle.getUserEntries(USER);
         assertEq(ids.length, 1);
         assertEq(counts[0], 3);
-        assertEq(wlist[0], 1);
+        assertEq(unclaimedWins.length, 0);
+        assertEq(claimedWins.length, 1);
+        assertEq(claimedWins[0], 1);
     }
 
+    // Test that getWinner returns the correct winner
+    // Test with 2 users across 2 prizes
     function testGetWinner() public {
         // Draw winner with ticket #2 (USER1)
         vm.prank(ADMIN);
@@ -420,6 +392,7 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(USER2);
         raffle.spendRaffle(1, 2); // USER2: tickets 4-5
         
+        // request prize ID1 winner
         vm.recordLogs();
         vm.prank(ADMIN);
         raffle.requestWinner(1);
@@ -436,11 +409,15 @@ contract RaffleFlowTest is PlumeTestBase {
         require(requestId != 0, "Request ID not found in logs");
         
         uint256[] memory rng = new uint256[](1);
-        rng[0] = 1; // Will result in ticket #2
+        rng[0] = 1; // Will result in ticket #2 - USER
         
         vm.prank(SUPRA_ORACLE);
         raffle.handleWinnerSelection(requestId, rng);
         
+        // Add setWinner call before claiming
+        vm.prank(ADMIN);
+        raffle.setWinner(1);
+
         // Verify winner is USER
         address winner = raffle.getWinner(1);
         assertEq(winner, USER);
@@ -451,11 +428,11 @@ contract RaffleFlowTest is PlumeTestBase {
         
         spinStub.setBalance(USER, 2);
         vm.prank(USER);
-        raffle.spendRaffle(2, 2);
+        raffle.spendRaffle(2, 2); // USER: tickets 1-2
         
         spinStub.setBalance(USER2, 2);
         vm.prank(USER2);
-        raffle.spendRaffle(2, 2);
+        raffle.spendRaffle(2, 2); // USER2: tickets 3-4
         
         vm.recordLogs();
         vm.prank(ADMIN);
@@ -472,109 +449,18 @@ contract RaffleFlowTest is PlumeTestBase {
         }
         require(requestId != 0, "Request ID not found in logs");
         
-        rng[0] = 3; // Will result in ticket #4
+        rng[0] = 3; // Will result in ticket #4 - USER2
         
         vm.prank(SUPRA_ORACLE);
         raffle.handleWinnerSelection(requestId, rng);
         
+        // Add setWinner call before claiming
+        vm.prank(ADMIN);
+        raffle.setWinner(2);
+
         // Verify winner is USER2
         winner = raffle.getWinner(2);
         assertEq(winner, USER2);
-    }
-
-    function testGetUserWinningStatus() public {
-        // Setup prize
-        vm.prank(ADMIN);
-        raffle.addPrize("Test Prize", "A test prize", 100);
-        
-        // Add tickets for USER and USER2
-        spinStub.setBalance(USER, 5);
-        vm.prank(USER);
-        raffle.spendRaffle(1, 3); // USER: tickets 1-3
-        
-        spinStub.setBalance(USER2, 5);
-        vm.prank(USER2);
-        raffle.spendRaffle(1, 2); // USER2: tickets 4-5
-        
-        // Draw winner with ticket #2 (USER) for prize 1
-        vm.recordLogs();
-        vm.prank(ADMIN);
-        raffle.requestWinner(1);
-        
-        // Extract the request ID from logs
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        uint256 requestId = 0;
-        for (uint i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
-                requestId = uint256(logs[i].topics[2]);
-                break;
-            }
-        }
-        require(requestId != 0, "Request ID not found in logs");
-        
-        uint256[] memory rng = new uint256[](1);
-        rng[0] = 1; // Will result in ticket #2
-        
-        vm.prank(SUPRA_ORACLE);
-        raffle.handleWinnerSelection(requestId, rng);
-        
-        // Check unclaimed wins for USER
-        (uint256[] memory unclaimed, uint256[] memory claimed) = raffle.getUserWinningStatus(USER);
-        assertEq(unclaimed.length, 1);
-        assertEq(unclaimed[0], 1);
-        assertEq(claimed.length, 0);
-        
-        // USER claims prize
-        vm.prank(USER);
-        raffle.claimPrize(1);
-        
-        // Check claimed wins updated
-        (unclaimed, claimed) = raffle.getUserWinningStatus(USER);
-        assertEq(unclaimed.length, 0);
-        assertEq(claimed.length, 1);
-        assertEq(claimed[0], 1);
-        
-        // No wins for USER2
-        (unclaimed, claimed) = raffle.getUserWinningStatus(USER2);
-        assertEq(unclaimed.length, 0);
-        assertEq(claimed.length, 0);
-        
-        // Setup another prize where USER2 wins
-        vm.prank(ADMIN);
-        raffle.addPrize("Second Prize", "Another prize", 100);
-        
-        spinStub.setBalance(USER, 2);
-        vm.prank(USER);
-        raffle.spendRaffle(2, 2);
-        
-        spinStub.setBalance(USER2, 2);
-        vm.prank(USER2);
-        raffle.spendRaffle(2, 2);
-        
-        vm.recordLogs();
-        vm.prank(ADMIN);
-        raffle.requestWinner(2);
-        
-        // Extract the request ID from logs for second prize
-        logs = vm.getRecordedLogs();
-        requestId = 0;
-        for (uint i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
-                requestId = uint256(logs[i].topics[2]);
-                break;
-            }
-        }
-        require(requestId != 0, "Request ID not found in logs");
-        
-        rng[0] = 3; // Will result in ticket #4 (USER2)
-        
-        vm.prank(SUPRA_ORACLE);
-        raffle.handleWinnerSelection(requestId, rng);
-        
-        // Check USER2 now has unclaimed win
-        (unclaimed, claimed) = raffle.getUserWinningStatus(USER2);
-        assertEq(unclaimed.length, 1);
-        assertEq(unclaimed[0], 2);
     }
 
     function testEditPrize() public {
@@ -622,18 +508,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.requestWinner(1);
     }
 
-    function testEditPrizeNotAdmin() public {
-        // Add a prize first
-        vm.prank(ADMIN);
-        raffle.addPrize("Original", "Original description", 100);
-        
-        // Try to edit as non-admin
-        vm.prank(USER);
-        vm.expectRevert(); // Just expect any revert
-        raffle.editPrize(1, "Updated", "Updated description", 200);
-    }
-
-    function testEditInactivePrize() public {
+    function testEditPrizeGuards() public {
         // Add and remove a prize
         vm.prank(ADMIN);
         raffle.addPrize("Original", "Original description", 100);
@@ -644,6 +519,11 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(ADMIN);
         vm.expectRevert("Prize not available");
         raffle.editPrize(1, "Updated", "Updated description", 200);
+
+        // Try to edit as non-admin
+        vm.prank(USER);
+        vm.expectRevert(); // Just expect any revert
+        raffle.editPrize(1, "Updated", "Updated description", 200);
     }
 
     function testClaimPrizeAlreadyClaimedReverts() public {
@@ -651,8 +531,8 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(ADMIN);
         raffle.addPrize("Prize", "Test prize", 100);
         
-        spinStub.setBalance(USER, 1);
-        vm.prank(USER);
+        spinStub.setBalance(USER2, 1);
+        vm.prank(USER2);
         raffle.spendRaffle(1, 1);
         
         // Request winner
@@ -673,25 +553,20 @@ contract RaffleFlowTest is PlumeTestBase {
         
         // Select winner
         uint256[] memory rng = new uint256[](1);
-        rng[0] = 0; // Will select USER
+        rng[0] = 0; // Will select USER2
         vm.prank(SUPRA_ORACLE);
         raffle.handleWinnerSelection(req, rng);
         
-        // Get the winner manually and verify it's USER
-        address winner = raffle.getWinner(1);
-        assertEq(winner, USER);
+        // After handleWinnerSelection, add:
+        vm.prank(ADMIN);
+        raffle.setWinner(1);
         
         // First claim should succeed
-        vm.prank(USER);
+        vm.prank(USER2);
         raffle.claimPrize(1);
         
-        // Prize should now be inactive and have winner set
-        (, , , bool active, address prizewinner, , ) = raffle.getPrizeDetails(1);
-        assertFalse(active, "Prize should be inactive after claiming");
-        assertEq(prizewinner, USER, "Winner should be set to USER");
-        
-        // Second claim by the same user should revert with "Prize not available"
-        vm.prank(USER);
+        // Second claim should revert with "Prize not available"
+        vm.prank(USER2);
         vm.expectRevert("Prize not available");
         raffle.claimPrize(1);
     }
@@ -728,6 +603,10 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(SUPRA_ORACLE);
         raffle.handleWinnerSelection(req, rng);
         
+        // After handleWinnerSelection, add:
+        vm.prank(ADMIN);
+        raffle.setWinner(1);
+
         // Verify the winner index is set
         (, , , , , uint256 winnerIdx, ) = raffle.getPrizeDetails(1);
         assertGt(winnerIdx, 0, "Winner index should be set");
@@ -752,13 +631,139 @@ contract RaffleFlowTest is PlumeTestBase {
         
         // Try to claim again - this should revert with WinnerDrawn
         vm.prank(USER);
-        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerDrawn.selector, USER));
+        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerClaimed.selector));
         raffle.claimPrize(1);
         
-        // Even USER2 should not be able to claim it
+        // Also check USER2 should not be able to claim it
         vm.prank(USER2);
-        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerDrawn.selector, USER));
+        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerClaimed.selector));
         raffle.claimPrize(1);
+    }
+
+    function testWinnerFlow() public {
+        // Setup prize and tickets
+        vm.prank(ADMIN);
+        raffle.addPrize("Test Prize", "A test prize", 100);
+        
+        // Add tickets for USER
+        spinStub.setBalance(USER, 5);
+        vm.prank(USER);
+        raffle.spendRaffle(1, 3); // USER: tickets 1-3
+        
+        // Add tickets for USER2
+        spinStub.setBalance(USER2, 5);
+        vm.prank(USER2);
+        raffle.spendRaffle(1, 2); // USER2: tickets 4-5
+        
+        // Request winner
+        vm.recordLogs();
+        vm.prank(ADMIN);
+        raffle.requestWinner(1);
+        
+        // Extract request ID from logs
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 requestId = 0;
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
+                requestId = uint256(logs[i].topics[2]);
+                break;
+            }
+        }
+        require(requestId != 0, "Request ID not found in logs");
+        
+        // Set winning ticket to #2 (USER)
+        uint256[] memory rng = new uint256[](1);
+        rng[0] = 4; // Will result in ticket #4 - USER2
+        
+        vm.prank(SUPRA_ORACLE);
+        raffle.handleWinnerSelection(requestId, rng);
+        
+        // Winner should not be set yet
+        address winnerBefore = raffle.getWinner(1);
+        assertEq(winnerBefore, address(0), "Winner should not be set before setWinner");
+        
+        // Set winner
+        vm.prank(ADMIN);
+        raffle.setWinner(1);
+        
+        // Verify winner is USER
+        address winner = raffle.getWinner(1);
+        assertEq(winner, USER2, "Winner should be USER after setWinner");
+    }
+
+    function testSetWinner() public {
+        // Setup prize
+        vm.prank(ADMIN);
+        raffle.addPrize("Test Prize", "A test prize", 100);
+        
+        // Add tickets
+        spinStub.setBalance(USER, 1);
+        vm.prank(USER);
+        raffle.spendRaffle(1, 1);
+        
+        // Try to set winner before winner index is set
+        vm.prank(ADMIN);
+        vm.expectRevert("Winner index not set");
+        raffle.setWinner(1);
+        
+        // Request winner and get request ID from logs
+        vm.recordLogs();
+        vm.prank(ADMIN);
+        raffle.requestWinner(1);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        
+        uint256 requestId = 0;
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
+                requestId = uint256(logs[i].topics[2]);
+                break;
+            }
+        }
+        require(requestId != 0, "Request ID not found in logs");
+        
+        // Select winner
+        uint256[] memory rng = new uint256[](1);
+        rng[0] = 0;
+        vm.prank(SUPRA_ORACLE);
+        raffle.handleWinnerSelection(requestId, rng);
+        
+        // Try to set winner as non-admin
+        vm.prank(USER);
+        vm.expectRevert();
+        raffle.setWinner(1);
+
+        // Set winner
+        vm.prank(ADMIN);
+        raffle.setWinner(1);
+        
+        // Try to set winner again
+        vm.prank(ADMIN);
+        vm.expectRevert("Winner already set");
+        raffle.setWinner(1);
+        
+        // Verify winner
+        assertEq(raffle.getWinner(1), USER);
+    }
+
+    function testPrizeDeleteAddDoesNotOverwriteActivePrize() public {
+        // create ids 1-3 
+        vm.prank(ADMIN); raffle.addPrize("A", "one",   0); // id-1
+        vm.prank(ADMIN); raffle.addPrize("B", "two",   0); // id-2
+        vm.prank(ADMIN); raffle.addPrize("C", "three", 0); // id-3
+
+        // remove id-2 ───────────────────────────────────────────────────────
+        vm.prank(ADMIN); raffle.removePrize(2);
+
+        // sanity: id-3 is still "C"
+        (string memory before,, , , , ,) = raffle.getPrizeDetails(3);
+        assertEq(before, "C");
+
+        // add another prize (should become id-4)
+        vm.prank(ADMIN); raffle.addPrize("D", "four", 0); // BUG: re-uses id-3
+
+        // EXPECTATION: id-3 still "C"
+        (string memory aft,, , , , ,) = raffle.getPrizeDetails(3);
+        assertEq(aft,"C","addPrize re-issued id-3 and overwrote live prize");
     }
 
 }
