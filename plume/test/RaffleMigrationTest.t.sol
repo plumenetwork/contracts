@@ -52,7 +52,7 @@ contract RaffleMigrationTests is PlumeTestBase {
         
         // Verify unique users count
         uint256 uniqueUsers;
-        (,,,,,,uniqueUsers) = raffle.getPrizeDetails(1);
+        (,,,,,,uniqueUsers, ) = raffle.getPrizeDetails(1);
         assertEq(uniqueUsers, 3);
         
         // Test getWinner to verify ranges are properly set
@@ -130,7 +130,7 @@ contract RaffleMigrationTests is PlumeTestBase {
         
         // Verify unique users (USER2 should not be counted)
         uint256 uniqueUsers;
-        (,,,,,,uniqueUsers) = raffle.getPrizeDetails(1);
+        (,,,,,,uniqueUsers, ) = raffle.getPrizeDetails(1);
         assertEq(uniqueUsers, 3);
     }
     

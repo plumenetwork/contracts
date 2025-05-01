@@ -388,7 +388,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         bool isActive,
         address winner,
         uint256 winnerIndex,
-        uint256 totalUsers
+        uint256 totalUsers,
+        bool claimed
     ) {
         Prize storage p = prizes[prizeId];
         
@@ -399,7 +400,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             p.isActive,
             p.winner,
             p.winnerIndex,
-            totalUniqueUsers[prizeId]
+            totalUniqueUsers[prizeId],
+            p.claimed
         );
     }
 

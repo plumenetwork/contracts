@@ -33,7 +33,7 @@ contract RaffleFlowTest is PlumeTestBase {
     function testAddAndGetPrizeDetails() public {
         vm.prank(ADMIN);
         raffle.addPrize("Gold", "Shiny", 0);
-        (string memory n, string memory d, uint256 t, , address w, , ) = raffle
+        (string memory n, string memory d, uint256 t, , address w, , , ) = raffle
             .getPrizeDetails(1);
         assertEq(n, "Gold");
         assertEq(d, "Shiny");
@@ -48,7 +48,7 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(USER);
         raffle.spendRaffle(1, 5);
         assertEq(spinStub.balances(USER), 5);
-        (, , uint256 pool, , , , ) = raffle.getPrizeDetails(1);
+        (, , uint256 pool, , , , , ) = raffle.getPrizeDetails(1);
         assertEq(pool, 5);
     }
 
@@ -104,7 +104,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.spendRaffle(1, 1);
 
         // Verify tickets were spent
-        (, , uint256 pool, , , , ) = raffle.getPrizeDetails(1);
+        (, , uint256 pool, , , , , ) = raffle.getPrizeDetails(1);
         assertEq(pool, 1, "Tickets should be added to the pool");
 
         // Request winner
@@ -133,9 +133,16 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(ADMIN);
         raffle.setWinner(1);
 
+        (,,,,,,,bool isClaimedBefore) = raffle.getPrizeDetails(1);
+        assertFalse(isClaimedBefore, "Winner claimed beforehand is true");
+
         // Claim prize
         vm.prank(USER);
         raffle.claimPrize(1);
+
+        (,,,,address winnerAfter,,,bool isClaimedAfter) = raffle.getPrizeDetails(1);
+        assertTrue(isClaimedAfter, "Winner claimed after is false");
+        assertEq(winnerAfter, USER, "Winner should be user after");
 
     }
 
@@ -149,7 +156,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.spendRaffle(1, 2); // Spend 2 tickets
 
         // Verify tickets were spent
-        (, , uint256 pool, , , , ) = raffle.getPrizeDetails(1);
+        (, , uint256 pool, , , , , ) = raffle.getPrizeDetails(1);
         assertEq(pool, 2, "Tickets should be in the pool");
 
         vm.recordLogs();
@@ -213,13 +220,13 @@ contract RaffleFlowTest is PlumeTestBase {
         spinStub.setBalance(USER,5);
         vm.prank(USER);
         raffle.spendRaffle(1,2);
-        (, , , , , , uint256 users1) = raffle.getPrizeDetails(1);
+        (, , , , , , uint256 users1, ) = raffle.getPrizeDetails(1);
         assertEq(users1, 1);
         // Second entry same user
         spinStub.setBalance(USER,5);
         vm.prank(USER);
         raffle.spendRaffle(1,3);
-        (, , , , , , uint256 users2) = raffle.getPrizeDetails(1);
+        (, , , , , , uint256 users2, ) = raffle.getPrizeDetails(1);
         assertEq(users2, 1, "totalUsers should not increment for repeat entry");
     }
 
@@ -261,7 +268,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.handleWinnerSelection(req, rng);
         
         // Check that winnerIndex is set
-        (, , , , , uint256 winnerIdx, ) = raffle.getPrizeDetails(1);
+        (, , , , , uint256 winnerIdx, , ) = raffle.getPrizeDetails(1);
         assertEq(winnerIdx, 1, "Winner index should be set");
         
         // After handleWinnerSelection, add:
@@ -273,7 +280,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.claimPrize(1);
         
         // Verify prize no longer active
-        (, , , bool active, , , ) = raffle.getPrizeDetails(1);
+        (, , , bool active, , , , ) = raffle.getPrizeDetails(1);
         assertFalse(active, "Prize should be inactive after claiming");
         
         // second request should revert with "Prize not available" since we've claimed it
@@ -308,7 +315,7 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(SUPRA_ORACLE);
         raffle.handleWinnerSelection(req, rng);
 
-        (, , , , , uint256 winnerIdx, ) = raffle.getPrizeDetails(1);
+        (, , , , , uint256 winnerIdx, , ) = raffle.getPrizeDetails(1);
         assertEq(winnerIdx, 3);
     }
 
@@ -474,7 +481,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.spendRaffle(1, 5);
         
         // Record the number of tickets before editing
-        (, , uint256 poolBefore, , , , ) = raffle.getPrizeDetails(1);
+        (, , uint256 poolBefore, , , , , ) = raffle.getPrizeDetails(1);
         assertEq(poolBefore, 5, "Tickets should be in the pool");
         
         // Edit the prize
@@ -494,7 +501,7 @@ contract RaffleFlowTest is PlumeTestBase {
         assertTrue(foundEvent, "PrizeEdited event not found");
         
         // Verify the prize details were updated but tickets remain
-        (string memory n, string memory d, uint256 poolAfter, bool active, address w, , ) = 
+        (string memory n, string memory d, uint256 poolAfter, bool active, address w, , , ) = 
             raffle.getPrizeDetails(1);
         
         assertEq(n, "Updated", "Name should be updated");
@@ -608,7 +615,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.setWinner(1);
 
         // Verify the winner index is set
-        (, , , , , uint256 winnerIdx, ) = raffle.getPrizeDetails(1);
+        (, , , , , uint256 winnerIdx,, ) = raffle.getPrizeDetails(1);
         assertGt(winnerIdx, 0, "Winner index should be set");
         
         // Claim the prize first time (this will set winner and deactivate the prize)
@@ -616,7 +623,7 @@ contract RaffleFlowTest is PlumeTestBase {
         raffle.claimPrize(1);
         
         // Verify prize is now inactive and has winner set
-        (, , , bool active, address winner, , ) = raffle.getPrizeDetails(1);
+        (, , , bool active, address winner, , , ) = raffle.getPrizeDetails(1);
         assertFalse(active, "Prize should be inactive after claiming");
         assertEq(winner, USER, "Winner should be set to USER");
         
@@ -742,14 +749,14 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(ADMIN); raffle.removePrize(2);
 
         // sanity: id-3 is still "C"
-        (string memory before,, , , , ,) = raffle.getPrizeDetails(3);
+        (string memory before,, , , , ,, ) = raffle.getPrizeDetails(3);
         assertEq(before, "C");
 
         // add another prize (should become id-4)
         vm.prank(ADMIN); raffle.addPrize("D", "four", 0); // BUG: re-uses id-3
 
         // EXPECTATION: id-3 still "C"
-        (string memory aft,, , , , ,) = raffle.getPrizeDetails(3);
+        (string memory aft,, , , , , , ) = raffle.getPrizeDetails(3);
         assertEq(aft,"C","addPrize re-issued id-3 and overwrote live prize");
     }
 
