@@ -230,6 +230,39 @@ contract RaffleFlowTest is PlumeTestBase {
         assertEq(users2, 1, "totalUsers should not increment for repeat entry");
     }
 
+    function testGetPrizeDetailsAllPrizes() public {
+        vm.prank(ADMIN);
+        raffle.addPrize("A","A",1);
+        vm.prank(ADMIN);
+        raffle.addPrize("B","B",1);
+
+        spinStub.setBalance(USER,15);
+
+        vm.prank(USER);
+        raffle.spendRaffle(1,2); // 2 tickets into prize 1
+
+        vm.prank(USER);
+        raffle.spendRaffle(1,3); // 3 tickets into prize 1 (again)
+
+        vm.prank(USER);
+        raffle.spendRaffle(2,1); // 1 ticket into prize 2
+
+        // First entry
+        spinStub.setBalance(USER2,15);
+
+        vm.prank(USER2);
+        raffle.spendRaffle(1,4); // 4 tickets into prize 1
+
+        vm.prank(USER2);
+        raffle.spendRaffle(2,6); // 6 tickets into prize 2
+
+        (Raffle.PrizeWithTickets[] memory prizes) = raffle.getPrizeDetails();
+        assertEq(prizes[0].totalUsers, 2, "totalUsers should not increment for repeat entry");
+        assertEq(prizes[1].totalUsers, 2, "totalUsers should not increment for repeat entry");
+        assertEq(prizes[0].totalTickets, 9, "totalTickets should not increment for repeat entry");
+        assertEq(prizes[1].totalTickets, 7, "totalTickets should not increment for repeat entry");
+    }
+
     function testRequestWinnerEmptyPoolReverts() public {
         vm.prank(ADMIN);
         raffle.addPrize("A","A",1);

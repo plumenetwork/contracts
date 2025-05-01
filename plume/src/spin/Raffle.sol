@@ -83,8 +83,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     error NotAWinner();
     error WinnerNotSet();
 
-    // Add state variable at the top with other state variables
-    uint256 private nextPrizeId = 1;
+    // Track the next prize ID so even if some are deleted we know it
+    uint256 private nextPrizeId;
 
     // Initialize function
     function initialize(address _spinContract, address _supraRouter) public initializer {
@@ -94,7 +94,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         spinContract = ISpin(_spinContract);
         supraRouter = ISupraRouterContract(_supraRouter);
         admin = msg.sender;
-        
+        nextPrizeId = 1; // 1-based indexing for prizes
+
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
         _grantRole(SUPRA_ROLE, _supraRouter);
@@ -380,6 +381,20 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         return prizeIds;
     }
 
+    struct PrizeWithTickets {
+        string name;
+        string description;
+        uint256 value;
+        uint256 endTimestamp;
+        bool isActive;
+        address winner;
+        uint256 winnerIndex;
+        bool claimed;
+        uint256 totalTickets;  // Added field
+        uint256 totalUsers;
+    }
+
+
     function getPrizeDetails(uint256 prizeId) external view returns (
         string memory name,
         string memory description,
@@ -404,16 +419,31 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         );
     }
 
-    function getPrizeDetails() external view returns (Prize[] memory) {
+    function getPrizeDetails() external view returns (PrizeWithTickets[] memory) {
         uint256 prizeCount = prizeIds.length;
-        Prize[] memory prizeArray = new Prize[](prizeCount);
+        PrizeWithTickets[] memory prizeArray = new PrizeWithTickets[](prizeCount);
         
         for (uint256 i = 0; i < prizeCount; i++) {
-            prizeArray[i] = prizes[prizeIds[i]];
+            uint256 currentPrizeId = prizeIds[i];
+            Prize storage currentPrize = prizes[currentPrizeId];
+            
+            prizeArray[i] = PrizeWithTickets({
+                name: currentPrize.name,
+                description: currentPrize.description,
+                value: currentPrize.value,
+                endTimestamp: currentPrize.endTimestamp,
+                isActive: currentPrize.isActive,
+                winner: currentPrize.winner,
+                winnerIndex: currentPrize.winnerIndex,
+                claimed: currentPrize.claimed,
+                totalTickets: totalTickets[currentPrizeId],
+                totalUsers: totalUniqueUsers[currentPrizeId]
+            });
         }
         
         return prizeArray;
     }
+    
     // Timestamp update for prizes
     function updatePrizeEndTimestamp(uint256 prizeId, uint256 endTimestamp) external onlyRole(ADMIN_ROLE) prizeIsActive(prizeId) {
         prizes[prizeId].endTimestamp = endTimestamp;

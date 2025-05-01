@@ -185,3 +185,124 @@ Paid: 0.0050855 ETH (50855 gas * 100 gwei)
 
 ✅ Sequence #1 on 98866 | Total Paid: 0.686297 ETH (6862970 gas * avg 100 gwei)
 
+
+
+
+source .env && forge script script/UpgradeSpinContract.s.sol     --rpc-url https://phoenix-rpc.plumenetwork.xyz     --broadcast     --via-ir
+source .env && forge script script/UpgradeRaffleContract.s.sol     --rpc-url https://phoenix-rpc.plumenetwork.xyz     --broadcast     --via-ir
+
+
+
+
+source .env && forge script script/DeploySpinRaffleContracts.s.sol --rpc-url https://phoenix-rpc.plumenetwork.xyz --broadcast --via-ir
+
+
+
+~/poof/plume/contracts/plume: $  (spin-refactored) source .env && forge script script/DeploySpinRaffleContracts.s.sol --rpc-url https://phoenix-rpc.plumenetwork.xyz --broadcast --via-ir
+[⠒] Compiling...
+[⠒] Compiling 1 files with Solc 0.8.25
+[⠢] Solc 0.8.25 finished in 8.16s
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  Deploying from: 0x656625D42167068796B3665763D4Ed756df65Dc6
+  Spin implementation deployed to: 0x2B18644e865ddBE558ED3D48452d252C32B0Cfa1
+  Spin init data (for verification): 0x485cc955000000000000000000000000e1062ac81e76ebd17b1e283ceed7b9e8b2f749a500000000000000000000000006a40ec10d03998634d89d2e098f079d06a8fa83
+  Spin Proxy deployed to: 0xB81B3c13c45A44c8aa76b35372e2D041D692aC31
+  Raffle implementation deployed to: 0x3906Ed0Fd3f3d024E4fE966677A826285699563f
+  Raffle init data (for verification): 0x485cc955000000000000000000000000b81b3c13c45a44c8aa76b35372e2d041d692ac31000000000000000000000000e1062ac81e76ebd17b1e283ceed7b9e8b2f749a5
+  Raffle Proxy deployed to: 0x9A292F62546FE80bF9fe0312E5BefD10eeb2cb53
+  Set Raffle contract in Spin
+  Added Raffle contract to Supra Deposit whitelist
+  Added Spin contract to Supra Deposit whitelist
+  Granted SUPRA role to Supra Generator address in the new Spin Proxy contract
+
+--- Blockscout Verification Commands ---
+  Spin implementation verification:
+  forge verify-contract --chain-id 98866 --verifier blockscout --verifier-url MAINNET_BLOCKSCOUT_URL 0x2B18644e865ddBE558ED3D48452d252C32B0Cfa1 src/spin/Spin.sol:Spin
+
+Raffle implementation verification:
+  forge verify-contract --chain-id 98866 --verifier blockscout --verifier-url MAINNET_BLOCKSCOUT_URL 0x3906Ed0Fd3f3d024E4fE966677A826285699563f src/spin/Raffle.sol:Raffle
+
+Spin Proxy verification:
+  forge verify-contract --chain-id 98866 --verifier blockscout --verifier-url MAINNET_BLOCKSCOUT_URL 0xB81B3c13c45A44c8aa76b35372e2D041D692aC31 src/proxy/SPINProxy.sol:SpinProxy --constructor-args 0x0000000000000000000000002b18644e865ddbe558ed3d48452d252c32b0cfa100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000044485cc955000000000000000000000000e1062ac81e76ebd17b1e283ceed7b9e8b2f749a500000000000000000000000006a40ec10d03998634d89d2e098f079d06a8fa8300000000000000000000000000000000000000000000000000000000
+
+Raffle Proxy verification:
+  forge verify-contract --chain-id 98866 --verifier blockscout --verifier-url MAINNET_BLOCKSCOUT_URL 0x9A292F62546FE80bF9fe0312E5BefD10eeb2cb53 src/proxy/RaffleProxy.sol:RaffleProxy --constructor-args 0x0000000000000000000000003906ed0fd3f3d024e4fe966677a826285699563f00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000044485cc955000000000000000000000000b81b3c13c45a44c8aa76b35372e2d041d692ac31000000000000000000000000e1062ac81e76ebd17b1e283ceed7b9e8b2f749a500000000000000000000000000000000000000000000000000000000
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 98866
+
+Estimated gas price: 200.000000001 gwei
+
+Estimated total gas used for script: 9233623
+
+Estimated amount required: 1.846724600009233623 ETH
+
+==========================
+
+##### 98866
+✅  [Success] Hash: 0xd990e6d892580f4121e1404f997601b870b8444b40827b0a315e3a735102e910
+Contract Address: 0x3906Ed0Fd3f3d024E4fE966677A826285699563f
+Block: 1263219
+Paid: 0.2884751 ETH (2884751 gas * 100 gwei)
+
+
+##### 98866
+✅  [Success] Hash: 0x82eb43ae241f4819b9703a0ec7e965654806a39b2ccf2f314131192cabf45c72
+Contract Address: 0x9A292F62546FE80bF9fe0312E5BefD10eeb2cb53
+Block: 1263219
+Paid: 0.0341062 ETH (341062 gas * 100 gwei)
+
+
+##### 98866
+✅  [Success] Hash: 0xf69c291372ebe210aa3e6339d14f74c56112379147bcfae00776c3a469ed4449
+Block: 1263219
+Paid: 0.0050855 ETH (50855 gas * 100 gwei)
+
+
+##### 98866
+✅  [Success] Hash: 0xdb43ac2ca491414957dfd0de520cf95089e47bb38a6944737404b1ffb6a9da0e
+Contract Address: 0xB81B3c13c45A44c8aa76b35372e2D041D692aC31
+Block: 1263218
+Paid: 0.0989089 ETH (989089 gas * 100 gwei)
+
+
+##### 98866
+✅  [Success] Hash: 0x175c2c556d4f55dc4c9b1b2558f68f3fefdaf88fc4de8b41907cf08669f48580
+Block: 1263219
+Paid: 0.0078361 ETH (78361 gas * 100 gwei)
+
+
+##### 98866
+✅  [Success] Hash: 0x457565434fef6b57130097cdfd4db0f70fc2d88403e4a1370df18677bc038605
+Block: 1263219
+Paid: 0.0056152 ETH (56152 gas * 100 gwei)
+
+
+##### 98866
+✅  [Success] Hash: 0x1c53b9168d492a5980943c8db28ed40d61ee78af018c07a1e28ea583a007a0ad
+Block: 1263219
+Paid: 0.0078361 ETH (78361 gas * 100 gwei)
+
+
+##### 98866
+✅  [Success] Hash: 0x40efe6079add07be70c9bec58ab80c3a965d090afef64253e1c901a992033197
+Contract Address: 0x2B18644e865ddBE558ED3D48452d252C32B0Cfa1
+Block: 1263218
+Paid: 0.2597883 ETH (2597883 gas * 100 gwei)
+
+✅ Sequence #1 on 98866 | Total Paid: 0.7076514 ETH (7076514 gas * avg 100 gwei)
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/dan/poof/plume/contracts/plume/broadcast/DeploySpinRaffleContracts.s.sol/98866/run-latest.json
+
+Sensitive values saved to: /Users/dan/poof/plume/contracts/plume/cache/DeploySpinRaffleContracts.s.sol/98866/run-latest.json
