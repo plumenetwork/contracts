@@ -94,22 +94,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         $.userValidatorStakes[msg.sender][validatorId].staked += stakeAmount;
         $.stakeInfo[msg.sender].staked += stakeAmount;
         $.validators[validatorId].delegatedAmount += stakeAmount;
-        $.validatorTotalStaked[validatorId] += stakeAmount;
-        $.totalStaked += stakeAmount;
 
         // Check if exceeding validator capacity
         uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
         uint256 maxCapacity = $.validators[validatorId].maxCapacity;
         if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
             revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, stakeAmount);
-        }
-
-        // Check if exceeding validator percentage limit
-        if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
-            if (validatorPercentage > $.maxValidatorPercentage) {
-                revert ValidatorPercentageExceeded();
-            }
         }
 
         // Add user to the list of validators they have staked with
@@ -164,11 +154,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // 1. Decrease source balances
         if (fromCooled > 0) {
             info.cooled -= fromCooled;
-            if ($.totalCooling >= fromCooled) {
-                $.totalCooling -= fromCooled;
-            } else {
-                $.totalCooling = 0;
-            }
             // Reset cooldown only if cooled balance becomes zero AFTER this operation
             if (info.cooled == 0) {
                 info.cooldownEnd = 0;
@@ -176,19 +161,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         }
         if (fromParked > 0) {
             info.parked -= fromParked;
-            if ($.totalWithdrawable >= fromParked) {
-                $.totalWithdrawable -= fromParked;
-            } else {
-                $.totalWithdrawable = 0;
-            }
         }
 
         // 2. Increase staked amounts
         info.staked += amount; // User's global staked
         $.userValidatorStakes[msg.sender][validatorId].staked += amount; // User's stake FOR THIS VALIDATOR
         $.validators[validatorId].delegatedAmount += amount; // Validator's delegated amount
-        $.validatorTotalStaked[validatorId] += amount; // Validator's total staked
-        $.totalStaked += amount; // Global total staked
 
         // Add staker to validator list if not already there
         PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
@@ -199,14 +177,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         uint256 maxCapacity = $.validators[validatorId].maxCapacity;
         if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
             revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, amount);
-        }
-
-        // Check if exceeding validator percentage limit
-        if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
-            if (validatorPercentage > $.maxValidatorPercentage) {
-                revert ValidatorPercentageExceeded();
-            }
         }
 
         // --- Events ---
@@ -286,8 +256,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Ensure remaining stake is either 0 or meets the minimum requirement
         if (info.staked != 0 && info.staked < $.minStakeAmount) {
-            revert StakeAmountTooSmall(info.staked, $.minStakeAmount); // Revert if remaining stake is below minimum
-                // (but not zero)
+            revert StakeAmountTooSmall(info.staked, $.minStakeAmount);
         }
 
         // Update global stake info
@@ -296,22 +265,11 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Update validator's delegated amount
         $.validators[validatorId].delegatedAmount -= amountUnstaked;
 
-        // Update total staked amounts
-        $.validatorTotalStaked[validatorId] -= amountUnstaked;
-        $.totalStaked -= amountUnstaked;
-
         // 1. Check if existing cooled balance has finished its cooldown
         if (globalInfo.cooldownEnd != 0 && block.timestamp >= globalInfo.cooldownEnd) {
             uint256 finishedCoolingAmount = globalInfo.cooled;
             if (finishedCoolingAmount > 0) {
                 globalInfo.parked += finishedCoolingAmount;
-                $.totalWithdrawable += finishedCoolingAmount;
-                // Adjust totalCooling (decrease finished amount)
-                if ($.totalCooling >= finishedCoolingAmount) {
-                    $.totalCooling -= finishedCoolingAmount;
-                } else {
-                    $.totalCooling = 0;
-                }
                 globalInfo.cooled = 0; // Reset cooled amount as it's now parked
             }
             // CooldownEnd is reset below anyway
@@ -319,7 +277,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // 2. Add the newly unstaked amount to the (potentially zeroed) cooled balance
         globalInfo.cooled += amountUnstaked;
-        $.totalCooling += amountUnstaked; // Global total cooling increases by new amount
 
         // 3. Set/Reset the cooldown timer for the current cooled balance
         globalInfo.cooldownEnd = block.timestamp + $.cooldownInterval;
@@ -349,12 +306,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             amount += cooledAmount;
             info.cooled = 0;
 
-            // Need to adjust totalCooling if it exists and is accurate
-            if ($.totalCooling >= cooledAmount) {
-                $.totalCooling -= cooledAmount;
-            } else {
-                $.totalCooling = 0; // Avoid underflow
-            }
             // Reset cooldown end time only if cooled amount becomes zero
             if (info.cooled == 0) {
                 info.cooldownEnd = 0;
@@ -367,13 +318,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         info.parked = 0;
         info.lastUpdateTimestamp = block.timestamp;
-
-        // Update total withdrawable amount
-        if ($.totalWithdrawable >= amount) {
-            $.totalWithdrawable -= amount;
-        } else {
-            $.totalWithdrawable = 0;
-        }
 
         // Transfer PLUME to user
         (bool success,) = payable(msg.sender).call{ value: amount }("");
@@ -410,22 +354,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         $.userValidatorStakes[staker][validatorId].staked += stakeAmount;
         $.stakeInfo[staker].staked += stakeAmount;
         $.validators[validatorId].delegatedAmount += stakeAmount;
-        $.validatorTotalStaked[validatorId] += stakeAmount;
-        $.totalStaked += stakeAmount;
 
         // Check if exceeding validator capacity
         uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
         uint256 maxCapacity = $.validators[validatorId].maxCapacity;
         if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
             revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, stakeAmount);
-        }
-
-        // Check if exceeding validator percentage limit
-        if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
-            if (validatorPercentage > $.maxValidatorPercentage) {
-                revert ValidatorPercentageExceeded();
-            }
         }
 
         // Add user to the list of validators they have staked with
@@ -455,7 +389,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function restakeRewards(
         uint16 validatorId
     ) external nonReentrant returns (uint256 amountRestaked) {
-        // Added nonReentrant, changed return name
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
 
         // Verify target validator exists and is active
@@ -496,13 +429,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 // Reset rewards for this validator/token
                 $.userRewards[msg.sender][userValidatorId][token] = 0;
 
-                // Update total claimable (decrease)
-                if ($.totalClaimableByToken[token] >= validatorReward) {
-                    $.totalClaimableByToken[token] -= validatorReward;
-                } else {
-                    $.totalClaimableByToken[token] = 0;
-                }
-
                 // Emit event indicating reward was 'claimed' internally for restaking
                 emit RewardClaimedFromValidator(msg.sender, token, userValidatorId, validatorReward);
             }
@@ -520,24 +446,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         info.staked += amountRestaked; // User's global staked
         $.userValidatorStakes[msg.sender][validatorId].staked += amountRestaked; // User's stake FOR THIS VALIDATOR
         targetValidator.delegatedAmount += amountRestaked; // Validator's delegated amount
-        $.validatorTotalStaked[validatorId] += amountRestaked; // Validator's total staked
-        $.totalStaked += amountRestaked; // Global total staked
 
         // Add staker relationship if needed
         PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
-
-        // --- Checks (copied from stake) ---
-        uint256 newDelegatedAmount = targetValidator.delegatedAmount;
-        uint256 maxCapacity = targetValidator.maxCapacity;
-        if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
-            revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, amountRestaked);
-        }
-        if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
-            if (validatorPercentage > $.maxValidatorPercentage) {
-                revert ValidatorPercentageExceeded();
-            }
-        }
 
         // --- Events ---
         // Emit stake event - specifying that the amount came from pending rewards
@@ -608,47 +519,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         address user
     ) external view returns (PlumeStakingStorage.StakeInfo memory) {
         return _getPlumeStorage().stakeInfo[user];
-    }
-
-    /**
-     * @notice Get the total amount of PLUME staked in the contract.
-     * @return amount Total amount of PLUME staked.
-     */
-    function totalAmountStaked() external view returns (uint256 amount) {
-        return _getPlumeStorage().totalStaked;
-    }
-
-    /**
-     * @notice Get the total amount of PLUME cooling in the contract.
-     * @return amount Total amount of PLUME cooling.
-     */
-    function totalAmountCooling() external view returns (uint256 amount) {
-        return _getPlumeStorage().totalCooling;
-    }
-
-    /**
-     * @notice Get the total amount of PLUME withdrawable in the contract.
-     * @return amount Total amount of PLUME withdrawable.
-     */
-    function totalAmountWithdrawable() external view returns (uint256 amount) {
-        return _getPlumeStorage().totalWithdrawable;
-    }
-
-    /**
-     * @notice Get the total amount of a specific token claimable across all users.
-     * @param token Address of the token to check.
-     * @return amount Total amount of the token claimable.
-     */
-    function totalAmountClaimable(
-        address token
-    ) external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-
-        // Check if token is a reward token using the mapping
-        require($.isRewardToken[token], "Token is not a reward token");
-
-        // Return the total claimable amount
-        return $.totalClaimableByToken[token];
     }
 
     /**
