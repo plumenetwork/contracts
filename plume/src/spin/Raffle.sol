@@ -117,42 +117,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         _;
     }
 
-    // Migration function - preserved for migrating ticket data
-    // @notice this function is not planned to be used in production, is for 
-    // moving data from the previous pre-production test to this data structure
-    function migrateTickets(
-        uint256 prizeId,
-        address[] calldata users,
-        uint256[] calldata ticketCounts
-    ) external onlyRole(ADMIN_ROLE) {
-        require(prizes[prizeId].isActive, "Prize not available");
-        require(users.length == ticketCounts.length, "Array length mismatch");
-        
-        uint256 cumulative = totalTickets[prizeId];
-        uint256 migrated = 0;
-        
-        for (uint256 i = 0; i < users.length; i++) {
-            uint256 count = ticketCounts[i];
-            if (count == 0) continue;
-            
-            if (!userHasEnteredPrize[prizeId][users[i]]) {
-                userHasEnteredPrize[prizeId][users[i]] = true;
-                totalUniqueUsers[prizeId]++;
-            }
-            
-            cumulative += count;
-            prizeRanges[prizeId].push(Range({
-                user: users[i],
-                cumulativeEnd: cumulative
-            }));
-            migrated++;
-        }
-        
-        totalTickets[prizeId] = cumulative;
-        
-        emit PrizeMigrated(prizeId, migrated, cumulative);
-    }
-
     // Prize management
     function addPrize(
         string calldata name,
