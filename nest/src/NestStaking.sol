@@ -23,8 +23,10 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
     struct NestStakingStorage {
         /// @dev List of featured AggregateTokens
         IAggregateToken[] featuredList;
-        /// @dev Mapping of featured AggregateTokens
-        mapping(IAggregateToken aggregateToken => bool featured) isFeatured;
+        /// @dev Mapping of AggregateToken to its position in featuredList (1-based indexing)
+        /// @dev Returns 0 if token is not featured, otherwise returns index + 1
+        /// @dev Example: If token is at index 2, featuredIndex[token] = 3
+        mapping(IAggregateToken aggregateToken => uint256 index) featuredIndex;
     }
 
     // keccak256(abi.encode(uint256(keccak256("plume.storage.NestStaking")) - 1)) & ~bytes32(uint256(0xff))
@@ -65,6 +67,19 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      */
     event TokenUnfeatured(IAggregateToken aggregateToken);
 
+    // Enums
+    enum ZeroAmountParam {
+        ASK_PRICE, // Price at which users can buy tokens
+        BID_PRICE, // Price at which users can sell tokens
+        INITIAL_SUPPLY, // Initial supply of tokens when creating
+        TOTAL_VALUE, // Total value of all tokens
+        MINT_AMOUNT, // Amount of tokens to mint
+        BURN_AMOUNT, // Amount of tokens to burn
+        DEPOSIT_AMOUNT, // Amount of tokens to deposit
+        REDEEM_AMOUNT // Amount of tokens to redeem
+
+    }
+
     // Errors
 
     /**
@@ -78,6 +93,30 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
      * @param aggregateToken AggregateToken that is not featured
      */
     error TokenNotFeatured(IAggregateToken aggregateToken);
+
+    /**
+     * @notice Indicates a failure because there are no featured tokens
+     */
+    error NoFeaturedTokens();
+
+    /**
+     * @notice Indicates a failure because the given address is zero
+     * @param what Description of which address parameter was zero
+     */
+    error ZeroAddress(string what);
+
+    /**
+     * @notice Indicates a failure because the given amount is zero
+     * @param param Description of which amount parameter was zero
+     */
+    error ZeroAmount(ZeroAmountParam param);
+
+    /**
+     * @notice Indicates a failure because bid price is greater than ask price
+     * @param bidPrice Price at which users can sell the token
+     * @param askPrice Price at which users can buy the token
+     */
+    error InvalidPrices(uint256 bidPrice, uint256 askPrice);
 
     // Initializer
 
@@ -124,11 +163,18 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         IAggregateToken aggregateToken
     ) external onlyRole(ADMIN_ROLE) {
         NestStakingStorage storage $ = _getNestStakingStorage();
-        if ($.isFeatured[aggregateToken]) {
+
+        // Add zero address check
+        if (address(aggregateToken) == address(0)) {
+            revert ZeroAddress("aggregateToken");
+        }
+
+        if ($.featuredIndex[aggregateToken] != 0) {
             revert TokenAlreadyFeatured(aggregateToken);
         }
         $.featuredList.push(aggregateToken);
-        $.isFeatured[aggregateToken] = true;
+        // Store index + 1 (so 0 means not featured)
+        $.featuredIndex[aggregateToken] = $.featuredList.length;
         emit TokenFeatured(aggregateToken);
     }
 
@@ -141,19 +187,33 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
         IAggregateToken aggregateToken
     ) external onlyRole(ADMIN_ROLE) {
         NestStakingStorage storage $ = _getNestStakingStorage();
-        if (!$.isFeatured[aggregateToken]) {
+
+        // Check if there are any featured tokens
+        if ($.featuredList.length == 0) {
+            revert NoFeaturedTokens();
+        }
+
+        // Get stored index (subtract 1 to get actual index)
+        uint256 storedIndex = $.featuredIndex[aggregateToken];
+        if (storedIndex == 0) {
             revert TokenNotFeatured(aggregateToken);
         }
-        IAggregateToken[] storage featuredList = $.featuredList;
-        uint256 length = featuredList.length;
-        for (uint256 i = 0; i < length; ++i) {
-            if (featuredList[i] == aggregateToken) {
-                featuredList[i] = featuredList[length - 1];
-                featuredList.pop();
-                break;
-            }
+        uint256 index = storedIndex - 1;
+
+        // Get the last token
+        uint256 lastIndex = $.featuredList.length - 1;
+        IAggregateToken lastToken = $.featuredList[lastIndex];
+
+        // Move last token to the removed position (unless it's the last position)
+        if (index != lastIndex) {
+            $.featuredList[index] = lastToken;
+            $.featuredIndex[lastToken] = storedIndex; // Update index of moved token
         }
-        $.isFeatured[aggregateToken] = false;
+
+        // Remove last element and clear mapping
+        $.featuredList.pop();
+        $.featuredIndex[aggregateToken] = 0;
+
         emit TokenUnfeatured(aggregateToken);
     }
 
@@ -183,6 +243,23 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
     ) public returns (IAggregateToken aggregateToken) {
         NestStakingStorage storage $ = _getNestStakingStorage();
 
+        // Input validations
+        if (owner == address(0)) {
+            revert ZeroAddress("owner");
+        }
+        if (address(currencyToken) == address(0)) {
+            revert ZeroAddress("currencyToken");
+        }
+        if (askPrice == 0) {
+            revert ZeroAmount(ZeroAmountParam.ASK_PRICE);
+        }
+        if (bidPrice == 0) {
+            revert ZeroAmount(ZeroAmountParam.BID_PRICE);
+        }
+        if (bidPrice > askPrice) {
+            revert InvalidPrices(bidPrice, askPrice); // Need to add this error
+        }
+
         IAggregateToken aggregateTokenImplementation = new AggregateToken();
         AggregateTokenProxy aggregateTokenProxy = new AggregateTokenProxy(
             address(aggregateTokenImplementation),
@@ -191,7 +268,8 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
 
         aggregateToken = IAggregateToken(address(aggregateTokenProxy));
         $.featuredList.push(aggregateToken);
-        $.isFeatured[aggregateToken] = true;
+        $.featuredIndex[aggregateToken] = $.featuredList.length;
+
         emit TokenFeatured(aggregateToken);
         emit TokenCreated(msg.sender, aggregateToken);
     }
@@ -211,7 +289,7 @@ contract NestStaking is Initializable, AccessControlUpgradeable, UUPSUpgradeable
     function isFeatured(
         IAggregateToken aggregateToken
     ) external view returns (bool featured) {
-        return _getNestStakingStorage().isFeatured[aggregateToken];
+        return _getNestStakingStorage().featuredIndex[aggregateToken] != 0;
     }
 
 }

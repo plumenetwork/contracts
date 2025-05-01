@@ -9,7 +9,7 @@ ast = true
 build_info = true
 extra_output = ["storageLayout"]
 optimizer = true
-optimizer_runs = 2000
+optimizer_runs = 200
 
 [fmt]
 single_line_statement_blocks = "multi"
@@ -22,7 +22,3 @@ quote_style = "double"
 number_underscore = "thousands"
 wrap_comments = true
 
-remappings = [
-  "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/",
-  "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
-]

@@ -26,9 +26,8 @@ contract YieldDistributionTokenScenarioTest is Test {
 
     function setUp() public {
         currencyTokenMock = new ERC20Mock();
-        token = new YieldDistributionTokenHarness(
-            OWNER, "Yield Distribution Token", "YDT", IERC20(address(currencyTokenMock)), 18, "URI"
-        );
+        token = new YieldDistributionTokenHarness();
+        token.initialize(OWNER, "Yield Distribution Token", "YDT", IERC20(address(currencyTokenMock)), 18, "URI");
 
         currencyTokenMock.mint(OWNER, OWNER_MINTED_AMOUNT);
     }
@@ -174,7 +173,7 @@ contract YieldDistributionTokenScenarioTest is Test {
         // rounding error; perhaps can fix by rounding direction?
         /*
         assertEq(
-            currencyTokenMock.balanceOf(alice) - oldAliceBalance, expectedAliceYieldAccrued - oldWithdrawnYieldAlice - 1
+        currencyTokenMock.balanceOf(alice) - oldAliceBalance, expectedAliceYieldAccrued - oldWithdrawnYieldAlice - 1
         );
         assertEq(currencyTokenMock.balanceOf(bob) - oldBobBalance, expectedBobYieldAccrued - oldWithdrawnYieldBob);
         assertEq(

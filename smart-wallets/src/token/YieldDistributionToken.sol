@@ -1,24 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-
-//import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 import { IYieldDistributionToken } from "../interfaces/IYieldDistributionToken.sol";
 
 /**
  * @title YieldDistributionToken
- * @author Eugene Y. Q. Shen
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice ERC20 token that receives yield deposits and distributes yield
  *   to token holders proportionally based on how long they have held the token
  */
-abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionToken {
+abstract contract YieldDistributionToken is
+    Initializable,
+    ERC20Upgradeable,
+    OwnableUpgradeable,
+    IYieldDistributionToken
+{
 
     using Math for uint256;
     using SafeERC20 for IERC20;
@@ -53,6 +57,11 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     bytes32 private constant YIELD_DISTRIBUTION_TOKEN_STORAGE_LOCATION =
         0x3d2d7d9da47f1055055838ecd982d8a93d7044b5f93759fc6e1ef3269bbc7000;
 
+    /// @notice Role for the admin of the ComponentToken
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    /// @notice Role for the upgrader of the ComponentToken
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+
     function _getYieldDistributionTokenStorage() internal pure returns (YieldDistributionTokenStorage storage $) {
         assembly {
             $.slot := YIELD_DISTRIBUTION_TOKEN_STORAGE_LOCATION
@@ -70,29 +79,104 @@ abstract contract YieldDistributionToken is ERC20, Ownable, IYieldDistributionTo
     // Constructor
 
     /**
-     * @notice Construct the YieldDistributionToken
-     * @param owner Address of the owner of the YieldDistributionToken
-     * @param name Name of the YieldDistributionToken
-     * @param symbol Symbol of the YieldDistributionToken
-     * @param currencyToken Token in which the yield is deposited and denominated
-     * @param decimals_ Number of decimals of the YieldDistributionToken
-     * @param tokenURI URI of the YieldDistributionToken metadata
+     * @notice Prevent the implementation contract from being initialized or reinitialized
+     * @custom:oz-upgrades-unsafe-allow constructor
      */
-    constructor(
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @notice Initialize the YieldDistributionToken with basic parameters and storage
+     * @dev This function should only be called once during initialization
+     * @param owner Address thaxt will receive initial ownership rights
+     * @param name Token name for ERC20 metadata
+     * @param symbol Token symbol for ERC20 metadata
+     * @param currencyToken The ERC20 token used for yield distributions
+     * @param decimals_ Number of decimals for token amounts (e.g., 18 for full precision)
+     * @param tokenURI_ URI pointing to token metadata (can be updated later by owner)
+     * @custom:security onlyInitializing - Function can only be called during initialization
+     */
+    function __YieldDistributionToken_init(
         address owner,
         string memory name,
         string memory symbol,
         IERC20 currencyToken,
         uint8 decimals_,
-        string memory tokenURI
-    ) ERC20(name, symbol) Ownable(owner) {
+        string memory tokenURI_
+    ) internal onlyInitializing {
+        __ERC20_init(name, symbol);
+        __Ownable_init(owner);
+
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        _grantRole(ADMIN_ROLE, owner);
+        _grantRole(UPGRADER_ROLE, owner);
+
         YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
         $.currencyToken = currencyToken;
         $.decimals = decimals_;
-        $.tokenURI = tokenURI;
+        $.tokenURI = tokenURI_;
         $.lastDepositTimestamp = block.timestamp;
         $.lastSupplyUpdate = block.timestamp;
         $.yieldPerTokenStored = 0;
+    }
+
+    function __YieldDistributionToken_reinit(
+        string memory newName,
+        string memory newSymbol,
+        string memory newTokenURI
+    ) internal {
+        // Update name and symbol if provided
+        if (bytes(newName).length > 0 || bytes(newSymbol).length > 0) {
+            string memory updatedName = bytes(newName).length > 0 ? newName : name();
+            string memory updatedSymbol = bytes(newSymbol).length > 0 ? newSymbol : symbol();
+            __ERC20_init(updatedName, updatedSymbol);
+        }
+
+        // Update tokenURI if provided
+        if (bytes(newTokenURI).length > 0) {
+            _getYieldDistributionTokenStorage().tokenURI = newTokenURI;
+        }
+    }
+
+    /**
+     * @notice Reinitialize the YieldDistributionToken with updated parameters
+     * @dev This function can be called multiple times, but only by the owner and with increasing version numbers
+     * @param version Version number for the reinitialization
+     * @param newName Optional new name for the token (empty string to keep current)
+     * @param newSymbol Optional new symbol for the token (empty string to keep current)
+     * @param newCurrencyToken Optional new currency token (address(0) to keep current)
+     * @param newDecimals Optional new decimals (0 to keep current)
+     * @param newTokenURI Optional new token URI (empty string to keep current)
+     */
+    function __YieldDistributionToken_reinitialize(
+        uint8 version,
+        string memory newName,
+        string memory newSymbol,
+        IERC20 newCurrencyToken,
+        uint8 newDecimals,
+        string memory newTokenURI
+    ) internal reinitializer(version) {
+        YieldDistributionTokenStorage storage $ = _getYieldDistributionTokenStorage();
+
+        // Update currency token if provided
+        if (address(newCurrencyToken) != address(0)) {
+            // Ensure there's no pending yield before changing currency token
+            if ($.yieldPerTokenStored > 0) {
+                revert("Cannot change currency token with pending yield");
+            }
+            $.currencyToken = newCurrencyToken;
+        }
+
+        // Update decimals if provided
+        if (newDecimals > 0) {
+            $.decimals = newDecimals;
+        }
+
+        // Update tokenURI if provided
+        if (bytes(newTokenURI).length > 0) {
+            $.tokenURI = newTokenURI;
+        }
     }
 
     // Virtual Functions

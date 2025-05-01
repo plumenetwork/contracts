@@ -9,14 +9,18 @@ contract YieldDistributionTokenHarness is YieldDistributionToken {
     // silence warnings
     uint256 requestCounter;
 
-    constructor(
+    constructor() YieldDistributionToken() { }
+
+    function initialize(
         address owner,
         string memory name,
         string memory symbol,
         IERC20 currencyToken,
         uint8 decimals_,
         string memory tokenURI
-    ) YieldDistributionToken(owner, name, symbol, currencyToken, decimals_, tokenURI) { }
+    ) public initializer {
+        __YieldDistributionToken_init(owner, name, symbol, currencyToken, decimals_, tokenURI);
+    }
 
     function exposed_mint(address to, uint256 amount) external {
         _mint(to, amount);

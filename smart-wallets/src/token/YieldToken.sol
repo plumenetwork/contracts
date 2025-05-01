@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { ERC4626 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 
 import { WalletUtils } from "../WalletUtils.sol";
 import { IAssetToken } from "../interfaces/IAssetToken.sol";
@@ -20,7 +24,17 @@ import { YieldDistributionToken } from "./YieldDistributionToken.sol";
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice ERC20 token that receives yield redistributions from an AssetToken
  */
-contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken, IComponentToken {
+contract YieldToken is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuardUpgradeable,
+    YieldDistributionToken,
+    ERC4626Upgradeable,
+    WalletUtils,
+    IYieldToken,
+    IComponentToken
+{
 
     // Storage
 
@@ -28,6 +42,10 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     struct YieldTokenStorage {
         /// @dev AssetToken that redistributes yield to the YieldToken
         IAssetToken assetToken;
+        /// @dev Tracks undistributed yield
+        uint256 yieldBuffer;
+        /// @dev Tracks actual deposits/withdrawals
+        uint256 totalManagedAssets;
         /// @dev Amount of assets deposited by each controller and not ready to claim
         mapping(address controller => uint256 assets) pendingDepositRequest;
         /// @dev Amount of assets deposited by each controller and ready to claim
@@ -133,7 +151,15 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     // Constructor
 
     /**
-     * @notice Construct the YieldToken
+     * @notice Prevent the implementation contract from being initialized or reinitialized
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @notice Initialize the YieldToken
      * @param owner Address of the owner of the YieldToken
      * @param name Name of the YieldToken
      * @param symbol Symbol of the YieldToken
@@ -143,7 +169,7 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
      * @param assetToken AssetToken that redistributes yield to the YieldToken
      * @param initialSupply Initial supply of the YieldToken
      */
-    constructor(
+    function initialize(
         address owner,
         string memory name,
         string memory symbol,
@@ -152,7 +178,7 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         string memory tokenURI_,
         IAssetToken assetToken,
         uint256 initialSupply
-    ) YieldDistributionToken(owner, name, symbol, currencyToken, decimals_, tokenURI_) ERC4626(currencyToken) {
+    ) public initializer {
         if (owner == address(0)) {
             revert ZeroAddress("owner");
         }
@@ -166,8 +192,44 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         if (currencyToken != assetToken.getCurrencyToken()) {
             revert InvalidCurrencyToken(currencyToken, assetToken.getCurrencyToken());
         }
+
+        __YieldDistributionToken_init(owner, name, symbol, currencyToken, decimals_, tokenURI_);
+        __ERC4626_init(currencyToken);
+
         _getYieldTokenStorage().assetToken = assetToken;
+
         _mint(owner, initialSupply);
+    }
+
+    /**
+     * @notice Reinitialize the YieldToken with updated parameters
+     * @dev This function can be called multiple times, but only by the owner and with increasing version numbers
+     * @param version Version number for the reinitialization
+     * @param newName Optional new name for the token (empty string to keep current)
+     * @param newSymbol Optional new symbol for the token (empty string to keep current)
+     * @param newTokenURI Optional new token URI (empty string to keep current)
+     * @param newAssetToken Optional new asset token (address(0) to keep current)
+     */
+    function reinitialize(
+        uint8 version,
+        string memory newName,
+        string memory newSymbol,
+        string memory newTokenURI,
+        IAssetToken newAssetToken
+    ) public onlyRole(UPGRADER_ROLE) reinitializer(version) {
+        // Handle name, symbol, and tokenURI updates in YieldDistributionToken
+        __YieldDistributionToken_reinit(newName, newSymbol, newTokenURI);
+
+        // Update assetToken if provided
+        if (address(newAssetToken) != address(0)) {
+            // Verify the new asset token uses the same currency token
+            if (_getYieldDistributionTokenStorage().currencyToken != newAssetToken.getCurrencyToken()) {
+                revert InvalidCurrencyToken(
+                    IERC20(newAssetToken.getCurrencyToken()), _getYieldDistributionTokenStorage().currencyToken
+                );
+            }
+            _getYieldTokenStorage().assetToken = newAssetToken;
+        }
     }
 
     // Admin Functions
@@ -178,9 +240,17 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
      * @param user Address of the user to mint YieldTokens to
      * @param yieldTokenAmount Amount of YieldTokens to mint
      */
-    function adminMint(address user, uint256 yieldTokenAmount) external onlyOwner {
+    function adminMint(address user, uint256 yieldTokenAmount) external onlyRole(ADMIN_ROLE) {
         _mint(user, yieldTokenAmount);
     }
+
+    /**
+     * @notice Revert when `msg.sender` is not authorized to upgrade the contract
+     * @param newImplementation Address of the new implementation
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal virtual override(UUPSUpgradeable) onlyRole(UPGRADER_ROLE) { }
 
     // Override Functions
 
@@ -192,7 +262,7 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
      */
     function requestYield(
         address from
-    ) external override(YieldDistributionToken, IYieldDistributionToken) {
+    ) external override(YieldDistributionToken, IYieldDistributionToken) nonReentrant {
         // Have to override both until updated in https://github.com/ethereum/solidity/issues/12665
         (bool success,) = from.call(
             abi.encodeWithSelector(ISmartWallet.claimAndRedistributeYield.selector, _getYieldTokenStorage().assetToken)
@@ -203,13 +273,14 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     }
 
     /// @inheritdoc IERC4626
-    function asset() public view override(ERC4626, IComponentToken) returns (address assetTokenAddress) {
+    function asset() public view override(ERC4626Upgradeable, IComponentToken) returns (address assetTokenAddress) {
         return super.asset();
     }
 
     /// @inheritdoc IERC4626
     function totalAssets() public view override(ERC4626, IComponentToken) returns (uint256 totalManagedAssets) {
-        return super.totalAssets();
+        YieldTokenStorage storage $ = _getYieldTokenStorage();
+        return $.totalManagedAssets;
     }
 
     /// @inheritdoc IComponentToken
@@ -219,10 +290,13 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         return convertToAssets(balanceOf(owner));
     }
 
-    /// @inheritdoc IERC4626
+    /**
+     * @inheritdoc IERC4626
+     * @dev Always rounds down for user safety when converting assets to shares
+     */
     function convertToShares(
         uint256 assets
-    ) public view override(ERC4626, IComponentToken) returns (uint256 shares) {
+    ) public view override(ERC4626Upgradeable, IComponentToken) returns (uint256 shares) {
         uint256 supply = totalSupply();
         uint256 totalAssets_ = totalAssets();
         if (supply == 0 || totalAssets_ == 0) {
@@ -231,10 +305,13 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         return (assets * supply) / totalAssets_;
     }
 
-    /// @inheritdoc IERC4626
+    /**
+     * @inheritdoc IERC4626
+     * @dev Always rounds down for user safety when converting shares to assets
+     */
     function convertToAssets(
         uint256 shares
-    ) public view override(ERC4626, IComponentToken) returns (uint256 assets) {
+    ) public view override(ERC4626Upgradeable, IComponentToken) returns (uint256 assets) {
         uint256 supply = totalSupply();
         if (supply == 0) {
             return shares;
@@ -242,17 +319,17 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         return (shares * totalAssets()) / supply;
     }
 
-    /// @inheritdoc ERC20
-    function decimals() public view override(YieldDistributionToken, ERC4626) returns (uint8) {
+    /// @inheritdoc ERC20Upgradeable
+    function decimals() public view override(YieldDistributionToken, ERC4626Upgradeable) returns (uint8) {
         return super.decimals();
     }
 
-    /// @inheritdoc ERC20
+    /// @inheritdoc ERC20Upgradeable
     function _update(
         address from,
         address to,
         uint256 value
-    ) internal virtual override(YieldDistributionToken, ERC20) {
+    ) internal virtual override(YieldDistributionToken, ERC20Upgradeable) {
         super._update(from, to, value);
     }
 
@@ -265,18 +342,28 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
      * @param currencyToken CurrencyToken in which the yield is received and denominated
      * @param currencyTokenAmount Amount of CurrencyToken to receive as yield
      */
-    function receiveYield(IAssetToken assetToken, IERC20 currencyToken, uint256 currencyTokenAmount) external {
+    function receiveYield(
+        IAssetToken assetToken,
+        IERC20 currencyToken,
+        uint256 currencyTokenAmount
+    ) external nonReentrant {
         if (assetToken != _getYieldTokenStorage().assetToken) {
             revert InvalidAssetToken(assetToken, _getYieldTokenStorage().assetToken);
         }
         if (currencyToken != _getYieldDistributionTokenStorage().currencyToken) {
             revert InvalidCurrencyToken(currencyToken, _getYieldDistributionTokenStorage().currencyToken);
         }
+
         _depositYield(currencyTokenAmount);
+        $.yieldBuffer += amount;
     }
 
     /// @inheritdoc IComponentToken
-    function requestDeposit(uint256 assets, address controller, address owner) public returns (uint256 requestId) {
+    function requestDeposit(
+        uint256 assets,
+        address controller,
+        address owner
+    ) public nonReentrant returns (uint256 requestId) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -318,7 +405,11 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     }
 
     /// @inheritdoc IComponentToken
-    function deposit(uint256 assets, address receiver, address controller) public returns (uint256 shares) {
+    function deposit(
+        uint256 assets,
+        address receiver,
+        address controller
+    ) public nonReentrant returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -340,6 +431,9 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         $.claimableDepositRequest[controller] -= assets;
         $.sharesDepositRequest[controller] -= shares;
 
+        // Track managed assets
+        $.totalManagedAssets += assets;
+
         _mint(receiver, shares);
 
         emit Deposit(controller, receiver, assets, shares);
@@ -351,7 +445,7 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
      * @param receiver Address to receive the shares
      * @param controller Controller of the request
      */
-    function mint(uint256 shares, address receiver, address controller) public returns (uint256 assets) {
+    function mint(uint256 shares, address receiver, address controller) public nonReentrant returns (uint256 assets) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -363,13 +457,19 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         }
 
         YieldTokenStorage storage $ = _getYieldTokenStorage();
-        assets = convertToAssets(shares);
 
-        if ($.claimableDepositRequest[controller] < assets) {
-            revert InsufficientRequestBalance(controller, assets, 1);
+        if ($.sharesDepositRequest[controller] < shares) {
+            revert InsufficientRequestBalance(controller, shares, 1);
         }
+
+        // Calculate proportional assets based on requested shares
+        assets = $.claimableDepositRequest[controller].mulDivDown(shares, $.sharesDepositRequest[controller]);
+
         $.claimableDepositRequest[controller] -= assets;
         $.sharesDepositRequest[controller] -= shares;
+
+        // Track managed assets
+        $.totalManagedAssets += assets;
 
         _mint(receiver, shares);
 
@@ -377,7 +477,11 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
     }
 
     /// @inheritdoc IComponentToken
-    function requestRedeem(uint256 shares, address controller, address owner) public returns (uint256 requestId) {
+    function requestRedeem(
+        uint256 shares,
+        address controller,
+        address owner
+    ) public nonReentrant returns (uint256 requestId) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -387,7 +491,6 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
 
         YieldTokenStorage storage $ = _getYieldTokenStorage();
 
-        _burn(msg.sender, shares);
         $.pendingRedeemRequest[controller] += shares;
 
         emit RedeemRequest(controller, owner, REQUEST_ID, owner, shares);
@@ -422,7 +525,7 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         uint256 shares,
         address receiver,
         address controller
-    ) public override(ERC4626, IComponentToken) returns (uint256 assets) {
+    ) public override(ERC4626Upgradeable, IComponentToken) nonReentrant returns (uint256 assets) {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -444,6 +547,15 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         $.claimableRedeemRequest[controller] -= shares;
         $.assetsRedeemRequest[controller] -= assets;
 
+        // Track managed assets
+        $.totalManagedAssets -= assets;
+
+        // Check yield buffer
+        _beforeWithdraw(assets);
+
+        // Burn the shares, when we actually process the redemption
+        _burn(controller, shares);
+
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
         }
@@ -451,12 +563,20 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
         emit Withdraw(controller, receiver, controller, assets, shares);
     }
 
+    function _beforeWithdraw(
+        uint256 assets
+    ) internal view {
+        YieldTokenStorage storage $ = _getYieldTokenStorage();
+        uint256 availableAssets = IERC20(asset()).balanceOf(address(this)) - $.yieldBuffer;
+        require(availableAssets >= assets, "Cannot withdraw from yield buffer");
+    }
+
     /// @inheritdoc IERC4626
     function withdraw(
         uint256 assets,
         address receiver,
         address controller
-    ) public override(ERC4626) returns (uint256 shares) {
+    ) public override(ERC4626Upgradeable) nonReentrant returns (uint256 shares) {
         if (assets == 0) {
             revert ZeroAmount();
         }
@@ -479,6 +599,14 @@ contract YieldToken is YieldDistributionToken, ERC4626, WalletUtils, IYieldToken
 
         $.claimableRedeemRequest[controller] -= shares;
         $.assetsRedeemRequest[controller] -= assets;
+
+        // Track managed assets
+        $.totalManagedAssets -= assets;
+
+        _beforeWithdraw(assets);
+
+        // Burn the shares when we actually process the withdrawal
+        _burn(controller, shares);
 
         if (!IERC20(asset()).transfer(receiver, assets)) {
             revert InsufficientBalance(IERC20(asset()), address(this), assets);
