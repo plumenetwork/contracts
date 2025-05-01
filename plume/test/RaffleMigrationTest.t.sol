@@ -34,7 +34,7 @@ contract RaffleMigrationTests is PlumeTestBase {
     function testMigrateTickets() public {
         // Create arrays for migration
         address[] memory users = new address[](3);
-        users[0] = USER;  // Using USER from TestUtils instead of USER1
+        users[0] = USER;
         users[1] = USER2;
         users[2] = USER3;
         
@@ -77,40 +77,55 @@ contract RaffleMigrationTests is PlumeTestBase {
         rng[0] = 3; // Will result in ticket #4
         vm.prank(SUPRA_ORACLE);
         raffle.handleWinnerSelection(requestId, rng);
+
+        vm.prank(ADMIN);
+        raffle.setWinner(1);
+
         assertEq(raffle.getWinner(1), USER);
+    }
+
+    // New test for multiple migrations
+    function testMultipleMigrations() public {
+        // First migration
+        address[] memory users1 = new address[](2);
+        users1[0] = USER;
+        users1[1] = USER2;
         
-        // Test another prize with USER2 winning (ticket in range 6-8)
+        uint256[] memory tickets1 = new uint256[](2);
+        tickets1[0] = 5;  // USER: 5 tickets
+        tickets1[1] = 3;  // USER2: 3 tickets
+        
         vm.prank(ADMIN);
-        raffle.addPrize("Second Migration Test", "Another test", 50);
+        raffle.migrateTickets(1, users1, tickets1);
+        
+        // Verify first migration
+        assertEq(raffle.totalTickets(1), 8);
+        
+        // Second migration
+        address[] memory users2 = new address[](2);
+        users2[0] = USER3;
+        users2[1] = USER;  // USER appears in both migrations
+        
+        uint256[] memory tickets2 = new uint256[](2);
+        tickets2[0] = 4;  // USER3: 4 tickets
+        tickets2[1] = 2;  // USER: 2 more tickets
         
         vm.prank(ADMIN);
-        raffle.migrateTickets(2, users, tickets);
+        raffle.migrateTickets(1, users2, tickets2);
         
-        vm.recordLogs();
-        vm.prank(ADMIN);
-        raffle.requestWinner(2);
+        // Verify total after second migration
+        assertEq(raffle.totalTickets(1), 14);  // 8 + 6
         
-        // Extract the request ID from logs for second prize
-        logs = vm.getRecordedLogs();
-        requestId = 0;
-        for (uint i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
-                requestId = uint256(logs[i].topics[2]);
-                break;
-            }
-        }
-        require(requestId != 0, "Request ID not found in logs");
-        
-        rng[0] = 6; // Will result in ticket #7
-        vm.prank(SUPRA_ORACLE);
-        raffle.handleWinnerSelection(requestId, rng);
-        assertEq(raffle.getWinner(2), USER2);
+        // Verify unique users (should be 3 since USER appears twice)
+        uint256 uniqueUsers;
+        (,,,,,,uniqueUsers, ) = raffle.getPrizeDetails(1);
+        assertEq(uniqueUsers, 3);
     }
     
     function testMigrateTicketsWithZeroValues() public {
         // Create arrays with some zero values
         address[] memory users = new address[](4);
-        users[0] = USER;  // Using USER from TestUtils
+        users[0] = USER;
         users[1] = USER2;
         users[2] = address(0); // Zero address
         users[3] = USER3;
@@ -134,25 +149,9 @@ contract RaffleMigrationTests is PlumeTestBase {
         assertEq(uniqueUsers, 3);
     }
     
-    function testMigrateTicketsAlreadyHasTicketsReverts() public {
-        // First migration
-        address[] memory users = new address[](1);
-        users[0] = USER;  // Using USER from TestUtils
-        uint256[] memory tickets = new uint256[](1);
-        tickets[0] = 1;
-        
-        vm.prank(ADMIN);
-        raffle.migrateTickets(1, users, tickets);
-        
-        // Second migration should revert
-        vm.prank(ADMIN);
-        vm.expectRevert("Already has tickets");
-        raffle.migrateTickets(1, users, tickets);
-    }
-    
     function testMigrateTicketsArrayLengthMismatchReverts() public {
         address[] memory users = new address[](2);
-        users[0] = USER;  // Using USER from TestUtils
+        users[0] = USER;
         users[1] = USER2;
         
         uint256[] memory tickets = new uint256[](3); // Different length
@@ -171,7 +170,7 @@ contract RaffleMigrationTests is PlumeTestBase {
         raffle.removePrize(1);
         
         address[] memory users = new address[](1);
-        users[0] = USER;  // Using USER from TestUtils
+        users[0] = USER;
         uint256[] memory tickets = new uint256[](1);
         tickets[0] = 1;
         
@@ -182,13 +181,11 @@ contract RaffleMigrationTests is PlumeTestBase {
     
     function testMigrateTicketsOnlyAdmin() public {
         address[] memory users = new address[](1);
-        users[0] = USER;  // Using USER from TestUtils
+        users[0] = USER;
         uint256[] memory tickets = new uint256[](1);
         tickets[0] = 1;
         
         vm.prank(USER); // Not admin
-        
-        // Just check that it reverts without specifying the exact error
         vm.expectRevert();
         raffle.migrateTickets(1, users, tickets);
     }

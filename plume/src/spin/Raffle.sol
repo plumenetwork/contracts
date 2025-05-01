@@ -125,10 +125,9 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256[] calldata ticketCounts
     ) external onlyRole(ADMIN_ROLE) {
         require(prizes[prizeId].isActive, "Prize not available");
-        require(prizeRanges[prizeId].length == 0, "Already has tickets");
         require(users.length == ticketCounts.length, "Array length mismatch");
         
-        uint256 cumulative = 0;
+        uint256 cumulative = totalTickets[prizeId];
         uint256 migrated = 0;
         
         for (uint256 i = 0; i < users.length; i++) {
