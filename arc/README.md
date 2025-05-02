@@ -83,8 +83,8 @@ graph TD
 | Function                                                                         | Description                                                                                    | Access Control             |
 | :------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------- | :------------------------- |
 | `initialize(...)`                                                                | Initializes the token, sets roles, router, yield token, initial supply.                        | Initializer                |
-| `setSpecificRestrictionModule(bytes32 typeId, address moduleAddress)`            | Links a specific restriction module instance (e.g., Whitelist) to this token.                  | `ADMIN_ROLE`               |
-| `getSpecificRestrictionModule(bytes32 typeId)`                                   | Returns the address of the linked specific restriction module for a given type.                | View                       |
+| `setRestrictionModule(bytes32 typeId, address moduleAddress)`            | Links a specific restriction module instance (e.g., Whitelist) to this token.                  | `ADMIN_ROLE`               |
+| `getRestrictionModule(bytes32 typeId)`                                   | Returns the address of the linked specific restriction module for a given type.                | View                       |
 | `updateTokenName(string memory newName)`                                         | Updates the token's name.                                                                      | `MANAGER_ROLE`             |
 | `mint(address to, uint256 amount)`                                               | Mints new tokens.                                                                              | `MINTER_ROLE`              |
 | `burn(address from, uint256 amount)`                                             | Burns tokens.                                                                                  | `BURNER_ROLE`              |
@@ -110,7 +110,7 @@ graph TD
 | `TokenNameUpdated(string oldName, string newName)`                    | Emitted when the token name is updated.                                         |
 | `TokenURIUpdated(string newTokenURI)`                                 | Emitted when the token URI is updated.                                          |
 | `SymbolUpdated(string oldSymbol, string newSymbol)`                   | Emitted when the token symbol is updated.                                       |
-| `SpecificRestrictionModuleSet(bytes32 indexed typeId, address indexed moduleAddress)` | Emitted when a specific restriction module address is set for the token. |
+| `RestrictionModuleSet(bytes32 indexed typeId, address indexed moduleAddress)` | Emitted when a specific restriction module address is set for the token. |
 
 #### Custom Errors
 

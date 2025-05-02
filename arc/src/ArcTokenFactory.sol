@@ -201,7 +201,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         // 1. Whitelist Module (for transfers)
         address whitelistModule = _createWhitelistRestrictionsModule(msg.sender);
-        try token.setSpecificRestrictionModule(TRANSFER_RESTRICTION_TYPE, whitelistModule) {
+        try token.setRestrictionModule(TRANSFER_RESTRICTION_TYPE, whitelistModule) {
             // Optionally emit an event here specific to the factory if needed
         } catch {
             revert FailedToSetRestrictions();
@@ -209,7 +209,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         // 2. Yield Blacklist Module
         address yieldBlacklistModule = _createYieldBlacklistRestrictionsModule(msg.sender);
-        try token.setSpecificRestrictionModule(YIELD_RESTRICTION_TYPE, yieldBlacklistModule) {
+        try token.setRestrictionModule(YIELD_RESTRICTION_TYPE, yieldBlacklistModule) {
             // Optionally emit an event here specific to the factory if needed
         } catch {
             revert FailedToSetRestrictions();
@@ -297,7 +297,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         // 1. Whitelist Module (for transfers)
         address whitelistModule = _createWhitelistRestrictionsModule(msg.sender);
-        try token.setSpecificRestrictionModule(TRANSFER_RESTRICTION_TYPE, whitelistModule) {
+        try token.setRestrictionModule(TRANSFER_RESTRICTION_TYPE, whitelistModule) {
             // Optionally emit an event here specific to the factory if needed
         } catch {
             revert FailedToSetRestrictions();
@@ -305,7 +305,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         // 2. Yield Blacklist Module
         address yieldBlacklistModule = _createYieldBlacklistRestrictionsModule(msg.sender);
-        try token.setSpecificRestrictionModule(YIELD_RESTRICTION_TYPE, yieldBlacklistModule) {
+        try token.setRestrictionModule(YIELD_RESTRICTION_TYPE, yieldBlacklistModule) {
             // Optionally emit an event here specific to the factory if needed
         } catch {
             revert FailedToSetRestrictions();

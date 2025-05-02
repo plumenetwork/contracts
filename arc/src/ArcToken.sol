@@ -138,21 +138,21 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
 
     // -------------- Restrictions Module Management --------------
     /**
-     * @dev Sets the address of a specific restriction module instance for this token.
+     * @dev Sets the address of a restriction module instance for this token.
      * @notice The router must have a module type registered for this typeId with isGlobal = false.
      * @param typeId The unique identifier for the module type (e.g., TRANSFER_RESTRICTION_TYPE).
      * @param moduleAddress The address of the deployed module instance (e.g., WhitelistRestrictions).
      */
-    function setSpecificRestrictionModule(bytes32 typeId, address moduleAddress) external onlyRole(ADMIN_ROLE) {
+    function setRestrictionModule(bytes32 typeId, address moduleAddress) external onlyRole(ADMIN_ROLE) {
         _getArcTokenStorage().specificRestrictionModules[typeId] = moduleAddress;
         emit SpecificRestrictionModuleSet(typeId, moduleAddress);
     }
 
     /**
-     * @dev Returns the address of the specific restriction module instance for a given type.
+     * @dev Returns the address of the restriction module instance for a given type.
      * @param typeId The unique identifier for the module type.
      */
-    function getSpecificRestrictionModule(
+    function getRestrictionModule(
         bytes32 typeId
     ) external view returns (address) {
         return _getArcTokenStorage().specificRestrictionModules[typeId];

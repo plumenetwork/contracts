@@ -77,8 +77,8 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         );
 
         // --- Link Modules to Token ---
-        token.setSpecificRestrictionModule(TRANSFER_RESTRICTION_TYPE, address(whitelistModule));
-        token.setSpecificRestrictionModule(YIELD_RESTRICTION_TYPE, address(yieldBlacklistModule));
+        token.setRestrictionModule(TRANSFER_RESTRICTION_TYPE, address(whitelistModule));
+        token.setRestrictionModule(YIELD_RESTRICTION_TYPE, address(yieldBlacklistModule));
 
         // --- Deploy ArcTokenPurchase ---
         purchase = new ArcTokenPurchase();

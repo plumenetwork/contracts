@@ -17,5 +17,4 @@ interface IRestrictionsRouter {
         bytes32 typeId
     ) external view returns (address);
 
-
 }

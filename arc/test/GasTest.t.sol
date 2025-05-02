@@ -73,8 +73,8 @@ contract GasTest is Test {
         );
 
         // --- Link Modules ---
-        token.setSpecificRestrictionModule(token.TRANSFER_RESTRICTION_TYPE(), address(whitelistModule));
-        token.setSpecificRestrictionModule(token.YIELD_RESTRICTION_TYPE(), address(yieldBlacklistModule));
+        token.setRestrictionModule(token.TRANSFER_RESTRICTION_TYPE(), address(whitelistModule));
+        token.setRestrictionModule(token.YIELD_RESTRICTION_TYPE(), address(yieldBlacklistModule));
 
         // Explicitly grant all necessary roles
         bytes32 MINTER_ROLE = token.MINTER_ROLE();

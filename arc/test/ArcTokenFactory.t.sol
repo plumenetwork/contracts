@@ -79,7 +79,7 @@ contract ArcTokenFactoryTest is Test {
         // Deploy a token first so its implementation gets added to allowedImplementations
         // Note: We need to whitelist the holder *after* creation now
         address tokenAddress = factory.createToken("Temp", "TEMP", 1e18, address(yieldToken), "uri", admin);
-        address whitelistModuleAddr = ArcToken(tokenAddress).getSpecificRestrictionModule(TRANSFER_RESTRICTION_TYPE);
+        address whitelistModuleAddr = ArcToken(tokenAddress).getRestrictionModule(TRANSFER_RESTRICTION_TYPE);
         WhitelistRestrictions(whitelistModuleAddr).addToWhitelist(admin); // Whitelist the creator
 
         address arcTokenImpl = factory.getTokenImplementation(tokenAddress); // Get the impl address
@@ -135,9 +135,9 @@ contract ArcTokenFactoryTest is Test {
         assertEq(token.totalSupply(), initialSupply);
 
         // Verify modules were linked
-        address whitelistModuleAddr = token.getSpecificRestrictionModule(TRANSFER_RESTRICTION_TYPE);
+        address whitelistModuleAddr = token.getRestrictionModule(TRANSFER_RESTRICTION_TYPE);
         assertTrue(whitelistModuleAddr != address(0));
-        address yieldBlacklistModuleAddr = token.getSpecificRestrictionModule(YIELD_RESTRICTION_TYPE);
+        address yieldBlacklistModuleAddr = token.getRestrictionModule(YIELD_RESTRICTION_TYPE);
         assertTrue(yieldBlacklistModuleAddr != address(0));
 
         // Verify initial holder is whitelisted in the correct module AFTER creation
@@ -153,7 +153,7 @@ contract ArcTokenFactoryTest is Test {
 
         // Create first token (holder is admin)
         address token1Addr = factory.createToken("Token 1", "ONE", 1000e18, address(yieldToken), uri1, admin);
-        address wl1Addr = ArcToken(token1Addr).getSpecificRestrictionModule(TRANSFER_RESTRICTION_TYPE);
+        address wl1Addr = ArcToken(token1Addr).getRestrictionModule(TRANSFER_RESTRICTION_TYPE);
         // Whitelist admin (creator) for token1
         WhitelistRestrictions(wl1Addr).addToWhitelist(admin);
 
@@ -162,7 +162,7 @@ contract ArcTokenFactoryTest is Test {
         vm.startPrank(user);
         address token2Addr = factory.createToken("Token 2", "TWO", 2000e18, address(yieldToken), uri2, user);
         vm.stopPrank();
-        address wl2Addr = ArcToken(token2Addr).getSpecificRestrictionModule(TRANSFER_RESTRICTION_TYPE);
+        address wl2Addr = ArcToken(token2Addr).getRestrictionModule(TRANSFER_RESTRICTION_TYPE);
         // Whitelist user (creator) for token2 - use user key to call addToWhitelist
         vm.startPrank(user);
         WhitelistRestrictions(wl2Addr).addToWhitelist(user);
@@ -191,7 +191,7 @@ contract ArcTokenFactoryTest is Test {
         assertEq(ArcToken(tokenAddress).totalSupply(), 0);
 
         // Whitelist the creator after creation
-        address wlAddr = ArcToken(tokenAddress).getSpecificRestrictionModule(TRANSFER_RESTRICTION_TYPE);
+        address wlAddr = ArcToken(tokenAddress).getRestrictionModule(TRANSFER_RESTRICTION_TYPE);
         WhitelistRestrictions(wlAddr).addToWhitelist(admin);
     }
 
@@ -200,7 +200,7 @@ contract ArcTokenFactoryTest is Test {
         // Optionally, add asserts here to check token state if creation succeeds
         // ArcToken doesn't expose yieldToken directly via getter, check internal storage if needed or skip assert
         // Whitelist the creator after creation
-        address wlAddr = ArcToken(tokenAddress).getSpecificRestrictionModule(TRANSFER_RESTRICTION_TYPE);
+        address wlAddr = ArcToken(tokenAddress).getRestrictionModule(TRANSFER_RESTRICTION_TYPE);
         WhitelistRestrictions(wlAddr).addToWhitelist(admin);
     }
 
