@@ -58,6 +58,7 @@ graph TD
     style RM_W_Standalone fill:#cfc,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
     style RM_Y_Standalone fill:#cfc,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
 
+
     %% Annotations
     note right of T : Core ERC20, UUPS Upgradeable,<br>Manages holders, yield distribution,<br>Delegates restriction checks.
     note right of F1 : Creates ArcToken proxies<br>and deploys dedicated instances of<br>Whitelist & YieldBlacklist modules per token.
