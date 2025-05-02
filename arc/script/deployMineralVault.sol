@@ -25,9 +25,13 @@ contract DeployMineralVault is Script, Test {
 
     // Financial metrics (all monetary values scaled by 1e18)
     uint256 public constant INITIAL_SUPPLY = 1_000_000 * 1e18; // 1,000,000 tokens with 18 decimals
+    uint8 public constant DECIMALS = 18; // 1,000,000 tokens with 18 decimals
 
     // IMPORTANT: Update this address with your deployed MockUSDC address before running
     address private constant YIELD_TOKEN_ADDRESS = 0x41b199a4138BFA31b32f58Adb167F6981d5A99Dd;
+
+    // IMPORTANT: Update this address with your deployed RestrictionsRouter proxy address before running
+    address private constant ROUTER_ADDRESS = address(0); // <<< UPDATE THIS ADDRESS
 
     // Metadata URI path
     string private constant METADATA_URI_PATH = "mineralvault/";
@@ -47,12 +51,27 @@ contract DeployMineralVault is Script, Test {
             YIELD_TOKEN_ADDRESS != address(0),
             "ERROR: Please update the YIELD_TOKEN_ADDRESS constant with your MockUSDC address!"
         );
+        require(
+            ROUTER_ADDRESS != address(0),
+            "ERROR: Please update the ROUTER_ADDRESS constant with your RestrictionsRouter address!"
+        );
 
         vm.startBroadcast(ADMIN_ADDRESS);
 
         // Deploy ArcToken implementation
         ArcToken implementation = new ArcToken();
         console2.log("ArcToken implementation deployed to:", address(implementation));
+
+        /*
+
+        string memory name_,
+        string memory symbol_,
+        uint256 initialSupply_,
+        address yieldToken_,
+        address initialTokenHolder_,
+        uint8 decimals_
+
+        */
 
         // Create proxy using ArcTokenProxy - INITIALIZING WITH FULL TOKEN SUPPLY
         ArcTokenProxy arcTokenProxy = new ArcTokenProxy(
@@ -64,7 +83,9 @@ contract DeployMineralVault is Script, Test {
                     TOKEN_SYMBOL,
                     INITIAL_SUPPLY, // Initial token supply
                     YIELD_TOKEN_ADDRESS, // Yield token address
-                    ADMIN_ADDRESS // The admin address will receive the initial token supply
+                    ADMIN_ADDRESS, // The admin address will receive the initial token supply,
+                    DECIMALS,
+                    ROUTER_ADDRESS // Address of the Restrictions Router
                 )
             )
         );
@@ -76,7 +97,7 @@ contract DeployMineralVault is Script, Test {
         token.setTokenURI(string.concat("https://arc.plumenetwork.xyz/tokens/", METADATA_URI_PATH));
 
         // Ensure transfers are unrestricted (no whitelist requirement)
-        token.setTransfersAllowed(true);
+        //token.setTransfersAllowed(true);
 
         console2.log("Mineral Vault I Security Token deployed to:", address(arcTokenProxy));
         console2.log("Using yield token at address:", YIELD_TOKEN_ADDRESS);
