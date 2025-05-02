@@ -10,7 +10,6 @@ build_info = true
 extra_output = ["storageLayout"]
 optimizer = true
 optimizer_runs = 2000
-viaIR = true
 
 [fmt]
 single_line_statement_blocks = "multi"
