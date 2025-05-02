@@ -399,4 +399,4 @@ A typical deployment sequence involves:
 
 ## License
 
-(Specify License Here - e.g., MIT License)
+MIT License
