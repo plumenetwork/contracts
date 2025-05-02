@@ -64,8 +64,11 @@ library PlumeValidatorLogic {
             $.userHasStakedWithValidator[staker][validatorId] = true;
         }
         if (!$.isStakerForValidator[validatorId][staker]) {
+            // === Store index before pushing ===
+            uint256 index = $.validatorStakers[validatorId].length;
             $.validatorStakers[validatorId].push(staker);
             $.isStakerForValidator[validatorId][staker] = true;
+            $.userIndexInValidatorStakers[staker][validatorId] = index; // <<< Store the index
         }
         // Call the library version of the helper function
         addStakerIfNew($, staker);
@@ -98,31 +101,54 @@ library PlumeValidatorLogic {
         address staker,
         uint16 validatorId
     ) internal {
-        // Only proceed if the user has no stake left with this validator
+        // Only proceed if the user has no stake left with this validator AND they were previously a staker
         if ($.userValidatorStakes[staker][validatorId].staked == 0 && $.isStakerForValidator[validatorId][staker]) {
-            // Remove staker from validator's staker list by replacing with the last element
-            address[] storage stakers = $.validatorStakers[validatorId];
-            for (uint256 i = 0; i < stakers.length; i++) {
-                if (stakers[i] == staker) {
-                    // Replace with the last element and remove the last element
-                    stakers[i] = stakers[stakers.length - 1];
-                    stakers.pop();
-                    break;
+            // --- Swap and Pop from validatorStakers array ---
+            address[] storage stakersList = $.validatorStakers[validatorId];
+            uint256 listLength = stakersList.length;
+
+            // Ensure list is not empty before proceeding
+            if (listLength > 0) {
+                // 1. Get the index of the staker to remove
+                uint256 indexToRemove = $.userIndexInValidatorStakers[staker][validatorId];
+
+                // Check if index is valid (sanity check)
+                if (indexToRemove < listLength && stakersList[indexToRemove] == staker) {
+                    // 2. Get the address of the last staker in the list
+                    address lastStaker = stakersList[listLength - 1];
+
+                    // 3. If the staker to remove is NOT the last element, swap it with the last element
+                    if (indexToRemove != listLength - 1) {
+                        stakersList[indexToRemove] = lastStaker;
+                        // 4. Update the index mapping for the moved (last) staker
+                        $.userIndexInValidatorStakers[lastStaker][validatorId] = indexToRemove;
+                    }
+
+                    // 5. Pop the last element (which is either the one we want to remove, or a duplicate of the one we
+                    // moved)
+                    stakersList.pop();
+                } else {
+                    // This case should ideally not happen if storage is consistent
+                    // Handle error or log? For now, just skip the swap/pop for safety.
+                    // console.log("Inconsistency: Staker index not found or mismatch in removeStakerFromValidator");
                 }
             }
 
+            // --- Cleanup Mappings ---
             // Update the mapping to show staker is no longer staking with this validator
             $.isStakerForValidator[validatorId][staker] = false;
+            // Delete the stored index for the removed staker
+            delete $.userIndexInValidatorStakers[staker][validatorId];
 
-            // Optionally, also remove validator from user's validator list if needed
-            // (only if we want to keep this list accurate)
+            // --- Remove validator from user's list (if needed) ---
             if ($.userHasStakedWithValidator[staker][validatorId]) {
                 uint16[] storage userValidators = $.userValidators[staker];
+                // Use swap and pop for the user's list as well (assuming order doesn't matter)
                 for (uint256 i = 0; i < userValidators.length; i++) {
                     if (userValidators[i] == validatorId) {
                         userValidators[i] = userValidators[userValidators.length - 1];
                         userValidators.pop();
-                        break;
+                        break; // Found and removed
                     }
                 }
                 $.userHasStakedWithValidator[staker][validatorId] = false;

@@ -74,6 +74,8 @@ library PlumeStakingStorage {
         mapping(uint16 => address[]) validatorStakers;
         /// @notice Maps a (validator, staker) pair to indicate if staker has staked with that validator
         mapping(uint16 => mapping(address => bool)) isStakerForValidator;
+        /// @notice Maps a (staker, validator) pair to the index of the staker within the validator's staker list
+        mapping(address => mapping(uint16 => uint256)) userIndexInValidatorStakers;
         /// @notice Maps a validator to its total staked amount
         mapping(uint16 => uint256) validatorTotalStaked;
         /// @notice Maps a validator to its total cooling amount

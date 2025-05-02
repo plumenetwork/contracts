@@ -262,8 +262,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert CommissionRateTooHigh(newCommission, 1e18);
         }
 
-        _updateRewardsForAllValidatorStakers(validatorId);
-
         validator.commission = newCommission;
         // Create commission checkpoint
         PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
@@ -361,8 +359,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         // Existence check done implicitly
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
-
-        _updateRewardsForAllValidatorStakers(validatorId);
 
         amount = $.validatorAccruedCommission[validatorId][token];
         if (amount > 0) {
@@ -641,21 +637,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
         }
         return count;
-    }
-
-    // --- Internal Functions Definitions ---
-
-    function _updateRewardsForAllValidatorStakers(
-        uint16 validatorId
-    ) internal {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        address[] memory stakers = $.validatorStakers[validatorId];
-        if (stakers.length > 100) {
-            revert TooManyStakers();
-        }
-        for (uint256 i = 0; i < stakers.length; i++) {
-            PlumeRewardLogic.updateRewardsForValidator($, stakers[i], validatorId);
-        }
     }
 
 }
