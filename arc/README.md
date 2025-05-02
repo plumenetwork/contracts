@@ -76,7 +76,7 @@ graph TD
 ### `ArcToken.sol`
 
 -   **Type:** UUPS Upgradeable ERC20 Token (`ERC20Upgradeable`, `AccessControlUpgradeable`, `ReentrancyGuardUpgradeable`, `UUPSUpgradeable`)
--   **Overview:** Represents the RWA share/token. Manages core ERC20 logic, holder tracking, yield distribution, and delegates transfer/yield restriction checks via the `RestrictionsRouter` and specific modules.
+-   **Overview:** Represents the share/token. Manages core ERC20 logic, holder tracking, yield distribution, and delegates transfer/yield restriction checks via the `RestrictionsRouter` and specific modules.
 
 #### Key Functions
 
