@@ -47,6 +47,16 @@ graph TD
     F2 -- Deploys Proxy --> RM_W_Standalone(WhitelistRestrictions<br>Standalone)
     F2 -- Deploys Proxy --> RM_Y_Standalone(YieldBlacklistRestrictions<br>Standalone)
 
+    %% Annotations
+    note right of T : Core ERC20, UUPS Upgradeable,<br>Manages holders, yield distribution,<br>Delegates restriction checks.
+    note right of F1 : Creates ArcToken proxies<br>and deploys dedicated instances of<br>Whitelist & YieldBlacklist modules per token.
+    note right of F2 : Deploys standalone, proxied<br>restriction modules (e.g., Whitelist).
+    note right of RR : Central point for routing<br>restriction checks based on type<br>(Global or Token-Specific).
+    note right of RM_W : Token-specific module instance<br>enforcing transfer whitelists,<br>deployed by ArcTokenFactory.
+    note right of RM_Y : Token-specific module instance<br>enforcing yield blacklists,<br>deployed by ArcTokenFactory.
+    note right of P : Handles token sales,<br>holds tokens for sale,<br>manages storefront config.
+    note right of RM_W_Standalone: Example standalone module<br>deployed by RestrictionsFactory.
+
     style T fill:#f96,stroke:#333,stroke-width:2px
     style P fill:#ccf,stroke:#333,stroke-width:2px
     style F1 fill:#9cf,stroke:#333,stroke-width:1px
@@ -57,17 +67,6 @@ graph TD
     style RM_G fill:#ccc,stroke:#333,stroke-width:1px
     style RM_W_Standalone fill:#cfc,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
     style RM_Y_Standalone fill:#cfc,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
-
-
-    %% Annotations
-    note right of T : Core ERC20, UUPS Upgradeable,<br>Manages holders, yield distribution,<br>Delegates restriction checks.
-    note right of F1 : Creates ArcToken proxies<br>and deploys dedicated instances of<br>Whitelist & YieldBlacklist modules per token.
-    note right of F2 : Deploys standalone, proxied<br>restriction modules (e.g., Whitelist).
-    note right of RR : Central point for routing<br>restriction checks based on type<br>(Global or Token-Specific).
-    note right of RM_W : Token-specific module instance<br>enforcing transfer whitelists,<br>deployed by ArcTokenFactory.
-    note right of RM_Y : Token-specific module instance<br>enforcing yield blacklists,<br>deployed by ArcTokenFactory.
-    note right of P : Handles token sales,<br>holds tokens for sale,<br>manages storefront config.
-    note right of RM_W_Standalone: Example standalone module<br>deployed by RestrictionsFactory.
 ```
 
 ## Core Components
