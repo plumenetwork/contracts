@@ -188,14 +188,14 @@ contract UpgradePlumeStakingDiamond is Script {
     }
 
     function getManagementSelectors() internal pure returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](7);
+        bytes4[] memory selectors = new bytes4[](6);
         selectors[0] = ManagementFacet.setMinStakeAmount.selector; // setMinStakeAmount(uint256)
         selectors[1] = ManagementFacet.setCooldownInterval.selector; // setCooldownInterval(uint256)
         selectors[2] = ManagementFacet.adminWithdraw.selector; // adminWithdraw(address,uint256,address)
-        selectors[3] = ManagementFacet.updateTotalAmounts.selector; // updateTotalAmounts(uint256,uint256)
-        selectors[4] = ManagementFacet.getMinStakeAmount.selector; // getMinStakeAmount()
-        selectors[5] = ManagementFacet.getCooldownInterval.selector; // getCooldownInterval()
-        selectors[6] = ManagementFacet.setMaxSlashVoteDuration.selector; // setMaxSlashVoteDuration(uint256)
+//        selectors[3] = ManagementFacet.updateTotalAmounts.selector; // updateTotalAmounts(uint256,uint256)
+        selectors[3] = ManagementFacet.getMinStakeAmount.selector; // getMinStakeAmount()
+        selectors[4] = ManagementFacet.getCooldownInterval.selector; // getCooldownInterval()
+        selectors[5] = ManagementFacet.setMaxSlashVoteDuration.selector; // setMaxSlashVoteDuration(uint256)
         return selectors;
     }
 
