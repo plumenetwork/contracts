@@ -63,12 +63,7 @@ contract DeployArcTokenFactory is Script, Test {
         address yieldToken = address(0); // Just for testing
 
         try factory.createToken(
-            testTokenName,
-            testTokenSymbol,
-            initialSupply,
-            yieldToken,
-            testTokenUri,
-            ADMIN_ADDRESS // Specify admin as the token recipient
+            testTokenName, testTokenSymbol, initialSupply, yieldToken, testTokenUri, ADMIN_ADDRESS, 18
         ) returns (address tokenAddress) {
             console2.log("Test token successfully created at:", tokenAddress);
 

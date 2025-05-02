@@ -60,6 +60,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         string tokenUri,
         uint8 decimals
     );
+    event ModuleLinked(address indexed tokenAddress, address indexed moduleAddress, bytes32 indexed moduleType);
     event ImplementationWhitelisted(address indexed implementation);
     event ImplementationRemoved(address indexed implementation);
     event TokenUpgraded(address indexed token, address indexed newImplementation);
@@ -132,101 +133,6 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
     /**
      * @dev Creates a new ArcToken instance with its own implementation and associated restriction modules.
-     * Uses default 18 decimals.
-     * @param name Token name
-     * @param symbol Token symbol
-     * @param initialSupply Initial token supply
-     * @param yieldToken Address of the yield token (e.g., USDC)
-     * @param tokenUri URI for the token metadata
-     * @param initialTokenHolder Address that will receive the initial token supply (if address(0), defaults to
-     * msg.sender)
-     * @return Address of the newly created token
-     */
-    function createToken(
-        string memory name,
-        string memory symbol,
-        uint256 initialSupply,
-        address yieldToken,
-        string memory tokenUri,
-        address initialTokenHolder
-    ) external returns (address) {
-        FactoryStorage storage fs = _getFactoryStorage();
-        address routerAddr = fs.restrictionsRouter;
-        if (routerAddr == address(0)) {
-            revert RouterNotSet(); // Ensure factory is initialized with router
-        }
-
-        // Deploy a fresh implementation for this token
-        ArcToken implementation = new ArcToken();
-
-        // Add the implementation to the whitelist
-        bytes32 codeHash = _getCodeHash(address(implementation));
-        fs.allowedImplementations[codeHash] = true;
-
-        // Use caller as token holder if not specified
-        address tokenHolder = initialTokenHolder == address(0) ? msg.sender : initialTokenHolder;
-
-        // Create initialization data
-        bytes memory initData = abi.encodeWithSelector(
-            ArcToken.initialize.selector, // Use the main initializer
-            name,
-            symbol,
-            initialSupply,
-            yieldToken,
-            tokenHolder,
-            18, // Pass 18 decimals
-            routerAddr // Pass the router address
-        );
-
-        // Deploy proxy with the fresh implementation
-        ArcTokenProxy proxy = new ArcTokenProxy(address(implementation), initData);
-
-        // Store the mapping between token and its implementation
-        fs.tokenToImplementation[address(proxy)] = address(implementation);
-
-        // Set the token URI
-        ArcToken token = ArcToken(address(proxy));
-        token.setTokenURI(tokenUri);
-
-        // Grant all necessary roles to the owner
-        token.grantRole(token.ADMIN_ROLE(), msg.sender);
-        token.grantRole(token.MANAGER_ROLE(), msg.sender);
-        token.grantRole(token.YIELD_MANAGER_ROLE(), msg.sender);
-        token.grantRole(token.YIELD_DISTRIBUTOR_ROLE(), msg.sender);
-        token.grantRole(token.MINTER_ROLE(), msg.sender);
-        token.grantRole(token.BURNER_ROLE(), msg.sender);
-        token.grantRole(token.UPGRADER_ROLE(), msg.sender);
-
-        // --- Create and link Restriction Modules ---
-
-        // 1. Whitelist Module (for transfers)
-        address whitelistModule = _createWhitelistRestrictionsModule(msg.sender);
-        try token.setRestrictionModule(TRANSFER_RESTRICTION_TYPE, whitelistModule) {
-            // Optionally emit an event here specific to the factory if needed
-        } catch {
-            revert FailedToSetRestrictions();
-        }
-
-        // 2. Yield Blacklist Module
-        address yieldBlacklistModule = _createYieldBlacklistRestrictionsModule(msg.sender);
-        try token.setRestrictionModule(YIELD_RESTRICTION_TYPE, yieldBlacklistModule) {
-            // Optionally emit an event here specific to the factory if needed
-        } catch {
-            revert FailedToSetRestrictions();
-        }
-
-        // Whitelisting is now done by the caller in the test suite
-        // try WhitelistRestrictions(whitelistModule).addToWhitelist(tokenHolder) { }
-        //     catch { /* Ignore if already whitelisted */ }
-
-        emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri, 18);
-        emit ImplementationWhitelisted(address(implementation));
-
-        return address(proxy);
-    }
-
-    /**
-     * @dev Creates a new ArcToken instance with its own implementation and associated restriction modules.
      * @param name Token name
      * @param symbol Token symbol
      * @param initialSupply Initial token supply
@@ -270,8 +176,8 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
             initialSupply,
             yieldToken,
             tokenHolder,
-            decimals, // Pass specified decimals
-            routerAddr // Pass the router address
+            decimals,
+            routerAddr
         );
 
         // Deploy proxy with the fresh implementation
@@ -298,7 +204,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         // 1. Whitelist Module (for transfers)
         address whitelistModule = _createWhitelistRestrictionsModule(msg.sender);
         try token.setRestrictionModule(TRANSFER_RESTRICTION_TYPE, whitelistModule) {
-            // Optionally emit an event here specific to the factory if needed
+            emit ModuleLinked(address(proxy), whitelistModule, TRANSFER_RESTRICTION_TYPE);
         } catch {
             revert FailedToSetRestrictions();
         }
@@ -306,14 +212,10 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         // 2. Yield Blacklist Module
         address yieldBlacklistModule = _createYieldBlacklistRestrictionsModule(msg.sender);
         try token.setRestrictionModule(YIELD_RESTRICTION_TYPE, yieldBlacklistModule) {
-            // Optionally emit an event here specific to the factory if needed
+            emit ModuleLinked(address(proxy), yieldBlacklistModule, YIELD_RESTRICTION_TYPE);
         } catch {
             revert FailedToSetRestrictions();
         }
-
-        // Whitelisting is now done by the caller in the test suite
-        // try WhitelistRestrictions(whitelistModule).addToWhitelist(tokenHolder) { }
-        //    catch { /* Ignore if already whitelisted */ }
 
         emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri, decimals);
         emit ImplementationWhitelisted(address(implementation));

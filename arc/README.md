@@ -155,6 +155,7 @@ graph TD
 | Event                                                                                                     | Description                                                                                   |
 | :-------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------- |
 | `TokenCreated(address indexed tokenAddress, address indexed owner, address indexed impl, string, string, string, uint8)` | Emitted when a new `ArcToken` proxy and its modules are successfully created.               |
+| `ModuleLinked(address indexed tokenAddress, address indexed moduleAddress, bytes32 indexed moduleType)`     | Emitted when a restriction module (e.g., Whitelist) is linked to a created token.             |
 | `ImplementationWhitelisted(address indexed implementation)`                                               | Emitted when an `ArcToken` implementation is whitelisted for upgrades.                        |
 | `ImplementationRemoved(address indexed implementation)`                                                   | Emitted when an `ArcToken` implementation is removed from the whitelist.                    |
 | `TokenUpgraded(address indexed token, address indexed newImplementation)`                                 | Emitted when an `ArcToken` proxy is successfully upgraded.                                  |
