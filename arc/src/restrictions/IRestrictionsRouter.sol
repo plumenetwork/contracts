@@ -17,7 +17,5 @@ interface IRestrictionsRouter {
         bytes32 typeId
     ) external view returns (address);
 
-    // Potential future additions:
-    // function getModuleInfo(bytes32 typeId) external view returns (bool isGlobal, address globalImplementation);
 
 }

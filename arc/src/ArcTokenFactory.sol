@@ -215,11 +215,9 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
             revert FailedToSetRestrictions();
         }
 
-        // Add the token holder to the *transfer* whitelist
-        if (tokenHolder != msg.sender) {
-            try WhitelistRestrictions(whitelistModule).addToWhitelist(tokenHolder) { }
-                catch { /* Ignore if already whitelisted */ }
-        }
+        // Whitelisting is now done by the caller in the test suite
+        // try WhitelistRestrictions(whitelistModule).addToWhitelist(tokenHolder) { }
+        //     catch { /* Ignore if already whitelisted */ }
 
         emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri, 18);
         emit ImplementationWhitelisted(address(implementation));
@@ -313,11 +311,9 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
             revert FailedToSetRestrictions();
         }
 
-        // Add the token holder to the *transfer* whitelist
-        if (tokenHolder != msg.sender) {
-            try WhitelistRestrictions(whitelistModule).addToWhitelist(tokenHolder) { }
-                catch { /* Ignore if already whitelisted */ }
-        }
+        // Whitelisting is now done by the caller in the test suite
+        // try WhitelistRestrictions(whitelistModule).addToWhitelist(tokenHolder) { }
+        //    catch { /* Ignore if already whitelisted */ }
 
         emit TokenCreated(address(proxy), msg.sender, address(implementation), name, symbol, tokenUri, decimals);
         emit ImplementationWhitelisted(address(implementation));

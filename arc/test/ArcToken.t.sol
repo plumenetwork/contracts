@@ -97,7 +97,6 @@ contract ArcTokenTest is Test, IERC20Errors {
 
         // Now mint tokens after linking modules and whitelisting
         // Note: Initial supply is already minted to owner in initialize
-        // vm.prank(owner); // Not needed as owner deploys
         token.transfer(alice, 100e18); // Owner: 900e18, Alice: 100e18
     }
 
@@ -231,18 +230,6 @@ contract ArcTokenTest is Test, IERC20Errors {
         yieldBlacklistModule.removeFromBlacklist(alice);
         assertTrue(yieldBlacklistModule.isYieldAllowed(alice));
     }
-
-    /*
-    // ============ Tests for Removed Features ============
-
-    // Tests removed as features moved out of ArcToken or changed significantly:
-    // - test_ClaimableYieldDistribution (Claiming logic removed)
-    // - test_RedemptionPriceCalculation (Financial metrics removed)
-    // - test_YieldHistory (Yield history removed)
-    // - test_RevertWhen_ClaimYieldWithoutDistribution (Claiming logic removed)
-    // - test_RevertWhen_SetZeroIssuePrice (Token pricing removed)
-
-    */
 
     // ============ Error Cases Tests ============
 

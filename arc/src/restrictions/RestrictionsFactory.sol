@@ -6,6 +6,7 @@ import "./WhitelistRestrictions.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title RestrictionsFactory
@@ -93,17 +94,9 @@ contract RestrictionsFactory is Initializable, AccessControlUpgradeable, UUPSUpg
      * @dev Internal helper to deploy a proxy
      */
     function _deployProxy(address implementation, bytes memory initData) internal returns (address) {
-        // This is simplified - in a real implementation you'd use
-        // OZ's ERC1967Proxy or a custom proxy implementation
-        // For this example, we'll create a mock deployment return
-        // In a real implementation, you'd deploy the proxy here
-
-        // Placeholder for proxy deployment logic
-        // address proxy = address(new ERC1967Proxy(implementation, initData));
-
-        // For now, we'll just return the implementation as a placeholder
-        // You'll need to replace this with actual proxy deployment
-        return implementation;
+        // Deploy the actual proxy using ERC1967 standard
+        address proxy = address(new ERC1967Proxy(implementation, initData));
+        return proxy;
     }
 
     /**

@@ -16,6 +16,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *         The contract holds the tokens being sold and the purchase currency received.
  * @dev Manages purchase process and storefront metadata, upgradeable via UUPS pattern.
  *      Requires ArcTokens to be transferred to this contract before enabling sale.
+ *      Assumes tokenPrice is denominated in purchaseToken units for the number of base units
+ *      corresponding to 1 full ArcToken (e.g., 1e18 for 18 decimals).
  */
 contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
 
@@ -63,6 +65,29 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     event StorefrontConfigSet(address indexed tokenContract, string domain);
     event PurchaseTokenUpdated(address indexed newPurchaseToken);
 
+    // -------------- Custom Errors --------------
+    error PurchaseTokenNotSet();
+    error PurchaseAmountTooLow();
+    error NotEnoughTokensForSale();
+    error ContractBalanceInsufficient();
+    error PurchaseTransferFailed();
+    error TokenTransferFailed();
+    error InvalidPurchaseTokenAddress();
+    error TokenPriceMustBePositive();
+    error NumberOfTokensMustBePositive();
+    error ContractMissingRequiredTokens();
+    error NotTokenAdmin(address caller, address token);
+    error DomainCannotBeEmpty();
+    error DomainAlreadyInUse(string domain);
+    error NoConfigForDomain(string domain);
+    error CannotWithdrawToZeroAddress();
+    error AmountMustBePositive();
+    error InsufficientUnsoldTokens();
+    error ArcTokenWithdrawalFailed();
+    error PurchaseTokenWithdrawalFailed();
+    error TokenNotEnabled(); // Replaces "Token is not enabled for purchase"
+    error ZeroAmount(); // Added for consistency if needed
+
     /**
      * @dev Initializes the contract and sets up admin role
      * @param admin Address to be granted admin role
@@ -83,10 +108,11 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     modifier onlyTokenAdmin(
         address _tokenContract
     ) {
-        require(
-            ArcToken(_tokenContract).hasRole(ArcToken(_tokenContract).ADMIN_ROLE(), msg.sender),
-            "Only token admin can call this function"
-        );
+        address adminRoleHolder = msg.sender;
+        bytes32 adminRole = ArcToken(_tokenContract).ADMIN_ROLE();
+        if (!ArcToken(_tokenContract).hasRole(adminRole, adminRoleHolder)) {
+            revert NotTokenAdmin(adminRoleHolder, _tokenContract);
+        }
         _;
     }
 
@@ -101,13 +127,17 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         uint256 _numberOfTokens,
         uint256 _tokenPrice
     ) external onlyTokenAdmin(_tokenContract) {
-        require(_tokenPrice > 0, "Token price must be greater than 0");
-        require(_numberOfTokens > 0, "Number of tokens must be greater than 0");
+        if (_tokenPrice == 0) {
+            revert TokenPriceMustBePositive();
+        }
+        if (_numberOfTokens == 0) {
+            revert NumberOfTokensMustBePositive();
+        }
 
         PurchaseStorage storage ps = _getPurchaseStorage();
-        require(
-            ArcToken(_tokenContract).balanceOf(address(this)) >= _numberOfTokens, "Contract does not hold enough tokens"
-        );
+        if (ArcToken(_tokenContract).balanceOf(address(this)) < _numberOfTokens) {
+            revert ContractMissingRequiredTokens();
+        }
 
         ps.tokenInfo[_tokenContract] =
             TokenInfo({ isEnabled: true, tokenPrice: _tokenPrice, totalAmountForSale: _numberOfTokens, amountSold: 0 });
@@ -125,29 +155,57 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         PurchaseStorage storage ps = _getPurchaseStorage();
         TokenInfo storage info = ps.tokenInfo[_tokenContract];
 
-        require(info.isEnabled, "Token is not enabled for purchase");
-        require(_purchaseAmount > 0, "Purchase amount should be greater than zero");
-        require(info.tokenPrice > 0, "Token price not set");
+        if (!info.isEnabled) {
+            revert TokenNotEnabled();
+        }
+        if (_purchaseAmount == 0) {
+            revert ZeroAmount();
+        }
+        if (info.tokenPrice == 0) {
+            revert TokenPriceMustBePositive();
+        }
 
         IERC20 purchaseTkn = ps.purchaseToken;
-        require(address(purchaseTkn) != address(0), "Purchase token not set");
-
-        uint256 tokensToBuy = _purchaseAmount / info.tokenPrice;
-        require(tokensToBuy > 0, "Purchase amount too low for a single token");
-
-        uint256 remainingForSale = info.totalAmountForSale - info.amountSold;
-        require(remainingForSale >= tokensToBuy, "Not enough tokens left for sale");
+        if (address(purchaseTkn) == address(0)) {
+            revert PurchaseTokenNotSet();
+        }
 
         ArcToken token = ArcToken(_tokenContract);
-        require(token.balanceOf(address(this)) >= tokensToBuy, "Contract internal token balance insufficient");
+        uint8 tokenDecimals = token.decimals(); // Get decimals dynamically
+        uint256 scalingFactor = 10 ** tokenDecimals;
 
-        require(purchaseTkn.transferFrom(msg.sender, address(this), _purchaseAmount), "Purchase token transfer failed");
+        // Calculate ArcToken base units to buy, assuming tokenPrice is for 1 full ArcToken (scaled by its decimals)
+        uint256 arcTokensBaseUnitsToBuy = (_purchaseAmount * scalingFactor) / info.tokenPrice;
+        if (arcTokensBaseUnitsToBuy == 0) {
+            revert PurchaseAmountTooLow();
+        }
 
-        require(token.transfer(msg.sender, tokensToBuy), "Token transfer failed");
+        uint256 remainingForSale = info.totalAmountForSale - info.amountSold; // Remaining in base units
+        if (remainingForSale < arcTokensBaseUnitsToBuy) {
+            revert NotEnoughTokensForSale();
+        }
 
-        info.amountSold += tokensToBuy;
+        // Check base unit balance
+        if (token.balanceOf(address(this)) < arcTokensBaseUnitsToBuy) {
+            revert ContractBalanceInsufficient();
+        }
 
-        emit PurchaseMade(msg.sender, _tokenContract, tokensToBuy, _purchaseAmount);
+        // Transfer purchase token (e.g., USDC)
+        bool purchaseSuccess = purchaseTkn.transferFrom(msg.sender, address(this), _purchaseAmount);
+        if (!purchaseSuccess) {
+            revert PurchaseTransferFailed();
+        }
+
+        // Transfer ArcToken base units
+        bool tokenTransferSuccess = token.transfer(msg.sender, arcTokensBaseUnitsToBuy);
+        if (!tokenTransferSuccess) {
+            revert TokenTransferFailed();
+        }
+
+        info.amountSold += arcTokensBaseUnitsToBuy; // Track base units sold
+
+        // Emit event with ArcToken base units bought and purchase token amount paid
+        emit PurchaseMade(msg.sender, _tokenContract, arcTokensBaseUnitsToBuy, _purchaseAmount);
     }
 
     /**
@@ -157,7 +215,9 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     function setPurchaseToken(
         address purchaseTokenAddress
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(purchaseTokenAddress != address(0), "Invalid purchase token address");
+        if (purchaseTokenAddress == address(0)) {
+            revert InvalidPurchaseTokenAddress();
+        }
         PurchaseStorage storage ps = _getPurchaseStorage();
         ps.purchaseToken = IERC20(purchaseTokenAddress);
         emit PurchaseTokenUpdated(purchaseTokenAddress);
@@ -177,12 +237,13 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         string memory _companyLogoUrl,
         bool _showPlumeBadge
     ) external onlyTokenAdmin(_tokenContract) {
-        require(bytes(_domain).length > 0, "Domain cannot be empty");
+        if (bytes(_domain).length == 0) {
+            revert DomainCannotBeEmpty();
+        }
         PurchaseStorage storage ps = _getPurchaseStorage();
-        require(
-            ps.domainToAddress[_domain] == address(0) || ps.domainToAddress[_domain] == _tokenContract,
-            "Domain already in use"
-        );
+        if (ps.domainToAddress[_domain] != address(0) && ps.domainToAddress[_domain] != _tokenContract) {
+            revert DomainAlreadyInUse(_domain);
+        }
 
         ps.storefrontConfigs[_tokenContract] = StorefrontConfig({
             domain: _domain,
@@ -242,7 +303,9 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     ) external view returns (StorefrontConfig memory) {
         PurchaseStorage storage ps = _getPurchaseStorage();
         address tokenContract = ps.domainToAddress[_domain];
-        require(tokenContract != address(0), "No config found for this domain");
+        if (tokenContract == address(0)) {
+            revert NoConfigForDomain(_domain);
+        }
         return ps.storefrontConfigs[tokenContract];
     }
 
@@ -251,7 +314,9 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     ) external view returns (address) {
         PurchaseStorage storage ps = _getPurchaseStorage();
         address tokenContract = ps.domainToAddress[_domain];
-        require(tokenContract != address(0), "No address found for this domain");
+        if (tokenContract == address(0)) {
+            revert NoConfigForDomain(_domain);
+        }
         return tokenContract;
     }
 
@@ -268,10 +333,17 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
      * @param amount Amount of tokens to withdraw
      */
     function withdrawPurchaseTokens(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(to != address(0), "Cannot withdraw to zero address");
+        if (to == address(0)) {
+            revert CannotWithdrawToZeroAddress();
+        }
         PurchaseStorage storage ps = _getPurchaseStorage();
-        require(address(ps.purchaseToken) != address(0), "Purchase token not set");
-        require(ps.purchaseToken.transfer(to, amount), "Purchase token transfer failed");
+        if (address(ps.purchaseToken) == address(0)) {
+            revert PurchaseTokenNotSet();
+        }
+        bool success = ps.purchaseToken.transfer(to, amount);
+        if (!success) {
+            revert PurchaseTokenWithdrawalFailed();
+        }
     }
 
     /**
@@ -285,14 +357,23 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         address to,
         uint256 amount
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(to != address(0), "Cannot withdraw to zero address");
-        require(amount > 0, "Amount must be greater than zero");
+        if (to == address(0)) {
+            revert CannotWithdrawToZeroAddress();
+        }
+        if (amount == 0) {
+            revert AmountMustBePositive();
+        }
 
         ArcToken token = ArcToken(_tokenContract);
         uint256 contractBalance = token.balanceOf(address(this));
-        require(contractBalance >= amount, "Insufficient unsold tokens in contract");
+        if (contractBalance < amount) {
+            revert InsufficientUnsoldTokens();
+        }
 
-        require(token.transfer(to, amount), "ArcToken withdrawal failed");
+        bool success = token.transfer(to, amount);
+        if (!success) {
+            revert ArcTokenWithdrawalFailed();
+        }
     }
 
     /**

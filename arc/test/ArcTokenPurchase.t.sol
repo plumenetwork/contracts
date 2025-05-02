@@ -13,7 +13,10 @@ import { RestrictionsRouter } from "../src/restrictions/RestrictionsRouter.sol";
 import { WhitelistRestrictions } from "../src/restrictions/WhitelistRestrictions.sol";
 import { YieldBlacklistRestrictions } from "../src/restrictions/YieldBlacklistRestrictions.sol";
 
-contract ArcTokenPurchaseTest is Test {
+// Import ERC20 error interface for checking reverts
+import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+
+contract ArcTokenPurchaseTest is Test, IERC20Errors {
 
     ArcToken public token;
     ArcTokenPurchase public purchase;
@@ -32,7 +35,7 @@ contract ArcTokenPurchaseTest is Test {
     uint256 public constant INITIAL_SUPPLY = 1000e18;
     uint256 public constant TOKEN_PRICE = 100e6; // Price in USDC (6 decimals)
     uint256 public constant TOKENS_FOR_SALE = 500e18;
-    uint256 public constant PURCHASE_AMOUNT = 200e6; // Amount of USDC to spend
+    uint256 public constant USDC_TO_SPEND_ALICE = 200e6; // Amount of USDC (6 decimals) Alice spends
 
     // Define module type constants matching ArcToken/Factory
     bytes32 public constant TRANSFER_RESTRICTION_TYPE = keccak256("TRANSFER_RESTRICTION");
@@ -127,37 +130,75 @@ contract ArcTokenPurchaseTest is Test {
     }
 
     function test_Buy() public {
-        // Enable token sale
+        // Enable token sale (already done in setUp, but explicit is fine)
         purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
+
+        // --- Alice's Purchase ---
+        // Calculate how many ArcTokens Alice should get (ArcToken has 18 decimals)
+        uint256 tokensToBuyAlice = (USDC_TO_SPEND_ALICE * 1e18) / TOKEN_PRICE;
+        assertEq(tokensToBuyAlice, 2e18, "Calculation mismatch for Alice"); // 200e6 * 1e18 / 100e6 = 2e18
 
         // Approve purchase
         vm.prank(alice);
-        purchaseToken.approve(address(purchase), TOKEN_PRICE * PURCHASE_AMOUNT);
+        purchaseToken.approve(address(purchase), USDC_TO_SPEND_ALICE);
 
-        // Buy tokens
-        vm.prank(alice);
+        // Expect the correct event parameters (amount is now ArcToken base units)
+        vm.startPrank(alice);
         vm.expectEmit(true, true, true, true);
-        emit PurchaseMade(alice, address(token), PURCHASE_AMOUNT, TOKEN_PRICE * PURCHASE_AMOUNT);
+        emit PurchaseMade(alice, address(token), tokensToBuyAlice, USDC_TO_SPEND_ALICE); // tokensToBuyAlice already has
+            // 18 decimals
 
-        purchase.buy(address(token), PURCHASE_AMOUNT);
+        // Buy tokens - Alice spends 200 USDC (200e6)
+        purchase.buy(address(token), USDC_TO_SPEND_ALICE);
 
-        // Verify balances
-        assertEq(token.balanceOf(alice), PURCHASE_AMOUNT);
-        assertEq(purchaseToken.balanceOf(alice), TOKEN_PRICE * (100 - PURCHASE_AMOUNT));
+        // Verify Alice's balances
+        assertEq(token.balanceOf(alice), tokensToBuyAlice, "Alice ArcToken balance mismatch");
+        assertEq(purchaseToken.balanceOf(alice), (1_000_000e6 - USDC_TO_SPEND_ALICE), "Alice USDC balance mismatch"); // Initial
+            // mint was 1M USDC
+        vm.stopPrank();
 
-        // Verify final state
+        // --- Buyer2's Purchase ---
         address buyer2 = makeAddr("buyer2");
-        whitelistModule.addToWhitelist(buyer2);
-        purchaseToken.mint(buyer2, TOKEN_PRICE * 50);
+        whitelistModule.addToWhitelist(buyer2); // Buyer needs to be whitelisted for ArcToken transfer
+
+        uint256 tokensToBuyBuyer2 = 50e18; // Buyer2 wants 50 ArcTokens
+        uint256 usdcToSpendBuyer2 = (tokensToBuyBuyer2 * TOKEN_PRICE) / 1e18;
+        assertEq(usdcToSpendBuyer2, 5000e6, "Calculation mismatch for Buyer2"); // 50e18 * 100e6 / 1e18 = 5000e6
+
+        purchaseToken.mint(buyer2, usdcToSpendBuyer2);
 
         vm.prank(buyer2);
-        purchaseToken.approve(address(purchase), TOKEN_PRICE * 50);
-        vm.prank(buyer2);
-        purchase.buy(address(token), 50);
+        purchaseToken.approve(address(purchase), usdcToSpendBuyer2);
 
+        vm.startPrank(buyer2);
+        vm.expectEmit(true, true, true, true);
+        emit PurchaseMade(buyer2, address(token), tokensToBuyBuyer2, usdcToSpendBuyer2);
+
+        // Buyer2 buys 50 ArcTokens by spending 5000 USDC (5000e6)
+        purchase.buy(address(token), usdcToSpendBuyer2);
+
+        // Verify Buyer2's balances
+        assertEq(token.balanceOf(buyer2), tokensToBuyBuyer2, "Buyer2 ArcToken balance mismatch");
+        assertEq(purchaseToken.balanceOf(buyer2), 0, "Buyer2 USDC balance mismatch");
+
+        // --- Verify Final State ---
         ArcTokenPurchase.TokenInfo memory finalInfo = purchase.getTokenInfo(address(token));
+        uint256 totalTokensSold = tokensToBuyAlice + tokensToBuyBuyer2; // 2e18 + 50e18 = 52e18
+        assertEq(finalInfo.amountSold, totalTokensSold, "Final amountSold mismatch");
+
         uint256 finalRemaining = finalInfo.totalAmountForSale - finalInfo.amountSold;
-        assertEq(finalRemaining, TOKENS_FOR_SALE - 80);
+        assertEq(finalRemaining, TOKENS_FOR_SALE - totalTokensSold, "Final remaining mismatch"); // 500e18 - 52e18 =
+            // 448e18
+
+        assertEq(
+            token.balanceOf(address(purchase)), TOKENS_FOR_SALE - totalTokensSold, "Contract final ArcToken balance"
+        );
+        assertEq(
+            purchaseToken.balanceOf(address(purchase)),
+            USDC_TO_SPEND_ALICE + usdcToSpendBuyer2,
+            "Contract final USDC balance"
+        );
+        vm.stopPrank();
     }
 
     // ============ Storefront Configuration Tests ============
@@ -192,38 +233,63 @@ contract ArcTokenPurchaseTest is Test {
 
     function test_RevertWhen_EnableTokenNonOwner() public {
         vm.prank(bob);
-        vm.expectRevert("Only token owner can call this function");
+        // Expect the specific error instance with arguments
+        vm.expectRevert(abi.encodeWithSelector(ArcTokenPurchase.NotTokenAdmin.selector, bob, address(token)));
         purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
     }
 
     function test_RevertWhen_BuyWithoutEnabling() public {
+        // Disable the token first (it's enabled in setUp)
+        vm.prank(owner); // Use owner who has ADMIN_ROLE on the token
+        // Need a function to disable token sale. Let's assume we add disableToken().
+        // purchase.disableToken(address(token));
+        // For now, let's test by deploying a new token that isn't enabled
+        ArcToken newToken = new ArcToken();
+        newToken.initialize("New", "NEW", 0, address(yieldToken), owner, 18, address(router));
+
         vm.prank(alice);
-        vm.expectRevert("Token is not enabled for purchase");
-        purchase.buy(address(token), PURCHASE_AMOUNT);
+        vm.expectRevert(ArcTokenPurchase.TokenNotEnabled.selector);
+        purchase.buy(address(newToken), USDC_TO_SPEND_ALICE);
     }
 
     function test_RevertWhen_BuyWithoutApproval() public {
         purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
 
         vm.prank(alice);
-        vm.expectRevert("ERC20: insufficient allowance");
-        purchase.buy(address(token), PURCHASE_AMOUNT);
+        // Expect the specific error instance with arguments
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientAllowance.selector, address(purchase), 0, USDC_TO_SPEND_ALICE
+            )
+        );
+        purchase.buy(address(token), USDC_TO_SPEND_ALICE);
     }
 
     function test_RevertWhen_BuyMoreThanAvailable() public {
         purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
 
-        vm.prank(alice);
-        purchaseToken.approve(address(purchase), TOKEN_PRICE * (TOKENS_FOR_SALE + 1));
+        ArcTokenPurchase.TokenInfo memory info = purchase.getTokenInfo(address(token));
 
-        vm.prank(alice);
-        vm.expectRevert("Not enough tokens available for sale");
-        purchase.buy(address(token), TOKENS_FOR_SALE + 1);
+        // Calculate the USDC amount required to buy exactly one more base unit (1) than available
+
+        uint256 tokensAvailable = info.totalAmountForSale - info.amountSold;
+        uint256 usdcForAvailableTokens = (tokensAvailable * info.tokenPrice) / 1e18;
+        uint256 usdcAmountToCauseRevert = usdcForAvailableTokens + 1; // Try to buy with 1 extra base unit of USDC
+
+        vm.startPrank(alice);
+        purchaseToken.approve(address(purchase), usdcAmountToCauseRevert); // Approve the amount that should cause
+            // revert
+
+        vm.expectRevert(ArcTokenPurchase.NotEnoughTokensForSale.selector);
+        // Attempt to buy with the USDC amount calculated to be just over the limit
+        purchase.buy(address(token), usdcAmountToCauseRevert);
+        vm.stopPrank();
     }
 
     function test_RevertWhen_SetStorefrontConfigNonOwner() public {
         vm.prank(bob);
-        vm.expectRevert("Only token owner can call this function");
+        // Expect the specific error instance with arguments
+        vm.expectRevert(abi.encodeWithSelector(ArcTokenPurchase.NotTokenAdmin.selector, bob, address(token)));
         purchase.setStorefrontConfig(
             address(token), "test.arc", "Test Sale", "Description", "image.url", "#FFFFFF", "#000000", "logo.url", true
         );
@@ -233,7 +299,7 @@ contract ArcTokenPurchaseTest is Test {
 
     function test_CompleteTokenSaleFlow() public {
         // Enable sale
-        purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
+        // Sale is already enabled in setUp
 
         // Configure storefront
         purchase.setStorefrontConfig(
@@ -249,20 +315,22 @@ contract ArcTokenPurchaseTest is Test {
         vm.prank(alice);
         purchaseToken.approve(address(purchase), TOKEN_PRICE * 30);
         vm.prank(alice);
-        purchase.buy(address(token), 30);
+        uint256 alicePurchaseAmount = 30 * TOKEN_PRICE; // Buy 30 tokens worth of USDC
+        purchase.buy(address(token), alicePurchaseAmount);
 
         // Second purchase
+        uint256 buyer2PurchaseAmount = 50 * TOKEN_PRICE; // Buy 50 tokens worth of USDC
         vm.prank(buyer2);
-        purchaseToken.approve(address(purchase), TOKEN_PRICE * 50);
+        purchaseToken.approve(address(purchase), buyer2PurchaseAmount);
         vm.prank(buyer2);
-        purchase.buy(address(token), 50);
+        purchase.buy(address(token), buyer2PurchaseAmount);
 
         // Verify final state
-        assertEq(token.balanceOf(alice), 30);
-        assertEq(token.balanceOf(buyer2), 50);
+        assertEq(token.balanceOf(alice), 30e18); // Assuming 1 token = 1e18
+        assertEq(token.balanceOf(buyer2), 50e18);
         ArcTokenPurchase.TokenInfo memory finalInfo = purchase.getTokenInfo(address(token));
         uint256 finalRemaining = finalInfo.totalAmountForSale - finalInfo.amountSold;
-        assertEq(finalRemaining, TOKENS_FOR_SALE - 80);
+        assertEq(finalRemaining, TOKENS_FOR_SALE - (30e18 + 50e18));
     }
 
 }
