@@ -130,6 +130,8 @@ library PlumeStakingStorage {
         mapping(uint16 => uint256) slashVoteCounts;
         /// @notice Maps an admin address to its validator ID (if it's a validator admin)
         mapping(address => uint16) adminToValidatorId;
+        /// @notice Tracks if an admin address is already assigned to *any* validator.
+        mapping(address => bool) isAdminAssigned;
     }
 
     // Validator info struct to store validator details
