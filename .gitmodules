@@ -40,6 +40,16 @@
 [submodule "nest/lib/nucleus-boring-vault"]
 	path = nest/lib/nucleus-boring-vault
 	url = https://github.com/plumenetwork/nucleus-boring-vault
+[submodule "smart-wallets/lib/solmate"]
+	path = smart-wallets/lib/solmate
+	url = https://github.com/transmissions11/solmate
+[submodule "arc/lib/openzeppelin-contracts"]
+	path = arc/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "arc/lib/openzeppelin-contracts-upgradeable"]
+	path = arc/lib/openzeppelin-contracts-upgradeable
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable
 [submodule "plume/lib/solidstate-solidity"]
 	path = plume/lib/solidstate-solidity
 	url = https://github.com/solidstate-network/solidstate-solidity
+
