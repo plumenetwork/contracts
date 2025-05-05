@@ -87,7 +87,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert StakeAmountTooSmall(stakeAmount, $.minStakeAmount);
         }
         if (!$.validatorExists[validatorId]) {
-            revert ValidatorNotActive(validatorId);
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        // Check if validator is active and not slashed
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        if (!validator.active || validator.slashed) {
+            revert ValidatorInactive(validatorId);
         }
 
         // Update stake amount
@@ -144,7 +149,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert StakeAmountTooSmall(amount, $.minStakeAmount);
         }
         if (!$.validatorExists[validatorId]) {
-            revert ValidatorNotActive(validatorId);
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        // Check if validator is active and not slashed
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        if (!validator.active || validator.slashed) {
+            revert ValidatorInactive(validatorId);
         }
 
         // Check available balances
@@ -400,7 +410,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert StakeAmountTooSmall(stakeAmount, $.minStakeAmount);
         }
         if (!$.validatorExists[validatorId]) {
-            revert ValidatorNotActive(validatorId);
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        // Check if validator is active and not slashed
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        if (!validator.active || validator.slashed) {
+            revert ValidatorInactive(validatorId);
         }
         if (staker == address(0)) {
             revert ZeroRecipientAddress();
@@ -511,6 +526,11 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Check if any rewards were found
         if (amountRestaked == 0) {
             revert NoRewardsToRestake();
+        }
+
+        // Check if the total reward amount meets the minimum stake threshold
+        if (amountRestaked < $.minStakeAmount) {
+            revert StakeAmountTooSmall(amountRestaked, $.minStakeAmount);
         }
 
         // --- Update Stake State ---
