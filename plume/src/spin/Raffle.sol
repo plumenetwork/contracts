@@ -55,6 +55,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     
     // VRF
     mapping(uint256 => uint256) public pendingVRFRequests;
+    mapping(uint256 => bool) public isWinnerRequestPending;
 
     // Migration tracking
     bool private _migrationComplete;
@@ -82,6 +83,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     error WinnerNotDrawn();
     error NotAWinner();
     error WinnerNotSet();
+    error WinnerRequestPending(uint256 prizeId);
 
     // Track the next prize ID so even if some are deleted we know it
     uint256 private nextPrizeId;
@@ -102,15 +104,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // Modifiers
-    modifier onlyAdmin() {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Not admin");
-        _;
-    }
-    
-    modifier onlySupra() {
-        require(hasRole(SUPRA_ROLE, msg.sender), "Not supra");
-        _;
-    }
     
     modifier prizeIsActive(uint256 prizeId) {
         require(prizes[prizeId].isActive, "Prize not available");
@@ -203,6 +196,11 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         if (prizeRanges[prizeId].length == 0) revert EmptyTicketPool();
         if (prizes[prizeId].winner != address(0)) revert WinnerDrawn(prizes[prizeId].winner);
 
+        if (isWinnerRequestPending[prizeId]) {
+            revert WinnerRequestPending(prizeId);
+        }
+        isWinnerRequestPending[prizeId] = true;
+
         string memory callbackSig = "handleWinnerSelection(uint256,uint256[])";
         uint256 requestId = supraRouter.generateRequest(
             callbackSig,
@@ -220,6 +218,9 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     function handleWinnerSelection(uint256 requestId, uint256[] memory rng) external onlyRole(SUPRA_ROLE) {
         uint256 prizeId = pendingVRFRequests[requestId];
         
+        isWinnerRequestPending[prizeId] = false;
+        delete pendingVRFRequests[requestId];
+
         if (!prizes[prizeId].isActive) revert PrizeInactive();
 
         uint256 idx = (rng[0] % totalTickets[prizeId]) + 1;

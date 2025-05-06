@@ -53,6 +53,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     mapping(address => bool) public whitelists;
     bool public enableSpin;
     RewardProbabilities public rewardProbabilities;
+    mapping(address => bool) public isSpinPending;
 
     // Reserved storage gap for future upgrades
     uint256[50] private __gap;
@@ -69,6 +70,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     error AlreadySpunToday();
     error InvalidNonce();
     error CampaignNotStarted();
+    error SpinRequestPending(address user);
 
     /**
      * @notice Initializes the Spin contract.
@@ -163,6 +165,11 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             revert CampaignNotStarted();
         }
 
+        if (isSpinPending[msg.sender]) {
+            revert SpinRequestPending(msg.sender);
+        }
+        isSpinPending[msg.sender] = true;
+
         string memory callbackSignature = "handleRandomness(uint256,uint256[])";
         uint8 rngCount = 1;
         uint256 numConfirmations = 1;
@@ -190,6 +197,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         if (user == address(0)) {
             revert InvalidNonce();
         }
+
+        isSpinPending[user] = false;
+        delete userNonce[nonce];
 
         uint256 randomness = rngList[0]; // Use full VRF range
         (string memory rewardCategory, uint256 rewardAmount) = determineReward(randomness, user);
