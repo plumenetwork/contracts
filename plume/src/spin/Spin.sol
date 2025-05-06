@@ -23,11 +23,12 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 nothingCounts;
     }
 
+    // Defines the probability ranges for non-jackpot rewards based on a 0-999,999 scale.
+    // Jackpot probability is determined separately by the daily jackpotProbabilities array.
     struct RewardProbabilities {
-        uint256 jackpotThreshold;    // 0 to jackpotThreshold
-        uint256 plumeTokenThreshold; // jackpotThreshold to plumeTokenThreshold
-        uint256 raffleTicketThreshold; // plumeTokenThreshold to raffleTicketThreshold
-        uint256 ppThreshold;         // raffleTicketThreshold to ppThreshold
+        uint256 plumeTokenThreshold; // Range start depends on daily jackpot threshold, ends here.
+        uint256 raffleTicketThreshold; // Starts after plumeTokenThreshold, ends here.
+        uint256 ppThreshold;         // Starts after raffleTicketThreshold, ends here.
         // anything above ppThreshold is "Nothing"
     }
 
@@ -114,12 +115,12 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         lastJackpotClaimWeek = 999;  // start with arbitrary non-zero value
 
         // Set default probabilities
+        // Note: Jackpot probability is handled by jackpotProbabilities based on dayOfWeek
         rewardProbabilities = RewardProbabilities({
-            jackpotThreshold: 200,        // 0-200 (0.02% but further modified by the daily odds to much lower)
-            plumeTokenThreshold: 200_000,  // 201-200,000 (20%)
-            raffleTicketThreshold: 600_000, // 200,001-600,000 (40%)
-            ppThreshold: 900_000           // 600,001-900,000 (30%)
-                                           // 900,001-1,000,000 is "Nothing" (10%)
+            plumeTokenThreshold: 200_000,  // Up to 200,000 (Approx 20%)
+            raffleTicketThreshold: 600_000, // Up to 600,000 (Approx 40%)
+            ppThreshold: 900_000           // Up to 900,000 (Approx 30%)
+                                           // Above 900,000 is "Nothing" (Approx 10%)
         });
     }
 
