@@ -10,7 +10,14 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "../interfaces/IDateTime.sol";
 import "../interfaces/ISupraRouterContract.sol";
 
-contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable {
+contract Spin is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable
+{
+
     // Storage
     struct UserData {
         uint256 jackpotWins;
@@ -24,11 +31,11 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     }
 
     struct RewardProbabilities {
-        uint256 jackpotThreshold;    // 0 to jackpotThreshold
+        uint256 jackpotThreshold; // 0 to jackpotThreshold
         uint256 plumeTokenThreshold; // jackpotThreshold to plumeTokenThreshold
         uint256 raffleTicketThreshold; // plumeTokenThreshold to raffleTicketThreshold
-        uint256 ppThreshold;         // raffleTicketThreshold to ppThreshold
-        // anything above ppThreshold is "Nothing"
+        uint256 ppThreshold; // raffleTicketThreshold to ppThreshold
+            // anything above ppThreshold is "Nothing"
     }
 
     // Roles
@@ -53,6 +60,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     mapping(address => bool) public whitelists;
     bool public enableSpin;
     RewardProbabilities public rewardProbabilities;
+    mapping(address => bool) public isSpinPending;
 
     // Reserved storage gap for future upgrades
     uint256[50] private __gap;
@@ -88,7 +96,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         supraRouter = ISupraRouterContract(supraRouterAddress);
         dateTime = IDateTime(dateTimeAddress);
         admin = msg.sender;
-        enableSpin = false;  // Start disabled until explicitly enabled
+        enableSpin = false; // Start disabled until explicitly enabled
 
         // Set default values
         jackpotProbabilities = [1, 2, 3, 5, 7, 10, 20];
@@ -109,16 +117,16 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         PP_PerSpin = 100;
         plumeAmounts = [1, 1, 1];
 
-        lastJackpotClaimWeek = 999;  // start with arbitrary non-zero value
+        lastJackpotClaimWeek = 999; // start with arbitrary non-zero value
 
         // Set default probabilities
         rewardProbabilities = RewardProbabilities({
-            jackpotThreshold: 200,        // 0-200 (0.02% but further modified by the daily odds to much lower)
-            plumeTokenThreshold: 200_000,  // 201-200,000 (20%)
+            jackpotThreshold: 200, // 0-200 (0.02% but further modified by the daily odds to much lower)
+            plumeTokenThreshold: 200_000, // 201-200,000 (20%)
             raffleTicketThreshold: 600_000, // 200,001-600,000 (40%)
-            ppThreshold: 900_000           // 600,001-900,000 (30%)
-                                           // 900,001-1,000,000 is "Nothing" (10%)
-        });
+            ppThreshold: 900_000 // 600,001-900,000 (30%)
+                // 900,001-1,000,000 is "Nothing" (10%)
+         });
     }
 
     /// @notice Ensures that the user can only spin once per day by checking their last spin date.
@@ -168,8 +176,11 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 numConfirmations = 1;
         uint256 clientSeed = uint256(keccak256(abi.encodePacked(admin, block.timestamp)));
 
-        uint256 nonce =
-            supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, admin);
+        // Prevent multiple pending spins
+        require(!isSpinPending[msg.sender], "Previous spin request still pending");
+        isSpinPending[msg.sender] = true; // Mark spin as pending
+
+        uint256 nonce = supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, admin);
         userNonce[nonce] = msg.sender;
 
         emit SpinRequested(nonce, msg.sender);
@@ -191,13 +202,15 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
             revert InvalidNonce();
         }
 
+        // Reset pending status and clean up nonce
+        isSpinPending[user] = false;
+        delete userNonce[nonce];
+
         uint256 randomness = rngList[0]; // Use full VRF range
         (string memory rewardCategory, uint256 rewardAmount) = determineReward(randomness, user);
 
         // Apply reward logic
         UserData storage userDataStorage = userData[user];
-
-        
 
         // ----------  Effects: update storage first  ----------
         if (keccak256(bytes(rewardCategory)) == keccak256("Jackpot")) {
@@ -276,21 +289,29 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         // if a user just spun, we need to increment the streak its a new day or a broken streak
         uint256 streakAdjustment = justSpun ? 1 : 0;
         uint256 lastSpinTs = userData[user].lastSpinTimestamp;
-        if (lastSpinTs == 0) return 0 + streakAdjustment;
+        if (lastSpinTs == 0) {
+            return 0 + streakAdjustment;
+        }
         uint256 lastDaySpun = lastSpinTs / SECONDS_PER_DAY;
-        uint256 today   = nowTs     / SECONDS_PER_DAY;
-        if (today == lastDaySpun) return userData[user].streakCount; // same day
-        if (today == lastDaySpun + 1)   return userData[user].streakCount + streakAdjustment; // streak not broken yet
+        uint256 today = nowTs / SECONDS_PER_DAY;
+        if (today == lastDaySpun) {
+            return userData[user].streakCount;
+        } // same day
+        if (today == lastDaySpun + 1) {
+            return userData[user].streakCount + streakAdjustment;
+        } // streak not broken yet
         return 0 + streakAdjustment; // broken streak
     }
 
-    function currentStreak(address user) public view returns (uint256) {
+    function currentStreak(
+        address user
+    ) public view returns (uint256) {
         return _computeStreak(user, block.timestamp, false);
     }
 
     function _safeTransferPlume(address to, uint256 weiAmount) internal {
         require(address(this).balance >= weiAmount, "insufficient Plume in the Spin contract");
-        (bool ok,) = to.call{value: weiAmount}("");
+        (bool ok,) = to.call{ value: weiAmount }("");
         require(ok, "Plume transfer failed");
     }
 
@@ -451,7 +472,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         jackpotPrizes[week] = prize;
     }
 
-    function setCampaignStartDate(uint256 start) external onlyRole(ADMIN_ROLE) {
+    function setCampaignStartDate(
+        uint256 start
+    ) external onlyRole(ADMIN_ROLE) {
         campaignStartDate = start == 0 ? block.timestamp : start;
     }
 
@@ -497,7 +520,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     /// @notice Enable or disable spinning
     /// @param _enableSpin The flag to enable/disable spinning
-    function setEnableSpin(bool _enableSpin) external onlyRole(ADMIN_ROLE) {
+    function setEnableSpin(
+        bool _enableSpin
+    ) external onlyRole(ADMIN_ROLE) {
         enableSpin = _enableSpin;
     }
 
@@ -515,7 +540,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         require(_plumeTokenThreshold < _raffleTicketThreshold, "Invalid thresholds order");
         require(_raffleTicketThreshold < _ppThreshold, "Invalid thresholds order");
         require(_ppThreshold <= 1_000_000, "Threshold exceeds maximum");
-        
+
         rewardProbabilities.plumeTokenThreshold = _plumeTokenThreshold;
         rewardProbabilities.raffleTicketThreshold = _raffleTicketThreshold;
         rewardProbabilities.ppThreshold = _ppThreshold;
@@ -532,4 +557,5 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     /// @notice Fallback function to receive ether
     receive() external payable { }
+
 }
