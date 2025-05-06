@@ -101,16 +101,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // Modifiers
-    modifier onlyAdmin() {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Not admin");
-        _;
-    }
-
-    modifier onlySupra() {
-        require(hasRole(SUPRA_ROLE, msg.sender), "Not supra");
-        _;
-    }
-
     modifier onlyPrize(
         uint256 prizeId
     ) {
