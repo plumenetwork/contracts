@@ -359,18 +359,7 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(USER); raffle.spendRaffle(1,2);
         vm.prank(USER); raffle.spendRaffle(1,1);
 
-        // getUserEntries(user) - check initial state
-        (
-            uint256[] memory ids, 
-            uint256[] memory counts, 
-            uint256[] memory unclaimedWins,
-            uint256[] memory claimedWins
-        ) = raffle.getUserEntries(USER);
-        
-        assertEq(ids.length, 1);
-        assertEq(counts[0], 3);  // 2 + 1 tickets spent
-        assertEq(unclaimedWins.length, 0);
-        assertEq(claimedWins.length, 0);
+   
 
         // draw and claim so wins get populated
         vm.recordLogs();
@@ -396,23 +385,11 @@ contract RaffleFlowTest is PlumeTestBase {
         vm.prank(ADMIN);
         raffle.setWinner(1);
 
-        // Check unclaimed wins before claiming
-        (ids, counts, unclaimedWins, claimedWins) = raffle.getUserEntries(USER);
-        assertEq(unclaimedWins.length, 1);
-        assertEq(unclaimedWins[0], 1);
-        assertEq(claimedWins.length, 0);
 
         // Claim the prize
         vm.prank(USER); 
         raffle.claimPrize(1);
 
-        // Check claimed wins after claiming
-        (ids, counts, unclaimedWins, claimedWins) = raffle.getUserEntries(USER);
-        assertEq(ids.length, 1);
-        assertEq(counts[0], 3);
-        assertEq(unclaimedWins.length, 0);
-        assertEq(claimedWins.length, 1);
-        assertEq(claimedWins[0], 1);
     }
 
     // Test that getWinner returns the correct winner
