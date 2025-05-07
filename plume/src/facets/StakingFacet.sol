@@ -94,7 +94,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert ValidatorInactive(validatorId);
         }
 
-        // --- Optimization: Check if this is a new stake for this specific validator ---
+        // Check if this is a new stake for this specific validator
         bool isNewStakeForValidator = $.userValidatorStakes[msg.sender][validatorId].staked == 0;
 
         // Update stake amount
@@ -122,7 +122,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Add user to the list of validators they have staked with
         PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
 
-        // --- Optimized Initialize Reward State for New Stake with Validator ---
+        // --- Initialize Reward State for New Stake with Validator ---
         if (isNewStakeForValidator) {
             address[] memory rewardTokens = $.rewardTokens; // Get all system reward tokens
             for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -152,7 +152,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 }
             }
         }
-        // --- End Optimized Initialize Reward State ---
 
         // Emit stake event with details
         emit Staked(
@@ -204,7 +203,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         uint256 fromCooled = amount <= availableCooled ? amount : availableCooled;
         uint256 fromParked = amount - fromCooled;
 
-        // --- Optimization: Check if this is a new stake for this specific validator ---
+        // Check if this is a new stake for this specific validator
         bool isNewStakeForValidator = $.userValidatorStakes[msg.sender][validatorId].staked == 0;
 
         // --- Update State ---
@@ -240,7 +239,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Add staker to validator list if not already there
         PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
 
-        // --- Optimized Initialize Reward State for New Stake with Validator (Restake) ---
+        // ---  Initialize Reward State for New Stake with Validator (Restake) ---
         if (isNewStakeForValidator) {
             address[] memory rewardTokens = $.rewardTokens;
             for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -262,7 +261,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 }
             }
         }
-        // --- End Optimized Initialize Reward State ---
 
         // --- Checks ---
         // Check if exceeding validator capacity
@@ -482,7 +480,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert ZeroRecipientAddress();
         }
 
-        // --- Optimization: Check if this is a new stake for the staker with this specific validator ---
+        //  Check if this is a new stake for the staker with this specific validator
         bool isNewStakeForValidator = $.userValidatorStakes[staker][validatorId].staked == 0;
 
         // Update stake amount
@@ -510,7 +508,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Add user to the list of validators they have staked with
         PlumeValidatorLogic.addStakerToValidator($, staker, validatorId);
 
-        // --- Optimized Initialize Reward State for New Stake with Validator (StakeOnBehalf) ---
         // Applied to the `staker` address, not msg.sender
         if (isNewStakeForValidator) {
             address[] memory rewardTokens = $.rewardTokens;
@@ -533,7 +530,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 }
             }
         }
-        // --- End Optimized Initialize Reward State ---
 
         // Emit stake event with details
         emit Staked(
