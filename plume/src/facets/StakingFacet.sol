@@ -44,24 +44,16 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
-import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
-import { console2 } from "forge-std/Test.sol";
 
 /**
  * @title StakingFacet
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Facet containing core user staking, unstaking, and withdrawal functions.
  */
-contract StakingFacet is ReentrancyGuardUpgradeable, ContextUpgradeable {
+contract StakingFacet is ReentrancyGuardUpgradeable {
 
     using SafeERC20 for IERC20;
     using Address for address payable;
-
-    // TEMPORARY DEBUG FUNCTION
-    function DEBUG_getUserValidators(address user) external view returns (uint16[] memory) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        return $.userValidators[user];
-    }
 
     // Define PLUME_NATIVE constant
     address internal constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
