@@ -60,7 +60,6 @@ import { PlumeRoles } from "../lib/PlumeRoles.sol";
  */
 contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
-    // Struct definition MOVED INSIDE the contract
     struct ValidatorListData {
         uint16 id;
         uint256 totalStaked;
@@ -80,9 +79,14 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     // Storage slot for treasury address (same as in RewardsFacet)
     bytes32 internal constant TREASURY_STORAGE_POSITION = keccak256("plume.storage.RewardTreasury");
 
-    // Helper to get Plume-specific storage layout
+    // --- Storage Access ---
+    bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
+
     function _getPlumeStorage() internal pure returns (PlumeStakingStorage.Layout storage $) {
-        $ = PlumeStakingStorage.layout();
+        bytes32 position = PLUME_STORAGE_POSITION;
+        assembly {
+            $.slot := position
+        }
     }
 
     // Helper to get treasury address (same implementation as in RewardsFacet)

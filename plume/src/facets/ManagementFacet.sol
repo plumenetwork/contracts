@@ -49,11 +49,13 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     address internal constant PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     // --- Storage Access ---
-    // bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking"); // Keep if used
-    // elsewhere
+    bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
 
     function _getPlumeStorage() internal pure returns (PlumeStakingStorage.Layout storage $) {
-        $ = PlumeStakingStorage.layout();
+        bytes32 position = PLUME_STORAGE_POSITION;
+        assembly {
+            $.slot := position
+        }
     }
 
     // --- Modifiers ---
@@ -79,7 +81,6 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function setMinStakeAmount(
         uint256 _minStakeAmount
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        // <-- Use ADMIN_ROLE
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         uint256 oldAmount = $.minStakeAmount;
         // Add validation? E.g., prevent setting to 0?
@@ -98,7 +99,6 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function setCooldownInterval(
         uint256 _cooldownInterval
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        // <-- Use ADMIN_ROLE
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         $.cooldownInterval = _cooldownInterval;
         emit CooldownIntervalSet(_cooldownInterval);
@@ -119,7 +119,6 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint256 amount,
         address recipient
     ) external onlyRole(PlumeRoles.TIMELOCK_ROLE) nonReentrant {
-        // <-- Use ADMIN_ROLE
         // Validate inputs
         if (token == address(0)) {
             revert ZeroAddress("token");
