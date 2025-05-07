@@ -94,6 +94,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert ValidatorInactive(validatorId);
         }
 
+        // --- Optimization: Check if this is a new stake for this specific validator ---
+        bool isNewStakeForValidator = $.userValidatorStakes[msg.sender][validatorId].staked == 0;
+
         // Update stake amount
         $.userValidatorStakes[msg.sender][validatorId].staked += stakeAmount;
         $.stakeInfo[msg.sender].staked += stakeAmount;
@@ -118,6 +121,38 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Add user to the list of validators they have staked with
         PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
+
+        // --- Optimized Initialize Reward State for New Stake with Validator ---
+        if (isNewStakeForValidator) {
+            address[] memory rewardTokens = $.rewardTokens; // Get all system reward tokens
+            for (uint256 i = 0; i < rewardTokens.length; i++) {
+                address token = rewardTokens[i];
+                if ($.isRewardToken[token]) { // Ensure it's still an active reward token
+                    // 1. Update the validator's cumulative reward per token to current block.timestamp
+                    //    This ensures that the validator's state is current before we use its cumulative values.
+                    PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
+
+                    // 2. Set the new staker's "paid" marker to the current cumulative value.
+                    //    This means they start with a "debt" of all rewards accrued by the validator up to this point.
+                    $.userValidatorRewardPerTokenPaid[msg.sender][validatorId][token] =
+                        $.validatorRewardPerTokenCumulative[validatorId][token];
+                    $.userValidatorRewardPerTokenPaidTimestamp[msg.sender][validatorId][token] = block.timestamp;
+                    
+                    // 3. Initialize any stored pending rewards for this specific validator/token to zero.
+                    $.userRewards[msg.sender][validatorId][token] = 0;
+
+                    // 4. Set user's last processed checkpoint index for this validator/token.
+                    if ($.validatorRewardRateCheckpoints[validatorId][token].length > 0) {
+                        $.userLastCheckpointIndex[msg.sender][validatorId][token] =
+                            $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
+                    } else {
+                        // If no validator-specific checkpoints, they start from the beginning (index 0 or implicit global)
+                        $.userLastCheckpointIndex[msg.sender][validatorId][token] = 0;
+                    }
+                }
+            }
+        }
+        // --- End Optimized Initialize Reward State ---
 
         // Emit stake event with details
         emit Staked(
@@ -169,6 +204,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         uint256 fromCooled = amount <= availableCooled ? amount : availableCooled;
         uint256 fromParked = amount - fromCooled;
 
+        // --- Optimization: Check if this is a new stake for this specific validator ---
+        bool isNewStakeForValidator = $.userValidatorStakes[msg.sender][validatorId].staked == 0;
+
         // --- Update State ---
         // 1. Decrease source balances
         if (fromCooled > 0) {
@@ -201,6 +239,30 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Add staker to validator list if not already there
         PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
+
+        // --- Optimized Initialize Reward State for New Stake with Validator (Restake) ---
+        if (isNewStakeForValidator) {
+            address[] memory rewardTokens = $.rewardTokens;
+            for (uint256 i = 0; i < rewardTokens.length; i++) {
+                address token = rewardTokens[i];
+                if ($.isRewardToken[token]) {
+                    PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
+
+                    $.userValidatorRewardPerTokenPaid[msg.sender][validatorId][token] =
+                        $.validatorRewardPerTokenCumulative[validatorId][token];
+                    $.userValidatorRewardPerTokenPaidTimestamp[msg.sender][validatorId][token] = block.timestamp;
+                    $.userRewards[msg.sender][validatorId][token] = 0;
+
+                    if ($.validatorRewardRateCheckpoints[validatorId][token].length > 0) {
+                        $.userLastCheckpointIndex[msg.sender][validatorId][token] =
+                            $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
+                    } else {
+                        $.userLastCheckpointIndex[msg.sender][validatorId][token] = 0;
+                    }
+                }
+            }
+        }
+        // --- End Optimized Initialize Reward State ---
 
         // --- Checks ---
         // Check if exceeding validator capacity
@@ -420,6 +482,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert ZeroRecipientAddress();
         }
 
+        // --- Optimization: Check if this is a new stake for the staker with this specific validator ---
+        bool isNewStakeForValidator = $.userValidatorStakes[staker][validatorId].staked == 0;
+
         // Update stake amount
         $.userValidatorStakes[staker][validatorId].staked += stakeAmount;
         $.stakeInfo[staker].staked += stakeAmount;
@@ -444,6 +509,31 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Add user to the list of validators they have staked with
         PlumeValidatorLogic.addStakerToValidator($, staker, validatorId);
+
+        // --- Optimized Initialize Reward State for New Stake with Validator (StakeOnBehalf) ---
+        // Applied to the `staker` address, not msg.sender
+        if (isNewStakeForValidator) {
+            address[] memory rewardTokens = $.rewardTokens;
+            for (uint256 i = 0; i < rewardTokens.length; i++) {
+                address token = rewardTokens[i];
+                if ($.isRewardToken[token]) {
+                    PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
+
+                    $.userValidatorRewardPerTokenPaid[staker][validatorId][token] =
+                        $.validatorRewardPerTokenCumulative[validatorId][token];
+                    $.userValidatorRewardPerTokenPaidTimestamp[staker][validatorId][token] = block.timestamp;
+                    $.userRewards[staker][validatorId][token] = 0;
+
+                    if ($.validatorRewardRateCheckpoints[validatorId][token].length > 0) {
+                        $.userLastCheckpointIndex[staker][validatorId][token] =
+                            $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
+                    } else {
+                        $.userLastCheckpointIndex[staker][validatorId][token] = 0;
+                    }
+                }
+            }
+        }
+        // --- End Optimized Initialize Reward State ---
 
         // Emit stake event with details
         emit Staked(

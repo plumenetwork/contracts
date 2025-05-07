@@ -211,8 +211,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
             for (uint256 j = 0; j < validatorIds.length; j++) {
                 uint16 validatorId = validatorIds[j];
-                PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
-                PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, rate); // Use library
+                PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, rate); 
             }
             $.rewardRates[token] = rate;
         }
