@@ -1,4 +1,0 @@
-@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/
-@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
-@solmate/=lib/solmate/src/
-@boringvault/=lib/nucleus-boring-vault/
