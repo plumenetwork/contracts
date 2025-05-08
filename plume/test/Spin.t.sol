@@ -163,24 +163,28 @@ contract SpinTest is SpinTestBase {
 
         // Spin day 1
         uint256 ts1 = block.timestamp;
-        uint256 nonce = performSpin(USER);
-        completeSpin(nonce, 999_999);
+        uint256 nonce1 = performSpin(USER); // Nonce for day 1
+        completeSpin(nonce1, 999_999);      // Complete spin for day 1
         // after first spin, streak = 1
         assertEq(spin.currentStreak(USER), 1);
 
-        // Next day
+        // Next day (Day 2)
         vm.warp(ts1 + 1 days);
-        // next day, no spin yet, streak = 1
+        // next day, no spin yet, streak = 1 (correctly reflects last spin's effect)
         assertEq(spin.currentStreak(USER), 1);
-        completeSpin(nonce, 999_999);
+        // Spin again on Day 2
+        uint256 nonce2 = performSpin(USER); // Nonce for day 2
+        completeSpin(nonce2, 999_999);      // Complete spin for day 2
         // next day, spin again, streak = 2
         assertEq(spin.currentStreak(USER), 2);
 
-        // Skip a day
+        // Skip a day (Go to Day 4)
         vm.warp(ts1 + 3 days);
-        // skip a day, no spin yet, streak = 0
+        // skip a day, no spin yet, streak = 0 (broken streak)
         assertEq(spin.currentStreak(USER), 0);
-        completeSpin(nonce, 999_999);
+        // Spin again on Day 4
+        uint256 nonce3 = performSpin(USER); // Nonce for day 4
+        completeSpin(nonce3, 999_999);      // Complete spin for day 4
         // skip a day, spin again, streak = 1
         assertEq(spin.currentStreak(USER), 1);
     }

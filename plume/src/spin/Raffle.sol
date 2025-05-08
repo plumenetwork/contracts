@@ -55,6 +55,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     
     // VRF
     mapping(uint256 => uint256) public pendingVRFRequests;
+    mapping(uint256 => bool) public isWinnerRequestPending;
 
     // Migration tracking
     bool private _migrationComplete;
@@ -82,6 +83,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     error WinnerNotDrawn();
     error NotAWinner();
     error WinnerNotSet();
+    error WinnerRequestPending(uint256 prizeId);
 
     // Track the next prize ID so even if some are deleted we know it
     uint256 private nextPrizeId;
@@ -102,15 +104,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // Modifiers
-    modifier onlyAdmin() {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Not admin");
-        _;
-    }
-    
-    modifier onlySupra() {
-        require(hasRole(SUPRA_ROLE, msg.sender), "Not supra");
-        _;
-    }
     
     modifier prizeIsActive(uint256 prizeId) {
         require(prizes[prizeId].isActive, "Prize not available");
@@ -203,6 +196,11 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         if (prizeRanges[prizeId].length == 0) revert EmptyTicketPool();
         if (prizes[prizeId].winner != address(0)) revert WinnerDrawn(prizes[prizeId].winner);
 
+        if (isWinnerRequestPending[prizeId]) {
+            revert WinnerRequestPending(prizeId);
+        }
+        isWinnerRequestPending[prizeId] = true;
+
         string memory callbackSig = "handleWinnerSelection(uint256,uint256[])";
         uint256 requestId = supraRouter.generateRequest(
             callbackSig,
@@ -220,6 +218,9 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     function handleWinnerSelection(uint256 requestId, uint256[] memory rng) external onlyRole(SUPRA_ROLE) {
         uint256 prizeId = pendingVRFRequests[requestId];
         
+        isWinnerRequestPending[prizeId] = false;
+        delete pendingVRFRequests[requestId];
+
         if (!prizes[prizeId].isActive) revert PrizeInactive();
 
         uint256 idx = (rng[0] % totalTickets[prizeId]) + 1;
@@ -281,65 +282,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit PrizeClaimed(msg.sender, prizeId);
     }
 
-    // Return the data for all prizes for a user, including the prizes themselves
-    // the prizes, how much they spent on each, and how many unclaimed and claimed wins they have
-    function getUserEntries(address user) external view returns (
-        uint256[] memory _prizeIds,
-        uint256[] memory ticketCounts,
-        uint256[] memory unclaimedWinnings,
-        uint256[] memory claimedWinnings
-    ) {
-        uint256 count = prizeIds.length;
-        _prizeIds = new uint256[](count);
-        ticketCounts = new uint256[](count);
-        
-        // Count winners first to allocate arrays correctly
-        uint256 unclaimedCount = 0;
-        uint256 claimedCount = 0;
-        for (uint256 i = 0; i < count; i++) {
-            uint256 prizeId = prizeIds[i];
-            Prize storage prize = prizes[prizeId];
-            if (prize.winner == user) {
-                if (prize.claimed) {
-                    claimedCount++;
-                } else {
-                    unclaimedCount++;
-                }
-            }
-        }
-        
-        unclaimedWinnings = new uint256[](unclaimedCount);
-        claimedWinnings = new uint256[](claimedCount);
-        unclaimedCount = 0;  // Reset for reuse
-        claimedCount = 0;    // Reset for reuse
-
-        // Copy prize IDs and process each prize
-        for (uint256 i = 0; i < count; i++) {
-            uint256 prizeId = prizeIds[i];
-            _prizeIds[i] = prizeId;
-            
-            // Calculate tickets spent
-            Range[] storage ranges = prizeRanges[prizeId];
-            for (uint256 j = 0; j < ranges.length; j++) {
-                if (ranges[j].user == user) {
-                    uint256 prevEnd = (j == 0) ? 0 : ranges[j - 1].cumulativeEnd;
-                    ticketCounts[i] += ranges[j].cumulativeEnd - prevEnd;
-                }
-            }
-            
-            // Track winnings
-            Prize storage prize = prizes[prizeId];
-            if (prize.winner == user) {
-                if (prize.claimed) {
-                    claimedWinnings[claimedCount++] = prizeId;
-                } else {
-                    unclaimedWinnings[unclaimedCount++] = prizeId;
-                }
-            }
-        }
-
-        return (_prizeIds, ticketCounts, unclaimedWinnings, claimedWinnings);
-    }
 
     function getPrizeIds() external view returns (uint256[] memory) {
         return prizeIds;
