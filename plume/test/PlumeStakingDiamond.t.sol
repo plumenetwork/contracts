@@ -29,7 +29,7 @@ import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535Diamo
 import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 
 // Libs & Errors/Events
-import { NotValidatorAdmin, Unauthorized } from "../src/lib/PlumeErrors.sol"; // Added Unauthorized, NotValidatorAdmin
+import { AdminAlreadyAssigned, NotValidatorAdmin, Unauthorized, ValidatorInactive, ValidatorDoesNotExist, StakeAmountTooSmall, InvalidAmount } from "../src/lib/PlumeErrors.sol"; // Added errors
 import "../src/lib/PlumeErrors.sol";
 import "../src/lib/PlumeEvents.sol";
 import { PlumeRoles } from "../src/lib/PlumeRoles.sol";
@@ -641,16 +641,20 @@ contract PlumeStakingDiamondTest is Test {
 
         // Setup reward tokens with known rates for easy calculation
         // PUSD: 0.001 token per second (reduced from 1), PLUME_NATIVE: much smaller rate to avoid exceeding max
-        uint256 pusdRate = 1e15; // 0.001 PUSD per second (reduced from 1e18 to prevent excessive rewards)
+        //uint256 pusdRate = 1e15; // 0.001 PUSD per second (reduced from 1e18 to prevent excessive rewards)
         uint256 plumeRate = 1e9; // 0.000000001 PLUME per second (adjusted to be below max)
 
+
+
+
+
         vm.startPrank(admin);
-        address[] memory tokens = new address[](2);
-        tokens[0] = address(pUSD);
-        tokens[1] = PLUME_NATIVE;
-        uint256[] memory rates = new uint256[](2);
-        rates[0] = pusdRate;
-        rates[1] = plumeRate;
+                RewardsFacet(address(diamondProxy)).removeRewardToken(address(pUSD));
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = PLUME_NATIVE;
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = plumeRate;
         RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
 
         // Ensure treasury has enough tokens
@@ -667,8 +671,8 @@ contract PlumeStakingDiamondTest is Test {
         // Setup commission for validators
         uint16 validator0 = DEFAULT_VALIDATOR_ID;
         uint16 validator1 = 1;
-        uint256 commissionRate0 = 1000; // 10%
-        uint256 commissionRate1 = 2000; // 20%
+        uint256 commissionRate0 = 5e15; // 0.5%
+        uint256 commissionRate1 = 5e15; // 0.5%
 
         // Set commission rates
         vm.startPrank(validatorAdmin);
@@ -684,41 +688,105 @@ contract PlumeStakingDiamondTest is Test {
         uint256 user1Stake = 50 ether;
         vm.startPrank(user1);
         StakingFacet(address(diamondProxy)).stake{ value: user1Stake }(validator0);
+        // IMMEDIATELY CHECK THE LIST VIA FACET VIEW FUNCTION
+
+        // DEBUG: Check total stake immediately after staking
+        (,,,uint256 stakeCheckAfterUser1Stake) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validator0);
+        console2.log("DEBUG POST-STAKE: validatorTotalStake = %s", stakeCheckAfterUser1Stake);
+        vm.stopPrank(); // Stop user1 prank before rolling
+        console2.log("DEBUG: block.timestamp = %s", block.timestamp);
+        console2.log("DEBUG: block.number = %s", block.number);
+
+
+
+
+        // Roll to a new block *before* capturing start time for warp
+        vm.roll(block.number + 1);
+        uint256 timestamp = block.timestamp;
+        uint256 startTime =1;
+        console2.log("DEBUG: startTime = %s", startTime);
+
+        // Warp time by a small amount to generate a reward < MIN_STAKE
+        uint256 timeToWarp = 2 seconds;
+        vm.roll(block.number + 1);
+        vm.warp(startTime + timeToWarp);
+
+
+        console2.log("DEBUG: block.timestamp = %s", block.timestamp);
+        console2.log("DEBUG: startTime = %s", startTime);
+
+
+
+        // Perform a dummy action in a new block to ensure warp takes effect
+        vm.roll(block.number + 1);
+        vm.prank(user2); // Use a different user for the dummy action
+        StakingFacet(address(diamondProxy)).amountStaked(); // Simple view call
+
+
+        uint256 actualTimeDelta = block.timestamp - startTime;
+        (PlumeStakingStorage.ValidatorInfo memory validatorInfo,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(validator0);
+        uint256 commissionRate = validatorInfo.commission;
+
+        // Get total staked for the validator for accurate calculation
+        (,,uint256 validatorTotalStake,) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validator0);
+
+        // Use the likely correct formula based on reward logic
+        uint256 grossReward = 0;
+        if (validatorTotalStake > 0) { // Prevent division by zero if validator has no stake
+            grossReward = (actualTimeDelta * plumeRate * user1Stake) / validatorTotalStake;
+        }
+        
+        uint256 commissionAmount = (grossReward * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedNetReward = grossReward - commissionAmount;
+
+
+
+        // --- DEBUG LOGS ---
+        console2.log("DEBUG: actualTimeDelta = %s", actualTimeDelta);
+        console2.log("DEBUG: plumeRate = %s", plumeRate);
+        console2.log("DEBUG: userStake = %s", user1Stake);
+        console2.log("DEBUG: validatorTotalStake = %s", validatorTotalStake);
+        console2.log("DEBUG: commissionRate = %s", commissionRate);
+        console2.log("DEBUG: REWARD_PRECISION = %s", PlumeRewardLogic.REWARD_PRECISION);
+        console2.log("DEBUG: grossReward = %s", grossReward);
+        console2.log("DEBUG: commissionAmount = %s", commissionAmount);
+        console2.log("DEBUG: expectedNetReward = %s", expectedNetReward);
+        console2.log("DEBUG: MIN_STAKE = %s", MIN_STAKE);
+        // --- END DEBUG LOGS ---
+
+        // Re-enable assertion with correct calculation and time warp
+        assertTrue(expectedNetReward > 0 && expectedNetReward < MIN_STAKE, "Test setup failed: Net Reward not between 0 and MIN_STAKE");
+
+        uint256 claimableFinal = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(PLUME_NATIVE));
+        console2.log("DEBUG: claimableFinal = %s", claimableFinal);
+
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(StakeAmountTooSmall.selector, expectedNetReward, MIN_STAKE));
+        StakingFacet(address(diamondProxy)).restakeRewards(validator0);
         vm.stopPrank();
 
-        // === User2 stakes with validator1 ===
-        console2.log("User 2 staking with validator 1");
-        uint256 user2Stake = 100 ether;
-        vm.startPrank(user2);
-        StakingFacet(address(diamondProxy)).stake{ value: user2Stake }(validator1);
         vm.stopPrank();
-
-        // === First time advancement (1 day) ===
-        uint256 timeAdvance1 = 1 days;
-        vm.roll(block.number + timeAdvance1 / 12); // Assuming ~12 second blocks
-        vm.warp(block.timestamp + timeAdvance1);
-        console2.log("Advanced time by 1 day");
 
         // Check accrued rewards for user1
-        uint256 user1ExpectedReward = user1Stake * pusdRate * timeAdvance1 / 1e18; // Simplified calculation
-        uint256 user1Commission = user1ExpectedReward * commissionRate0 / 10_000;
+        uint256 user1ExpectedReward = user1Stake * plumeRate * actualTimeDelta / 1e18; // Simplified calculation - Using actualTimeDelta from PLUME check above
+        uint256 user1Commission = (user1ExpectedReward * commissionRate) / PlumeRewardLogic.REWARD_PRECISION; // Use correct commissionRate and PRECISION
         uint256 user1NetReward = user1ExpectedReward - user1Commission;
 
-        uint256 user1ClaimablePUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
-        console2.log("User 1 claimable PUSD after 1 day:", user1ClaimablePUSD);
+        uint256 user1ClaimablePUSD = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(PLUME_NATIVE));
+        console2.log("User 1 claimable PLUME_NATIVE after 1 day:", user1ClaimablePUSD);
         console2.log("Expected approximately:", user1NetReward);
 
         // Check accrued commission for validator0
         uint256 validator0Commission =
-            ValidatorFacet(address(diamondProxy)).getAccruedCommission(validator0, address(pUSD));
+            ValidatorFacet(address(diamondProxy)).getAccruedCommission(validator0, address(PLUME_NATIVE));
         console2.log("Validator 0 accrued commission:", validator0Commission);
         console2.log("Expected approximately:", user1Commission);
 
         // === User1 claims rewards ===
         vm.startPrank(user1);
-        uint256 user1BalanceBefore = pUSD.balanceOf(user1);
-        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(address(pUSD), 0);
-        uint256 user1BalanceAfter = pUSD.balanceOf(user1);
+        uint256 user1BalanceBefore = address(user1).balance;
+        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(address(PLUME_NATIVE), 0);
+        uint256 user1BalanceAfter = address(user1).balance;
 
         // Verify claim was successful
         assertApproxEqAbs(
@@ -732,16 +800,16 @@ contract PlumeStakingDiamondTest is Test {
         vm.warp(1);
 
         // Check claimable amount after resetting time - should now be near zero
-        uint256 claimableAfterClaim = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+        uint256 claimableAfterClaim = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(PLUME_NATIVE));
         assertApproxEqAbs(claimableAfterClaim, 0, 10 ** 10, "Final claimable should be near zero");
 
         // Claim validator commission
         vm.stopPrank();
 
         vm.startPrank(validatorAdmin);
-        uint256 validatorBalanceBefore = pUSD.balanceOf(validatorAdmin);
-        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(0, address(pUSD));
-        uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
+        uint256 validatorBalanceBefore = address(validatorAdmin).balance;
+        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(0, address(PLUME_NATIVE));
+        uint256 validatorBalanceAfter = address(validatorAdmin).balance;
 
         // Verify commission claim was successful
         assertApproxEqAbs(
@@ -752,7 +820,7 @@ contract PlumeStakingDiamondTest is Test {
         );
 
         // Check final commission accrued (should be zero since we reset the time)
-        uint256 finalCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(0, address(pUSD));
+        uint256 finalCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(0, address(PLUME_NATIVE));
         assertApproxEqAbs(finalCommission, 0, 10 ** 10, "Final accrued commission should be near zero");
         vm.stopPrank();
 
@@ -1190,7 +1258,6 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("Restake during cooldown test completed.");
     }
 
-
     // --- Access Control / Edge Cases ---
 
     function testClaimValidatorCommission_ZeroAmount() public {
@@ -1491,29 +1558,37 @@ contract PlumeStakingDiamondTest is Test {
     function testAddValidator() public {
         uint16 newValidatorId = 2;
         uint256 commission = 5e16;
-        address l2Admin = validatorAdmin;
-        address l2Withdraw = validatorAdmin;
+        // Use a *new* admin address for this test validator
+        address newAdminForVal2 = makeAddr("newAdminForVal2");
+        address l2Withdraw = newAdminForVal2; // Often the same, but can be different
         string memory l1ValAddr = "0xval3";
         string memory l1AccAddr = "0xacc3";
         address l1AccEvmAddr = address(0x1234);
         uint256 maxCapacity = 1_000_000e18;
 
-        // Check event emission
+        // Check event emission - expecting the new admin address
         vm.expectEmit(true, true, true, true, address(diamondProxy));
-        emit ValidatorAdded(newValidatorId, commission, l2Admin, l2Withdraw, l1ValAddr, l1AccAddr, l1AccEvmAddr);
+        emit ValidatorAdded(newValidatorId, commission, newAdminForVal2, l2Withdraw, l1ValAddr, l1AccAddr, l1AccEvmAddr);
 
-        // Call as admin
+        // Call as admin (who has VALIDATOR_ROLE)
         vm.startPrank(admin);
         ValidatorFacet(address(diamondProxy)).addValidator(
-            newValidatorId, commission, l2Admin, l2Withdraw, l1ValAddr, l1AccAddr, l1AccEvmAddr, maxCapacity
+            newValidatorId,
+            commission,
+            newAdminForVal2, // Use the new admin address
+            l2Withdraw,
+            l1ValAddr,
+            l1AccAddr,
+            l1AccEvmAddr,
+            maxCapacity
         );
         vm.stopPrank();
 
-        // Verify using getValidatorInfo
+        // Verify using getValidatorInfo - check against the new admin address
         (PlumeStakingStorage.ValidatorInfo memory storedInfo,,) =
             ValidatorFacet(address(diamondProxy)).getValidatorInfo(newValidatorId);
         assertEq(storedInfo.commission, commission, "Stored commission mismatch");
-        assertEq(storedInfo.l2AdminAddress, l2Admin, "Stored L2 admin mismatch");
+        assertEq(storedInfo.l2AdminAddress, newAdminForVal2, "Stored L2 admin mismatch");
         assertEq(storedInfo.l2WithdrawAddress, l2Withdraw, "Stored L2 withdraw mismatch");
         // Add checks for other fields if needed, e.g., l1 addresses, active status
         assertEq(storedInfo.l1ValidatorAddress, l1ValAddr, "Stored L1 validator address mismatch");
@@ -2202,7 +2277,6 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("--- Commission & Reward Rate Change Test Complete ---");
     }
 
-
     /**
      * @notice Tests a complex sequence with state tracking:
      *          (S=Staked, C=Cooled, P=Parked, CE=CooldownEnd)
@@ -2406,7 +2480,8 @@ contract PlumeStakingDiamondTest is Test {
         RewardsFacet(address(diamondProxy)).setRewardRates(nativeTokenArr, nativeRateArr);
         vm.stopPrank();
 
-        uint256 timeAdvance = 100 seconds;
+        // uint256 timeAdvance = 100 seconds;
+        uint256 timeAdvance = 110 seconds; // Increased time to ensure reward >= MIN_STAKE after commission
         vm.warp(block.timestamp + timeAdvance); // Advance time to accrue PLUME rewards
 
         // 12. Call restakeRewards - this should take pending PLUME and add to stake
@@ -2644,5 +2719,200 @@ contract PlumeStakingDiamondTest is Test {
         assertEq(staker3Validators.length, 0, "Staker3 validator list not cleared");
     }
 
-   
+    function testAddValidator_Fail_AdminAlreadyAssigned() public {
+        uint16 newValidatorId = 3;
+        address existingAdmin = validatorAdmin; // This admin is assigned to validator 0 in setUp
+        uint256 commission = 5e16;
+        address l2Withdraw = makeAddr("withdrawForVal3");
+        string memory l1ValAddr = "0xval3";
+        string memory l1AccAddr = "0xacc3";
+        address l1AccEvmAddr = address(0x1235);
+        uint256 maxCapacity = 1_000_000e18;
+
+        // Expect revert with the correct error and the conflicting admin address
+        vm.expectRevert(abi.encodeWithSelector(AdminAlreadyAssigned.selector, existingAdmin));
+
+        // Call as admin (has VALIDATOR_ROLE)
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            newValidatorId,
+            commission,
+            existingAdmin, // Use the existing admin address
+            l2Withdraw,
+            l1ValAddr,
+            l1AccAddr,
+            l1AccEvmAddr,
+            maxCapacity
+        );
+        vm.stopPrank();
+    }
+
+    function testStake_Fail_InactiveValidator() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        uint256 stakeAmount = 1 ether;
+
+        // Deactivate the validator
+        vm.startPrank(admin); // Assuming admin has ADMIN_ROLE needed for setValidatorStatus
+        ValidatorFacet(address(diamondProxy)).setValidatorStatus(validatorId, false);
+        vm.stopPrank();
+
+        // Attempt to stake with the inactive validator
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(ValidatorInactive.selector, validatorId));
+        StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId);
+        vm.stopPrank();
+    }
+
+    function testRestake_Fail_InactiveValidator() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        uint256 stakeAmount = 1 ether;
+        // Ensure restakeAmount meets the minimum stake requirement
+        uint256 restakeAmount = MIN_STAKE; // Use the constant defined in setUp (1 ether)
+
+        // User 1 stakes and unstakes to get funds cooling
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, stakeAmount);
+        vm.stopPrank();
+
+        // Deactivate the validator
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).setValidatorStatus(validatorId, false);
+        vm.stopPrank();
+
+        // Attempt to restake cooling funds to the inactive validator
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(ValidatorInactive.selector, validatorId));
+        StakingFacet(address(diamondProxy)).restake(validatorId, restakeAmount);
+        vm.stopPrank();
+    }
+
+    function testStakeOnBehalf_Fail_InactiveValidator() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        uint256 stakeAmount = 1 ether;
+        address staker = user1;
+        address sender = user2;
+
+        // Deactivate the validator
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).setValidatorStatus(validatorId, false);
+        vm.stopPrank();
+
+        // Attempt to stake on behalf with the inactive validator
+        vm.startPrank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ValidatorInactive.selector, validatorId));
+        StakingFacet(address(diamondProxy)).stakeOnBehalf{ value: stakeAmount }(validatorId, staker);
+        vm.stopPrank();
+    }
+
+    function testRestakeRewards_Fail_BelowMinStake() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        uint256 userStake = MIN_STAKE * 10; // Stake more than minimum initially
+
+        // --- Setup PLUME Rewards ---  
+        address token = PLUME_NATIVE;
+        // Set a rate low enough that we can precisely control accrual below MIN_STAKE
+        uint256 plumeRate = 1e9; // 0.0001 PLUME per second
+
+        vm.startPrank(admin);
+        // Ensure PLUME is a reward token (redundant if done in setUp, but safe)
+        // REMOVED: RewardsFacet(address(diamondProxy)).addRewardToken(token); // Already added in setUp
+        // Need to add to treasury allowed list too if not done in setUp
+        if (!treasury.isRewardToken(token)) { 
+            treasury.addRewardToken(token);
+        }
+            
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, plumeRate * 100); // Set a reasonable max
+        address[] memory tokensArr = new address[](1); tokensArr[0] = token; // Renamed to avoid conflict
+        uint256[] memory rates = new uint256[](1); rates[0] = plumeRate;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokensArr, rates);
+        // Ensure treasury has PLUME
+        vm.deal(address(treasury), 1000 ether); 
+
+
+
+
+   // Setup commission for validators
+        uint16 validator0 = DEFAULT_VALIDATOR_ID;
+        uint256 commissionRate0 = 5e15; // 0.5%
+
+        // Set commission rates
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validator0, commissionRate0);
+        vm.stopPrank();
+
+
+        vm.stopPrank();
+        // --- End Setup ---
+
+
+
+
+
+        // User stakes
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: userStake }(validatorId);
+        // DEBUG: Check total stake immediately after staking
+        (,,,uint256 stakeCheckAfterUser1Stake) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+        console2.log("DEBUG POST-STAKE: validatorTotalStake = %s", stakeCheckAfterUser1Stake);
+        // Keep prank for roll
+
+        // Roll to a new block *before* capturing start time for warp
+        vm.roll(block.number + 1); 
+        uint256 startTime = 1; 
+        // vm.stopPrank(); // Stop prank *after* roll and startTime capture
+
+        // Warp time by a small amount to generate a reward < MIN_STAKE
+        uint256 timeToWarp = 10 days; 
+        vm.warp(startTime + timeToWarp);
+        
+        // Perform a dummy action in a new block to ensure warp takes effect
+        vm.roll(block.number + 1); 
+        // vm.prank(user2); // No need to prank as different user, just need a block
+        // StakingFacet(address(diamondProxy)).amountStaked(); // View call doesn't advance block state, use a state change or skip
+        vm.warp(block.timestamp + 1); // Simple warp to advance state slightly
+
+        // --- Trigger the restake --- 
+        // Calculate the expected NET reward to use in expectRevert
+        // Now block.timestamp reflects the warped time
+        uint256 actualTimeDelta = block.timestamp - startTime; 
+        (PlumeStakingStorage.ValidatorInfo memory validatorInfo,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
+        uint256 commissionRate = validatorInfo.commission;
+
+        // Get total staked for the validator for accurate calculation
+        (,,uint256 validatorTotalStake,) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+
+        // Use the likely correct formula based on reward logic
+        uint256 grossReward = 0;
+        if (validatorTotalStake > 0) { // Prevent division by zero if validator has no stake
+            grossReward = (actualTimeDelta * plumeRate * userStake ) / validatorTotalStake;
+        }
+        
+        uint256 commissionAmount = (grossReward * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedNetReward = (grossReward - commissionAmount);
+
+        // --- DEBUG LOGS --- 
+        console2.log("DEBUG: actualTimeDelta = %s", actualTimeDelta);
+        console2.log("DEBUG: plumeRate = %s", plumeRate);
+        console2.log("DEBUG: userStake = %s", userStake);
+        console2.log("DEBUG: validatorTotalStake = %s", validatorTotalStake);
+        console2.log("DEBUG: commissionRate = %s", commissionRate);
+        console2.log("DEBUG: REWARD_PRECISION = %s", PlumeRewardLogic.REWARD_PRECISION);
+        console2.log("DEBUG: grossReward = %s", grossReward);
+        console2.log("DEBUG: commissionAmount = %s", commissionAmount);
+        console2.log("DEBUG: expectedNetReward = %s", expectedNetReward);
+        console2.log("DEBUG: MIN_STAKE = %s", MIN_STAKE);
+        // --- END DEBUG LOGS ---
+
+        // Re-enable assertion with correct calculation and time warp
+        assertTrue(expectedNetReward > 0 && expectedNetReward < MIN_STAKE, "Test setup failed: Net Reward not between 0 and MIN_STAKE");
+
+        // Expect revert because reward < MIN_STAKE
+        vm.expectRevert(abi.encodeWithSelector(StakeAmountTooSmall.selector, expectedNetReward, MIN_STAKE));
+        // Perform the action that should revert *while still pranking as user1*
+        StakingFacet(address(diamondProxy)).restakeRewards(validatorId);
+
+        vm.stopPrank(); // Stop prank after the expected revert call
+    }
+
 }

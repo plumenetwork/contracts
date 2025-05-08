@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 import {
+    AdminAlreadyAssigned,
     AlreadyVotedToSlash,
     CannotVoteForSelf,
     CommissionRateTooHigh,
@@ -59,7 +60,6 @@ import { PlumeRoles } from "../lib/PlumeRoles.sol";
  */
 contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
-    // Struct definition MOVED INSIDE the contract
     struct ValidatorListData {
         uint16 id;
         uint256 totalStaked;
@@ -79,9 +79,14 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     // Storage slot for treasury address (same as in RewardsFacet)
     bytes32 internal constant TREASURY_STORAGE_POSITION = keccak256("plume.storage.RewardTreasury");
 
-    // Helper to get Plume-specific storage layout
+    // --- Storage Access ---
+    bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
+
     function _getPlumeStorage() internal pure returns (PlumeStakingStorage.Layout storage $) {
-        $ = PlumeStakingStorage.layout();
+        bytes32 position = PLUME_STORAGE_POSITION;
+        assembly {
+            $.slot := position
+        }
     }
 
     // Helper to get treasury address (same implementation as in RewardsFacet)
@@ -169,6 +174,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (commission > REWARD_PRECISION) {
             revert CommissionTooHigh();
         }
+        // Check if admin address is already assigned using the dedicated mapping
+        if ($.isAdminAssigned[l2AdminAddress]) {
+            revert AdminAlreadyAssigned(l2AdminAddress);
+        }
 
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
         validator.validatorId = validatorId;
@@ -187,6 +196,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         $.validatorExists[validatorId] = true;
         // Add admin to ID mapping
         $.adminToValidatorId[l2AdminAddress] = validatorId;
+        // Mark admin as assigned in the dedicated mapping
+        $.isAdminAssigned[l2AdminAddress] = true;
 
         emit ValidatorAdded(
             validatorId,
@@ -300,11 +311,18 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Update L2 Admin Address if provided and different
         if (newL2AdminAddress != address(0) && newL2AdminAddress != validator.l2AdminAddress) {
+            // Check if the new admin address is already assigned
+            if ($.isAdminAssigned[newL2AdminAddress]) {
+                revert AdminAlreadyAssigned(newL2AdminAddress);
+            }
             address currentAdminAddress = validator.l2AdminAddress;
             validator.l2AdminAddress = newL2AdminAddress;
             // Update admin to ID mapping
             delete $.adminToValidatorId[currentAdminAddress];
             $.adminToValidatorId[newL2AdminAddress] = validatorId;
+            // Update the dedicated assignment mapping
+            $.isAdminAssigned[currentAdminAddress] = false;
+            $.isAdminAssigned[newL2AdminAddress] = true;
         }
 
         // Update L2 Withdraw Address if provided and different

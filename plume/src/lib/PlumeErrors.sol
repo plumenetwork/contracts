@@ -200,6 +200,9 @@ error UnanimityNotReached(uint256 votes, uint256 required);
 error SlashVoteExpired(uint16 targetValidatorId, uint16 voterValidatorId);
 error SlashConditionsNotMet(uint16 validatorId);
 
+/// @param admin Address that is already assigned.
+error AdminAlreadyAssigned(address admin);
+
 // Treasury Errors
 error ZeroAddressToken();
 error TokenAlreadyAdded(address token);

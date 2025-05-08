@@ -107,9 +107,6 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     // --- Internal View Function (_earned) ---
-    // NOTE: The implementation of _earned here now depends on the library's
-    // calculateRewardsWithCheckpoints for consistency, but it's still needed
-    // as the public view entry point.
     function _earned(address user, address token, uint16 validatorId) internal view returns (uint256 rewards) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
@@ -214,8 +211,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
             for (uint256 j = 0; j < validatorIds.length; j++) {
                 uint16 validatorId = validatorIds[j];
-                PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
-                PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, rate); // Use library
+                PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, rate); 
             }
             $.rewardRates[token] = rate;
         }
