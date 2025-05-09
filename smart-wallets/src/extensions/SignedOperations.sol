@@ -129,7 +129,7 @@ contract SignedOperations is EIP712, WalletUtils, ISignedOperations {
 
     /**
      * @notice Cancel pending SignedOperations that have not yet been executed
-     * @dev This function can only be called by the user that signed the SignedOperations.
+     * @dev This function can only be called by the user who signed the SignedOperations.
      *   After this, the affected SignedOperations will revert when trying to be executed.
      * @param nonce Nonce of the SignedOperations to cancel
      */
