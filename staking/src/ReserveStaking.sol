@@ -357,9 +357,9 @@ function adminBridge(
             uint256 newBalance = stone.balanceOf(address(this));
             actualStoneAmount = newBalance - previousBalance;
             userState.stoneAmountSeconds += userState.stoneAmountStaked * (timestamp - userState.stoneLastUpdate);
-            userState.stoneAmountStaked += stoneAmount;
+            userState.stoneAmountStaked += actualStoneAmount;
             userState.stoneLastUpdate = timestamp;
-            $.stoneTotalAmountStaked += stoneAmount;
+            $.stoneTotalAmountStaked += actualStoneAmount;
         }
 
         emit Staked(msg.sender, actualSbtcAmount, actualStoneAmount);
