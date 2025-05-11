@@ -462,7 +462,7 @@ function adminBridge(
         return _getRWAStakingStorage().endTime;
     }
 
-    /// @notice Returns true if the RWAStaking contract is pauseWhether the RWAStaking contract is paused for deposits
+    /// @notice Returns true if the RWAStaking contract is paused
     function isPaused() external view returns (bool) {
         return _getRWAStakingStorage().paused;
     }
