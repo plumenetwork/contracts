@@ -273,9 +273,15 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     function claim(address token, uint16 validatorId) external nonReentrant returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
+
+        // If token is not active, only proceed if there are previously earned/stored rewards.
+        // _earned will correctly use rate=0 for delta calculation if token is removed.
         if (!$.isRewardToken[token]) {
-            revert TokenDoesNotExist(token);
+            if (_earned(msg.sender, token, validatorId) == 0) {
+                revert TokenDoesNotExist(token);
+            }
         }
+
         if (!$.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
@@ -318,10 +324,24 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address token
     ) external nonReentrant returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
+
+        // If token is not active, check if there's anything claimable from any validator.
+        // If not, and token is not active, then revert.
         if (!$.isRewardToken[token]) {
-            revert TokenDoesNotExist(token);
+            bool canClaimRemovedToken = false;
+            uint16[] memory validatorIdsLocal = $.userValidators[msg.sender];
+            for (uint256 i = 0; i < validatorIdsLocal.length; i++) {
+                if (_earned(msg.sender, token, validatorIdsLocal[i]) > 0) {
+                    canClaimRemovedToken = true;
+                    break;
+                }
+            }
+            if (!canClaimRemovedToken) {
+                revert TokenDoesNotExist(token);
+            }
         }
-        uint16[] memory validatorIds = $.userValidators[msg.sender];
+
+        uint16[] memory validatorIds = $.userValidators[msg.sender]; 
         uint256 totalReward = 0;
 
         // For each validator the user has staked with
