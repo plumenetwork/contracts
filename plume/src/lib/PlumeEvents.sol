@@ -467,3 +467,8 @@ event ValidatorAddressesSet(
     address oldL1AccountEvm,
     address newL1AccountEvm
 );
+
+// --- Administrative Events ---
+event MaxAllowedValidatorCommissionSet(uint256 oldMaxRate, uint256 newMaxRate);
+
+// --- SolidState Diamond Events (for reference if needed, usually handled by SolidState) ---

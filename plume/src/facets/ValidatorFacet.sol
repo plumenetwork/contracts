@@ -20,7 +20,7 @@ import {
     ValidatorAlreadyExists,
     ValidatorAlreadySlashed,
     ValidatorDoesNotExist,
-    ValidatorNotActive,
+    ValidatorInactive,
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
@@ -230,6 +230,11 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
+        // Check if validator is active and not slashed
+        if (!validator.active || validator.slashed) {
+            revert ValidatorInactive(validatorId);
+        }
+
         uint256 oldCapacity = validator.maxCapacity;
         validator.maxCapacity = maxCapacity;
 
@@ -274,6 +279,11 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
+        // Check if validator is active and not slashed
+        if (!validator.active || validator.slashed) {
+            revert ValidatorInactive(validatorId);
+        }
+
         // Check against the system-wide maximum allowed commission.
         if (newCommission > $.maxAllowedValidatorCommission) {
             revert CommissionExceedsMaxAllowed(newCommission, $.maxAllowedValidatorCommission);
@@ -310,6 +320,11 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     ) external onlyValidatorAdmin(validatorId) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+        // Check if validator is active and not slashed
+        if (!validator.active || validator.slashed) {
+            revert ValidatorInactive(validatorId);
+        }
 
         address oldL2AdminAddress = validator.l2AdminAddress;
         address oldL2WithdrawAddress = validator.l2WithdrawAddress;
@@ -428,7 +443,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert ValidatorDoesNotExist(maliciousValidatorId);
         }
         if (!targetValidator.active) {
-            revert ValidatorNotActive(maliciousValidatorId);
+            revert ValidatorInactive(maliciousValidatorId);
         }
         if (targetValidator.slashed) {
             revert ValidatorAlreadySlashed(maliciousValidatorId);
@@ -481,7 +496,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert ValidatorDoesNotExist(validatorId);
         }
         if (!targetValidator.active) {
-            revert ValidatorNotActive(validatorId);
+            revert ValidatorInactive(validatorId);
         }
         if (targetValidator.slashed) {
             revert ValidatorAlreadySlashed(validatorId);

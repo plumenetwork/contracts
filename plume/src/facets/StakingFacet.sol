@@ -20,7 +20,6 @@ import {
     ValidatorCapacityExceeded,
     ValidatorDoesNotExist,
     ValidatorInactive,
-    ValidatorNotActive,
     ValidatorPercentageExceeded,
     ZeroAddress,
     ZeroRecipientAddress
@@ -332,6 +331,14 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Verify validator exists
         if (!$.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
+        }
+
+        // Check if the validator being unstaked from is active and not slashed
+        // NOTE: This is a design choice. Allowing unstake from inactive/slashed validators might be intended
+        // to let users retrieve funds. If this check is added, users cannot unstake from them.
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        if (!validator.active || validator.slashed) {
+            revert ValidatorInactive(validatorId);
         }
 
         PlumeStakingStorage.StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
