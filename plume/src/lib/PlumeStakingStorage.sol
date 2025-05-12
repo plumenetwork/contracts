@@ -132,6 +132,8 @@ library PlumeStakingStorage {
         mapping(address => uint16) adminToValidatorId;
         /// @notice Tracks if an admin address is already assigned to *any* validator.
         mapping(address => bool) isAdminAssigned;
+        /// @notice Maximum allowed commission for any validator
+        uint256 maxAllowedValidatorCommission;
     }
 
     // Validator info struct to store validator details

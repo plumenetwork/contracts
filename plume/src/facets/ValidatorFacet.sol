@@ -5,8 +5,8 @@ import {
     AdminAlreadyAssigned,
     AlreadyVotedToSlash,
     CannotVoteForSelf,
+    CommissionExceedsMaxAllowed,
     CommissionRateTooHigh,
-    CommissionTooHigh,
     InvalidUpdateType,
     NativeTransferFailed,
     NotValidatorAdmin,
@@ -171,9 +171,17 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (l2WithdrawAddress == address(0)) {
             revert ZeroAddress("l2WithdrawAddress");
         }
-        if (commission > REWARD_PRECISION) {
-            revert CommissionTooHigh();
+
+        // Check against the system-wide maximum allowed commission.
+        // maxAllowedValidatorCommission defaults to 0 if not set by admin.
+        // If it's 0, any commission > 0 will fail, forcing admin to set a rate.
+        // The setter for maxAllowedValidatorCommission ensures it's <= REWARD_PRECISION / 2 (50%).
+        if (commission > $.maxAllowedValidatorCommission) {
+            revert CommissionExceedsMaxAllowed(commission, $.maxAllowedValidatorCommission);
         }
+        // The old check `if (commission > REWARD_PRECISION)` is now redundant
+        // because maxAllowedValidatorCommission is guaranteed to be <= REWARD_PRECISION / 2.
+
         // Check if admin address is already assigned using the dedicated mapping
         if ($.isAdminAssigned[l2AdminAddress]) {
             revert AdminAlreadyAssigned(l2AdminAddress);
@@ -247,9 +255,9 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
 
         validator.active = newActiveStatus;
+        // $.validators[validatorId].slashed should remain false unless explicitly slashed
 
-        // Use the new specific event for status changes
-        emit ValidatorStatusUpdated(validatorId, validator.active, validator.slashed);
+        emit ValidatorStatusUpdated(validatorId, newActiveStatus, validator.slashed);
     }
 
     /**
@@ -262,22 +270,22 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function setValidatorCommission(
         uint16 validatorId,
         uint256 newCommission
-    ) external onlyValidatorAdmin(validatorId) {
+    ) external onlyValidatorAdmin(validatorId) _validateValidatorExists(validatorId) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
-        uint256 oldCommission = validator.commission;
-
-        // Check for maximum commission rate if needed (e.g., 100% = 1e18)
-        if (newCommission > 1e18) {
-            revert CommissionRateTooHigh(newCommission, 1e18);
+        // Check against the system-wide maximum allowed commission.
+        if (newCommission > $.maxAllowedValidatorCommission) {
+            revert CommissionExceedsMaxAllowed(newCommission, $.maxAllowedValidatorCommission);
         }
+        // The old check `if (newCommission > REWARD_PRECISION)` is now redundant.
 
+        uint256 oldCommission = validator.commission;
         validator.commission = newCommission;
-        // Create commission checkpoint
+
+        // Create a commission rate checkpoint
         PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
 
-        // Emit correct event with old and new values
         emit ValidatorCommissionSet(validatorId, oldCommission, newCommission);
     }
 

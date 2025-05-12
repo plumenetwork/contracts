@@ -277,3 +277,7 @@ error InternalInconsistency(string message);
 
 // Validator errors
 error InvalidUpdateType(uint8 providedType);
+
+// --- New Max Commission Errors ---
+error CommissionExceedsMaxAllowed(uint256 requested, uint256 maxAllowed);
+error InvalidMaxCommissionRate(uint256 requested, uint256 limit);

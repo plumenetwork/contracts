@@ -6,6 +6,7 @@ import {
     InsufficientFunds,
     InvalidAmount,
     InvalidIndexRange,
+    InvalidMaxCommissionRate,
     Unauthorized,
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
@@ -13,6 +14,7 @@ import {
     AdminStakeCorrection,
     AdminWithdraw,
     CooldownIntervalSet,
+    MaxAllowedValidatorCommissionSet,
     MaxSlashVoteDurationSet,
     MinStakeAmountSet,
     PartialTotalAmountsUpdated,
@@ -47,6 +49,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     // --- Constants ---
     address internal constant PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    uint256 internal constant REWARD_PRECISION = 1e18;
 
     // --- Storage Access ---
     bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
@@ -180,6 +183,27 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         $.maxSlashVoteDurationInSeconds = duration;
 
         emit MaxSlashVoteDurationSet(duration);
+    }
+
+    /**
+     * @notice Set the system-wide maximum allowed commission rate for any validator.
+     * @dev Requires TIMELOCK_ROLE. Max rate cannot exceed 50%.
+     * @param newMaxRate The new maximum commission rate (e.g., 50e16 for 50%).
+     */
+    function setMaxAllowedValidatorCommission(
+        uint256 newMaxRate
+    ) external onlyRole(PlumeRoles.TIMELOCK_ROLE) {
+        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+
+        // Max rate cannot be more than 50% (REWARD_PRECISION / 2)
+        if (newMaxRate > REWARD_PRECISION / 2) {
+            revert InvalidMaxCommissionRate(newMaxRate, REWARD_PRECISION / 2);
+        }
+
+        uint256 oldMaxRate = $.maxAllowedValidatorCommission;
+        $.maxAllowedValidatorCommission = newMaxRate;
+
+        emit MaxAllowedValidatorCommissionSet(oldMaxRate, newMaxRate);
     }
 
     // --- Admin Data Correction ---

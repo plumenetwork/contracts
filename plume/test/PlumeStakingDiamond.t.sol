@@ -226,7 +226,7 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[13] = bytes4(keccak256(bytes("slashValidator(uint16)"))); // <<< ADD MISSING SELECTOR
 
         // Management Facet Selectors
-        bytes4[] memory managementSigs_Manual = new bytes4[](7); // Increase size to 7
+        bytes4[] memory managementSigs_Manual = new bytes4[](8);
         managementSigs_Manual[0] = bytes4(keccak256(bytes("setMinStakeAmount(uint256)")));
         managementSigs_Manual[1] = bytes4(keccak256(bytes("setCooldownInterval(uint256)")));
         managementSigs_Manual[2] = bytes4(keccak256(bytes("adminWithdraw(address,uint256,address)")));
@@ -234,6 +234,7 @@ contract PlumeStakingDiamondTest is Test {
         managementSigs_Manual[4] = bytes4(keccak256(bytes("getMinStakeAmount()")));
         managementSigs_Manual[5] = bytes4(keccak256(bytes("getCooldownInterval()")));
         managementSigs_Manual[6] = bytes4(keccak256(bytes("setMaxSlashVoteDuration(uint256)")));
+        managementSigs_Manual[7] = bytes4(keccak256(bytes("setMaxAllowedValidatorCommission(uint256)")));
 
         console2.log("Manual selectors initialized");
 
@@ -292,6 +293,10 @@ contract PlumeStakingDiamondTest is Test {
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.ADMIN_ROLE, admin);
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.TIMELOCK_ROLE, admin);
+
+        // Set the system-wide maximum allowed validator commission before adding any validators
+        ManagementFacet(address(diamondProxy)).setMaxAllowedValidatorCommission(PlumeRewardLogic.REWARD_PRECISION / 2); // 50%
+
         // 6. Deploy and setup reward treasury
         PlumeStakingRewardTreasury treasuryImpl = new PlumeStakingRewardTreasury();
         bytes memory initData =
