@@ -134,6 +134,10 @@ library PlumeStakingStorage {
         mapping(address => bool) isAdminAssigned;
         /// @notice Maximum allowed commission for any validator
         uint256 maxAllowedValidatorCommission;
+        // Add mapping for pending commission claims: validatorId => token => PendingCommissionClaim
+        mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims;
+        // Add a constant for the commission claim timelock (2 days)
+        uint256 public constant COMMISSION_CLAIM_TIMELOCK = 2 days;
     }
 
     // Validator info struct to store validator details
@@ -157,6 +161,13 @@ library PlumeStakingStorage {
         uint256 parked; // Amount that can be withdrawn
         uint256 cooldownEnd; // Timestamp when cooldown ends
         uint256 lastUpdateTimestamp; // Timestamp of last rewards update
+    }
+
+    struct PendingCommissionClaim {
+        uint256 amount;
+        uint256 requestTimestamp;
+        address token;
+        address recipient;
     }
 
     // Constants
