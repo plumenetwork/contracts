@@ -2920,4 +2920,67 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank(); // Stop prank after the expected revert call
     }
 
+    function testCommissionClaimTimelock() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        address token = address(pUSD);
+        address recipient = validatorAdmin;
+
+        // Set up commission
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, 10e16); // 10%
+        vm.stopPrank();
+
+        // Set reward rate and fund treasury
+        vm.startPrank(admin);
+        address[] memory tokens = new address[](1);
+        tokens[0] = token;
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = 1e18;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        pUSD.transfer(address(treasury), 1000 ether);
+        vm.stopPrank();
+
+        // Stake to accrue commission
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: 10 ether }(validatorId);
+        vm.stopPrank();
+
+        // Advance time to accrue commission
+        vm.warp(block.timestamp + 1 days);
+
+        // Request commission claim
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
+        vm.stopPrank();
+
+        // Try to finalize before 2 days (should revert)
+        vm.startPrank(validatorAdmin);
+        vm.expectRevert();
+        ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
+        vm.stopPrank();
+
+        // Advance time to after 2 days
+        vm.warp(block.timestamp + 2 days + 1);
+
+        // Finalize claim (should succeed)
+        vm.startPrank(validatorAdmin);
+        uint256 balanceBefore = pUSD.balanceOf(validatorAdmin);
+        uint256 claimed = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
+        uint256 balanceAfter = pUSD.balanceOf(validatorAdmin);
+        assertEq(balanceAfter - balanceBefore, claimed, "Commission not received after timelock");
+        vm.stopPrank();
+
+        // Request again, then slash before finalization
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
+        vm.stopPrank();
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).slashValidator(validatorId);
+        vm.stopPrank();
+        vm.startPrank(validatorAdmin);
+        vm.expectRevert();
+        ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
+        vm.stopPrank();
+    }
+
 }

@@ -390,35 +390,66 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     /**
-     * @notice Claim validator commission rewards for a specific token
-     * @dev Caller must be the current l2AdminAddress for the specific validatorId.
+     * @notice Request a commission claim for a validator and token (starts timelock)
+     * @dev Only callable by validator admin. Amount is locked at request time.
      */
-    function claimValidatorCommission(
-        uint16 validatorId,
-        address token
-    ) external nonReentrant onlyValidatorAdmin(validatorId) returns (uint256 amount) {
+    function requestCommissionClaim(uint16 validatorId, address token) external onlyValidatorAdmin(validatorId) nonReentrant {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        // Existence check done implicitly
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
-
-        amount = $.validatorAccruedCommission[validatorId][token];
-        if (amount > 0) {
-            $.validatorAccruedCommission[validatorId][token] = 0;
-            address recipient = validator.l2WithdrawAddress;
-
-            // Get the treasury address
-            address treasury = getTreasuryAddress();
-            if (treasury == address(0)) {
-                revert TreasuryNotSet();
-            }
-
-            // Use the treasury to distribute reward instead of direct transfer
-            IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);
-
-            emit ValidatorCommissionClaimed(validatorId, token, amount);
+        uint256 amount = $.validatorAccruedCommission[validatorId][token];
+        if (amount == 0) {
+            revert InvalidAmount(0);
         }
-        // Return amount even if 0
+        if ($.pendingCommissionClaims[validatorId][token].amount > 0) {
+            revert PendingClaimExists(validatorId, token);
+        }
+        address recipient = validator.l2WithdrawAddress;
+        uint256 nowTs = block.timestamp;
+        $.pendingCommissionClaims[validatorId][token] = PlumeStakingStorage.PendingCommissionClaim({
+            amount: amount,
+            requestTimestamp: nowTs,
+            token: token,
+            recipient: recipient
+        });
+        // Zero out accrued commission immediately
+        $.validatorAccruedCommission[validatorId][token] = 0;
+        emit CommissionClaimRequested(validatorId, token, recipient, amount, nowTs);
+    }
+
+    /**
+     * @notice Finalize a commission claim after timelock expires
+     * @dev Only callable by validator admin. Pays out the pending claim if ready.
+     */
+    function finalizeCommissionClaim(uint16 validatorId, address token) external onlyValidatorAdmin(validatorId) nonReentrant returns (uint256) {
+        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.PendingCommissionClaim storage claim = $.pendingCommissionClaims[validatorId][token];
+        if (claim.amount == 0) {
+            revert NoPendingClaim(validatorId, token);
+        }
+        uint256 readyTimestamp = claim.requestTimestamp + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK;
+        if (block.timestamp < readyTimestamp) {
+            revert ClaimNotReady(validatorId, token, readyTimestamp);
+        }
+        uint256 amount = claim.amount;
+        address recipient = claim.recipient;
+        // Clear pending claim
+        delete $.pendingCommissionClaims[validatorId][token];
+        // Transfer from treasury
+        address treasury = getTreasuryAddress();
+        if (treasury == address(0)) {
+            revert TreasuryNotSet();
+        }
+        IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);
+        emit CommissionClaimFinalized(validatorId, token, recipient, amount, block.timestamp);
         return amount;
+    }
+
+    /**
+     * @notice Claim validator commission rewards for a specific token (DEPRECATED: use timelock)
+     * @dev Always reverts. Use requestCommissionClaim/finalizeCommissionClaim instead.
+     */
+    function claimValidatorCommission(uint16 validatorId, address token) external pure {
+        revert("Use requestCommissionClaim/finalizeCommissionClaim");
     }
 
     /**
@@ -541,6 +572,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address[] memory rewardTokens = $.rewardTokens;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
             $.validatorAccruedCommission[validatorId][rewardTokens[i]] = 0;
+            // Also clear any pending commission claim
+            delete $.pendingCommissionClaims[validatorId][rewardTokens[i]];
         }
 
         /*

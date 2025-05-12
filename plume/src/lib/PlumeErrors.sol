@@ -280,3 +280,8 @@ error InvalidUpdateType(uint8 providedType);
 // --- New Max Commission Errors ---
 error CommissionExceedsMaxAllowed(uint256 requested, uint256 maxAllowed);
 error InvalidMaxCommissionRate(uint256 requested, uint256 limit);
+
+// --- Commission Claim Timelock Errors ---
+error PendingClaimExists(uint16 validatorId, address token);
+error NoPendingClaim(uint16 validatorId, address token);
+error ClaimNotReady(uint16 validatorId, address token, uint256 readyTimestamp);
