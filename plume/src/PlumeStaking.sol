@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 import { PlumeStakingStorage } from "./lib/PlumeStakingStorage.sol";
+import { InvalidAmount } from "./lib/PlumeErrors.sol";
 import { OwnableInternal } from "@solidstate/access/ownable/Ownable.sol";
 import { ISolidStateDiamond, SolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol";
 
@@ -9,8 +10,6 @@ import { ISolidStateDiamond, SolidStateDiamond } from "@solidstate/proxy/diamond
  * @title PlumeStaking Diamond Proxy
  * @notice Main entry point for the Plume Staking Diamond, inheriting SolidStateDiamond.
  */
-
-
 contract PlumeStaking is SolidStateDiamond {
 
     function initializePlume(
@@ -24,6 +23,11 @@ contract PlumeStaking is SolidStateDiamond {
         // Add an initialization check
         require(!$.initialized, "PlumeStaking: Already initialized");
 
+        // Add check for minStake
+        if (minStake == 0) {
+            revert InvalidAmount(minStake);
+        }
+
         if (initialOwner != address(0) && initialOwner != owner()) {
             // Use the internal transfer function from Ownable/SafeOwnable
             // Note: SolidStateDiamond inherits SafeOwnable -> Ownable -> OwnableInternal
@@ -32,14 +36,6 @@ contract PlumeStaking is SolidStateDiamond {
 
         $.minStakeAmount = minStake;
         $.cooldownInterval = cooldown;
-
-        // Mark as initialized
-        $.initialized = true;
-
-        $.minStakeAmount = minStake;
-        $.cooldownInterval = cooldown;
-
-        // Mark as initialized
         $.initialized = true;
     }
 
@@ -48,7 +44,6 @@ contract PlumeStaking is SolidStateDiamond {
     /**
      * @notice Checks if the Plume-specific initialization has been performed.
      */
-
     function isInitialized() external view returns (bool) {
         return PlumeStakingStorage.layout().initialized;
     }
