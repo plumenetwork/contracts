@@ -268,8 +268,18 @@ contract ForkTestPlumeStaking is Test {
         // Claim the commission
         vm.startPrank(admin);
         uint256 balanceBefore = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of the actual recipient (admin)
-        uint256 claimedAmount =
-            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
+ 
+
+
+
+
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+        vm.warp(block.timestamp + 7 days);
+
+        uint256 claimedAmount = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+
+
+            
         uint256 balanceAfter = pUSD.balanceOf(admin);
         vm.stopPrank();
 
@@ -337,8 +347,19 @@ contract ForkTestPlumeStaking is Test {
         // Try to claim the commission to verify it works end-to-end
         vm.startPrank(admin);
         uint256 balanceBefore = pUSD.balanceOf(admin);
-        uint256 claimedAmount =
-            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
+ 
+
+
+
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+        vm.warp(block.timestamp + 7 days);
+
+        uint256 claimedAmount = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+
+
+
+
+
         uint256 balanceAfter = pUSD.balanceOf(admin);
         vm.stopPrank();
 
@@ -499,12 +520,14 @@ contract ForkTestPlumeStaking is Test {
 
         vm.startPrank(admin); // Use KNOWN_ADMIN assumed to be L2 admin for validator 1
         uint256 validatorBalanceBefore = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of actual admin for
-            // validatorId 1
-        uint256 commissionClaimed =
-            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
-        // uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
-        uint256 validatorBalanceAfter = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of actual admin for
-            // validatorId 1
+        // validatorId 1
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+        vm.warp(block.timestamp + 7 days);
+        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+
+
+
+        uint256 validatorBalanceAfter = pUSD.balanceOf(admin); // Check balance of actual admin for validatorId 1
 
         // Verify commission claim was successful
         assertApproxEqAbs(
@@ -1516,10 +1539,11 @@ contract ForkTestPlumeStaking is Test {
         vm.startPrank(admin); // Use KNOWN_ADMIN assumed to be L2 admin for validator 1
         // uint256 validatorBalanceBefore = pUSD.balanceOf(validatorAdmin);
         uint256 validatorBalanceBefore = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of actual admin for
-            // validatorId 1
-        uint256 commissionClaimed =
-            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
-        // uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
+        // validatorId 1
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(0, address(pUSD));
+        vm.warp(block.timestamp + 7 days);
+        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(0, address(pUSD));
+            
         uint256 validatorBalanceAfter = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of actual admin for
             // validatorId 1
 

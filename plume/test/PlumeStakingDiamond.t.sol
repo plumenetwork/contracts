@@ -206,7 +206,7 @@ contract PlumeStakingDiamondTest is Test {
         rewardsSigs_Manual[20] = bytes4(keccak256(bytes("getPendingRewardForValidator(address,uint16,address)")));
 
         // Validator Facet Selectors
-        bytes4[] memory validatorSigs_Manual = new bytes4[](14);
+        bytes4[] memory validatorSigs_Manual = new bytes4[](15);
         validatorSigs_Manual[0] =
             bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
@@ -221,9 +221,10 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[9] = bytes4(keccak256(bytes("getValidatorsList()")));
         validatorSigs_Manual[10] = bytes4(keccak256(bytes("getActiveValidatorCount()")));
         validatorSigs_Manual[11] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));
-        validatorSigs_Manual[12] = bytes4(keccak256(bytes("voteToSlashValidator(uint16,uint256)"))); // <<< ADD MISSING
+        validatorSigs_Manual[12] = bytes4(keccak256(bytes("finalizeCommissionClaim(uint16,address)")));
+        validatorSigs_Manual[13] = bytes4(keccak256(bytes("voteToSlashValidator(uint16,uint256)"))); // <<< ADD MISSING
             // SELECTOR
-        validatorSigs_Manual[13] = bytes4(keccak256(bytes("slashValidator(uint16)"))); // <<< ADD MISSING SELECTOR
+        validatorSigs_Manual[14] = bytes4(keccak256(bytes("slashValidator(uint16)"))); // <<< ADD MISSING SELECTOR
 
         // Management Facet Selectors
         bytes4[] memory managementSigs_Manual = new bytes4[](8);
@@ -522,8 +523,15 @@ contract PlumeStakingDiamondTest is Test {
         // Claim the commission
         vm.startPrank(validatorAdmin);
         uint256 balanceBefore = pUSD.balanceOf(validatorAdmin);
-        uint256 claimedAmount =
-            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
+   
+
+       ValidatorFacet(address(diamondProxy)).requestCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+        vm.warp(block.timestamp + 7 days);
+        uint256 claimedAmount = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+
+
+
+
         uint256 balanceAfter = pUSD.balanceOf(validatorAdmin);
         vm.stopPrank();
 
@@ -590,8 +598,14 @@ contract PlumeStakingDiamondTest is Test {
         // Try to claim the commission to verify it works end-to-end
         vm.startPrank(validatorAdmin);
         uint256 balanceBefore = pUSD.balanceOf(validatorAdmin);
-        uint256 claimedAmount =
-            ValidatorFacet(address(diamondProxy)).claimValidatorCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
+
+
+       ValidatorFacet(address(diamondProxy)).requestCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+        vm.warp(block.timestamp + 7 days);
+        uint256 claimedAmount = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+
+
+            
         uint256 balanceAfter = pUSD.balanceOf(validatorAdmin);
         vm.stopPrank();
 
@@ -813,7 +827,12 @@ contract PlumeStakingDiamondTest is Test {
 
         vm.startPrank(validatorAdmin);
         uint256 validatorBalanceBefore = address(validatorAdmin).balance;
-        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(0, address(PLUME_NATIVE));
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(0, address(PLUME_NATIVE));
+        vm.warp(block.timestamp + 7 days);
+
+        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(0, address(PLUME_NATIVE));
+
+
         uint256 validatorBalanceAfter = address(validatorAdmin).balance;
 
         // Verify commission claim was successful
@@ -1274,7 +1293,14 @@ contract PlumeStakingDiamondTest is Test {
         vm.startPrank(recipient);
 
         // Claim should return 0 and not revert
-        uint256 claimedCommission = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validatorId, token);
+
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
+        vm.warp(block.timestamp + 7 days);
+
+        uint256 claimedCommission = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
+
+
+
         assertEq(claimedCommission, 0, "Claimed amount should be zero when none accrued");
 
         vm.stopPrank();
@@ -1287,7 +1313,7 @@ contract PlumeStakingDiamondTest is Test {
         vm.startPrank(validatorAdmin); // Prank as a valid admin for *some* validator (e.g., ID 0)
 
         vm.expectRevert(abi.encodeWithSelector(ValidatorDoesNotExist.selector, nonExistentId));
-        ValidatorFacet(address(diamondProxy)).claimValidatorCommission(nonExistentId, token);
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(nonExistentId, token);
         vm.stopPrank();
     }
 
@@ -1298,7 +1324,7 @@ contract PlumeStakingDiamondTest is Test {
         vm.startPrank(user1); // user1 is not the admin for validator 0
         // vm.expectRevert(bytes("Not validator admin"));
         vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
-        ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validatorId, token);
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
         vm.stopPrank();
     }
 
@@ -2263,7 +2289,18 @@ contract PlumeStakingDiamondTest is Test {
 
         vm.startPrank(validatorAdmin);
         uint256 validatorBalanceBefore = pUSD.balanceOf(validatorAdmin);
-        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).claimValidatorCommission(0, address(pUSD));
+
+
+
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(0, address(pUSD));
+        vm.warp(block.timestamp + 7 days);
+
+        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(0, address(pUSD));
+
+
+
+
+
         uint256 validatorBalanceAfter = pUSD.balanceOf(validatorAdmin);
 
         // Verify commission claim was successful
@@ -2982,5 +3019,142 @@ contract PlumeStakingDiamondTest is Test {
         ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
         vm.stopPrank();
     }
+
+
+function testDoubleClaimBugWithStaleCumulativeIndex_EdgeCases() public {
+    uint16 validatorId1 = DEFAULT_VALIDATOR_ID;
+    uint16 validatorId2 = 1;
+    address token = address(pUSD);
+    uint256 stakeAmount = 10 ether;
+
+    // --- 1. Single User, Single Validator, Single Claim ---
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId1);
+    vm.stopPrank();
+
+    // Set reward rate and fund treasury
+    vm.startPrank(admin);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = 1e18;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 1000 ether);
+    vm.stopPrank();
+
+    // Warp time to accrue rewards
+    vm.warp(block.timestamp + 100);
+
+    // First claim
+    vm.startPrank(user1);
+    uint256 claimed1 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    assertGt(claimed1, 0, "First claim should yield rewards");
+    // Second claim (should be zero)
+    uint256 claimed2 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    assertEq(claimed2, 0, "Second claim should yield zero");
+    vm.stopPrank();
+
+    // --- 2. Multiple Claims with Time Warp ---
+    vm.warp(block.timestamp + 50);
+    vm.startPrank(user1);
+    uint256 claimed3 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    assertGt(claimed3, 0, "Claim after time warp should yield new rewards");
+    uint256 claimed4 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    assertEq(claimed4, 0, "Immediate re-claim should yield zero");
+    vm.stopPrank();
+
+    // --- 3. Multiple Users, Same Validator ---
+    vm.startPrank(user2);
+    StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId1);
+    vm.stopPrank();
+
+    vm.warp(block.timestamp + 100);
+    vm.startPrank(user1);
+    uint256 claimed5 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    vm.stopPrank();
+    vm.startPrank(user2);
+    uint256 claimed6 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    uint256 claimed7 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    assertEq(claimed7, 0, "User2 immediate re-claim should yield zero");
+    vm.stopPrank();
+
+    // --- 4. Multiple Validators ---
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId2);
+    vm.stopPrank();
+
+    vm.warp(block.timestamp + 100);
+    vm.startPrank(user1);
+    uint256 claimed8 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    uint256 claimed9 = RewardsFacet(address(diamondProxy)).claim(token, validatorId2);
+    assertGt(claimed8, 0, "Claim from validator 1 should yield rewards");
+    assertGt(claimed9, 0, "Claim from validator 2 should yield rewards");
+    uint256 claimed10 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    uint256 claimed11 = RewardsFacet(address(diamondProxy)).claim(token, validatorId2);
+    assertEq(claimed10, 0, "Immediate re-claim from validator 1 should yield zero");
+    assertEq(claimed11, 0, "Immediate re-claim from validator 2 should yield zero");
+    vm.stopPrank();
+
+// --- 5. Reward Rate Change ---
+vm.startPrank(admin);
+RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, 2e18); // Increase max before setting higher rate
+rates[0] = 2e18; // Double the rate
+RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+vm.stopPrank();
+
+    vm.warp(block.timestamp + 100);
+    vm.startPrank(user1);
+    uint256 claimed12 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    assertGt(claimed12, 0, "Claim after reward rate change should yield rewards");
+    uint256 claimed13 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    assertEq(claimed13, 0, "Immediate re-claim after rate change should yield zero");
+    vm.stopPrank();
+
+    // --- 6. Commission Change ---
+    vm.startPrank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId1, 2e17); // 20%
+    vm.stopPrank();
+
+    vm.warp(block.timestamp + 100);
+    vm.startPrank(user1);
+    uint256 claimed14 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    assertGt(claimed14, 0, "Claim after commission change should yield rewards");
+    uint256 claimed15 = RewardsFacet(address(diamondProxy)).claim(token, validatorId1);
+    assertEq(claimed15, 0, "Immediate re-claim after commission change should yield zero");
+    vm.stopPrank();
+}
+    function testDoubleClaimBugWithStaleCumulativeIndex() public {
+        // Setup: Stake with validator 0
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        address token = address(pUSD);
+        uint256 stakeAmount = 10 ether;
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId);
+        vm.stopPrank();
+
+        // Set reward rate and fund treasury
+        vm.startPrank(admin);
+        address[] memory tokens = new address[](1);
+        tokens[0] = token;
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = 1e18; // 1 token per second
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        pUSD.transfer(address(treasury), 1000 ether);
+        vm.stopPrank();
+
+        // Warp time to accrue rewards
+        vm.warp(block.timestamp + 100);
+
+        // First claim: should receive rewards for 100 seconds
+        vm.startPrank(user1);
+        uint256 claimed1 = RewardsFacet(address(diamondProxy)).claim(token, validatorId);
+        assertGt(claimed1, 0, "First claim should yield rewards");
+
+        // Second claim: without any new staking/unstaking/time warp, should yield 0 if correct
+        uint256 claimed2 = RewardsFacet(address(diamondProxy)).claim(token, validatorId);
+        assertEq(claimed2, 0, "Second claim should yield zero if cumulative index is up to date");
+        vm.stopPrank();
+    }
+
 
 }

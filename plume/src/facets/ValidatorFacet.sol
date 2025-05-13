@@ -21,7 +21,11 @@ import {
     ValidatorAlreadySlashed,
     ValidatorDoesNotExist,
     ValidatorInactive,
-    ZeroAddress
+    ZeroAddress,
+    NoPendingClaim,
+    PendingClaimExists,
+    ClaimNotReady,
+    InvalidAmount
 } from "../lib/PlumeErrors.sol";
 import {
     SlashVoteCast,
@@ -32,7 +36,9 @@ import {
     ValidatorCommissionSet,
     ValidatorSlashed,
     ValidatorStatusUpdated,
-    ValidatorUpdated
+    ValidatorUpdated,
+    CommissionClaimRequested,
+    CommissionClaimFinalized
 } from "../lib/PlumeEvents.sol";
 
 import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
