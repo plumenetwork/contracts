@@ -14,7 +14,6 @@ library PlumeValidatorLogic {
 
     using PlumeStakingStorage for PlumeStakingStorage.Layout;
 
-
     /**
      * @notice Get validator info from storage
      * @param $ The storage layout reference
@@ -62,7 +61,7 @@ library PlumeValidatorLogic {
         if (!$.userHasStakedWithValidator[staker][validatorId]) {
             $.userValidators[staker].push(validatorId);
             $.userHasStakedWithValidator[staker][validatorId] = true;
-        } 
+        }
 
         if (!$.isStakerForValidator[validatorId][staker]) {
             // === Store index before pushing ===

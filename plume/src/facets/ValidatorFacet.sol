@@ -5,11 +5,15 @@ import {
     AdminAlreadyAssigned,
     AlreadyVotedToSlash,
     CannotVoteForSelf,
+    ClaimNotReady,
     CommissionExceedsMaxAllowed,
     CommissionRateTooHigh,
+    InvalidAmount,
     InvalidUpdateType,
     NativeTransferFailed,
+    NoPendingClaim,
     NotValidatorAdmin,
+    PendingClaimExists,
     SlashConditionsNotMet,
     SlashVoteDurationTooLong,
     SlashVoteExpired,
@@ -21,13 +25,11 @@ import {
     ValidatorAlreadySlashed,
     ValidatorDoesNotExist,
     ValidatorInactive,
-    ZeroAddress,
-    NoPendingClaim,
-    PendingClaimExists,
-    ClaimNotReady,
-    InvalidAmount
+    ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
+    CommissionClaimFinalized,
+    CommissionClaimRequested,
     SlashVoteCast,
     ValidatorAdded,
     ValidatorAddressesSet,
@@ -36,9 +38,7 @@ import {
     ValidatorCommissionSet,
     ValidatorSlashed,
     ValidatorStatusUpdated,
-    ValidatorUpdated,
-    CommissionClaimRequested,
-    CommissionClaimFinalized
+    ValidatorUpdated
 } from "../lib/PlumeEvents.sol";
 
 import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
@@ -212,6 +212,13 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         $.adminToValidatorId[l2AdminAddress] = validatorId;
         // Mark admin as assigned in the dedicated mapping
         $.isAdminAssigned[l2AdminAddress] = true;
+
+        // Initialize last update times for all reward tokens for this validator
+        address[] memory rewardTokens = $.rewardTokens;
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            address token = rewardTokens[i];
+            $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
+        }
 
         emit ValidatorAdded(
             validatorId,
@@ -399,7 +406,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @notice Request a commission claim for a validator and token (starts timelock)
      * @dev Only callable by validator admin. Amount is locked at request time.
      */
-    function requestCommissionClaim(uint16 validatorId, address token) external onlyValidatorAdmin(validatorId) nonReentrant {
+    function requestCommissionClaim(
+        uint16 validatorId,
+        address token
+    ) external onlyValidatorAdmin(validatorId) nonReentrant {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
         uint256 amount = $.validatorAccruedCommission[validatorId][token];
@@ -426,7 +436,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @notice Finalize a commission claim after timelock expires
      * @dev Only callable by validator admin. Pays out the pending claim if ready.
      */
-    function finalizeCommissionClaim(uint16 validatorId, address token) external onlyValidatorAdmin(validatorId) nonReentrant returns (uint256) {
+    function finalizeCommissionClaim(
+        uint16 validatorId,
+        address token
+    ) external onlyValidatorAdmin(validatorId) nonReentrant returns (uint256) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.PendingCommissionClaim storage claim = $.pendingCommissionClaims[validatorId][token];
         if (claim.amount == 0) {

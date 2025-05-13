@@ -268,18 +268,13 @@ contract ForkTestPlumeStaking is Test {
         // Claim the commission
         vm.startPrank(admin);
         uint256 balanceBefore = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of the actual recipient (admin)
- 
-
-
-
 
         ValidatorFacet(address(diamondProxy)).requestCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
         vm.warp(block.timestamp + 7 days);
 
-        uint256 claimedAmount = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
+        uint256 claimedAmount =
+            ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
 
-
-            
         uint256 balanceAfter = pUSD.balanceOf(admin);
         vm.stopPrank();
 
@@ -347,18 +342,12 @@ contract ForkTestPlumeStaking is Test {
         // Try to claim the commission to verify it works end-to-end
         vm.startPrank(admin);
         uint256 balanceBefore = pUSD.balanceOf(admin);
- 
-
-
 
         ValidatorFacet(address(diamondProxy)).requestCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
         vm.warp(block.timestamp + 7 days);
 
-        uint256 claimedAmount = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
-
-
-
-
+        uint256 claimedAmount =
+            ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
 
         uint256 balanceAfter = pUSD.balanceOf(admin);
         vm.stopPrank();
@@ -523,9 +512,8 @@ contract ForkTestPlumeStaking is Test {
         // validatorId 1
         ValidatorFacet(address(diamondProxy)).requestCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
         vm.warp(block.timestamp + 7 days);
-        uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
-
-
+        uint256 commissionClaimed =
+            ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
 
         uint256 validatorBalanceAfter = pUSD.balanceOf(admin); // Check balance of actual admin for validatorId 1
 
@@ -804,7 +792,6 @@ contract ForkTestPlumeStaking is Test {
         ManagementFacet(address(diamondProxy)).adminWithdraw(token, withdrawAmount, recipient);
         vm.stopPrank();
     }
-
 
     function testSetMinStakeAmount_InvalidAmount() public {
         uint256 invalidAmount = 0; // Zero is invalid
@@ -1543,7 +1530,7 @@ contract ForkTestPlumeStaking is Test {
         ValidatorFacet(address(diamondProxy)).requestCommissionClaim(0, address(pUSD));
         vm.warp(block.timestamp + 7 days);
         uint256 commissionClaimed = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(0, address(pUSD));
-            
+
         uint256 validatorBalanceAfter = pUSD.balanceOf(admin); // <<< CHANGE: Check balance of actual admin for
             // validatorId 1
 
@@ -1563,7 +1550,6 @@ contract ForkTestPlumeStaking is Test {
 
         console2.log("--- Commission & Reward Rate Change Test Complete ---");
     }
-
 
     // --- Complex Reward Calculation Test ---
     function testComplexRewardScenario() public {

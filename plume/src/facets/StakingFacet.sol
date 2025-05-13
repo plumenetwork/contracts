@@ -126,7 +126,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             address[] memory rewardTokens = $.rewardTokens; // Get all system reward tokens
             for (uint256 i = 0; i < rewardTokens.length; i++) {
                 address token = rewardTokens[i];
-                if ($.isRewardToken[token]) { // Ensure it's still an active reward token
+                if ($.isRewardToken[token]) {
+                    // Ensure it's still an active reward token
                     // 1. Update the validator's cumulative reward per token to current block.timestamp
                     //    This ensures that the validator's state is current before we use its cumulative values.
                     PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
@@ -136,7 +137,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                     $.userValidatorRewardPerTokenPaid[msg.sender][validatorId][token] =
                         $.validatorRewardPerTokenCumulative[validatorId][token];
                     $.userValidatorRewardPerTokenPaidTimestamp[msg.sender][validatorId][token] = block.timestamp;
-                    
+
                     // 3. Initialize any stored pending rewards for this specific validator/token to zero.
                     $.userRewards[msg.sender][validatorId][token] = 0;
 
@@ -145,7 +146,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                         $.userLastCheckpointIndex[msg.sender][validatorId][token] =
                             $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
                     } else {
-                        // If no validator-specific checkpoints, they start from the beginning (index 0 or implicit global)
+                        // If no validator-specific checkpoints, they start from the beginning (index 0 or implicit
+                        // global)
                         $.userLastCheckpointIndex[msg.sender][validatorId][token] = 0;
                     }
                 }
@@ -385,7 +387,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 // Adjust totalCooling (decrease finished amount)
                 if ($.totalCooling >= finishedCoolingAmount) {
                     $.totalCooling -= finishedCoolingAmount;
-        } else {
+                } else {
                     $.totalCooling = 0;
                 }
                 globalInfo.cooled = 0; // Reset cooled amount as it's now parked

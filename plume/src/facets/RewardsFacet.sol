@@ -211,7 +211,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
             for (uint256 j = 0; j < validatorIds.length; j++) {
                 uint16 validatorId = validatorIds[j];
-                PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, rate); 
+                PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, rate);
             }
             $.rewardRates[token] = rate;
         }
@@ -341,7 +341,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
         }
 
-        uint16[] memory validatorIds = $.userValidators[msg.sender]; 
+        uint16[] memory validatorIds = $.userValidators[msg.sender];
         uint256 totalReward = 0;
 
         // For each validator the user has staked with

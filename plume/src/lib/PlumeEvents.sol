@@ -474,5 +474,18 @@ event MaxAllowedValidatorCommissionSet(uint256 oldMaxRate, uint256 newMaxRate);
 // --- SolidState Diamond Events (for reference if needed, usually handled by SolidState) ---
 
 // --- Commission Claim Timelock Events ---
-event CommissionClaimRequested(uint16 indexed validatorId, address indexed token, address indexed recipient, uint256 amount, uint256 requestTimestamp);
-event CommissionClaimFinalized(uint16 indexed validatorId, address indexed token, address indexed recipient, uint256 amount, uint256 finalizeTimestamp);
+event CommissionClaimRequested(
+    uint16 indexed validatorId,
+    address indexed token,
+    address indexed recipient,
+    uint256 amount,
+    uint256 requestTimestamp
+);
+
+event CommissionClaimFinalized(
+    uint16 indexed validatorId,
+    address indexed token,
+    address indexed recipient,
+    uint256 amount,
+    uint256 finalizeTimestamp
+);

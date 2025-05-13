@@ -136,9 +136,10 @@ library PlumeStakingStorage {
         uint256 maxAllowedValidatorCommission;
         // Add mapping for pending commission claims: validatorId => token => PendingCommissionClaim
         mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims;
-        // Add a constant for the commission claim timelock (7 days)
     }
-        uint256 constant COMMISSION_CLAIM_TIMELOCK = 7 days;
+    // Add a constant for the commission claim timelock (7 days)
+
+    uint256 constant COMMISSION_CLAIM_TIMELOCK = 7 days;
 
     // Validator info struct to store validator details
     struct ValidatorInfo {
