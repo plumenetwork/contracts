@@ -158,6 +158,12 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         emit RewardTokenAdded(token);
     }
 
+    /**
+     * @notice Remove a reward token from the contract.
+     *   This also prevents any users from claiming existing rewards for this token.
+     * @dev Only callable by REWARD_MANAGER_ROLE
+     * @param token Address of the token to remove
+     */
     function removeRewardToken(
         address token
     ) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {

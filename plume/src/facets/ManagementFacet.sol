@@ -17,7 +17,6 @@ import {
     MaxAllowedValidatorCommissionSet,
     MaxSlashVoteDurationSet,
     MinStakeAmountSet,
-    PartialTotalAmountsUpdated,
     StakeInfoUpdated
 } from "../lib/PlumeEvents.sol";
 
@@ -86,7 +85,6 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         uint256 oldAmount = $.minStakeAmount;
-        // Add validation? E.g., prevent setting to 0?
         if (_minStakeAmount == 0) {
             revert InvalidAmount(_minStakeAmount);
         }

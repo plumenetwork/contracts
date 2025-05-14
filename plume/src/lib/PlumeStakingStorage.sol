@@ -55,8 +55,6 @@ library PlumeStakingStorage {
         mapping(address => mapping(address => uint256)) userRewardPerTokenPaid;
         /// @notice Maps a (user, token) pair to the reward of that token for that user
         mapping(address => mapping(address => uint256)) rewards;
-        /// @notice Mapping to track if an address is already in stakers array
-        mapping(address => bool) isStaker;
         // Validator related storage
         /// @notice Information about each validator
         mapping(uint16 => ValidatorInfo) validators;

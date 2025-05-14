@@ -70,23 +70,6 @@ library PlumeValidatorLogic {
             $.isStakerForValidator[validatorId][staker] = true;
             $.userIndexInValidatorStakers[staker][validatorId] = index; // <<< Store the index
         }
-        // Call the library version of the helper function
-        addStakerIfNew($, staker);
-    }
-
-    /**
-     * @notice Adds a staker to the global stakers list if they have a stake and are not already listed.
-     * @param $ The PlumeStaking storage layout.
-     * @param staker The address of the staker.
-     */
-    function addStakerIfNew(PlumeStakingStorage.Layout storage $, address staker) internal {
-        // This replaces _addStakerIfNew from ValidatorFacet
-        // Check global stake info, not validator specific
-        if ($.stakeInfo[staker].staked > 0 && !$.isStaker[staker]) {
-            $.stakers.push(staker);
-            $.isStaker[staker] = true;
-            // emit PlumeEvents.StakerAdded(staker);
-        }
     }
 
     /**

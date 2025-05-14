@@ -30,7 +30,6 @@ import { StakedOnBehalf } from "../lib/PlumeEvents.sol";
 import { Unstaked } from "../lib/PlumeEvents.sol";
 import { Withdrawn } from "../lib/PlumeEvents.sol";
 import { RewardsRestaked } from "../lib/PlumeEvents.sol";
-import { ParkedRestaked } from "../lib/PlumeEvents.sol";
 import { RewardClaimedFromValidator } from "../lib/PlumeEvents.sol";
 
 import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
@@ -571,7 +570,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert ValidatorDoesNotExist(validatorId);
         }
         PlumeStakingStorage.ValidatorInfo storage targetValidator = $.validators[validatorId];
-        if (!targetValidator.active) {
+        if (!targetValidator.active || targetValidator.slashed) {
             revert ValidatorInactive(validatorId);
         }
 

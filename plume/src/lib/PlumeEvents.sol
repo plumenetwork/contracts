@@ -34,43 +34,12 @@ event Staked(
 event CooldownStarted(address indexed staker, uint16 indexed validatorId, uint256 amount, uint256 cooldownEnd);
 
 /**
- * @notice Emitted when cooling period is completed for tokens
- * @param staker Address of the staker
- * @param amount Amount that completed cooling
- */
-event CoolingCompleted(address indexed staker, uint256 amount);
-
-/**
  * @notice Emitted when tokens are unstaked from the contract (legacy)
  * @param user Address of the user
  * @param validatorId ID of the validator
  * @param amount Amount unstaked
  */
 event Unstaked(address indexed user, uint16 indexed validatorId, uint256 amount);
-
-/**
- * @notice Emitted when tokens are unstaked from a specific validator
- * @param user Address of the user
- * @param validatorId ID of the validator
- * @param amount Amount unstaked
- */
-event UnstakedFromValidator(address indexed user, uint16 indexed validatorId, uint256 amount);
-
-/**
- * @notice Emitted when stake is forced to cool without a cooldown period
- * @param staker Address of the staker
- * @param validatorId ID of the validator
- * @param amount Amount moved directly to parked status
- */
-event ForceUnstaked(address indexed staker, uint16 indexed validatorId, uint256 amount);
-
-/**
- * @notice Emitted when cooled tokens are parked (ready for withdrawal)
- * @param staker Address of the staker
- * @param validatorId ID of the validator
- * @param amount Amount moved to parked status
- */
-event TokensParked(address indexed staker, uint16 indexed validatorId, uint256 amount);
 
 /**
  * @notice Emitted when tokens are withdrawn from the contract
@@ -118,13 +87,6 @@ event RewardRateCheckpointCreated(
 event RewardsAdded(address indexed token, uint256 amount);
 
 /**
- * @notice Emitted when max reward rates are set
- * @param tokens Array of token addresses
- * @param maxRates Array of max rates
- */
-event MaxRewardRatesSet(address[] tokens, uint256[] maxRates);
-
-/**
  * @notice Emitted when the maximum reward rate for a token is updated
  * @param token Address of the token
  * @param newRate New maximum rate
@@ -149,34 +111,6 @@ event RewardClaimed(address indexed user, address indexed token, uint256 amount)
 event RewardClaimedFromValidator(
     address indexed user, address indexed token, uint16 indexed validatorId, uint256 amount
 );
-
-/**
- * @notice Emitted when admin withdraws user's unclaimed rewards
- * @param user Address of the user
- * @param token Address of the token
- * @param amount Amount withdrawn
- */
-event AdminWithdrewUserRewards(address indexed user, address indexed token, uint256 amount);
-
-/**
- * @notice Emitted when the minimum stake amount is updated
- * @param oldAmount Old minimum amount
- * @param newAmount New minimum amount
- */
-event MinStakeAmountUpdated(uint256 oldAmount, uint256 newAmount);
-
-/**
- * @notice Emitted when the cooldown interval is updated
- * @param oldInterval Old cooldown interval
- * @param newInterval New cooldown interval
- */
-event CooldownIntervalUpdated(uint256 oldInterval, uint256 newInterval);
-
-/**
- * @notice Emitted when a new staker is added to the system
- * @param staker Address of the staker
- */
-event StakerAdded(address indexed staker);
 
 /**
  * @notice Emitted when validator commission is claimed
@@ -227,37 +161,10 @@ event ValidatorUpdated(
 );
 
 /**
- * @notice Emitted when a validator is deactivated
- * @param validatorId ID of the validator
- */
-event ValidatorDeactivated(uint16 indexed validatorId);
-
-/**
- * @notice Emitted when a validator is activated
- * @param validatorId ID of the validator
- */
-event ValidatorActivated(uint16 indexed validatorId);
-
-/**
- * @notice Emitted when validator stakers' rewards are updated in a batch
- * @param validatorId ID of the validator
- * @param startIndex The starting index for processing
- * @param endIndex The ending index for processing
- */
-event ValidatorStakersRewardsUpdated(uint16 validatorId, uint256 startIndex, uint256 endIndex);
-
-/**
  * @notice Emitted when a validator is removed from the system
  * @param validatorId ID of the validator removed
  */
 event ValidatorRemoved(uint16 indexed validatorId);
-
-/**
- * @notice Emitted when the maximum validator commission is updated
- * @param oldMaxCommission Old maximum commission rate
- * @param newMaxCommission New maximum commission rate
- */
-event MaxValidatorCommissionUpdated(uint256 oldMaxCommission, uint256 newMaxCommission);
 
 /**
  * @notice Emitted when the validator capacity is updated
@@ -273,28 +180,6 @@ event ValidatorCapacityUpdated(uint16 indexed validatorId, uint256 oldCapacity, 
  * @param newPercentage New maximum percentage (in basis points)
  */
 event MaxValidatorPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
-
-/**
- * @notice Emitted when emergency funds are transferred from one validator to another for a specific staker
- * @param staker Address of the staker whose funds were transferred
- * @param fromValidatorId Source validator ID
- * @param toValidatorId Destination validator ID
- * @param amount Amount of funds transferred
- */
-event EmergencyFundsTransferred(
-    address indexed staker, uint16 indexed fromValidatorId, uint16 indexed toValidatorId, uint256 amount
-);
-
-/**
- * @notice Emitted when validator emergency transfer is completed
- * @param fromValidatorId Source validator ID
- * @param toValidatorId Destination validator ID
- * @param amount Amount of funds transferred
- * @param stakerCount Number of stakers affected
- */
-event ValidatorEmergencyTransfer(
-    uint16 indexed fromValidatorId, uint16 indexed toValidatorId, uint256 amount, uint256 stakerCount
-);
 
 /**
  * @notice Emitted when a user stakes PLUME on behalf of another user
@@ -326,18 +211,6 @@ event CooldownIntervalSet(uint256 interval);
 event MinStakeAmountSet(uint256 amount);
 
 /**
- * @notice Emitted when partial total amounts are updated in a batch process
- * @param startIndex Starting index for processing
- * @param endIndex Ending index for processing
- * @param totalStaked Processed staked amount
- * @param totalCooling Processed cooling amount
- * @param totalWithdrawable Processed withdrawable amount
- */
-event PartialTotalAmountsUpdated(
-    uint256 startIndex, uint256 endIndex, uint256 totalStaked, uint256 totalCooling, uint256 totalWithdrawable
-);
-
-/**
  * @notice Emitted when stake info is updated by admin
  * @param user Address of the user
  * @param staked Updated staked amount
@@ -354,14 +227,6 @@ event StakeInfoUpdated(
     uint256 cooldownEnd,
     uint256 lastUpdateTimestamp
 );
-
-/**
- * @notice Emitted when total amounts are updated
- * @param totalStaked Updated total staked amount
- * @param totalCooling Updated total cooling amount
- * @param totalWithdrawable Updated total withdrawable amount
- */
-event TotalAmountsUpdated(uint256 totalStaked, uint256 totalCooling, uint256 totalWithdrawable);
 
 /**
  * @notice Emitted when a vote to slash a validator is cast
@@ -402,43 +267,12 @@ event RewardDistributed(address indexed token, uint256 amount, address indexed r
 event PlumeReceived(address indexed sender, uint256 amount);
 
 /**
- * @notice Emitted when native tokens are deposited to the treasury
- * @param sender Address of the sender
- * @param amount Amount of tokens deposited
- */
-event NativeTokenDeposited(address indexed sender, uint256 amount);
-
-/**
- * @notice Emitted when an ERC20 token is received by the treasury
- * @param token Address of the token
- * @param sender Address of the sender
- * @param amount Amount of tokens received
- */
-event TokenReceived(address indexed token, address indexed sender, uint256 amount);
-
-/**
- * @notice Emitted when a token transfer fails
- * @param token Address of the token (PLUME_NATIVE for native token)
- * @param recipient Address of the intended recipient
- * @param amount Amount that failed to transfer
- */
-event TransferFailed(address indexed token, address indexed recipient, uint256 amount);
-
-/**
  * @notice Emitted when a user restakes their rewards
  * @param staker Address of the staker who restaked
  * @param validatorId Validator ID restaked to
  * @param amount Amount of rewards restaked
  */
 event RewardsRestaked(address indexed staker, uint16 indexed validatorId, uint256 amount);
-
-/**
- * @notice Emitted when a user restakes their parked/cooled balance.
- * @param user The address of the user.
- * @param validatorId The ID of the validator the user restaked to.
- * @param amount The amount of PLUME restaked.
- */
-event ParkedRestaked(address indexed user, uint16 indexed validatorId, uint256 amount);
 
 // --- Management Facet Events ---
 event AdminStakeCorrection(address indexed user, uint256 oldTotalStake, uint256 newTotalStake);
@@ -470,8 +304,6 @@ event ValidatorAddressesSet(
 
 // --- Administrative Events ---
 event MaxAllowedValidatorCommissionSet(uint256 oldMaxRate, uint256 newMaxRate);
-
-// --- SolidState Diamond Events (for reference if needed, usually handled by SolidState) ---
 
 // --- Commission Claim Timelock Events ---
 event CommissionClaimRequested(
