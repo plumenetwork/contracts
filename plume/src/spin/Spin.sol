@@ -10,7 +10,14 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "../interfaces/IDateTime.sol";
 import "../interfaces/ISupraRouterContract.sol";
 
-contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable {
+contract Spin is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable
+{
+
     // Storage
     struct UserData {
         uint256 jackpotWins;
@@ -28,8 +35,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     struct RewardProbabilities {
         uint256 plumeTokenThreshold; // Range start depends on daily jackpot threshold, ends here.
         uint256 raffleTicketThreshold; // Starts after plumeTokenThreshold, ends here.
-        uint256 ppThreshold;         // Starts after raffleTicketThreshold, ends here.
-        // anything above ppThreshold is "Nothing"
+        uint256 ppThreshold; // Starts after raffleTicketThreshold, ends here.
+            // anything above ppThreshold is "Nothing"
     }
 
     // Roles
@@ -45,7 +52,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     uint256 public baseRaffleMultiplier;
     uint256 public PP_PerSpin;
     uint256[3] public plumeAmounts;
-    mapping(uint256 => address) public userNonce;
+    mapping(uint256 => address payable) public userNonce;
     ISupraRouterContract public supraRouter;
     IDateTime public dateTime;
     address public raffleContract;
@@ -55,6 +62,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     bool public enableSpin;
     RewardProbabilities public rewardProbabilities;
     mapping(address => bool) public isSpinPending;
+    uint256 public spinPrice; // Price to spin in wei
 
     // Reserved storage gap for future upgrades
     uint256[50] private __gap;
@@ -91,7 +99,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         supraRouter = ISupraRouterContract(supraRouterAddress);
         dateTime = IDateTime(dateTimeAddress);
         admin = msg.sender;
-        enableSpin = false;  // Start disabled until explicitly enabled
+        enableSpin = false; // Start disabled until explicitly enabled
 
         // Set default values
         jackpotProbabilities = [1, 2, 3, 5, 7, 10, 20];
@@ -112,16 +120,17 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         PP_PerSpin = 100;
         plumeAmounts = [1, 1, 1];
 
-        lastJackpotClaimWeek = 999;  // start with arbitrary non-zero value
+        lastJackpotClaimWeek = 999; // start with arbitrary non-zero value
+        spinPrice = 2 ether; // Set default spin price to 2 PLUME
 
         // Set default probabilities
         // Note: Jackpot probability is handled by jackpotProbabilities based on dayOfWeek
         rewardProbabilities = RewardProbabilities({
-            plumeTokenThreshold: 200_000,  // Up to 200,000 (Approx 20%)
+            plumeTokenThreshold: 200_000, // Up to 200,000 (Approx 20%)
             raffleTicketThreshold: 600_000, // Up to 600,000 (Approx 40%)
-            ppThreshold: 900_000           // Up to 900,000 (Approx 30%)
-                                           // Above 900,000 is "Nothing" (Approx 10%)
-        });
+            ppThreshold: 900_000 // Up to 900,000 (Approx 30%)
+                // Above 900,000 is "Nothing" (Approx 10%)
+         });
     }
 
     /// @notice Ensures that the user can only spin once per day by checking their last spin date.
@@ -160,11 +169,12 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     }
 
     /// @notice Starts the spin process by generating a random number and recording the spin date.
-    /// @dev This function is called by the user to initiate a spin.
-    function startSpin() external whenNotPaused canSpin {
+    /// @dev This function is called by the user to initiate a spin. Requires payment equal to spinPrice.
+    function startSpin() external payable whenNotPaused canSpin {
         if (!enableSpin) {
             revert CampaignNotStarted();
         }
+        require(msg.value == spinPrice, "Incorrect spin price sent");
 
         if (isSpinPending[msg.sender]) {
             revert SpinRequestPending(msg.sender);
@@ -176,9 +186,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         uint256 numConfirmations = 1;
         uint256 clientSeed = uint256(keccak256(abi.encodePacked(admin, block.timestamp)));
 
-        uint256 nonce =
-            supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, admin);
-        userNonce[nonce] = msg.sender;
+        uint256 nonce = supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, admin);
+        userNonce[nonce] = payable(msg.sender);
 
         emit SpinRequested(nonce, msg.sender);
     }
@@ -194,7 +203,7 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
      * @param rngList The list of random numbers generated.
      */
     function handleRandomness(uint256 nonce, uint256[] memory rngList) external onlyRole(SUPRA_ROLE) nonReentrant {
-        address user = userNonce[nonce];
+        address payable user = userNonce[nonce];
         if (user == address(0)) {
             revert InvalidNonce();
         }
@@ -207,8 +216,6 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         // Apply reward logic
         UserData storage userDataStorage = userData[user];
-
-        
 
         // ----------  Effects: update storage first  ----------
         if (keccak256(bytes(rewardCategory)) == keccak256("Jackpot")) {
@@ -240,8 +247,8 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
         // update the streak count after their spin
         userDataStorage.streakCount = _computeStreak(user, block.timestamp, true);
-        userDataStorage.lastSpinTimestamp = block.timestamp;
 
+        userDataStorage.lastSpinTimestamp = block.timestamp;
         // ----------  Interactions: transfer Plume last ----------
         if (
             keccak256(bytes(rewardCategory)) == keccak256("Jackpot")
@@ -253,6 +260,13 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         emit SpinCompleted(user, rewardCategory, rewardAmount);
     }
 
+    /**
+     * @notice Determines the reward based on the generated randomness and user\'s state.
+     * @param _randomness The random number from Supra VRF.
+     * @param _user The address of the user spinning.
+     * @return rewardCategory The category of the reward (e.g., "Jackpot", "Plume Token").
+     * @return rewardAmount The amount of the reward.
+     */
     /**
      * @notice Determines the reward category based on the VRF random number.
      * @param randomness The random number generated by the Supra Router.
@@ -286,47 +300,45 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
     function _computeStreak(address user, uint256 nowTs, bool justSpun) internal view returns (uint256) {
         // if a user just spun, we need to increment the streak its a new day or a broken streak
         uint256 streakAdjustment = justSpun ? 1 : 0;
+
         uint256 lastSpinTs = userData[user].lastSpinTimestamp;
-        if (lastSpinTs == 0) return 0 + streakAdjustment;
+
+        if (lastSpinTs == 0) {
+            return 0 + streakAdjustment;
+        }
         uint256 lastDaySpun = lastSpinTs / SECONDS_PER_DAY;
-        uint256 today   = nowTs     / SECONDS_PER_DAY;
-        if (today == lastDaySpun) return userData[user].streakCount; // same day
-        if (today == lastDaySpun + 1)   return userData[user].streakCount + streakAdjustment; // streak not broken yet
+        uint256 today = nowTs / SECONDS_PER_DAY;
+        if (today == lastDaySpun) {
+            return userData[user].streakCount;
+        } // same day
+        if (today == lastDaySpun + 1) {
+            return userData[user].streakCount + streakAdjustment;
+        } // streak not broken yet
         return 0 + streakAdjustment; // broken streak
     }
 
-    function currentStreak(address user) public view returns (uint256) {
+    /// @notice Returns the user\'s current streak count based on their last spin date.
+    function currentStreak(
+        address user
+    ) public view returns (uint256) {
         return _computeStreak(user, block.timestamp, false);
     }
 
-    function _safeTransferPlume(address to, uint256 weiAmount) internal {
-        require(address(this).balance >= weiAmount, "insufficient Plume in the Spin contract");
-        (bool ok,) = to.call{value: weiAmount}("");
-        require(ok, "Plume transfer failed");
+    /// @notice Allows the raffle contract to deduct tickets from a user\'s balance.
+    function spendRaffleTickets(address user, uint256 amount) external onlyRaffleContract {
+        UserData storage userDataStorage = userData[user];
+        require(userDataStorage.raffleTicketsBalance >= amount, "Insufficient raffle tickets");
+        userDataStorage.raffleTicketsBalance -= amount;
+        emit RaffleTicketsSpent(user, amount, userDataStorage.raffleTicketsBalance);
     }
 
-    function spendRaffleTickets(address user, uint256 ticketsUsed) external onlyRaffleContract {
-        uint256 bal = userData[user].raffleTicketsBalance;
-        require(bal >= ticketsUsed, "ticket underflow");
-        userData[user].raffleTicketsBalance = bal - ticketsUsed;
-
-        emit RaffleTicketsSpent(user, ticketsUsed, userData[user].raffleTicketsBalance);
-    }
-
-    /**
-     * @notice Allows the admin to withdraw Ether from the contract.
-     * @param recipient The address to receive the funds.
-     * @param amount The amount of Ether to withdraw (in wei).
-     */
-    function withdraw(address payable recipient, uint256 amount) external onlyRole(ADMIN_ROLE) {
-        require(address(this).balance >= amount, "Insufficient contract balance");
+    /// @notice Allows the admin to withdraw PLUME tokens from the contract.
+    function adminWithdraw(address payable recipient, uint256 amount) external onlyRole(ADMIN_ROLE) {
         require(recipient != address(0), "Invalid recipient address");
-
-        (bool success,) = recipient.call{ value: amount }("");
-        require(success, "Withdrawal failed");
+        _safeTransferPlume(recipient, amount);
     }
 
-    /// @dev Allows the admin to pause the contract, preventing certain actions.
+    /// @notice Pauses the contract, preventing spins.
     function pause() external onlyRole(ADMIN_ROLE) {
         _pause();
     }
@@ -462,7 +474,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         jackpotPrizes[week] = prize;
     }
 
-    function setCampaignStartDate(uint256 start) external onlyRole(ADMIN_ROLE) {
+    function setCampaignStartDate(
+        uint256 start
+    ) external onlyRole(ADMIN_ROLE) {
         campaignStartDate = start == 0 ? block.timestamp : start;
     }
 
@@ -508,7 +522,9 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     /// @notice Enable or disable spinning
     /// @param _enableSpin The flag to enable/disable spinning
-    function setEnableSpin(bool _enableSpin) external onlyRole(ADMIN_ROLE) {
+    function setEnableSpin(
+        bool _enableSpin
+    ) external onlyRole(ADMIN_ROLE) {
         enableSpin = _enableSpin;
     }
 
@@ -526,10 +542,47 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
         require(_plumeTokenThreshold < _raffleTicketThreshold, "Invalid thresholds order");
         require(_raffleTicketThreshold < _ppThreshold, "Invalid thresholds order");
         require(_ppThreshold <= 1_000_000, "Threshold exceeds maximum");
-        
+
         rewardProbabilities.plumeTokenThreshold = _plumeTokenThreshold;
         rewardProbabilities.raffleTicketThreshold = _raffleTicketThreshold;
         rewardProbabilities.ppThreshold = _ppThreshold;
+    }
+
+    /**
+     * @notice Returns the current price required to spin.
+     * @return The price in wei.
+     */
+    function getSpinPrice() external view returns (uint256) {
+        return spinPrice;
+    }
+
+    /**
+     * @notice Allows the admin to set the price required to spin.
+     * @param _newPrice The new price in wei.
+     */
+    function setSpinPrice(
+        uint256 _newPrice
+    ) external onlyRole(ADMIN_ROLE) {
+        spinPrice = _newPrice;
+    }
+
+    /// @notice Internal function to get weekly jackpot details based on the week number.
+    function _getWeeklyJackpotDetails(
+        uint256 _week
+    ) internal view returns (uint256 prize, uint256 requiredStreak) {
+        if (_week >= 12) {
+            return (0, 0); // No jackpot after week 12
+        }
+        prize = jackpotPrizes[uint8(_week)];
+        requiredStreak = _week + 2;
+        return (prize, requiredStreak);
+    }
+
+    /// @notice Transfers Plume tokens safely, reverting if the contract has insufficient balance.
+    function _safeTransferPlume(address payable _to, uint256 _amount) internal {
+        require(address(this).balance >= _amount, "insufficient Plume in the Spin contract");
+        (bool success,) = _to.call{ value: _amount }("");
+        require(success, "Plume transfer failed");
     }
 
     // UUPS Authorization
@@ -543,4 +596,5 @@ contract Spin is Initializable, AccessControlUpgradeable, UUPSUpgradeable, Pausa
 
     /// @notice Fallback function to receive ether
     receive() external payable { }
+
 }
