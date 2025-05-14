@@ -80,13 +80,6 @@ event RewardRateCheckpointCreated(
 );
 
 /**
- * @notice Emitted when rewards are added to the contract
- * @param token Address of the token
- * @param amount Amount of rewards added
- */
-event RewardsAdded(address indexed token, uint256 amount);
-
-/**
  * @notice Emitted when the maximum reward rate for a token is updated
  * @param token Address of the token
  * @param newRate New maximum rate

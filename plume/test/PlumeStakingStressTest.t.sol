@@ -126,17 +126,16 @@ contract PlumeStakingStressTest is Test {
         rewardsSigs[1] = RewardsFacet.removeRewardToken.selector;
         rewardsSigs[2] = RewardsFacet.setRewardRates.selector;
         rewardsSigs[3] = RewardsFacet.setMaxRewardRate.selector;
-        rewardsSigs[4] = RewardsFacet.addRewards.selector;
-        rewardsSigs[5] = bytes4(keccak256("claim(address)"));
-        rewardsSigs[6] = bytes4(keccak256("claim(address,uint16)"));
-        rewardsSigs[7] = RewardsFacet.claimAll.selector;
-        rewardsSigs[8] = RewardsFacet.earned.selector;
-        rewardsSigs[9] = RewardsFacet.getClaimableReward.selector;
-        rewardsSigs[10] = RewardsFacet.getRewardTokens.selector;
-        rewardsSigs[11] = RewardsFacet.getMaxRewardRate.selector;
-        rewardsSigs[12] = RewardsFacet.tokenRewardInfo.selector;
-        rewardsSigs[13] = RewardsFacet.setTreasury.selector;
-        rewardsSigs[14] = RewardsFacet.getPendingRewardForValidator.selector;
+        rewardsSigs[4] = bytes4(keccak256("claim(address)"));
+        rewardsSigs[5] = bytes4(keccak256("claim(address,uint16)"));
+        rewardsSigs[6] = RewardsFacet.claimAll.selector;
+        rewardsSigs[7] = RewardsFacet.earned.selector;
+        rewardsSigs[8] = RewardsFacet.getClaimableReward.selector;
+        rewardsSigs[9] = RewardsFacet.getRewardTokens.selector;
+        rewardsSigs[10] = RewardsFacet.getMaxRewardRate.selector;
+        rewardsSigs[11] = RewardsFacet.tokenRewardInfo.selector;
+        rewardsSigs[12] = RewardsFacet.setTreasury.selector;
+        rewardsSigs[13] = RewardsFacet.getPendingRewardForValidator.selector;
 
         bytes4[] memory validatorSigs = new bytes4[](14);
         validatorSigs[0] = ValidatorFacet.addValidator.selector;

@@ -434,23 +434,6 @@ contract QueryDiamondState is Script {
                 console2.log("getMaxRewardRate(%s) PANICKED: %s", token, code);
             }
 
-            try rewards.tokenRewardInfo(token) returns (
-                uint256 rewardRate, uint256 lastUpdateTime, uint256 rewardRateCheckpointCount
-            ) {
-                console2.log("  tokenRewardInfo(%s):", token);
-                console2.log("    - rewardRate:", rewardRate);
-                console2.log("    - lastUpdateTime:", lastUpdateTime);
-                console2.log("    - rewardRateCheckpointCount:", rewardRateCheckpointCount);
-            } catch Error(string memory reason) {
-                if (keccak256(bytes(reason)) == PROXY_ERROR_HASH) {
-                    console2.log("tokenRewardInfo(%s) FAILED: Proxy__ImplementationIsNotContract()", token);
-                } else {
-                    console2.log("tokenRewardInfo(%s) FAILED: %s", token, reason);
-                }
-            } catch Panic(uint256 code) {
-                console2.log("tokenRewardInfo(%s) PANICKED: %s", token, code);
-            }
-
             try rewards.getRewardRateCheckpointCount(token) returns (uint256 count) {
                 console2.log("  getRewardRateCheckpointCount(%s): %s", token, count);
                 if (count > 0) {

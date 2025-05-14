@@ -2219,22 +2219,6 @@ contract ForkTestPlumeStaking is Test {
         // User Stake Info
         uint256 userStake = stakingFacet.getUserValidatorStake(user1, validatorId);
 
-        // Reward Token Info (PLUME_NATIVE)
-        try rewardsFacet.tokenRewardInfo(PLUME_NATIVE) returns (
-            uint256 rewardRate, uint256 rewardsAvailable, uint256 lastUpdateTime
-        ) {
-            console2.log(
-                "   PLUME Reward Info: rewardRate=%d, rewardsAvailable=%d, lastUpdateTime=%d, ",
-                rewardRate,
-                rewardsAvailable,
-                lastUpdateTime
-            );
-        } catch Error(string memory reason) {
-            console2.log("   Could not get PLUME tokenRewardInfo: %s", reason);
-        } catch {
-            console2.log("   Could not get PLUME tokenRewardInfo (Unknown error).");
-        }
-
         // Pre-check Claimable Reward
         uint256 claimableBeforeExplicitCall =
             RewardsFacet(address(diamondProxy)).getClaimableReward(user1, PLUME_NATIVE);

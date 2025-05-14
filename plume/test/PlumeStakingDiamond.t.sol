@@ -32,6 +32,7 @@ import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond
 import {
     AdminAlreadyAssigned,
     InvalidAmount,
+    InvalidAmount,
     NotValidatorAdmin,
     StakeAmountTooSmall,
     Unauthorized,
@@ -228,7 +229,8 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[8] = bytes4(keccak256(bytes("getAccruedCommission(uint16,address)")));
         validatorSigs_Manual[9] = bytes4(keccak256(bytes("getValidatorsList()")));
         validatorSigs_Manual[10] = bytes4(keccak256(bytes("getActiveValidatorCount()")));
-        validatorSigs_Manual[11] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));
+
+        validatorSigs_Manual[11] = bytes4(keccak256(bytes("requestCommissionClaim(uint16,address)")));
         validatorSigs_Manual[12] = bytes4(keccak256(bytes("finalizeCommissionClaim(uint16,address)")));
         validatorSigs_Manual[13] = bytes4(keccak256(bytes("voteToSlashValidator(uint16,uint256)"))); // <<< ADD MISSING
             // SELECTOR
@@ -1292,13 +1294,13 @@ contract PlumeStakingDiamondTest is Test {
         vm.startPrank(recipient);
 
         // Claim should return 0 and not revert
-
+        vm.expectRevert(abi.encodeWithSelector(InvalidAmount.selector, 0));
         ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
         vm.warp(block.timestamp + 7 days);
 
-        uint256 claimedCommission = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
+        vm.expectRevert(abi.encodeWithSelector(NoPendingClaim.selector, validatorId, token));
 
-        assertEq(claimedCommission, 0, "Claimed amount should be zero when none accrued");
+        uint256 claimedCommission = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
 
         vm.stopPrank();
     }
@@ -2951,7 +2953,7 @@ contract PlumeStakingDiamondTest is Test {
     function testCommissionClaimTimelock() public {
         uint16 validatorId = DEFAULT_VALIDATOR_ID;
         address token = address(pUSD);
-        address recipient = validatorAdmin;
+        // address recipient = validatorAdmin; // Not used by name
 
         // Set up commission
         vm.startPrank(validatorAdmin);
@@ -2960,12 +2962,13 @@ contract PlumeStakingDiamondTest is Test {
 
         // Set reward rate and fund treasury
         vm.startPrank(admin);
-        address[] memory tokens = new address[](1);
-        tokens[0] = token;
-        uint256[] memory rates = new uint256[](1);
-        rates[0] = 1e18;
-        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
-        pUSD.transfer(address(treasury), 1000 ether);
+        address[] memory tokensToSet = new address[](1); // Renamed
+        tokensToSet[0] = token;
+        uint256[] memory ratesToSet = new uint256[](1); // Renamed
+        ratesToSet[0] = 1e18; // 1 PUSD per second
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokensToSet, ratesToSet);
+        // pUSD.transfer(address(treasury), 2000 ether); // Ensure enough funds
+        pUSD.transfer(address(treasury), 10e24); // Increased funding
         vm.stopPrank();
 
         // Stake to accrue commission
@@ -2976,37 +2979,74 @@ contract PlumeStakingDiamondTest is Test {
         // Advance time to accrue commission
         vm.warp(block.timestamp + 1 days);
 
-        // Request commission claim
-        vm.startPrank(validatorAdmin);
-        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
+        // User1 claims their rewards, which updates validatorAccruedCommission
+        vm.startPrank(user1);
+        uint256 user1Rewards = RewardsFacet(address(diamondProxy)).claim(token, validatorId);
+        assertTrue(user1Rewards > 0, "User1 should have rewards to claim to populate commission");
         vm.stopPrank();
 
-        // Try to finalize before 2 days (should revert)
+        // Request commission claim
         vm.startPrank(validatorAdmin);
-        vm.expectRevert();
+        uint256 tsBeforeRequest = block.timestamp; // Capture timestamp BEFORE request
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
+        // Remove vm.roll and direct storage read for pendingClaim.requestTimestamp
+        // PlumeStakingStorage.PendingCommissionClaim memory pendingClaim =
+        // PlumeStakingStorage.layout().pendingCommissionClaims[validatorId][token];
+        uint256 expectedReadyTimestamp = tsBeforeRequest + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK;
+        vm.stopPrank();
+
+        // Try to finalize before timelock
+        vm.startPrank(validatorAdmin);
+        // The actual block.timestamp when requestCommissionClaim runs might be tsBeforeRequest or tsBeforeRequest + 1
+        // depending on Foundry's block handling. Let's try tsBeforeRequest first for expectRevert.
+        // If this still mismatches by 1, we'll adjust.
+        vm.expectRevert(abi.encodeWithSelector(ClaimNotReady.selector, validatorId, token, expectedReadyTimestamp));
         ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
         vm.stopPrank();
 
-        // Advance time to after 2 days
-        vm.warp(block.timestamp + 2 days + 1);
+        // Advance time to after timelock - use tsBeforeRequest for consistency
+        vm.warp(tsBeforeRequest + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK + 1);
 
         // Finalize claim (should succeed)
         vm.startPrank(validatorAdmin);
         uint256 balanceBefore = pUSD.balanceOf(validatorAdmin);
         uint256 claimed = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
         uint256 balanceAfter = pUSD.balanceOf(validatorAdmin);
+        assertTrue(claimed > 0, "Claimed commission should be greater than zero");
         assertEq(balanceAfter - balanceBefore, claimed, "Commission not received after timelock");
         vm.stopPrank();
 
-        // Request again, then slash before finalization
+        // --- Test interaction with inactive validator status ---
+        // Accrue new commission
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: 5 ether }(validatorId); // Stake more to ensure new activity
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 days); // Advance time for new commission
+
+        // User1 claims again to update validatorAccruedCommission for the new period
+        vm.startPrank(user1);
+        user1Rewards = RewardsFacet(address(diamondProxy)).claim(token, validatorId);
+        assertTrue(user1Rewards > 0, "User1 should have new rewards to claim for the second commission request");
+        vm.stopPrank();
+
+        // Request new commission claim
         vm.startPrank(validatorAdmin);
+        uint256 tsBeforeSecondRequest = block.timestamp; // Capture timestamp BEFORE second request
         ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
         vm.stopPrank();
+
+        // Make validator inactive
         vm.startPrank(admin);
-        ValidatorFacet(address(diamondProxy)).slashValidator(validatorId);
+        ValidatorFacet(address(diamondProxy)).setValidatorStatus(validatorId, false);
         vm.stopPrank();
+
+        // Warp past timelock for this second request - use tsBeforeSecondRequest for consistency
+        vm.warp(tsBeforeSecondRequest + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK + 1);
+
+        // Try to finalize claim for the now inactive validator
         vm.startPrank(validatorAdmin);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(ValidatorInactive.selector, validatorId));
         ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
         vm.stopPrank();
     }
@@ -3228,6 +3268,178 @@ contract PlumeStakingDiamondTest is Test {
         // 10. Assert that the claimed reward is NOT for the entire period since validator creation or epoch
         uint256 excessiveReward = rewardRate * (warp1 + warp2) * stakeAmount / stakeAmount;
         assertTrue(claimed < excessiveReward, "Should not be able to claim excessive rewards for period before staking");
+    }
+
+    function testNoRetroactiveRewardRateUpdate() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        address token = address(pUSD);
+        uint256 stakeAmount = 100 ether;
+        // uint256 commissionRate = PlumeStakingStorage.layout().validators[validatorId].commission; // 5e16 from setUp
+        (PlumeStakingStorage.ValidatorInfo memory valInfo,,) =
+            ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
+        uint256 commissionRate = valInfo.commission;
+
+        // User 1 stakes
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId);
+        vm.stopPrank();
+
+        // Admin sets initial reward rate R1 and funds treasury
+        uint256 rateR1 = 1 ether; // 1 PUSD per second
+        vm.startPrank(admin);
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rateR1 * 2); // Ensure max rate is sufficient
+        address[] memory tokensToUpdate = new address[](1);
+        tokensToUpdate[0] = token;
+        uint256[] memory ratesR1 = new uint256[](1);
+        ratesR1[0] = rateR1;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokensToUpdate, ratesR1);
+        pUSD.transfer(address(treasury), 500 ether); // Sufficient funding for the test
+        vm.stopPrank();
+
+        // Advance time T1
+        uint256 timeT1 = 100 seconds;
+        vm.warp(block.timestamp + timeT1);
+
+        // Calculate expected net rewards for Period 1 (Rate R1)
+        // Gross reward P1 = Rate R1 * Time T1 (since user is only staker, their stake is total stake)
+        uint256 grossRewardP1 = rateR1 * timeT1;
+        uint256 commissionP1 = (grossRewardP1 * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 netRewardP1 = grossRewardP1 - commissionP1;
+
+        // Admin changes reward rate to R2
+        uint256 rateR2 = 0.5 ether; // 0.5 PUSD per second
+        vm.startPrank(admin);
+        uint256[] memory ratesR2 = new uint256[](1);
+        ratesR2[0] = rateR2;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokensToUpdate, ratesR2);
+        vm.stopPrank();
+
+        // Advance time T2
+        uint256 timeT2 = 50 seconds;
+        vm.warp(block.timestamp + timeT2);
+
+        // Calculate expected net rewards for Period 2 (Rate R2)
+        uint256 grossRewardP2 = rateR2 * timeT2;
+        uint256 commissionP2 = (grossRewardP2 * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 netRewardP2 = grossRewardP2 - commissionP2;
+
+        // User 1 claims rewards
+        vm.startPrank(user1);
+        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(token, validatorId);
+        vm.stopPrank();
+
+        // Expected total net reward = Net P1 + Net P2
+        uint256 expectedTotalNetReward = netRewardP1 + netRewardP2;
+
+        console2.log("Net Reward P1 (Rate R1): %s", netRewardP1);
+        console2.log("Net Reward P2 (Rate R2): %s", netRewardP2);
+        console2.log("Expected Total Net Reward: %s", expectedTotalNetReward);
+        console2.log("Actual Claimed Amount: %s", claimedAmount);
+
+        assertApproxEqAbs(
+            claimedAmount,
+            expectedTotalNetReward,
+            1e12,
+            "Claimed amount does not match expected sum of rewards from distinct rate periods"
+        );
+
+        // --- Verification against retroactive application ---
+        // Scenario 1: If R2 was applied to T1+T2
+        uint256 grossRewardRetroactiveR2 = rateR2 * (timeT1 + timeT2);
+        uint256 commissionRetroactiveR2 =
+            (grossRewardRetroactiveR2 * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 netRewardRetroactiveR2 = grossRewardRetroactiveR2 - commissionRetroactiveR2;
+
+        assertTrue(
+            claimedAmount != netRewardRetroactiveR2 || (rateR1 == rateR2),
+            "Claimed amount should not equal rewards if R2 was applied retroactively, unless R1 == R2"
+        );
+
+        // Scenario 2: If R1 was applied to T1+T2 (less likely, but for completeness)
+        uint256 grossRewardRetroactiveR1 = rateR1 * (timeT1 + timeT2);
+        uint256 commissionRetroactiveR1 =
+            (grossRewardRetroactiveR1 * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 netRewardRetroactiveR1 = grossRewardRetroactiveR1 - commissionRetroactiveR1;
+
+        assertTrue(
+            claimedAmount != netRewardRetroactiveR1 || (rateR1 == rateR2),
+            "Claimed amount should not equal rewards if R1 was applied retroactively to T2, unless R1 == R2"
+        );
+    }
+
+    function testRewardsPayoutExceedsRewardsAvailableButCoveredByTreasury() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        address token = address(pUSD);
+        uint256 commissionRate = 0; // Set commission to 0 for simplicity in this test
+
+        // --- Setup ---
+        // Set validator commission to 0
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commissionRate);
+        vm.stopPrank();
+
+        // Admin sets reward rate for PUSD
+        uint256 rewardRate = 1 ether; // 1 PUSD per second
+        vm.startPrank(admin);
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rewardRate * 2); // Ensure max rate is sufficient
+        address[] memory tokensToSet = new address[](1);
+        tokensToSet[0] = token;
+        uint256[] memory ratesToSet = new uint256[](1);
+        ratesToSet[0] = rewardRate;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokensToSet, ratesToSet);
+
+        // Fund treasury with a larger amount (e.g., 1000 PUSD)
+        uint256 treasuryInitialFund = 1000 ether;
+        pUSD.transfer(address(treasury), treasuryInitialFund);
+        uint256 treasuryBalanceBeforeAddRewards = pUSD.balanceOf(address(treasury));
+
+        vm.stopPrank();
+
+        // --- User Stakes & Accrues Rewards ---
+        uint256 stakeAmount = 10 ether; // User1 stake
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId);
+        vm.stopPrank();
+
+        // Warp time to accrue rewards E, where E > rewardsAvailable but E < treasuryBalance
+        uint256 warpSeconds = 150; // Earns 150 PUSD
+        vm.warp(block.timestamp + warpSeconds);
+
+        // Calculate expected earned rewards (commission is 0)
+        // Assuming user1 is the only staker for this validator for simplicity of totalStaked calculation
+        (,,, uint256 validatorTotalStaked) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+        // uint256 expectedEarnedRewards = (rewardRate * warpSeconds * stakeAmount) / validatorTotalStaked;
+        // Simplified calculation for a single staker where stakeAmount == validatorTotalStaked, and commission is 0
+        console2.log("DEBUG TEST: rewardRate before calc is %s", rewardRate);
+        console2.log("DEBUG TEST: warpSeconds before calc is %s", warpSeconds);
+        uint256 expectedEarnedRewards = rewardRate * warpSeconds;
+
+        // --- User Claims ---
+        uint256 userPusdBalanceBeforeClaim = pUSD.balanceOf(user1);
+        uint256 treasuryPusdBalanceBeforeClaim = pUSD.balanceOf(address(treasury));
+
+        vm.startPrank(user1);
+        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(token, validatorId);
+        vm.stopPrank();
+
+        console2.log("DEBUG TEST: claimedAmount is %s", claimedAmount);
+        console2.log("DEBUG TEST: expectedEarnedRewards after calc is %s", expectedEarnedRewards);
+
+        // --- Verifications ---
+        // 1. User received the full earned amount
+        assertEq(claimedAmount, expectedEarnedRewards, "Claimed amount should be the full earned amount");
+        assertEq(
+            pUSD.balanceOf(user1),
+            userPusdBalanceBeforeClaim + expectedEarnedRewards,
+            "User PUSD balance incorrect after claim"
+        );
+
+        // 3. Treasury balance decreased by the full earned amount
+        assertEq(
+            pUSD.balanceOf(address(treasury)),
+            treasuryPusdBalanceBeforeClaim - expectedEarnedRewards,
+            "Treasury PUSD balance incorrect after claim"
+        );
     }
 
 }

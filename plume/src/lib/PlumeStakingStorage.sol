@@ -33,8 +33,6 @@ library PlumeStakingStorage {
         mapping(address => uint256) lastUpdateTimes;
         /// @notice Maps a token address to the reward per token accumulated so far
         mapping(address => uint256) rewardPerTokenCumulative;
-        /// @notice Maps a token address to the amount of rewards still to be distributed
-        mapping(address => uint256) rewardsAvailable;
         /// @notice Maps a token address to the total amount claimable for that token
         mapping(address => uint256) totalClaimableByToken;
         /// @notice Maps a token address to its history of rate checkpoints

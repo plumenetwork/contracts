@@ -27,7 +27,6 @@ import {
     RewardRatesSet,
     RewardTokenAdded,
     RewardTokenRemoved,
-    RewardsAdded,
     Staked,
     TreasurySet
 } from "../lib/PlumeEvents.sol";
@@ -236,45 +235,6 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         emit MaxRewardRateUpdated(token, newMaxRate);
     }
 
-    function addRewards(
-        address token,
-        uint256 amount
-    ) external payable virtual nonReentrant onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
-        PlumeStakingStorage.Layout storage $ = plumeStorage();
-        if (!$.isRewardToken[token]) {
-            revert TokenDoesNotExist(token);
-        }
-
-        address treasury = getTreasuryAddress();
-        if (treasury == address(0)) {
-            revert TreasuryNotSet();
-        }
-
-        // Check if treasury has sufficient funds - direct balance check
-        if (token == PLUME) {
-            // For native PLUME, check the treasury's ETH balance
-            if (treasury.balance < amount) {
-                revert InsufficientBalance(token, treasury.balance, amount);
-            }
-        } else {
-            // For ERC20 tokens, check the token balance
-            uint256 treasuryBalance = IERC20(token).balanceOf(treasury);
-            if (treasuryBalance < amount) {
-                revert InsufficientBalance(token, treasuryBalance, amount);
-            }
-        }
-
-        uint16[] memory validatorIds = $.validatorIds;
-        for (uint256 i = 0; i < validatorIds.length; i++) {
-            // Use library function to update validator cumulative index
-            PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorIds[i]);
-        }
-
-        // Only update the accounting - actual funds remain in the treasury
-        $.rewardsAvailable[token] += amount;
-        emit RewardsAdded(token, amount);
-    }
-
     // --- Claim Functions ---
 
     function claim(address token, uint16 validatorId) external nonReentrant returns (uint256) {
@@ -473,8 +433,10 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);
 
         // Update accounting
-        PlumeStakingStorage.Layout storage $ = plumeStorage();
-        $.rewardsAvailable[token] = ($.rewardsAvailable[token] > amount) ? $.rewardsAvailable[token] - amount : 0;
+        // PlumeStakingStorage.Layout storage $ = plumeStorage(); // This line would be redundant if uncommented, $
+        // already in scope from plumeStorage() in prior version, but it's removed now.
+        // $.rewardsAvailable[token] = ($.rewardsAvailable[token] > amount) ? $.rewardsAvailable[token] - amount : 0; //
+        // Already commented out, but confirming removal.
     }
 
     function _isRewardToken(
@@ -562,15 +524,13 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @notice Get detailed reward information for a specific token.
      * @param token Address of the token to check.
      * @return rewardRate Current reward rate for the token.
-     * @return rewardsAvailable Amount of rewards available for this token.
      * @return lastUpdateTime Timestamp when the reward was last updated.
      */
     function tokenRewardInfo(
         address token
-    ) external view returns (uint256 rewardRate, uint256 rewardsAvailable, uint256 lastUpdateTime) {
+    ) external view returns (uint256 rewardRate, uint256 lastUpdateTime) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         rewardRate = $.rewardRates[token];
-        rewardsAvailable = $.rewardsAvailable[token];
         lastUpdateTime = $.lastUpdateTimes[token];
     }
 
