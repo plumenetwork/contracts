@@ -441,7 +441,18 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address token
     ) external onlyValidatorAdmin(validatorId) nonReentrant returns (uint256) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+        // Check if validator is active (and not slashed, though slash should clear pending claims)
+        // Note: a slashed validator should have its pending claims cleared by slashValidator,
+        // so primarily checking .active here. If it were possible for a slashed validator
+        // to have a pending claim and not be inactive, we might also check !validator.slashed.
+        if (!validator.active) {
+            revert ValidatorInactive(validatorId);
+        }
+
         PlumeStakingStorage.PendingCommissionClaim storage claim = $.pendingCommissionClaims[validatorId][token];
+
         if (claim.amount == 0) {
             revert NoPendingClaim(validatorId, token);
         }
