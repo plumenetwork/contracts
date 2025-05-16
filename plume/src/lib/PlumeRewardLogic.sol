@@ -131,8 +131,14 @@ library PlumeRewardLogic {
         address token,
         uint16 validatorId
     ) internal {
+        console2.log("URPTFV_ENTRY: v:%s t:%s now:%s", validatorId, token, block.timestamp);
         uint256 totalStaked = $.validatorTotalStaked[validatorId];
         uint256 oldLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token]; // Capture before update
+
+        console2.log("URPTFV_STATE - validatorId:", validatorId);
+        console2.log("URPTFV_STATE - token:", token);
+        console2.log("URPTFV_STATE - oldLastUpdTime:", oldLastUpdateTime);
+        console2.log("URPTFV_STATE - totalStaked:", totalStaked);
 
         if (block.timestamp > oldLastUpdateTime) {
             if (totalStaked > 0) {
@@ -192,118 +198,109 @@ library PlumeRewardLogic {
         address token,
         uint256 userStakedAmount
     ) internal returns (uint256 totalUserRewardDelta, uint256 totalCommissionAmountDelta, uint256 effectiveTimeDelta) {
-        // Update global validator-specific cumulative reward per token and last update time.
-        // This ensures finalCumulativeRewardPerToken is up-to-date.
+        console2.log("CRWC_ENTRY - user:", user);
+        console2.log("CRWC_ENTRY - validatorId:", validatorId);
+        console2.log("CRWC_ENTRY - token:", token);
+        console2.log("CRWC_ENTRY - userStakedAmount:", userStakedAmount);
         updateRewardPerTokenForValidator($, token, validatorId);
 
         uint256 lastUserPaidCumulativeRewardPerToken = $.userValidatorRewardPerTokenPaid[user][validatorId][token];
-        // finalCumulativeRewardPerToken is the most up-to-date RPT for this validator/token.
         uint256 finalCumulativeRewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
-
-
         uint256 lastUserRewardUpdateTime = $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token];
+
+        console2.log("CRWC_STATE1 - lastPaidRPT:", lastUserPaidCumulativeRewardPerToken);
+        console2.log("CRWC_STATE1 - finalRPT:", finalCumulativeRewardPerToken);
+        console2.log("CRWC_STATE1 - lastUpdTime:", lastUserRewardUpdateTime);
+        console2.log("CRWC_STATE1 - now:", block.timestamp);
+
         if (lastUserRewardUpdateTime == 0) {
             lastUserRewardUpdateTime = $.userValidatorStakeStartTime[user][validatorId];
+            console2.log("CRWC_STATE2: lastUpdTime (from stake start):%s", lastUserRewardUpdateTime);
             if (lastUserRewardUpdateTime == 0 && $.userValidatorStakes[user][validatorId].staked > 0) {
                 lastUserRewardUpdateTime = block.timestamp; 
+                console2.log("CRWC_STATE3: lastUpdTime (from current block):%s", lastUserRewardUpdateTime);
             }
         }
 
         if (block.timestamp <= lastUserRewardUpdateTime) {
+            console2.log("CRWC_EXIT_NO_DELTA: now <= lastUpdTime");
             return (0, 0, 0);
         }
 
         effectiveTimeDelta = block.timestamp - lastUserRewardUpdateTime;
+        console2.log("CRWC_STATE4: effectiveTimeDelta:%s", effectiveTimeDelta);
 
         uint256[] memory distinctTimestamps = getDistinctTimestamps($, validatorId, token, lastUserRewardUpdateTime, block.timestamp);
+        console2.log("CRWC_STATE5: distinctTimestamps.length:%s", distinctTimestamps.length);
 
         if (distinctTimestamps.length < 2) {
+            console2.log("CRWC_EXIT_NO_SEGMENTS: distinctTimestamps.length < 2");
             return (0, 0, 0);
         }
         
-        console2.log("calculateRewardsWithCheckpoints: User %s, Val %s, Token %s", user, validatorId, token);
-        console2.log("Distinct timestamps for segments: %s. Period: %s to %s", distinctTimestamps.length, lastUserRewardUpdateTime, block.timestamp);
-        // for(uint k=0; k<distinctTimestamps.length; ++k) { console2.log("  ts[%s]: %s", k, distinctTimestamps[k]); }
-
         uint256 currentCumulativeRewardPerToken = lastUserPaidCumulativeRewardPerToken;
 
         for (uint256 k = 0; k < distinctTimestamps.length - 1; ++k) {
             uint256 segmentStartTime = distinctTimestamps[k];
             uint256 actualSegmentEndTime = distinctTimestamps[k+1];
+            console2.log("CRWC_LOOP_START - index:", k);
+            console2.log("CRWC_LOOP_START - segStart:", segmentStartTime);
+            console2.log("CRWC_LOOP_START - segEnd:", actualSegmentEndTime);
+            console2.log("CRWC_LOOP_START - currentRPT:", currentCumulativeRewardPerToken);
 
             if (actualSegmentEndTime <= segmentStartTime) {
+                 console2.log("CRWC_LOOP_SKIP [%s]: segEnd <= segStart", k);
                 continue;
             }
 
             uint256 rptAtSegmentStart = currentCumulativeRewardPerToken;
-            uint256 rptAtSegmentEnd;
-
-            // Get effective reward RATE at the START of the segment
             PlumeStakingStorage.RateCheckpoint memory rewardRateInfoAtSegmentStart = getEffectiveRewardRateAt($, token, validatorId, segmentStartTime);
             uint256 effectiveRewardRateForSegment = rewardRateInfoAtSegmentStart.rate;
-            
             uint256 timeDeltaForSegment = actualSegmentEndTime - segmentStartTime;
             uint256 rewardPerTokenIncreaseForSegment = 0;
+            console2.log("CRWC_LOOP_CALC1 [%s]: effRate:%s, timeDeltaSeg:%s", k, effectiveRewardRateForSegment, timeDeltaForSegment);
 
             if (effectiveRewardRateForSegment > 0 && timeDeltaForSegment > 0) {
                  rewardPerTokenIncreaseForSegment = timeDeltaForSegment * effectiveRewardRateForSegment;
             }
-            rptAtSegmentEnd = rptAtSegmentStart + rewardPerTokenIncreaseForSegment;
+            uint256 rptAtSegmentEnd = rptAtSegmentStart + rewardPerTokenIncreaseForSegment;
+            console2.log("CRWC_LOOP_CALC2 [%s]: rptIncrSeg:%s, rptAtEnd:%s", k, rewardPerTokenIncreaseForSegment, rptAtSegmentEnd);
             
-            // Sanity check: if actualSegmentEndTime is block.timestamp, rptAtSegmentEnd should ideally match finalCumulativeRewardPerToken.
-            // This is a good test for consistency.
-            if (actualSegmentEndTime == block.timestamp) {
-                // Due to potential minor differences in how distinctTimestamps are formed vs. direct updateRewardPerTokenForValidator,
-                // using finalCumulativeRewardPerToken ensures consistency for the very last point.
-                // However, for calculations across all segments, the per-segment calculation is key.
-                // If there's a notable mismatch, it points to issues in rate fetching or distinctTimestamps.
-                // For now, we will use the calculated rptAtSegmentEnd.
-                // One option: if (actualSegmentEndTime == block.timestamp) rptAtSegmentEnd = finalCumulativeRewardPerToken;
-                // Let's stick to the per-segment calculation for its RPT delta for internal consistency.
-            }
-
-
             uint256 rewardPerTokenDeltaForSegment = 0;
-            if (rptAtSegmentEnd > rptAtSegmentStart) { // Ensure positive delta
+            if (rptAtSegmentEnd > rptAtSegmentStart) { 
                 rewardPerTokenDeltaForSegment = rptAtSegmentEnd - rptAtSegmentStart;
             }
-
+            console2.log("CRWC_LOOP_CALC3 [%s]: rptDeltaSeg:%s", k, rewardPerTokenDeltaForSegment);
 
             if (rewardPerTokenDeltaForSegment > 0 && userStakedAmount > 0) {
                 uint256 grossRewardForSegment = (userStakedAmount * rewardPerTokenDeltaForSegment) / REWARD_PRECISION;
                 uint256 effectiveCommissionRate = getEffectiveCommissionRateAt($, validatorId, segmentStartTime);
+                console2.log("CRWC_LOOP_CALC4 [%s]: grossRwdSeg:%s, effCommRate:%s", k, grossRewardForSegment, effectiveCommissionRate);
                 uint256 commissionForThisSegment = (grossRewardForSegment * effectiveCommissionRate) / REWARD_PRECISION;
+                console2.log("CRWC_LOOP_CALC5 [%s]: commSeg:%s", k, commissionForThisSegment);
 
-                console2.log("  Segment %s: startTime %s, endTime %s", k, segmentStartTime, actualSegmentEndTime);
-                console2.log("    RateForSeg: %s, TimeDeltaForSeg: %s, RPT_Incr_Seg: %s", effectiveRewardRateForSegment, timeDeltaForSegment, rewardPerTokenIncreaseForSegment);
-                console2.log("    RPT_Start: %s, RPT_End (calc): %s, RPT_Delta_Seg: %s", rptAtSegmentStart, rptAtSegmentEnd, rewardPerTokenDeltaForSegment);
-                console2.log("    UserStake: %s, GrossReward_Seg: %s", userStakedAmount, grossRewardForSegment);
-                console2.log("    EffectiveCommissionRate (at %s): %s, CommissionForThisSegment: %s", segmentStartTime, effectiveCommissionRate, commissionForThisSegment);
-
+                // Check for underflow before subtraction
+                if (grossRewardForSegment < commissionForThisSegment) {
+                    console2.log("CRWC_UNDERFLOW_ALERT [%s]: grossRwdSeg (%s) < commSeg (%s)", k, grossRewardForSegment, commissionForThisSegment);
+                    // This should ideally not happen with commission <= 100%
+                    // If it does, it means an issue elsewhere (e.g. commissionRate > REWARD_PRECISION)
+                    // For safety, can treat net reward as 0 in this case, or revert explicitly.
+                    // Reverting here would give a more specific error than a generic panic 0x11.
+                    // revert("Commission exceeds gross reward in segment calculation"); 
+                }
                 totalUserRewardDelta += (grossRewardForSegment - commissionForThisSegment);
                 totalCommissionAmountDelta += commissionForThisSegment;
-                console2.log("    Cumulative totalUserRewardDelta: %s", totalUserRewardDelta);
-                console2.log("    Cumulative totalCommissionAmountDelta: %s", totalCommissionAmountDelta);
-            } else if (userStakedAmount > 0) {
-                 console2.log("  Segment k", k);
-                 console2.log("  Segment segmentStartTime",  segmentStartTime );
-                 console2.log("  Segment actualSegmentEndTime", actualSegmentEndTime);
-                 console2.log("  Segment effectiveRewardRateForSegment", effectiveRewardRateForSegment);
-                 console2.log("  Segment timeDeltaForSegment", timeDeltaForSegment);
-                 console2.log("  Segment rptAtSegmentStart",  rptAtSegmentStart);
-                 console2.log("  Segment rptAtSegmentEnd",  rptAtSegmentEnd);
-            }
-            
+                console2.log("CRWC_LOOP_ACCUM [%s]: userDelta:%s, commDelta:%s", k, totalUserRewardDelta, totalCommissionAmountDelta);
+            } 
             currentCumulativeRewardPerToken = rptAtSegmentEnd;
         }
-
-        console2.log("calculateRewardsWithCheckpoints USER FINAL: user %s, valId %s, token %s", user, validatorId, token);
-        console2.log("calculateRewardsWithCheckpoints USER FINAL: totalUserRewardDelta %s (Expected ~13e18)", totalUserRewardDelta);
-        console2.log("calculateRewardsWithCheckpoints USER FINAL: totalCommissionAmountDelta %s (Expected ~2e18)", totalCommissionAmountDelta);
-        console2.log("calculateRewardsWithCheckpoints USER FINAL: finalCumulativeRPT from updates %s, final calculated currentRPT %s", finalCumulativeRewardPerToken, currentCumulativeRewardPerToken);
-
-
-        return (totalUserRewardDelta, totalCommissionAmountDelta, effectiveTimeDelta);
+console2.log("CRWC_EXIT_SUCCESS - user:", user);
+console2.log("CRWC_EXIT_SUCCESS - validatorId:", validatorId);
+console2.log("CRWC_EXIT_SUCCESS - token:", token);
+console2.log("CRWC_EXIT_SUCCESS - totalUserRewardDelta:", totalUserRewardDelta);
+console2.log("CRWC_EXIT_SUCCESS - totalCommissionAmountDelta:", totalCommissionAmountDelta);
+console2.log("CRWC_EXIT_SUCCESS - effectiveTimeDelta:", effectiveTimeDelta);
+    return (totalUserRewardDelta, totalCommissionAmountDelta, effectiveTimeDelta);
     }
 
     /**
@@ -428,20 +425,28 @@ library PlumeRewardLogic {
         uint16 validatorId,
         uint256 timestamp
     ) internal view returns (uint256) {
+        console2.log("GECRA_ENTRY: v:%s ts:%s", validatorId, timestamp);
         PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorCommissionCheckpoints[validatorId];
         uint256 chkCount = checkpoints.length;
+        console2.log("GECRA_STATE: v:%s chkCount:%s", validatorId, chkCount);
 
         if (chkCount > 0) {
+            for(uint i=0; i < chkCount; ++i) {
+                console2.log("GECRA_CHK - validatorId:", validatorId);
+                console2.log("GECRA_CHK - index:", i);
+                console2.log("GECRA_CHK - timestamp:", checkpoints[i].timestamp);
+                console2.log("GECRA_CHK - rate:", checkpoints[i].rate);
+            }
             uint256 idx = findCommissionCheckpointIndexAtOrBefore($, validatorId, timestamp);
-            // Similar logic to getEffectiveRewardRateAt:
-            // Check if the checkpoint at 'idx' is valid for the given 'timestamp'.
-            if (checkpoints[idx].timestamp <= timestamp) {
+            console2.log("GECRA_STATE: v:%s findCommChkIdx:%s", validatorId, idx);
+            if (idx < chkCount && checkpoints[idx].timestamp <= timestamp) { 
+                console2.log("GECRA_RETURN_CHK: v:%s idx:%s rate:%s", validatorId, idx, checkpoints[idx].rate);
                 return checkpoints[idx].rate;
             }
-            // If checkpoints[idx].timestamp > timestamp, fall through to current live commission rate.
         }
-        // Fallback to current live commission rate if no historical checkpoint applies or all are future.
-        return $.validators[validatorId].commission;
+        uint256 fallbackComm = $.validators[validatorId].commission;
+        console2.log("GECRA_FALLBACK: v:%s fallbackComm:%s", validatorId, fallbackComm);
+        return fallbackComm;
     }
 
     /**
@@ -455,24 +460,30 @@ library PlumeRewardLogic {
     ) internal view returns (uint256) {
         PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorRewardRateCheckpoints[validatorId][token];
         uint256 len = checkpoints.length;
-        if (len == 0) return 0; // Or handle as error / special value
+        // console2.log("FRRCIAOB_ENTRY: v:%s t:%s ts:%s len:%s", validatorId, token, timestamp, len); // Optional: entry log
+        if (len == 0) return 0; 
 
         uint256 low = 0;
         uint256 high = len - 1;
-        uint256 ans = 0; // Stores the index of the latest checkpoint with timestamp <= target_timestamp
+        uint256 ans = 0; 
+        bool foundSuitable = false;
 
-        while(low <= high) {
+        while (low <= high) {
             uint256 mid = low + (high - low) / 2;
-            if(checkpoints[mid].timestamp <= timestamp) {
+            if (checkpoints[mid].timestamp <= timestamp) {
                 ans = mid;
+                foundSuitable = true;
                 low = mid + 1;
-            } else {
+            } else { // checkpoints[mid].timestamp > timestamp
+                if (mid == 0) {
+                    break; // All remaining (or only) elements are in the future
+                }
                 high = mid - 1;
             }
         }
-        // If all checkpoints are in the future, ans remains 0. Caller needs to check checkpoints[ans].timestamp.
-        // If len > 0 and checkpoints[ans].timestamp > timestamp (only if all are future or ans=0 is future), then no past/current chk.
-        // But if ans is correctly found, checkpoints[ans].timestamp <= timestamp is guaranteed by loop.
+        // console2.log("FRRCIAOB_EXIT: v:%s ans:%s found:%s", validatorId, ans, foundSuitable);
+        // If !foundSuitable, ans is 0. Caller must check checkpoints[0].timestamp against query timestamp.
+        // If foundSuitable, ans is the index of the latest checkpoint <= timestamp.
         return ans;
     }
 
@@ -484,23 +495,47 @@ library PlumeRewardLogic {
         uint16 validatorId,
         uint256 timestamp
     ) internal view returns (uint256) {
+        console2.log("FCCIAOB_ENTRY: v:%s ts:%s", validatorId, timestamp);
         PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorCommissionCheckpoints[validatorId];
         uint256 len = checkpoints.length;
-        if (len == 0) return 0;
+        console2.log("FCCIAOB_STATE: v:%s len:%s", validatorId, len);
+        if (len == 0) { 
+            console2.log("FCCIAOB_EXIT_EMPTY: v:%s", validatorId);
+            return 0; 
+        }
 
         uint256 low = 0;
         uint256 high = len - 1;
         uint256 ans = 0; 
+        bool foundSuitable = false;
 
-        while(low <= high) {
+        while (low <= high) {
             uint256 mid = low + (high - low) / 2;
+            console2.log("FCCIAOB_LOOP - validatorId:", validatorId);
+            console2.log("FCCIAOB_LOOP - low:", low);
+            console2.log("FCCIAOB_LOOP - high:", high);
+            console2.log("FCCIAOB_LOOP - mid:", mid);
+            console2.log("FCCIAOB_LOOP - chkTs:", checkpoints[mid].timestamp);
+            console2.log("FCCIAOB_LOOP - queryTimestamp:", timestamp); // Corrected log to use 'timestamp' arg
             if(checkpoints[mid].timestamp <= timestamp) {
+                console2.log("FCCIAOB_LOOP - found chk at idx %s", mid);
                 ans = mid;
+                foundSuitable = true; // Mark that we found at least one suitable checkpoint
                 low = mid + 1;
-            } else {
+            } else { // checkpoints[mid].timestamp > timestamp
+                 console2.log("FCCIAOB_LOOP - chkTs > queryTimestamp, mid is %s", mid );
+                if (mid == 0) { // If the first element is already too new
+                    console2.log("FCCIAOB_LOOP - mid is 0 and chkTs > queryTs, breaking");
+                    break; 
+                }
                 high = mid - 1;
             }
+            console2.log("FCCIAOB_LOOP - FINISH_ITERATION");
         }
+        console2.log("FCCIAOB_EXIT_FOUND: v:%s ans:%s foundSuitable:%s", validatorId, ans, foundSuitable);
+        // If !foundSuitable, ans is 0. The caller (getEffectiveCommissionRateAt) must handle this by checking
+        // the timestamp of checkpoints[0] if it intends to use it, or fall back.
+        // The current `getEffectiveCommissionRateAt` does this: `if (idx < chkCount && checkpoints[idx].timestamp <= timestamp)`
         return ans;
     }
 

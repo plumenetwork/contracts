@@ -108,17 +108,25 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     // --- Internal View Function (_earned) ---
     function _earned(address user, address token, uint16 validatorId) internal returns (uint256 rewards) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
+        console2.log("_earned ENTRY: u:%s t:%s v:%s", user, token, validatorId);
         uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
         if (userStakedAmount == 0) {
-            // If no stake, only return previously calculated rewards stored in userRewards
+            console2.log("_earned: userStakedAmount is 0 for v:%s, returning stored rewards %s", validatorId, $.userRewards[user][validatorId][token]);
             return $.userRewards[user][validatorId][token];
         }
-        // Call the library function to calculate the current pending reward delta
+        console2.log("_earned - user:", user);
+        console2.log("_earned - token:", token);
+        console2.log("_earned - validatorId:", validatorId);
+        console2.log("_earned - userStakedAmount:", userStakedAmount);
+
         (uint256 userRewardDelta, , ) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
             $, user, validatorId, token, userStakedAmount
         );
-        // Add the delta to any previously stored (but unclaimed) rewards
         rewards = $.userRewards[user][validatorId][token] + userRewardDelta;
+        console2.log("_earned EXIT - validatorId:", validatorId);
+        console2.log("_earned EXIT - userRewardDelta:", userRewardDelta);
+        console2.log("_earned EXIT - storedRewards:", $.userRewards[user][validatorId][token]);
+        console2.log("_earned EXIT - totalRewardsToReturn:", rewards);
         return rewards;
     }
 
