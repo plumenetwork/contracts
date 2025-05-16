@@ -5,7 +5,7 @@ import { PlumeStakingStorage } from "./PlumeStakingStorage.sol";
 // Import errors/events if needed by logic
 import "./PlumeErrors.sol";
 import "./PlumeEvents.sol";
-
+import { console2 } from "forge-std/console2.sol";
 /**
  * @title PlumeValidatorLogic
  * @notice Internal library containing shared logic for validator management and checks.
@@ -127,13 +127,16 @@ library PlumeValidatorLogic {
             // This should only happen if there's no active stake (checked by outer if condition)
             // AND no active cooldown for this validator with this staker.
             if ($.userValidatorCooldowns[staker][validatorId].amount == 0) {
+                console2.log("PVL.removeStakerFromValidator: Conditions met for full removal of val %s from user %s lists.", validatorId, staker);
                 if ($.userHasStakedWithValidator[staker][validatorId]) { // If it was previously associated
                     uint16[] storage userValidators_ = $.userValidators[staker];
+                    console2.log("PVL.removeStakerFromValidator: user %s, valListLen BEFORE pop for val %s: %s", staker, validatorId, userValidators_.length);
                     // Use swap and pop for the user's list as well (assuming order doesn't matter)
                     for (uint256 i = 0; i < userValidators_.length; i++) {
                         if (userValidators_[i] == validatorId) {
                             userValidators_[i] = userValidators_[userValidators_.length - 1];
                             userValidators_.pop();
+                            console2.log("PVL.removeStakerFromValidator: user %s, valListLen AFTER pop for val %s: %s", staker, validatorId, userValidators_.length);
                             break; // Found and removed
                         }
                     }

@@ -43,6 +43,9 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
+import { console2 } from "forge-std/console2.sol";
+
+using PlumeRewardLogic for PlumeStakingStorage.Layout;
 
 /**
  * @title StakingFacet
@@ -352,25 +355,33 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
         PlumeStakingStorage.StakeInfo storage userGlobalStakeInfo = $.stakeInfo[user];
+        console2.log("SF.withdraw ENTRY: user %s, initial parked: %s, initial cooled: %s", user, userGlobalStakeInfo.parked, userGlobalStakeInfo.cooled);
 
         uint256 amountReadyToPark = 0;
-        uint16[] storage userStakedValidators = $.userValidators[user]; // Iterate validators user has interacted with
+        uint16[] storage userStakedValidators = $.userValidators[user];
+        console2.log("SF.withdraw: user %s, userStakedValidators.length: %s", user, userStakedValidators.length);
 
         // Iterate through validators the user might have cooling funds with
         for (uint i = 0; i < userStakedValidators.length; i++) {
             uint16 validatorId_iterator = userStakedValidators[i];
             PlumeStakingStorage.CooldownEntry storage cooldownEntry = $.userValidatorCooldowns[user][validatorId_iterator];
+console2.log("SF.withdraw LOOP - index:", i);
+console2.log("SF.withdraw LOOP - valId:", validatorId_iterator);
+console2.log("SF.withdraw LOOP - cooldownEntry.amount:", cooldownEntry.amount);
+console2.log("SF.withdraw LOOP - cooldownEntry.endTime:", cooldownEntry.cooldownEndTime);
+console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
 
             if (cooldownEntry.amount > 0 && block.timestamp >= cooldownEntry.cooldownEndTime) {
+                console2.log("SF.withdraw LOOP[%s]: Cooldown for valId %s matured.", i, validatorId_iterator);
                 uint256 amountInThisCooldown = cooldownEntry.amount;
-                
                 amountReadyToPark += amountInThisCooldown;
+                console2.log("SF.withdraw LOOP[%s]: amountInThisCooldown %s, amountReadyToPark now %s", i, amountInThisCooldown, amountReadyToPark);
 
                 // Decrement from user's global sum of cooled funds
                 if (userGlobalStakeInfo.cooled >= amountInThisCooldown) {
                     userGlobalStakeInfo.cooled -= amountInThisCooldown;
                 } else {
-                    userGlobalStakeInfo.cooled = 0; // Should not happen if sums are correct
+                    userGlobalStakeInfo.cooled = 0; 
                 }
 
                 // Decrement from validator's total cooling
@@ -391,17 +402,19 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             }
         }
 
+        console2.log("SF.withdraw: After loop, amountReadyToPark: %s", amountReadyToPark);
+
         if (amountReadyToPark > 0) {
             userGlobalStakeInfo.parked += amountReadyToPark;
             $.totalWithdrawable += amountReadyToPark;
-            // Note: The CooldownCompleted event might be less relevant now or needs rethinking,
-            // as cooldowns complete per-validator, not globally at one time.
-            // For now, we can emit a general Withdrawn event if funds are moved to parked and then withdrawn.
+            console2.log("SF.withdraw: Updated userGlobalStakeInfo.parked to: %s", userGlobalStakeInfo.parked);
         }
 
         uint256 amountToWithdraw = userGlobalStakeInfo.parked;
-        if (amountToWithdraw == 0) {
-            revert InvalidAmount(0); // No funds ready for withdrawal
+        console2.log("SF.withdraw: Amount to actually withdraw (from parked): %s", amountToWithdraw);
+        if (amountToWithdraw == 0) { 
+            console2.log("SF.withdraw: amountToWithdraw is 0, REVERTING InvalidAmount(0)");
+            revert InvalidAmount(0); 
         }
 
         userGlobalStakeInfo.parked = 0;
@@ -527,6 +540,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         uint16 validatorId
     ) external nonReentrant returns (uint256 amountRestaked) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        console2.log("SF.restakeRewards ENTRY: user %s, targetValId %s", msg.sender, validatorId);
 
         // Verify target validator exists and is active
         if (!$.validatorExists[validatorId]) {
@@ -545,40 +559,36 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert TokenDoesNotExist(token);
         }
 
-        // Calculate total pending native rewards across all validators
         amountRestaked = 0;
         uint16[] memory userValidators = $.userValidators[msg.sender];
+        console2.log("SF.restakeRewards: User %s, userValidators.length %s", msg.sender, userValidators.length);
 
         for (uint256 i = 0; i < userValidators.length; i++) {
-            uint16 userValidatorId = userValidators[i];
+            uint16 userValidatorIdLoop = userValidators[i]; // Renamed to avoid confusion
+            console2.log("SF.restakeRewards LOOP [%s]: userValIdLoop %s, checking PLUME rewards", i, userValidatorIdLoop);
 
-            // Calculate earned rewards for this specific validator by calling the public wrapper
             uint256 validatorReward =
-                RewardsFacet(payable(address(this))).getPendingRewardForValidator(msg.sender, userValidatorId, token);
+                RewardsFacet(payable(address(this))).getPendingRewardForValidator(msg.sender, userValidatorIdLoop, token);
+            console2.log("SF.restakeRewards LOOP [%s]: pending PLUME for val %s is %s", i, userValidatorIdLoop, validatorReward);
+            
             if (validatorReward > 0) {
                 amountRestaked += validatorReward;
+                console2.log("SF.restakeRewards LOOP [%s]: amountRestaked is now %s", i, amountRestaked);
 
-                // Update internal reward states as if claimed
-                // This ensures reward-per-token tracking is current before zeroing
-                PlumeRewardLogic.updateRewardsForValidator($, msg.sender, userValidatorId);
-
-                // Reset rewards for this validator/token
-                $.userRewards[msg.sender][userValidatorId][token] = 0;
-
-                // Update total claimable (decrease)
+                PlumeRewardLogic.updateRewardsForValidator($, msg.sender, userValidatorIdLoop);
+                $.userRewards[msg.sender][userValidatorIdLoop][token] = 0;
                 if ($.totalClaimableByToken[token] >= validatorReward) {
                     $.totalClaimableByToken[token] -= validatorReward;
                 } else {
                     $.totalClaimableByToken[token] = 0;
                 }
-
-                // Emit event indicating reward was 'claimed' internally for restaking
-                emit RewardClaimedFromValidator(msg.sender, token, userValidatorId, validatorReward);
+                emit RewardClaimedFromValidator(msg.sender, token, userValidatorIdLoop, validatorReward);
             }
         }
 
-        // Check if any rewards were found
+        console2.log("SF.restakeRewards: After loop, total amountRestaked for PLUME is %s", amountRestaked);
         if (amountRestaked == 0) {
+            console2.log("SF.restakeRewards: amountRestaked is 0, reverting NoRewardsToRestake");
             revert NoRewardsToRestake();
         }
 
@@ -589,10 +599,18 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // --- Update Stake State ---
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender]; // Global info
+        console2.log("SF.restakeRewards: msg.sender %s, info.staked BEFORE addition: %s", msg.sender, info.staked);
+        console2.log("SF.restakeRewards: amountRestaked (to be added): %s", amountRestaked);
 
         // Increase staked amounts
         info.staked += amountRestaked; // User's global staked
+        console2.log("SF.restakeRewards: msg.sender %s, info.staked AFTER addition: %s", msg.sender, info.staked);
+
+        uint256 userValStakeBefore = $.userValidatorStakes[msg.sender][validatorId].staked;
+        console2.log("SF.restakeRewards: userValStake for val %s BEFORE: %s", validatorId, userValStakeBefore);
         $.userValidatorStakes[msg.sender][validatorId].staked += amountRestaked; // User's stake FOR THIS VALIDATOR
+        console2.log("SF.restakeRewards: userValStake for val %s AFTER: %s", validatorId, $.userValidatorStakes[msg.sender][validatorId].staked);
+
         targetValidator.delegatedAmount += amountRestaked; // Validator's delegated amount
         $.validatorTotalStaked[validatorId] += amountRestaked; // Validator's total staked
         $.totalStaked += amountRestaked; // Global total staked
