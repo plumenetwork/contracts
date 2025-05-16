@@ -285,3 +285,17 @@ error InvalidMaxCommissionRate(uint256 requested, uint256 limit);
 error PendingClaimExists(uint16 validatorId, address token);
 error NoPendingClaim(uint16 validatorId, address token);
 error ClaimNotReady(uint16 validatorId, address token, uint256 readyTimestamp);
+
+/// @notice Thrown when cooldown interval is too short relative to max slash vote duration.
+/// @param newCooldownInterval The proposed cooldown interval.
+/// @param currentMaxSlashVoteDuration The current maximum slash vote duration.
+error CooldownTooShortForSlashVote(uint256 newCooldownInterval, uint256 currentMaxSlashVoteDuration);
+
+/// @notice Thrown when max slash vote duration is too long relative to cooldown interval.
+/// @param newMaxSlashVoteDuration The proposed maximum slash vote duration.
+/// @param currentCooldownInterval The current cooldown interval.
+error SlashVoteDurationTooLongForCooldown(uint256 newMaxSlashVoteDuration, uint256 currentCooldownInterval);
+
+/// @notice Thrown when an invalid interval is provided (e.g. zero)
+/// @param interval The invalid interval.
+error InvalidInterval(uint256 interval);

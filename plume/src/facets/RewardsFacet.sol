@@ -46,7 +46,7 @@ import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { IAccessControl } from "../interfaces/IAccessControl.sol";
 import { PlumeRoles } from "../lib/PlumeRoles.sol";
 import { OwnableInternal } from "@solidstate/access/ownable/OwnableInternal.sol";
-
+import { console2 } from "forge-std/console2.sol";
 using PlumeRewardLogic for PlumeStakingStorage.Layout;
 
 /**
@@ -106,7 +106,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     // --- Internal View Function (_earned) ---
-    function _earned(address user, address token, uint16 validatorId) internal view returns (uint256 rewards) {
+    function _earned(address user, address token, uint16 validatorId) internal returns (uint256 rewards) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
         if (userStakedAmount == 0) {
@@ -114,8 +114,8 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             return $.userRewards[user][validatorId][token];
         }
         // Call the library function to calculate the current pending reward delta
-        (uint256 userRewardDelta,) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
-            $, user, token, validatorId, userStakedAmount, $.validators[validatorId].commission
+        (uint256 userRewardDelta, , ) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
+            $, user, validatorId, token, userStakedAmount
         );
         // Add the delta to any previously stored (but unclaimed) rewards
         rewards = $.userRewards[user][validatorId][token] + userRewardDelta;
@@ -197,6 +197,8 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint256[] calldata rewardRates_
     ) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
+        console2.log("SRR_FACET_ENTRY_V2: ts %s, tokens.len %s, rates.len %s", block.timestamp, tokens.length, rewardRates_.length);
+
         if (tokens.length == 0) {
             revert EmptyArray();
         }
@@ -204,21 +206,33 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert ArrayLengthMismatch();
         }
         uint16[] memory validatorIds = $.validatorIds;
+        console2.log("validatorIds length",validatorIds.length);
         for (uint256 i = 0; i < tokens.length; i++) {
-            address token = tokens[i];
-            uint256 rate = rewardRates_[i];
-            if (!$.isRewardToken[token]) {
-                revert TokenDoesNotExist(token);
+            address token_loop = tokens[i];
+            uint256 rate_loop = rewardRates_[i];
+            
+            console2.log("SRR_FACET_OUTER_LOOP: token %s, rate %s, num_val_ids %s", token_loop, rate_loop, validatorIds.length);
+
+            if (!$.isRewardToken[token_loop]) {
+                revert TokenDoesNotExist(token_loop);
             }
-            uint256 maxRate = $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
-            if (rate > maxRate) {
+            uint256 maxRate = $.maxRewardRates[token_loop] > 0 ? $.maxRewardRates[token_loop] : MAX_REWARD_RATE;
+            if (rate_loop > maxRate) {
                 revert RewardRateExceedsMax();
             }
+
             for (uint256 j = 0; j < validatorIds.length; j++) {
-                uint16 validatorId = validatorIds[j];
-                PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, rate);
+                uint16 validatorId_for_crrc = validatorIds[j];
+                console2.log("validatorId_for_crrc", validatorId_for_crrc);
+                
+                // CRITICAL LOG POINT
+                if (validatorId_for_crrc == 0 && rate_loop == 0 && token_loop == address(0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f)) {
+                    console2.log("SRR_FACET_WILL_CALL_CRRC_FOR_VAL0_RATE0_PUSD: ts %s", block.timestamp);
+                }
+
+                PlumeRewardLogic.createRewardRateCheckpoint($, token_loop, validatorId_for_crrc, rate_loop);
             }
-            $.rewardRates[token] = rate;
+            $.rewardRates[token_loop] = rate_loop;
         }
         emit RewardRatesSet(tokens, rewardRates_);
     }
@@ -257,9 +271,12 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint256 userStakedAmount = $.userValidatorStakes[msg.sender][validatorId].staked;
         address user = msg.sender;
 
+        // Ensure validator's cumulative reward index is up-to-date before calculating delta
+        PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
+
         // Call the library function which calculates the earned rewards
-        (uint256 userRewardDelta, uint256 commissionAmount) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
-            $, user, token, validatorId, userStakedAmount, $.validators[validatorId].commission
+        (uint256 userRewardDelta, uint256 commissionAmountDelta, uint256 _effectiveTimeDelta) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
+            $, user, validatorId, token, userStakedAmount
         );
 
         // Calculate total reward as stored + computed delta
@@ -273,10 +290,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
                 $.validatorRewardPerTokenCumulative[validatorId][token];
 
-            // Update validator commission
-            if (commissionAmount > 0) {
-                $.validatorAccruedCommission[validatorId][token] += commissionAmount;
-            }
+            // $.validatorAccruedCommission is updated by _settleCommissionForValidatorUpToNow
+            // and potentially updateRewardsForValidator if it were to do so.
+            // The commissionAmountDelta here is for the user's portion and should not be double-added.
 
             // Transfer the reward from treasury to user
             _transferRewardFromTreasury(token, reward, user);
@@ -319,9 +335,12 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             address user = msg.sender;
             uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
 
+            // Ensure validator's cumulative reward index is up-to-date before calculating delta
+            PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
+
             // Call library function to calculate owed rewards
-            (uint256 userRewardDelta, uint256 commissionAmount) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
-                $, user, token, validatorId, userStakedAmount, $.validators[validatorId].commission
+            (uint256 userRewardDelta, uint256 commissionAmountDelta, uint256 _effectiveTimeDelta) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
+                $, user, validatorId, token, userStakedAmount
             );
 
             // Calculate total reward as stored + computed delta
@@ -337,10 +356,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
                 totalReward += rewardFromValidator;
 
-                // Update validator commission
-                if (commissionAmount > 0) {
-                    $.validatorAccruedCommission[validatorId][token] += commissionAmount;
-                }
+                // $.validatorAccruedCommission is updated by _settleCommissionForValidatorUpToNow
 
                 emit RewardClaimedFromValidator(user, token, validatorId, rewardFromValidator);
             }
@@ -376,9 +392,11 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
                 address user = msg.sender;
                 uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
 
-                // Call library function to calculate owed rewards
-                (uint256 userRewardDelta, uint256 commissionAmount) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
-                    $, user, token, validatorId, userStakedAmount, $.validators[validatorId].commission
+                // Ensure validator's cumulative reward index is up-to-date before calculating delta
+                PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
+
+                (uint256 userRewardDelta, uint256 commissionAmountDelta, uint256 _effectiveTimeDelta) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
+                    $, user, validatorId, token, userStakedAmount
                 );
 
                 // Calculate total reward as stored + computed delta
@@ -394,10 +412,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
                     totalReward += rewardFromValidator;
 
-                    // Update validator commission
-                    if (commissionAmount > 0) {
-                        $.validatorAccruedCommission[validatorId][token] += commissionAmount;
-                    }
+                    // $.validatorAccruedCommission is updated by _settleCommissionForValidatorUpToNow
 
                     emit RewardClaimedFromValidator(user, token, validatorId, rewardFromValidator);
                 }
@@ -470,7 +485,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     // --- Public View Functions ---
 
-    function earned(address user, address token) external view returns (uint256) {
+    function earned(address user, address token) external returns (uint256) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
         uint16[] memory validatorIds = $.userValidators[user];
         uint256 totalEarned = 0;
@@ -486,7 +501,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return totalEarned;
     }
 
-    function getClaimableReward(address user, address token) external view returns (uint256) {
+    function getClaimableReward(address user, address token) external returns (uint256) {
         // Same implementation as earned
         return this.earned(user, token);
     }
@@ -602,16 +617,16 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address user,
         uint16 validatorId,
         address token
-    ) external view returns (uint256 pendingReward) {
+    ) external returns (uint256 pendingReward) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
 
         // Required inputs for the internal logic function
         uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
-        uint256 validatorCommission = $.validators[validatorId].commission;
+        // uint256 validatorCommission = $.validators[validatorId].commission; // Not needed for the 5-arg call
 
         // Call the internal logic function - only need the first return value
-        (uint256 userRewardDelta,) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
-            $, user, token, validatorId, userStakedAmount, validatorCommission
+        (uint256 userRewardDelta, , ) = PlumeRewardLogic.calculateRewardsWithCheckpoints(
+            $, user, validatorId, token, userStakedAmount
         );
 
         return userRewardDelta;

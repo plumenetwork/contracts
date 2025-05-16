@@ -8,7 +8,10 @@ import {
     InvalidIndexRange,
     InvalidMaxCommissionRate,
     Unauthorized,
-    ZeroAddress
+    ZeroAddress,
+    InvalidInterval,
+    CooldownTooShortForSlashVote,
+    SlashVoteDurationTooLongForCooldown
 } from "../lib/PlumeErrors.sol";
 import {
     AdminStakeCorrection,
@@ -95,14 +98,19 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     /**
      * @notice Update the cooldown interval for unstaking
      * @dev Requires ADMIN_ROLE.
-     * @param _cooldownInterval New cooldown interval in seconds
+     * @param interval New cooldown interval in seconds
      */
-    function setCooldownInterval(
-        uint256 _cooldownInterval
-    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        $.cooldownInterval = _cooldownInterval;
-        emit CooldownIntervalSet(_cooldownInterval);
+    function setCooldownInterval(uint256 interval) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        if (interval == 0) {
+            revert InvalidInterval(interval);
+        }
+        // New check against maxSlashVoteDuration
+        if ($.maxSlashVoteDurationInSeconds != 0 && interval <= $.maxSlashVoteDurationInSeconds) {
+            revert CooldownTooShortForSlashVote(interval, $.maxSlashVoteDurationInSeconds);
+        }
+        $.cooldownInterval = interval;
+        emit CooldownIntervalSet(interval);
     }
 
     // --- Admin Fund Management (Roles) ---
@@ -178,8 +186,14 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint256 duration
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        if (duration == 0) {
+            revert InvalidInterval(duration);
+        }
+        // New check against cooldownInterval
+        if ($.cooldownInterval != 0 && duration >= $.cooldownInterval) {
+            revert SlashVoteDurationTooLongForCooldown(duration, $.cooldownInterval);
+        }
         $.maxSlashVoteDurationInSeconds = duration;
-
         emit MaxSlashVoteDurationSet(duration);
     }
 

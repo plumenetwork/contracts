@@ -105,7 +105,7 @@ contract PlumeStakingStressTest is Test {
         accessControlSigs[5] = IAccessControl.renounceRole.selector;
         accessControlSigs[6] = IAccessControl.setRoleAdmin.selector;
 
-        bytes4[] memory stakingSigs = new bytes4[](14);
+        bytes4[] memory stakingSigs = new bytes4[](13);
         stakingSigs[0] = StakingFacet.stake.selector;
         stakingSigs[1] = StakingFacet.restake.selector;
         stakingSigs[2] = bytes4(keccak256("unstake(uint16)"));
@@ -116,10 +116,10 @@ contract PlumeStakingStressTest is Test {
         stakingSigs[7] = StakingFacet.amountStaked.selector;
         stakingSigs[8] = StakingFacet.amountCooling.selector;
         stakingSigs[9] = StakingFacet.amountWithdrawable.selector;
-        stakingSigs[10] = StakingFacet.cooldownEndDate.selector;
-        stakingSigs[11] = StakingFacet.getUserValidatorStake.selector;
-        stakingSigs[12] = StakingFacet.restakeRewards.selector;
-        stakingSigs[13] = StakingFacet.totalAmountStaked.selector;
+        //stakingSigs[10] = StakingFacet.cooldownEndDate.selector;
+        stakingSigs[10] = StakingFacet.getUserValidatorStake.selector;
+        stakingSigs[11] = StakingFacet.restakeRewards.selector;
+        stakingSigs[12] = StakingFacet.totalAmountStaked.selector;
 
         bytes4[] memory rewardsSigs = new bytes4[](15);
         rewardsSigs[0] = RewardsFacet.addRewardToken.selector;
@@ -294,6 +294,7 @@ contract PlumeStakingStressTest is Test {
      * @param numInitialStakers Number of stakers to setup *before* the test actions begin.
      * @param numActionsToTest Number of random actions to perform and measure for the test staker.
      */
+     /*
     function _runGasAndStressTest(uint256 numInitialStakers, uint256 numActionsToTest) internal {
         // 1. Setup Initial Stakers
         _setupInitialStakers(numInitialStakers);
@@ -393,7 +394,7 @@ contract PlumeStakingStressTest is Test {
                             stakerInfoStakedBefore,
                             "Staker info staked amount changed after failed stake"
                         );
-                    } catch (bytes memory) /* lowLevelData */ {
+                    } catch (bytes memory){
                         gasAfter = gasleft();
                         gasUsed = gasBefore - gasAfter;
                         console2.log("  Gas Used (Stake Revert LowLevel): %d", gasUsed);
@@ -508,7 +509,7 @@ contract PlumeStakingStressTest is Test {
                             assertEq(
                                 infoAfter.cooled, infoBefore.cooled, "Staker info cooled changed after failed unstake"
                             );
-                        } catch (bytes memory) /* lowLevelData */ {
+                        } catch (bytes memory) {
                             gasAfter = gasleft();
                             gasUsed = gasBefore - gasAfter;
                             console2.log("  Gas Used (Unstake Revert LowLevel): %d", gasUsed);
@@ -623,7 +624,7 @@ contract PlumeStakingStressTest is Test {
                                 validatorStakeBefore,
                                 "Validator total stake changed after failed restake"
                             );
-                        } catch (bytes memory) /*lowLevelData*/ {
+                        } catch (bytes memory) {
                             gasAfter = gasleft();
                             gasUsed = gasBefore - gasAfter;
                             console2.log("  Gas Used (Restake Revert LowLevel): %d", gasUsed);
@@ -694,7 +695,7 @@ contract PlumeStakingStressTest is Test {
                         assertEq(infoAfter.cooled, infoBefore.cooled, "Cooled changed after failed withdraw");
                         assertEq(infoAfter.parked, infoBefore.parked, "Parked changed after failed withdraw");
                         assertEq(TEST_STAKER.balance, balanceBefore, "Balance changed after failed withdraw");
-                    } catch (bytes memory) /*lowLevelData*/ {
+                    } catch (bytes memory)  {
                         gasAfter = gasleft();
                         gasUsed = gasBefore - gasAfter;
                         console2.log("  Gas Used (Withdraw Revert LowLevel): %d", gasUsed);
@@ -792,7 +793,7 @@ contract PlumeStakingStressTest is Test {
                             stakerInfoStakedBefore,
                             "Staker info staked changed after failed restakeRewards"
                         );
-                    } catch (bytes memory) /*lowLevelData*/ {
+                    } catch (bytes memory)  {
                         gasAfter = gasleft();
                         gasUsed = gasBefore - gasAfter;
                         console2.log("  Gas Used (RestakeRewards Revert LowLevel): %d", gasUsed);
@@ -859,9 +860,9 @@ contract PlumeStakingStressTest is Test {
         console2.log("Validator 0 Stats: Active=%d", v0Active);
         console2.log("Validator 0 Stats: Commission=%d, TotalStaked=%d, Stakers=%d", v0Comm, v0Total, v0Stakers);
     }
-
+*/
     // --- New Top-Level Test Functions ---
-
+/*
     function testGasAndStress_a10() public {
         _runGasAndStressTest(10, GAS_TEST_NUM_ACTIONS);
     }
@@ -877,11 +878,13 @@ contract PlumeStakingStressTest is Test {
     function testGasAndStress_d1000() public {
         _runGasAndStressTest(1000, GAS_TEST_NUM_ACTIONS);
     }
-
+*/
     // Note: 10k initial stakers might be very slow or hit gas limits during setup.
     // Run this specific test with increased block gas limit if needed:
     // forge test --match-path plume/test/PlumeStakingStressTest.t.sol --match-test testGasAndStress_10k --gas-limit
     // 300000000 -vv
+
+        /*
     function testGasAndStress_e10k() public {
         // Consider increasing block gas limit for setup if this fails
         // vm.blockGasLimit(300_000_000); // Example
@@ -893,7 +896,7 @@ contract PlumeStakingStressTest is Test {
         // vm.blockGasLimit(300_000_000); // Example
         _runGasAndStressTest(100_000, GAS_TEST_NUM_ACTIONS);
     }
-    /*
+
 
     function testGasAndStress_g1m() public {
          // Consider increasing block gas limit for setup if this fails

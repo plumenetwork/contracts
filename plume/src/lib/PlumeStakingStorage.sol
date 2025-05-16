@@ -17,6 +17,12 @@ library PlumeStakingStorage {
         uint256 cumulativeIndex; // Accumulated reward per token at this checkpoint
     }
 
+    // New struct for per-user, per-validator cooldown entries
+    struct CooldownEntry {
+        uint256 amount;         // Amount cooling for this user with this validator
+        uint256 cooldownEndTime; // Timestamp when this specific cooldown ends
+    }
+
     // Main storage struct using ERC-7201 namespaced storage pattern
     struct Layout {
         /// @notice Array of all staker addresses
@@ -74,10 +80,12 @@ library PlumeStakingStorage {
         mapping(address => mapping(uint16 => uint256)) userIndexInValidatorStakers;
         /// @notice Maps a validator to its total staked amount
         mapping(uint16 => uint256) validatorTotalStaked;
-        /// @notice Maps a validator to its total cooling amount
+        /// @notice Maps a validator to its total cooling amount (sum of its entries in userValidatorCooldowns)
         mapping(uint16 => uint256) validatorTotalCooling;
         /// @notice Maps a validator to its total withdrawable amount
         mapping(uint16 => uint256) validatorTotalWithdrawable;
+        /// @notice Maps a (user, validator) pair to their specific cooldown details
+        mapping(address => mapping(uint16 => CooldownEntry)) userValidatorCooldowns;
         /// @notice Maps a (validator, token) pair to the last time rewards were updated
         mapping(uint16 => mapping(address => uint256)) validatorLastUpdateTimes;
         /// @notice Maps a (validator, token) pair to the reward per token accumulated
@@ -116,6 +124,8 @@ library PlumeStakingStorage {
         /// @notice Maps a role (bytes32) to an address to check if the address has the role.
         mapping(bytes32 => mapping(address => bool)) hasRole;
         bool initialized;
+        /// @notice Flag to indicate if the AccessControlFacet has been initialized
+        bool accessControlFacetInitialized;
         /// @notice Maps a malicious validator ID to the validator that voted to slash it
         mapping(uint16 maliciousValidatorId => mapping(uint16 votingValidatorId => uint256 voteExpiration))
             slashingVotes;
@@ -154,9 +164,8 @@ library PlumeStakingStorage {
 
     struct StakeInfo {
         uint256 staked; // Amount staked
-        uint256 cooled; // Amount in cooldown
+        uint256 cooled; // Amount in cooldown (sum of active userValidatorCooldowns for this user)
         uint256 parked; // Amount that can be withdrawn
-        uint256 cooldownEnd; // Timestamp when cooldown ends
         uint256 lastUpdateTimestamp; // Timestamp of last rewards update
     }
 

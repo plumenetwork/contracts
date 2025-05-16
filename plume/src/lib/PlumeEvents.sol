@@ -70,13 +70,19 @@ event RewardRatesSet(address[] tokens, uint256[] rates);
 /**
  * @notice Emitted when a new reward rate checkpoint is created
  * @param token Address of the token
+ * @param validatorId ID of the validator
  * @param rate New reward rate
  * @param timestamp Timestamp when the checkpoint was created
  * @param index Index of the checkpoint
  * @param cumulativeIndex Cumulative reward index at this checkpoint
  */
 event RewardRateCheckpointCreated(
-    address indexed token, uint256 rate, uint256 timestamp, uint256 indexed index, uint256 cumulativeIndex
+    address indexed token,
+    uint16 indexed validatorId,
+    uint256 rate,
+    uint256 timestamp,
+    uint256 indexed index,
+    uint256 cumulativeIndex
 );
 
 /**
@@ -314,3 +320,11 @@ event CommissionClaimFinalized(
     uint256 amount,
     uint256 finalizeTimestamp
 );
+
+/**
+ * @notice Emitted when a validator commission rate checkpoint is created.
+ * @param validatorId ID of the validator.
+ * @param rate The commission rate at this checkpoint.
+ * @param timestamp The timestamp of this checkpoint.
+ */
+event ValidatorCommissionCheckpointCreated(uint16 indexed validatorId, uint256 rate, uint256 timestamp);

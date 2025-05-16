@@ -123,19 +123,27 @@ library PlumeValidatorLogic {
             // Delete the stored index for the removed staker
             delete $.userIndexInValidatorStakers[staker][validatorId];
 
-            // --- Remove validator from user's list (if needed) ---
-            if ($.userHasStakedWithValidator[staker][validatorId]) {
-                uint16[] storage userValidators = $.userValidators[staker];
-                // Use swap and pop for the user's list as well (assuming order doesn't matter)
-                for (uint256 i = 0; i < userValidators.length; i++) {
-                    if (userValidators[i] == validatorId) {
-                        userValidators[i] = userValidators[userValidators.length - 1];
-                        userValidators.pop();
-                        break; // Found and removed
+            // --- Conditionally remove validator from user's list and update userHasStakedWithValidator ---
+            // This should only happen if there's no active stake (checked by outer if condition)
+            // AND no active cooldown for this validator with this staker.
+            if ($.userValidatorCooldowns[staker][validatorId].amount == 0) {
+                if ($.userHasStakedWithValidator[staker][validatorId]) { // If it was previously associated
+                    uint16[] storage userValidators_ = $.userValidators[staker];
+                    // Use swap and pop for the user's list as well (assuming order doesn't matter)
+                    for (uint256 i = 0; i < userValidators_.length; i++) {
+                        if (userValidators_[i] == validatorId) {
+                            userValidators_[i] = userValidators_[userValidators_.length - 1];
+                            userValidators_.pop();
+                            break; // Found and removed
+                        }
                     }
+                    // Set to false only if both active stake and cooldown amount are zero.
+                    $.userHasStakedWithValidator[staker][validatorId] = false;
                 }
-                $.userHasStakedWithValidator[staker][validatorId] = false;
             }
+            // If $.userValidatorCooldowns[staker][validatorId].amount > 0, the validatorId remains
+            // in $.userValidators[staker] and $.userHasStakedWithValidator[staker][validatorId]
+            // effectively remains true (is not set to false here), so getUserCooldowns can find it.
         }
     }
 
