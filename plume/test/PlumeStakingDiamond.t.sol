@@ -3546,7 +3546,7 @@ function testCommissionRateChange_NonRetroactive() public {
         uint256 initialCommission = 0.05e18; // 5%
 
         // Add validator 2
-        vm.startPrank(validatorAdmin);
+        vm.startPrank(admin); // Changed from validatorAdmin to admin, as admin has VALIDATOR_ROLE
         ValidatorFacet(address(diamondProxy)).addValidator(
             validatorId2,
             initialCommission,
