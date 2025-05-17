@@ -521,14 +521,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     /**
-     * @notice Claim validator commission rewards for a specific token (DEPRECATED: use timelock)
-     * @dev Always reverts. Use requestCommissionClaim/finalizeCommissionClaim instead.
-     */
-    function claimValidatorCommission(uint16 validatorId, address token) external pure {
-        revert("Use requestCommissionClaim/finalizeCommissionClaim");
-    }
-
-    /**
      * @notice Vote to slash a malicious validator
      * @dev Caller must be the L2 admin of an *active* validator.
      * @param maliciousValidatorId ID of the malicious validator to vote against

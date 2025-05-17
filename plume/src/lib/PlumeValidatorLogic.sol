@@ -199,27 +199,4 @@ library PlumeValidatorLogic {
         }
     }
 
-    // /**
-    //  * @notice Adds a validator ID to a user's list of staked validators if not already present.
-    //  * @dev Internal function to manage the user's list of validators.
-    //  * @param $ The PlumeStaking storage layout.
-    //  * @param user The address of the staker.
-    //  * @param validatorId The ID of the validator being staked with.
-    //  */
-    // function addStakerToValidatorList(
-    //     PlumeStakingStorage.Layout storage $,
-    //     address user,
-    //     uint16 validatorId
-    // ) internal {
-    //     uint16[] storage validatorList = $.userValidatorsList[user];
-    //     // Check if the validator is already in the list
-    //     for (uint256 i = 0; i < validatorList.length; i++) {
-    //         if (validatorList[i] == validatorId) {
-    //             return; // Already exists, do nothing
-    //         }
-    //     }
-    //     // If not found, add it
-    //     validatorList.push(validatorId);
-    // }
-
 }
