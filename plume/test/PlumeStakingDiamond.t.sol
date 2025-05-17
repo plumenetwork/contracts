@@ -233,7 +233,7 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[11] = bytes4(keccak256(bytes("requestCommissionClaim(uint16,address)")));
         validatorSigs_Manual[12] = bytes4(keccak256(bytes("finalizeCommissionClaim(uint16,address)")));
         validatorSigs_Manual[13] = bytes4(keccak256(bytes("voteToSlashValidator(uint16,uint256)")));
-        validatorSigs_Manual[14] = bytes4(keccak256(bytes("slashValidator(uint16)"))); 
+        validatorSigs_Manual[14] = bytes4(keccak256(bytes("slashValidator(uint16)")));
         validatorSigs_Manual[15] = bytes4(keccak256(bytes("forceSettleValidatorCommission(uint16)")));
 
         // Management Facet Selectors
@@ -508,12 +508,18 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
 
         uint256 desiredWarpTarget = stakeTimestamp + 10;
-        console2.log("Test: Current timestamp before explicit warp: %s. Warping to: %s", block.timestamp, desiredWarpTarget);
+        console2.log(
+            "Test: Current timestamp before explicit warp: %s. Warping to: %s", block.timestamp, desiredWarpTarget
+        );
         vm.warp(desiredWarpTarget);
         vm.roll(block.number + 1);
 
         uint256 timeAfterWarp = block.timestamp;
-        console2.log("Test: Warped time. Current timestamp is now: %s (intended delta from stake: %s)", timeAfterWarp, timeAfterWarp - stakeTimestamp);
+        console2.log(
+            "Test: Warped time. Current timestamp is now: %s (intended delta from stake: %s)",
+            timeAfterWarp,
+            timeAfterWarp - stakeTimestamp
+        );
 
         uint256 amountToUnstake = 1 ether;
         uint256 expectedStake = stakeAmount;
@@ -530,13 +536,18 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
 
         // Force settle commission before checking
-        console2.log("Test: Force settling commission for Validator 0 at t=%s before checking accrued commission.", block.timestamp);
+        console2.log(
+            "Test: Force settling commission for Validator 0 at t=%s before checking accrued commission.",
+            block.timestamp
+        );
         vm.prank(admin); // Assuming admin has the right to call this
         ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(DEFAULT_VALIDATOR_ID);
         vm.stopPrank();
 
         // Check the accrued commission
-        console2.log("Test: Calling getAccruedCommission for Val0, token PUSD (%s) at t=%s", address(pUSD), block.timestamp);
+        console2.log(
+            "Test: Calling getAccruedCommission for Val0, token PUSD (%s) at t=%s", address(pUSD), block.timestamp
+        );
         uint256 commission =
             ValidatorFacet(address(diamondProxy)).getAccruedCommission(DEFAULT_VALIDATOR_ID, address(pUSD));
         console2.log("Test: Accrued commission from getAccruedCommission: %s", commission);
@@ -547,7 +558,12 @@ contract PlumeStakingDiamondTest is Test {
         // Claim the commission
         vm.startPrank(validatorAdmin);
         uint256 balanceBefore = pUSD.balanceOf(validatorAdmin);
-        console2.log("Test: ValidatorAdmin (%s) PUSD balance before claim: %s at t=%s", validatorAdmin, balanceBefore, block.timestamp);
+        console2.log(
+            "Test: ValidatorAdmin (%s) PUSD balance before claim: %s at t=%s",
+            validatorAdmin,
+            balanceBefore,
+            block.timestamp
+        );
 
         ValidatorFacet(address(diamondProxy)).requestCommissionClaim(DEFAULT_VALIDATOR_ID, address(pUSD));
         console2.log("Test: Commission claim requested at t=%s", block.timestamp);
@@ -764,23 +780,26 @@ contract PlumeStakingDiamondTest is Test {
         // Get total staked for the validator for accurate calculation
         (,, uint256 validatorTotalStake,) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validator0);
 
-       // CORRECTED CALCULATION FOR THE REVERT EXPECTATION:
-        uint256 rptDelta_for_revert_calc = actualTimeDelta * plumeRate; 
-        uint256 totalGrossRewardUser1_for_revert_calc = (user1Stake * rptDelta_for_revert_calc) / PlumeRewardLogic.REWARD_PRECISION;
-        uint256 totalCommissionUser1_for_revert_calc = (totalGrossRewardUser1_for_revert_calc * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
-        uint256 expectedNetReward_for_revert = totalGrossRewardUser1_for_revert_calc - totalCommissionUser1_for_revert_calc;
+        // CORRECTED CALCULATION FOR THE REVERT EXPECTATION:
+        uint256 rptDelta_for_revert_calc = actualTimeDelta * plumeRate;
+        uint256 totalGrossRewardUser1_for_revert_calc =
+            (user1Stake * rptDelta_for_revert_calc) / PlumeRewardLogic.REWARD_PRECISION; // Changed userStake to user1Stake
+        uint256 totalCommissionUser1_for_revert_calc =
+            (totalGrossRewardUser1_for_revert_calc * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedNetReward_for_revert =
+            totalGrossRewardUser1_for_revert_calc - totalCommissionUser1_for_revert_calc;
 
         // --- DEBUG LOGS (updated variable names) ---
         console2.log("DEBUG_TEST: actualTimeDelta = %s", actualTimeDelta);
         console2.log("DEBUG_TEST: plumeRate = %s", plumeRate);
-        console2.log("DEBUG_TEST: user1Stake = %s", user1Stake); // Ensure user1Stake is defined and in scope
+        console2.log("DEBUG_TEST: user1Stake = %s", user1Stake); // Changed userStake to user1Stake
         console2.log("DEBUG_TEST: validatorTotalStake (should equal user1Stake here) = %s", validatorTotalStake);
         console2.log("DEBUG_TEST: commissionRate = %s", commissionRate);
         console2.log("DEBUG_TEST: REWARD_PRECISION = %s", PlumeRewardLogic.REWARD_PRECISION);
         console2.log("DEBUG_TEST: rptDelta_for_revert_calc = %s", rptDelta_for_revert_calc);
         console2.log("DEBUG_TEST: totalGrossRewardUser1_for_revert_calc = %s", totalGrossRewardUser1_for_revert_calc);
         console2.log("DEBUG_TEST: totalCommissionUser1_for_revert_calc = %s", totalCommissionUser1_for_revert_calc);
-        console2.log("DEBUG_TEST: expectedNetReward_for_revert = %s", expectedNetReward_for_revert); 
+        console2.log("DEBUG_TEST: expectedNetReward_for_revert = %s", expectedNetReward_for_revert);
         console2.log("DEBUG_TEST: MIN_STAKE = %s", MIN_STAKE);
         // --- END DEBUG LOGS ---
 
@@ -790,7 +809,9 @@ contract PlumeStakingDiamondTest is Test {
         );
 
         uint256 claimableFinal = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(PLUME_NATIVE));
-        console2.log("DEBUG: claimableFinal (user1's actual pending PLUME rewards before restake attempt) = %s", claimableFinal); 
+        console2.log(
+            "DEBUG: claimableFinal (user1's actual pending PLUME rewards before restake attempt) = %s", claimableFinal
+        );
 
         vm.startPrank(user1);
         // This now uses the correctly calculated expected amount for the revert
@@ -1252,7 +1273,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // User1 stakes
         vm.startPrank(user1);
-        StakingFacet(address(diamondProxy)).stake{value: stakeAmount}(validatorId);
+        StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId);
         PlumeStakingStorage.StakeInfo memory stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(stakeInfo.staked, stakeAmount, "Initial stake amount mismatch");
         assertEq(stakeInfo.cooled, 0, "Initial cooling amount should be 0");
@@ -1263,13 +1284,13 @@ contract PlumeStakingDiamondTest is Test {
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(stakeInfo.staked, 0, "Staked amount should be 0 after unstake");
         assertEq(stakeInfo.cooled, stakeAmount, "Cooling amount mismatch after unstake");
-        
+
         StakingFacet.CooldownView[] memory cooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         assertTrue(cooldowns.length > 0, "Should have a cooldown entry");
         uint256 userCooldownEndTime = 0;
         bool foundRestakeCooldown = false;
-        for(uint i=0; i < cooldowns.length; i++){
-            if(cooldowns[i].validatorId == validatorId && cooldowns[i].amount == stakeAmount){
+        for (uint256 i = 0; i < cooldowns.length; i++) {
+            if (cooldowns[i].validatorId == validatorId && cooldowns[i].amount == stakeAmount) {
                 userCooldownEndTime = cooldowns[i].cooldownEndTime;
                 foundRestakeCooldown = true;
                 break;
@@ -1288,12 +1309,13 @@ contract PlumeStakingDiamondTest is Test {
 
         // Verify state after restake
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
-        StakingFacet.CooldownView[] memory cooldownsAfterRestake = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+        StakingFacet.CooldownView[] memory cooldownsAfterRestake =
+            StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         uint256 remainingCooldownAmount = 0;
         uint256 newCooldownEndTime = 0;
         bool cooldownEntryStillExists = false;
-        for(uint i=0; i < cooldownsAfterRestake.length; i++){
-            if(cooldownsAfterRestake[i].validatorId == validatorId){
+        for (uint256 i = 0; i < cooldownsAfterRestake.length; i++) {
+            if (cooldownsAfterRestake[i].validatorId == validatorId) {
                 remainingCooldownAmount = cooldownsAfterRestake[i].amount;
                 newCooldownEndTime = cooldownsAfterRestake[i].cooldownEndTime;
                 cooldownEntryStillExists = true;
@@ -1301,28 +1323,30 @@ contract PlumeStakingDiamondTest is Test {
             }
         }
 
-        console2.log(
-            "State after restake: Staked=%s, UserTotalCooled=%s",
-            stakeInfo.staked,
-            stakeInfo.cooled
-        );
-        if(cooldownEntryStillExists){
-            console2.log("Specific Cooldown for Validator %s: Amount=%s, EndTime=%s", validatorId, remainingCooldownAmount, newCooldownEndTime);
+        console2.log("State after restake: Staked=%s, UserTotalCooled=%s", stakeInfo.staked, stakeInfo.cooled);
+        if (cooldownEntryStillExists) {
+            console2.log(
+                "Specific Cooldown for Validator %s: Amount=%s, EndTime=%s",
+                validatorId,
+                remainingCooldownAmount,
+                newCooldownEndTime
+            );
         } else {
             console2.log("Specific Cooldown for Validator %s: Entry deleted", validatorId);
         }
 
-
         assertEq(stakeInfo.cooled, 0, "User total cooling amount should be 0 after restake from that entry");
         assertEq(stakeInfo.staked, stakeAmount, "Staked amount should be restored after restake");
-        
+
         // The specific cooldown entry for this validator should be gone or amount 0
         bool entryGoneOrZero = !cooldownEntryStillExists || remainingCooldownAmount == 0;
         assertTrue(entryGoneOrZero, "Cooldown entry should be deleted or amount zeroed after full restake from it");
 
         // Verify validator's total stake increased
         (,, uint256 totalStakedAfter,) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
-        assertEq(totalStakedAfter, totalStakedBefore + stakeAmount, "Validator total stake should increase after restake");
+        assertEq(
+            totalStakedAfter, totalStakedBefore + stakeAmount, "Validator total stake should increase after restake"
+        );
 
         vm.stopPrank();
         console2.log("Restake during cooldown test completed.");
@@ -2159,7 +2183,6 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
     }
 
-
     /**
      * @notice Tests a complex sequence with state tracking:
      *          (S=Staked, C=Cooled, P=Parked, CE=CooldownEnd)
@@ -2211,7 +2234,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // 1. Stake 10 ETH
         console2.log("1. Staking %s ETH...", initialStake);
-        StakingFacet(address(diamondProxy)).stake{value: initialStake}(validatorId);
+        StakingFacet(address(diamondProxy)).stake{ value: initialStake }(validatorId);
         PlumeStakingStorage.StakeInfo memory stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(stakeInfo.staked, initialStake, "State Error after Step 1");
         assertEq(stakeInfo.cooled, 0, "State Error after Step 1");
@@ -2225,8 +2248,8 @@ contract PlumeStakingDiamondTest is Test {
         assertTrue(cooldowns1.length > 0, "Should have a cooldown entry after unstake");
         uint256 cooldownEnd1 = 0;
         bool foundCooldownd1Entry = false;
-        for(uint i=0; i < cooldowns1.length; i++){
-            if(cooldowns1[i].validatorId == validatorId && cooldowns1[i].amount == firstUnstake){
+        for (uint256 i = 0; i < cooldowns1.length; i++) {
+            if (cooldowns1[i].validatorId == validatorId && cooldowns1[i].amount == firstUnstake) {
                 cooldownEnd1 = cooldowns1[i].cooldownEndTime;
                 foundCooldownd1Entry = true;
                 break;
@@ -2246,11 +2269,11 @@ contract PlumeStakingDiamondTest is Test {
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(stakeInfo.staked, initialStake - firstUnstake + firstRestake, "State Error after Step 3 (Staked)");
         assertEq(stakeInfo.cooled, firstUnstake - firstRestake, "State Error after Step 3 (Cooled)");
-        
+
         cooldowns1 = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         bool foundCooldown1AfterRestake = false;
-        for(uint i=0; i < cooldowns1.length; i++){
-            if(cooldowns1[i].validatorId == validatorId && cooldowns1[i].amount == (firstUnstake - firstRestake)){
+        for (uint256 i = 0; i < cooldowns1.length; i++) {
+            if (cooldowns1[i].validatorId == validatorId && cooldowns1[i].amount == (firstUnstake - firstRestake)) {
                 assertEq(cooldowns1[i].cooldownEndTime, cooldownEnd1, "Cooldown 1 End Time should NOT reset yet");
                 foundCooldown1AfterRestake = true;
                 break;
@@ -2271,11 +2294,12 @@ contract PlumeStakingDiamondTest is Test {
         assertEq(stakeInfo.staked, initialStake - firstUnstake + firstRestake, "State Error after Step 5 (Staked)");
         assertEq(stakeInfo.cooled, 0, "State Error after Step 5 (Cooled)");
         assertEq(stakeInfo.parked, 0, "State Error after Step 5 (Parked)");
-        
-        StakingFacet.CooldownView[] memory cooldownsAfterWithdraw = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+
+        StakingFacet.CooldownView[] memory cooldownsAfterWithdraw =
+            StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         bool stillHasCooldownForVal0Step5 = false;
-        for(uint i=0; i < cooldownsAfterWithdraw.length; i++){
-            if(cooldownsAfterWithdraw[i].validatorId == validatorId && cooldownsAfterWithdraw[i].amount > 0){
+        for (uint256 i = 0; i < cooldownsAfterWithdraw.length; i++) {
+            if (cooldownsAfterWithdraw[i].validatorId == validatorId && cooldownsAfterWithdraw[i].amount > 0) {
                 stillHasCooldownForVal0Step5 = true;
                 break;
             }
@@ -2284,7 +2308,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // 6. Stake another 2 ETH normally
         console2.log("6. Staking %s ETH normally...", secondStake);
-        StakingFacet(address(diamondProxy)).stake{value: secondStake}(validatorId);
+        StakingFacet(address(diamondProxy)).stake{ value: secondStake }(validatorId);
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(
             stakeInfo.staked,
@@ -2301,8 +2325,8 @@ contract PlumeStakingDiamondTest is Test {
         assertTrue(cooldowns2.length > 0, "Should have a cooldown entry after second unstake");
         uint256 cooldownEnd2 = 0;
         bool foundCooldown2Entry = false;
-        for(uint i=0; i < cooldowns2.length; i++){
-            if(cooldowns2[i].validatorId == validatorId && cooldowns2[i].amount == secondUnstake){
+        for (uint256 i = 0; i < cooldowns2.length; i++) {
+            if (cooldowns2[i].validatorId == validatorId && cooldowns2[i].amount == secondUnstake) {
                 cooldownEnd2 = cooldowns2[i].cooldownEndTime;
                 foundCooldown2Entry = true;
                 break;
@@ -2330,14 +2354,16 @@ contract PlumeStakingDiamondTest is Test {
         assertEq(cooling, secondUnstake, "amountCooling() should be secondUnstakeAmount (matured, not yet withdrawn)");
 
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
-        assertEq(stakeInfo.cooled, secondUnstake, "Internal State Error after Step 9 (Cooled) - sum should still be there");
+        assertEq(
+            stakeInfo.cooled, secondUnstake, "Internal State Error after Step 9 (Cooled) - sum should still be there"
+        );
         assertEq(stakeInfo.parked, 0, "Internal State Error after Step 9 (Parked) - before withdraw call");
-        
+
         cooldowns2 = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         bool foundCooldown2AfterWarp = false;
         uint256 actualCooldown2EndTime = 0;
-        for(uint i=0; i < cooldowns2.length; i++){
-            if(cooldowns2[i].validatorId == validatorId && cooldowns2[i].amount == secondUnstake){
+        for (uint256 i = 0; i < cooldowns2.length; i++) {
+            if (cooldowns2[i].validatorId == validatorId && cooldowns2[i].amount == secondUnstake) {
                 actualCooldown2EndTime = cooldowns2[i].cooldownEndTime;
                 foundCooldown2AfterWarp = true;
                 break;
@@ -2349,30 +2375,34 @@ contract PlumeStakingDiamondTest is Test {
         // 10. Attempt `restakeRewards` when nothing to restake (expect revert)
         console2.log("10. Attempting restakeRewards after withdrawing available balance (expect revert)...");
         uint256 balanceBeforeWithdrawStep10 = user1.balance;
-        StakingFacet(address(diamondProxy)).withdraw(); // Withdraw the `secondUnstakeAmount` (which is secondUnstake in the test)
+        StakingFacet(address(diamondProxy)).withdraw(); // Withdraw the `secondUnstakeAmount` (which is secondUnstake in
+            // the test)
         assertEq(user1.balance, balanceBeforeWithdrawStep10 + secondUnstake, "Withdraw amount mismatch in Step 10");
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(stakeInfo.parked, 0, "Parked should be 0 after withdraw");
         assertEq(stakeInfo.cooled, 0, "Cooled should be 0 after withdraw");
 
-        StakingFacet.CooldownView[] memory cooldownsAfterWithdraw10 = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+        StakingFacet.CooldownView[] memory cooldownsAfterWithdraw10 =
+            StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         bool stillHasCooldownForVal0_10 = false;
-        for(uint i=0; i < cooldownsAfterWithdraw10.length; i++){
-            if(cooldownsAfterWithdraw10[i].validatorId == validatorId && cooldownsAfterWithdraw10[i].amount > 0){
+        for (uint256 i = 0; i < cooldownsAfterWithdraw10.length; i++) {
+            if (cooldownsAfterWithdraw10[i].validatorId == validatorId && cooldownsAfterWithdraw10[i].amount > 0) {
                 stillHasCooldownForVal0_10 = true;
                 break;
             }
         }
-        assertFalse(stillHasCooldownForVal0_10, "Cooldown entry for validatorId should be gone after withdraw in step 10");
+        assertFalse(
+            stillHasCooldownForVal0_10, "Cooldown entry for validatorId should be gone after withdraw in step 10"
+        );
 
         vm.expectRevert(abi.encodeWithSelector(NoRewardsToRestake.selector));
         StakingFacet(address(diamondProxy)).restakeRewards(validatorId);
 
-
         // <<<< ADD PUSD CLAIM HERE (Step 10a) >>>>
         console2.log("10a. Claiming any pending PUSD for user1/val0 before PLUME setup...");
         // Check specifically for validatorId, as global claimable might include other validators user1 interacted with.
-        uint256 pendingPUSDforVal0 = RewardsFacet(address(diamondProxy)).getPendingRewardForValidator(user1, validatorId, address(pUSD));
+        uint256 pendingPUSDforVal0 =
+            RewardsFacet(address(diamondProxy)).getPendingRewardForValidator(user1, validatorId, address(pUSD));
         if (pendingPUSDforVal0 > 0) {
             RewardsFacet(address(diamondProxy)).claim(address(pUSD), validatorId);
             console2.log("     Claimed %s PUSD for user1 from validator %s", pendingPUSDforVal0, validatorId);
@@ -2383,7 +2413,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // Re-stake 4 ETH to set up for the next part
         console2.log("10b. Re-staking %s ETH to set up for restakeRewards test", finalRestake);
-        StakingFacet(address(diamondProxy)).stake{value: finalRestake}(validatorId);
+        StakingFacet(address(diamondProxy)).stake{ value: finalRestake }(validatorId);
 
         // Unstake 4 ETH again
         console2.log("10c. Unstaking %s ETH again...", finalRestake);
@@ -2392,8 +2422,8 @@ contract PlumeStakingDiamondTest is Test {
         assertTrue(cooldowns3.length > 0, "Should have a cooldown entry after third unstake");
         uint256 cooldownEnd3 = 0;
         bool foundCooldown3Entry = false;
-        for(uint i=0; i < cooldowns3.length; i++){
-            if(cooldowns3[i].validatorId == validatorId && cooldowns3[i].amount == finalRestake){
+        for (uint256 i = 0; i < cooldowns3.length; i++) {
+            if (cooldowns3[i].validatorId == validatorId && cooldowns3[i].amount == finalRestake) {
                 cooldownEnd3 = cooldowns3[i].cooldownEndTime;
                 foundCooldown3Entry = true;
                 break;
@@ -2408,21 +2438,25 @@ contract PlumeStakingDiamondTest is Test {
         vm.warp(cooldownEnd3 + 1);
 
         withdrawable = StakingFacet(address(diamondProxy)).amountWithdrawable();
-        assertEq(withdrawable, 0, "Withdrawable amount should be 0 before withdraw processes matured cooldown (finalRestake)"); // Corrected: was finalRestake
+        assertEq(
+            withdrawable, 0, "Withdrawable amount should be 0 before withdraw processes matured cooldown (finalRestake)"
+        ); // Corrected: was finalRestake
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
-        assertEq(stakeInfo.cooled, finalRestake, "Cooled amount should be finalRestake before withdraw (finalRestake)"); // Corrected: was 0
+        assertEq(stakeInfo.cooled, finalRestake, "Cooled amount should be finalRestake before withdraw (finalRestake)"); // Corrected:
+            // was 0
         assertEq(stakeInfo.parked, 0, "Parked amount should be 0 before withdraw (finalRestake)"); // Added for clarity
 
         // 11. Activate PLUME rewards and advance time to accrue rewards
         console2.log("11. Activating PLUME rewards and advancing time...");
         uint256 plumeRate = 1e16; // 0.01 PLUME per second
         vm.startPrank(admin);
-        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, plumeRate * 2); 
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, plumeRate * 2);
         address[] memory nativeTokenArr = new address[](1);
         nativeTokenArr[0] = PLUME_NATIVE;
         uint256[] memory nativeRateArr = new uint256[](1);
         nativeRateArr[0] = plumeRate;
-        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, plumeRate); // Ensure max rate allows the desired rate
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, plumeRate); // Ensure max rate allows the
+            // desired rate
         RewardsFacet(address(diamondProxy)).setRewardRates(nativeTokenArr, nativeRateArr);
         vm.deal(address(treasury), 1000 ether); // Fund treasury for PLUME rewards
         vm.stopPrank();
@@ -2432,15 +2466,18 @@ contract PlumeStakingDiamondTest is Test {
 
         // 12. Call restakeRewards - this should take pending PLUME and add to stake
         console2.log("12. Calling restakeRewards(%s)...", validatorId);
-        uint256 pendingPlumeReward = RewardsFacet(address(diamondProxy)).getPendingRewardForValidator(user1, validatorId, PLUME_NATIVE);
+        uint256 pendingPlumeReward =
+            RewardsFacet(address(diamondProxy)).getPendingRewardForValidator(user1, validatorId, PLUME_NATIVE);
         assertTrue(pendingPlumeReward > 0, "Should have accrued some PLUME reward");
         console2.log("   Pending PLUME reward: %s", pendingPlumeReward);
 
         vm.startPrank(user1); // vm.startPrank for the subsequent calls
         // Read staked amount using the facet's view function
         uint256 stakedBeforeRestake = StakingFacet(address(diamondProxy)).stakeInfo(user1).staked;
-        console2.log("TEST_DEBUG: user1 stakeInfo.staked BEFORE restakeRewards call (via Facet): %s", stakedBeforeRestake);
-        
+        console2.log(
+            "TEST_DEBUG: user1 stakeInfo.staked BEFORE restakeRewards call (via Facet): %s", stakedBeforeRestake
+        );
+
         uint256 restakedAmount = StakingFacet(address(diamondProxy)).restakeRewards(validatorId);
         vm.stopPrank();
 
@@ -2453,34 +2490,48 @@ contract PlumeStakingDiamondTest is Test {
         assertEq(finalUserStakeInfo.cooled, finalRestake, "State Error after Step 12 (Cooled - should be unchanged)");
         assertEq(finalUserStakeInfo.parked, 0, "State Error after Step 12 (Parked - should be unchanged)");
 
-        uint256 pendingPlumeAfter = RewardsFacet(address(diamondProxy)).getPendingRewardForValidator(user1, validatorId, PLUME_NATIVE);
-        assertApproxEqAbs(pendingPlumeAfter, 0, 1e12, "Pending PLUME reward should be near zero after restakeRewards"); // Allow small dust
+        uint256 pendingPlumeAfter =
+            RewardsFacet(address(diamondProxy)).getPendingRewardForValidator(user1, validatorId, PLUME_NATIVE);
+        assertApproxEqAbs(pendingPlumeAfter, 0, 1e12, "Pending PLUME reward should be near zero after restakeRewards"); // Allow
+            // small dust
 
         // 13. Withdraw the 4 ETH that finished cooling earlier (this is the `finalRestake` amount)
         console2.log("13. Withdrawing %s ETH (from finished cooldown)...", finalRestake);
-        
+
         uint256 parkedAmountBeforeWithdrawAtStep13 = StakingFacet(address(diamondProxy)).amountWithdrawable();
-        assertEq(parkedAmountBeforeWithdrawAtStep13, 0, "Parked amount should be 0 before withdraw() processes matured finalRestake cooldown at step 13"); 
-        
-        uint256 balanceBeforeWithdrawAtStep13 = user1.balance; 
+        assertEq(
+            parkedAmountBeforeWithdrawAtStep13,
+            0,
+            "Parked amount should be 0 before withdraw() processes matured finalRestake cooldown at step 13"
+        );
+
+        uint256 balanceBeforeWithdrawAtStep13 = user1.balance;
         vm.startPrank(user1); // <<<< ADDED THIS
-        StakingFacet(address(diamondProxy)).withdraw(); 
-        vm.stopPrank();   // <<<< ADDED THIS
+        StakingFacet(address(diamondProxy)).withdraw();
+        vm.stopPrank(); // <<<< ADDED THIS
         uint256 balanceAfterWithdrawAtStep13 = user1.balance;
 
-        assertEq(balanceAfterWithdrawAtStep13, balanceBeforeWithdrawAtStep13 + finalRestake, "Withdraw amount mismatch in Step 13 for finalRestake");
+        assertEq(
+            balanceAfterWithdrawAtStep13,
+            balanceBeforeWithdrawAtStep13 + finalRestake,
+            "Withdraw amount mismatch in Step 13 for finalRestake"
+        );
 
         // 14. Final Checks
         // Ensure vm.prank(user1) is active for these reads if they depend on msg.sender indirectly,
         // or ensure they are called on the diamondProxy with user1 as an argument if they are view functions.
-        // For direct stakeInfo access, it's fine as long as the prank was active when $ was defined if it was a one-time definition.
+        // For direct stakeInfo access, it's fine as long as the prank was active when $ was defined if it was a
+        // one-time definition.
         // However, it's safer to re-prank for clarity or use view functions.
 
         vm.startPrank(user1); // Prank for reading final state of user1
         assertEq(StakingFacet(address(diamondProxy)).amountWithdrawable(), 0, "Withdrawable should be 0 after withdraw");
-        
-        PlumeStakingStorage.StakeInfo memory user1StakeInfoAfterWithdraw = StakingFacet(address(diamondProxy)).stakeInfo(user1);
-        assertEq(user1StakeInfoAfterWithdraw.staked, stakedBeforeRestake + restakedAmount, "Final Staked amount incorrect");
+
+        PlumeStakingStorage.StakeInfo memory user1StakeInfoAfterWithdraw =
+            StakingFacet(address(diamondProxy)).stakeInfo(user1);
+        assertEq(
+            user1StakeInfoAfterWithdraw.staked, stakedBeforeRestake + restakedAmount, "Final Staked amount incorrect"
+        );
         assertEq(user1StakeInfoAfterWithdraw.cooled, 0, "Final Cooled amount should be 0");
         assertEq(user1StakeInfoAfterWithdraw.parked, 0, "Final Parked amount should be 0");
         vm.stopPrank(); // Stop prank after reading user1 state
@@ -2524,49 +2575,159 @@ contract PlumeStakingDiamondTest is Test {
         assertEq(initialStakersCount, 4, "Initial staker count mismatch");
 
         // --- Remove staker2 (middle element) ---
+        console2.log("TEST_DEBUG: Removing staker2 (%s) from validator %s", staker2, validatorId);
+        uint256 cooldownInterval = ManagementFacet(address(diamondProxy)).getCooldownInterval();
+
         vm.startPrank(staker2);
+        console2.log("TEST_DEBUG: staker2 unstaking %s at t=%s", stakeAmount, block.timestamp);
         StakingFacet(address(diamondProxy)).unstake(validatorId, stakeAmount); // Unstake full amount
+        uint256 staker2CooldownEndTime = block.timestamp + cooldownInterval;
+        console2.log(
+            "TEST_DEBUG: staker2 cooldown for val %s should end around t=%s", validatorId, staker2CooldownEndTime
+        );
         vm.stopPrank();
 
-        // Verify state after removing staker2 (expect 4 values)
-        (,,, uint256 stakersCountAfterRemove2) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
-        assertEq(stakersCountAfterRemove2, 3, "Staker count mismatch after removing staker2");
-        // Verify staker2 is removed from their own validator list
-        uint16[] memory staker2Validators = ValidatorFacet(address(diamondProxy)).getUserValidators(staker2);
-        assertEq(staker2Validators.length, 0, "Staker2 validator list not cleared");
+        // Verify staker count on validator decreased
+        (,,, uint256 stakersCountAfterUnstake2) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+        assertEq(stakersCountAfterUnstake2, 3, "Staker count mismatch after staker2 unstakes (before withdraw)");
+
+        // At this point, staker2 should STILL be in $.userValidators[staker2] because cooldown is active
+        uint16[] memory staker2ValidatorsBeforeWithdraw =
+            ValidatorFacet(address(diamondProxy)).getUserValidators(staker2);
+        bool foundValIdForStaker2BeforeWithdraw = false;
+        for (uint256 i = 0; i < staker2ValidatorsBeforeWithdraw.length; i++) {
+            if (staker2ValidatorsBeforeWithdraw[i] == validatorId) {
+                foundValIdForStaker2BeforeWithdraw = true;
+                break;
+            }
+        }
+        assertTrue(foundValIdForStaker2BeforeWithdraw, "Staker2 should still list validatorId while cooldown is active");
+        console2.log(
+            "TEST_DEBUG: staker2 validator list length before withdraw: %s", staker2ValidatorsBeforeWithdraw.length
+        );
+
+        // Advance time past staker2's cooldown
+        console2.log("TEST_DEBUG: Warping time past staker2's cooldown end (%s)", staker2CooldownEndTime);
+        vm.warp(staker2CooldownEndTime + 1);
+
+        // Have staker2 withdraw their cooled funds
+        vm.startPrank(staker2);
+        console2.log("TEST_DEBUG: staker2 withdrawing at t=%s", block.timestamp);
+        StakingFacet(address(diamondProxy)).withdraw();
+        vm.stopPrank();
+        console2.log("TEST_DEBUG: staker2 withdraw completed.");
+
+        // NOW, verify staker2 is removed from their own validator list and $.userHasStakedWithValidator is false
+        uint16[] memory staker2ValidatorsAfterWithdraw =
+            ValidatorFacet(address(diamondProxy)).getUserValidators(staker2);
+        assertEq(
+            staker2ValidatorsAfterWithdraw.length, 0, "Staker2 validator list not cleared after cooldown and withdraw"
+        );
+
+        // Check userHasStakedWithValidator mapping (this requires a new view function or direct storage read if testing
+        // internals)
+        // For now, rely on userValidators list being empty as primary check.
+        // The PlumeValidatorLogic should have set $.userHasStakedWithValidator[staker2][validatorId] to false.
 
         // --- Remove staker1 (conceptually first element, now at index 0) ---
+        console2.log("TEST_DEBUG: Removing staker1 (%s) from validator %s", staker1, validatorId);
+        // cooldownInterval is already defined earlier in the test
+
         vm.startPrank(staker1);
-        StakingFacet(address(diamondProxy)).unstake(validatorId, stakeAmount);
+        console2.log("TEST_DEBUG: staker1 unstaking %s at t=%s", stakeAmount, block.timestamp);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, stakeAmount); // Unstake full amount
+        uint256 staker1CooldownEndTime = block.timestamp + cooldownInterval;
+        console2.log(
+            "TEST_DEBUG: staker1 cooldown for val %s should end around t=%s", validatorId, staker1CooldownEndTime
+        );
         vm.stopPrank();
 
-        // Verify state after removing staker1 (expect 4 values)
-        (,,, uint256 stakersCountAfterRemove1) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
-        assertEq(stakersCountAfterRemove1, 2, "Staker count mismatch after removing staker1");
-        uint16[] memory staker1Validators = ValidatorFacet(address(diamondProxy)).getUserValidators(staker1);
-        assertEq(staker1Validators.length, 0, "Staker1 validator list not cleared");
+        (,,, uint256 stakersCountAfterUnstake1) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+        assertEq(stakersCountAfterUnstake1, 2, "Staker count mismatch after staker1 unstakes (before withdraw)");
+
+        // Advance time past staker1's cooldown
+        console2.log("TEST_DEBUG: Warping time past staker1's cooldown end (%s)", staker1CooldownEndTime);
+        vm.warp(staker1CooldownEndTime + 1);
+
+        // Have staker1 withdraw their cooled funds
+        vm.startPrank(staker1);
+        console2.log("TEST_DEBUG: staker1 withdrawing at t=%s", block.timestamp);
+        StakingFacet(address(diamondProxy)).withdraw();
+        vm.stopPrank();
+        console2.log("TEST_DEBUG: staker1 withdraw completed.");
+
+        uint16[] memory staker1ValidatorsAfterWithdraw =
+            ValidatorFacet(address(diamondProxy)).getUserValidators(staker1);
+        assertEq(
+            staker1ValidatorsAfterWithdraw.length, 0, "Staker1 validator list not cleared after cooldown and withdraw"
+        );
 
         // --- Remove staker4 (conceptually last element, potentially moved) ---
+        console2.log("TEST_DEBUG: Removing staker4 (%s) from validator %s", staker4, validatorId);
+        // cooldownInterval is already defined
+
         vm.startPrank(staker4);
-        StakingFacet(address(diamondProxy)).unstake(validatorId, stakeAmount);
+        console2.log("TEST_DEBUG: staker4 unstaking %s at t=%s", stakeAmount, block.timestamp);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, stakeAmount); // Unstake full amount
+        uint256 staker4CooldownEndTime = block.timestamp + cooldownInterval;
+        console2.log(
+            "TEST_DEBUG: staker4 cooldown for val %s should end around t=%s", validatorId, staker4CooldownEndTime
+        );
         vm.stopPrank();
 
-        // Verify state after removing staker4 (expect 4 values)
-        (,,, uint256 stakersCountAfterRemove4) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
-        assertEq(stakersCountAfterRemove4, 1, "Staker count mismatch after removing staker4");
-        uint16[] memory staker4Validators = ValidatorFacet(address(diamondProxy)).getUserValidators(staker4);
-        assertEq(staker4Validators.length, 0, "Staker4 validator list not cleared");
+        (,,, uint256 stakersCountAfterUnstake4) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+        assertEq(stakersCountAfterUnstake4, 1, "Staker count mismatch after staker4 unstakes (before withdraw)");
+
+        // Advance time past staker4's cooldown
+        console2.log("TEST_DEBUG: Warping time past staker4's cooldown end (%s)", staker4CooldownEndTime);
+        vm.warp(staker4CooldownEndTime + 1);
+
+        // Have staker4 withdraw their cooled funds
+        vm.startPrank(staker4);
+        console2.log("TEST_DEBUG: staker4 withdrawing at t=%s", block.timestamp);
+        StakingFacet(address(diamondProxy)).withdraw();
+        vm.stopPrank();
+        console2.log("TEST_DEBUG: staker4 withdraw completed.");
+
+        uint16[] memory staker4ValidatorsAfterWithdraw =
+            ValidatorFacet(address(diamondProxy)).getUserValidators(staker4);
+        assertEq(
+            staker4ValidatorsAfterWithdraw.length, 0, "Staker4 validator list not cleared after cooldown and withdraw"
+        );
 
         // --- Remove staker3 (the last remaining) ---
+        console2.log("TEST_DEBUG: Removing staker3 (%s) from validator %s", staker3, validatorId);
+        // cooldownInterval is already defined
+
         vm.startPrank(staker3);
-        StakingFacet(address(diamondProxy)).unstake(validatorId, stakeAmount);
+        console2.log("TEST_DEBUG: staker3 unstaking %s at t=%s", stakeAmount, block.timestamp);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, stakeAmount); // Unstake full amount
+        uint256 staker3CooldownEndTime = block.timestamp + cooldownInterval;
+        console2.log(
+            "TEST_DEBUG: staker3 cooldown for val %s should end around t=%s", validatorId, staker3CooldownEndTime
+        );
         vm.stopPrank();
 
-        // Verify final state (expect 4 values)
-        (,,, uint256 stakersCountAfterRemove3) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
-        assertEq(stakersCountAfterRemove3, 0, "Staker count should be 0 finally");
-        uint16[] memory staker3Validators = ValidatorFacet(address(diamondProxy)).getUserValidators(staker3);
-        assertEq(staker3Validators.length, 0, "Staker3 validator list not cleared");
+        (,,, uint256 stakersCountAfterUnstake3) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+        assertEq(stakersCountAfterUnstake3, 0, "Staker count mismatch after staker3 unstakes (before withdraw)"); // Validator
+            // should have 0 stakers now
+
+        // Advance time past staker3's cooldown
+        console2.log("TEST_DEBUG: Warping time past staker3's cooldown end (%s)", staker3CooldownEndTime);
+        vm.warp(staker3CooldownEndTime + 1);
+
+        // Have staker3 withdraw their cooled funds
+        vm.startPrank(staker3);
+        console2.log("TEST_DEBUG: staker3 withdrawing at t=%s", block.timestamp);
+        StakingFacet(address(diamondProxy)).withdraw();
+        vm.stopPrank();
+        console2.log("TEST_DEBUG: staker3 withdraw completed.");
+
+        uint16[] memory staker3ValidatorsAfterWithdraw =
+            ValidatorFacet(address(diamondProxy)).getUserValidators(staker3);
+        assertEq(
+            staker3ValidatorsAfterWithdraw.length, 0, "Staker3 validator list not cleared after cooldown and withdraw"
+        );
     }
 
     function testAddValidator_Fail_AdminAlreadyAssigned() public {
@@ -2754,7 +2915,8 @@ contract PlumeStakingDiamondTest is Test {
         // Corrected calculation for expectedNetReward for the vm.expectRevert
         uint256 rptDeltaForPeriod = actualTimeDelta * plumeRate; // Reward Per Token increase for the period
         uint256 expectedGrossRewardForUser = (userStake * rptDeltaForPeriod) / PlumeRewardLogic.REWARD_PRECISION;
-        uint256 expectedCommissionAmountForUser = (expectedGrossRewardForUser * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedCommissionAmountForUser =
+            (expectedGrossRewardForUser * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
         uint256 expectedNetRewardForRevert = expectedGrossRewardForUser - expectedCommissionAmountForUser;
 
         // --- DEBUG LOGS (Single block, ensure no duplication) ---
@@ -3087,11 +3249,22 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
 
         // 9. Calculate expected reward: only for 1 hour, not for 1 day + 1 hour
-        // reward = rewardRate * timeDelta * stakeAmount / totalStaked
-        uint256 expectedRewardGross = rewardRate * warp2; // stakeAmount cancels with totalStaked for a single staker
+        uint256 rptDeltaForWarp2 = rewardRate * warp2; // Reward Per Token increase for the warp2 period
+        uint256 expectedRewardGross = (stakeAmount * rptDeltaForWarp2) / PlumeRewardLogic.REWARD_PRECISION;
         uint256 validatorCommissionRate = 5e16; // newValidatorId (99) is added with 5% commission in this test
         uint256 commissionAmount = (expectedRewardGross * validatorCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
         uint256 expectedRewardNet = expectedRewardGross - commissionAmount;
+
+        console2.log("TEST_DEBUG: stakeAmount = %s", stakeAmount);
+        console2.log("TEST_DEBUG: rewardRate = %s", rewardRate);
+        console2.log("TEST_DEBUG: warp2 (duration) = %s", warp2);
+        console2.log("TEST_DEBUG: rptDeltaForWarp2 = %s", rptDeltaForWarp2);
+        console2.log("TEST_DEBUG: expectedRewardGross = %s", expectedRewardGross);
+        console2.log("TEST_DEBUG: validatorCommissionRate = %s", validatorCommissionRate);
+        console2.log("TEST_DEBUG: commissionAmount = %s", commissionAmount);
+        console2.log("TEST_DEBUG: expectedRewardNet = %s", expectedRewardNet);
+        console2.log("TEST_DEBUG: actual claimed = %s", claimed);
+
         assertApproxEqAbs(
             claimed,
             expectedRewardNet,
@@ -3100,8 +3273,15 @@ contract PlumeStakingDiamondTest is Test {
         );
 
         // 10. Assert that the claimed reward is NOT for the entire period since validator creation or epoch
-        uint256 excessiveReward = rewardRate * (warp1 + warp2) * stakeAmount / stakeAmount;
-        assertTrue(claimed < excessiveReward, "Should not be able to claim excessive rewards for period before staking");
+        uint256 rptDeltaExcessive = rewardRate * (warp1 + warp2);
+        uint256 excessiveRewardGross = (stakeAmount * rptDeltaExcessive) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 excessiveCommission =
+            (excessiveRewardGross * validatorCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 excessiveNetReward = excessiveRewardGross - excessiveCommission;
+
+        assertTrue(
+            claimed < excessiveNetReward, "Should not be able to claim excessive rewards for period before staking"
+        );
     }
 
     function testNoRetroactiveRewardRateUpdate() public {
@@ -3135,10 +3315,10 @@ contract PlumeStakingDiamondTest is Test {
         vm.warp(block.timestamp + timeT1);
 
         // Calculate expected net rewards for Period 1 (Rate R1)
-        // Gross reward P1 = Rate R1 * Time T1 (since user is only staker, their stake is total stake)
-        uint256 grossRewardP1 = rateR1 * timeT1;
-        uint256 commissionP1 = (grossRewardP1 * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
-        uint256 netRewardP1 = grossRewardP1 - commissionP1;
+        uint256 rptDeltaP1_calc = rateR1 * timeT1;
+        uint256 totalGrossRewardUserP1_calc = (stakeAmount * rptDeltaP1_calc) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 commissionP1_calc = (totalGrossRewardUserP1_calc * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 netRewardP1_calc = totalGrossRewardUserP1_calc - commissionP1_calc;
 
         // Admin changes reward rate to R2
         uint256 rateR2 = 0.5 ether; // 0.5 PUSD per second
@@ -3153,9 +3333,10 @@ contract PlumeStakingDiamondTest is Test {
         vm.warp(block.timestamp + timeT2);
 
         // Calculate expected net rewards for Period 2 (Rate R2)
-        uint256 grossRewardP2 = rateR2 * timeT2;
-        uint256 commissionP2 = (grossRewardP2 * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
-        uint256 netRewardP2 = grossRewardP2 - commissionP2;
+        uint256 rptDeltaP2_calc = rateR2 * timeT2;
+        uint256 totalGrossRewardUserP2_calc = (stakeAmount * rptDeltaP2_calc) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 commissionP2_calc = (totalGrossRewardUserP2_calc * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 netRewardP2_calc = totalGrossRewardUserP2_calc - commissionP2_calc;
 
         // User 1 claims rewards
         vm.startPrank(user1);
@@ -3163,16 +3344,16 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
 
         // Expected total net reward = Net P1 + Net P2
-        uint256 expectedTotalNetReward = netRewardP1 + netRewardP2;
+        uint256 expectedTotalNetReward_calc = netRewardP1_calc + netRewardP2_calc; // Use _calc variables
 
-        console2.log("Net Reward P1 (Rate R1): %s", netRewardP1);
-        console2.log("Net Reward P2 (Rate R2): %s", netRewardP2);
-        console2.log("Expected Total Net Reward: %s", expectedTotalNetReward);
+        console2.log("Net Reward P1 (Rate R1) CALC: %s", netRewardP1_calc); // Use _calc variables
+        console2.log("Net Reward P2 (Rate R2) CALC: %s", netRewardP2_calc); // Use _calc variables
+        console2.log("Expected Total Net Reward CALC: %s", expectedTotalNetReward_calc); // Use _calc variables
         console2.log("Actual Claimed Amount: %s", claimedAmount);
 
         assertApproxEqAbs(
             claimedAmount,
-            expectedTotalNetReward,
+            expectedTotalNetReward_calc, // Use _calc variables
             1e12,
             "Claimed amount does not match expected sum of rewards from distinct rate periods"
         );
@@ -3240,13 +3421,15 @@ contract PlumeStakingDiamondTest is Test {
         vm.warp(block.timestamp + warpSeconds);
 
         // Calculate expected earned rewards (commission is 0)
-        // Assuming user1 is the only staker for this validator for simplicity of totalStaked calculation
-        (,,, uint256 validatorTotalStaked) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
-        // uint256 expectedEarnedRewards = (rewardRate * warpSeconds * stakeAmount) / validatorTotalStaked;
-        // Simplified calculation for a single staker where stakeAmount == validatorTotalStaked, and commission is 0
-        console2.log("DEBUG TEST: rewardRate before calc is %s", rewardRate);
-        console2.log("DEBUG TEST: warpSeconds before calc is %s", warpSeconds);
-        uint256 expectedEarnedRewards = rewardRate * warpSeconds;
+        // User1 is the only staker on validatorId at this point in the test.
+        uint256 rptDeltaForPeriod = rewardRate * warpSeconds;
+        uint256 expectedEarnedRewards = (stakeAmount * rptDeltaForPeriod) / PlumeRewardLogic.REWARD_PRECISION;
+
+        console2.log("DEBUG TEST: stakeAmount = %s", stakeAmount);
+        console2.log("DEBUG TEST: rewardRate = %s", rewardRate);
+        console2.log("DEBUG TEST: warpSeconds = %s", warpSeconds);
+        console2.log("DEBUG TEST: rptDeltaForPeriod = %s", rptDeltaForPeriod);
+        console2.log("DEBUG TEST: expectedEarnedRewards (user actual) = %s", expectedEarnedRewards);
 
         // --- User Claims ---
         uint256 userPusdBalanceBeforeClaim = pUSD.balanceOf(user1);
@@ -3275,154 +3458,200 @@ contract PlumeStakingDiamondTest is Test {
             "Treasury PUSD balance incorrect after claim"
         );
     }
-function testCommissionRateChange_NonRetroactive() public {
-    uint16 validatorId = DEFAULT_VALIDATOR_ID;
-    address token = address(pUSD);
-    uint256 userStakeAmount = 100 ether;
-    uint256 REWARD_PRECISION = PlumeRewardLogic.REWARD_PRECISION;
 
-    // --- P0: Setup and Initial Stake ---
-    vm.startPrank(user1);
-    deal(user1, userStakeAmount + 1 ether); 
-    StakingFacet(address(diamondProxy)).stake{value: userStakeAmount}(validatorId);
-    vm.stopPrank();
+    function testCommissionRateChange_NonRetroactive() public {
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        address token = address(pUSD);
+        uint256 userStakeAmount = 100 ether;
+        uint256 REWARD_PRECISION = PlumeRewardLogic.REWARD_PRECISION;
 
-    (PlumeStakingStorage.ValidatorInfo memory vInfo, , ) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
-    uint256 defaultCommissionFromSetup = vInfo.commission; 
+        // --- P0: Setup and Initial Stake ---
+        vm.startPrank(user1);
+        deal(user1, userStakeAmount + 1 ether);
+        StakingFacet(address(diamondProxy)).stake{ value: userStakeAmount }(validatorId);
+        vm.stopPrank();
 
-    uint256 initialCommissionRateP0 = 10 * (REWARD_PRECISION / 100); // 10%
+        (PlumeStakingStorage.ValidatorInfo memory vInfo,,) =
+            ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
+        uint256 defaultCommissionFromSetup = vInfo.commission;
 
-    vm.startPrank(validatorAdmin);
-    // uint256 tsExpectedForP0Checkpoint = block.timestamp + 1; // Capture expected timestamp *before* the call
-    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, initialCommissionRateP0);
-    vm.stopPrank();
+        uint256 initialCommissionRateP0 = 10 * (REWARD_PRECISION / 100); // 10%
 
-    // --- P1: First period with initialCommissionRateP0 (10%) ---
-    uint256 tsAfterP0SetCommission = block.timestamp; 
-    uint256 warpSecondsP1 = 100; 
-    vm.warp(tsAfterP0SetCommission + warpSecondsP1); 
-    // uint256 tsAfterWarpP1 = block.timestamp; 
+        vm.startPrank(validatorAdmin);
+        // uint256 tsExpectedForP0Checkpoint = block.timestamp + 1; // Capture expected timestamp *before* the call
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, initialCommissionRateP0);
+        vm.stopPrank();
 
-    uint256 pusdRewardRate = RewardsFacet(address(diamondProxy)).getRewardRate(token);
+        // --- P1: First period with initialCommissionRateP0 (10%) ---
+        uint256 tsAfterP0SetCommission = block.timestamp;
+        uint256 warpSecondsP1 = 100;
+        vm.warp(tsAfterP0SetCommission + warpSecondsP1);
+        // uint256 tsAfterWarpP1 = block.timestamp;
 
-    uint256 rewardPerTokenDeltaP1 = pusdRewardRate * warpSecondsP1; 
-    uint256 totalGrossRewardForUserP1 = (rewardPerTokenDeltaP1 * userStakeAmount) / REWARD_PRECISION;
-    uint256 expectedCommissionP1 = (totalGrossRewardForUserP1 * initialCommissionRateP0) / REWARD_PRECISION;
-    uint256 expectedNetRewardUserP1 = totalGrossRewardForUserP1 - expectedCommissionP1;
+        uint256 pusdRewardRate = RewardsFacet(address(diamondProxy)).getRewardRate(token);
 
-    console2.log("P1: RewardPerTokenDelta=%s", rewardPerTokenDeltaP1);
-    console2.log("P1: TotalGrossRewardForUser=%s", totalGrossRewardForUserP1);
-    console2.log("P1: ExpectedCommission=%s",  expectedCommissionP1) ;
-    console2.log("P1:  ExpectedNetRewardUser=%s",  expectedNetRewardUserP1);
+        uint256 rewardPerTokenDeltaP1 = pusdRewardRate * warpSecondsP1;
+        uint256 totalGrossRewardForUserP1 = (rewardPerTokenDeltaP1 * userStakeAmount) / REWARD_PRECISION;
+        uint256 expectedCommissionP1 = (totalGrossRewardForUserP1 * initialCommissionRateP0) / REWARD_PRECISION;
+        uint256 expectedNetRewardUserP1 = totalGrossRewardForUserP1 - expectedCommissionP1;
 
-    // --- P2: Change commission rate ---
-    uint256 newCommissionRateP2 = 20 * (REWARD_PRECISION / 100); // 20%
+        console2.log("P1: RewardPerTokenDelta=%s", rewardPerTokenDeltaP1);
+        console2.log("P1: TotalGrossRewardForUser=%s", totalGrossRewardForUserP1);
+        console2.log("P1: ExpectedCommission=%s", expectedCommissionP1);
+        console2.log("P1:  ExpectedNetRewardUser=%s", expectedNetRewardUserP1);
 
-    vm.startPrank(validatorAdmin);
-    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, newCommissionRateP2);
-    vm.stopPrank();
-    
-    uint256 tsAfterP2SetCommission = block.timestamp; 
+        // --- P2: Change commission rate ---
+        uint256 newCommissionRateP2 = 20 * (REWARD_PRECISION / 100); // 20%
 
-    // --- P3: Second period with newCommissionRateP2 (20%) ---
-    uint256 warpSecondsP3 = 50 seconds; 
-    vm.warp(tsAfterP2SetCommission + warpSecondsP3);
-    // uint256 tsAfterWarpP3 = block.timestamp; 
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, newCommissionRateP2);
+        vm.stopPrank();
 
-    uint256 rewardPerTokenDeltaP3 = pusdRewardRate * warpSecondsP3;
-    uint256 totalGrossRewardForUserP3 = (rewardPerTokenDeltaP3 * userStakeAmount) / REWARD_PRECISION;
-    uint256 expectedCommissionP3 = (totalGrossRewardForUserP3 * newCommissionRateP2) / REWARD_PRECISION;
-    uint256 expectedNetRewardUserP3 = totalGrossRewardForUserP3 - expectedCommissionP3;
+        uint256 tsAfterP2SetCommission = block.timestamp;
 
-    console2.log("P3: RewardPerTokenDelta=%s,", rewardPerTokenDeltaP3);
-    console2.log("P3: TotalGrossRewardForUser=%s", totalGrossRewardForUserP3);
-    console2.log("P3: ExpectedCommission=%s, ", expectedCommissionP3 );
-    console2.log("P3: ExpectedNetRewardUser=%s", expectedNetRewardUserP3);
+        // --- P3: Second period with newCommissionRateP2 (20%) ---
+        uint256 warpSecondsP3 = 50 seconds;
+        vm.warp(tsAfterP2SetCommission + warpSecondsP3);
+        // uint256 tsAfterWarpP3 = block.timestamp;
 
-    // --- User Claims Rewards ---
-    uint256 userPusdBalanceBeforeClaim = pUSD.balanceOf(user1);
-    uint256 treasuryPusdBalanceBeforeUserClaim = pUSD.balanceOf(address(treasury));
+        uint256 rewardPerTokenDeltaP3 = pusdRewardRate * warpSecondsP3;
+        uint256 totalGrossRewardForUserP3 = (rewardPerTokenDeltaP3 * userStakeAmount) / REWARD_PRECISION;
+        uint256 expectedCommissionP3 = (totalGrossRewardForUserP3 * newCommissionRateP2) / REWARD_PRECISION;
+        uint256 expectedNetRewardUserP3 = totalGrossRewardForUserP3 - expectedCommissionP3;
 
-    vm.startPrank(user1);
-    uint256 totalExpectedNetRewardUser = expectedNetRewardUserP1 + expectedNetRewardUserP3;
-    uint256 actualClaimedAmount = RewardsFacet(address(diamondProxy)).claim(token, validatorId);
-    vm.stopPrank();
+        console2.log("P3: RewardPerTokenDelta=%s,", rewardPerTokenDeltaP3);
+        console2.log("P3: TotalGrossRewardForUser=%s", totalGrossRewardForUserP3);
+        console2.log("P3: ExpectedCommission=%s, ", expectedCommissionP3);
+        console2.log("P3: ExpectedNetRewardUser=%s", expectedNetRewardUserP3);
 
-    console2.log("User actualClaimedAmount: %s, TotalExpectedNetRewardUser: %s", actualClaimedAmount, totalExpectedNetRewardUser);
-    assertEq(actualClaimedAmount, totalExpectedNetRewardUser, "User claimed amount mismatch");
-    assertEq(pUSD.balanceOf(user1), userPusdBalanceBeforeClaim + totalExpectedNetRewardUser, "User pUSD balance after claim mismatch");
-    assertEq(pUSD.balanceOf(address(treasury)), treasuryPusdBalanceBeforeUserClaim - totalExpectedNetRewardUser, "Treasury balance after user claim mismatch");
+        // --- User Claims Rewards ---
+        uint256 userPusdBalanceBeforeClaim = pUSD.balanceOf(user1);
+        uint256 treasuryPusdBalanceBeforeUserClaim = pUSD.balanceOf(address(treasury));
 
-    // --- Verification of Accrued Commission --- 
-    uint256 totalExpectedCommissionAccrued = expectedCommissionP1 + expectedCommissionP3;
-    
-    // Force settle before checking accrued commission, as user claim might not cover all segments if other users exist or other interactions happened.
-    // For this specific test flow, it might not be strictly necessary due to how `setValidatorCommission` settles,
-    // but it's good practice for robust checking of `getAccruedCommission`.
-    vm.prank(admin); // or any address that can call it
-    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
-    vm.stopPrank();
+        vm.startPrank(user1);
+        uint256 totalExpectedNetRewardUser = expectedNetRewardUserP1 + expectedNetRewardUserP3;
+        uint256 actualClaimedAmount = RewardsFacet(address(diamondProxy)).claim(token, validatorId);
+        vm.stopPrank();
 
-    uint256 actualAccruedCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
-    console2.log("ActualAccruedCommission: %s, TotalExpectedCommissionAccrued: %s", actualAccruedCommission, totalExpectedCommissionAccrued);
-    assertEq(actualAccruedCommission, totalExpectedCommissionAccrued, "Total accrued commission after user claim mismatch");
+        console2.log(
+            "User actualClaimedAmount: %s, TotalExpectedNetRewardUser: %s",
+            actualClaimedAmount,
+            totalExpectedNetRewardUser
+        );
+        assertEq(actualClaimedAmount, totalExpectedNetRewardUser, "User claimed amount mismatch");
+        assertEq(
+            pUSD.balanceOf(user1),
+            userPusdBalanceBeforeClaim + totalExpectedNetRewardUser,
+            "User pUSD balance after claim mismatch"
+        );
+        assertEq(
+            pUSD.balanceOf(address(treasury)),
+            treasuryPusdBalanceBeforeUserClaim - totalExpectedNetRewardUser,
+            "Treasury balance after user claim mismatch"
+        );
 
-    uint256 validatorAdminPusdBalanceBefore = pUSD.balanceOf(validatorAdmin);
-           uint256 treasuryPusdBalanceBeforeValidatorClaim = pUSD.balanceOf(address(treasury));
+        // --- Verification of Accrued Commission ---
+        uint256 totalExpectedCommissionAccrued = expectedCommissionP1 + expectedCommissionP3;
+
+        // Force settle before checking accrued commission, as user claim might not cover all segments if other users
+        // exist or other interactions happened.
+        // For this specific test flow, it might not be strictly necessary due to how `setValidatorCommission` settles,
+        // but it's good practice for robust checking of `getAccruedCommission`.
+        vm.prank(admin); // or any address that can call it
+        ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
+        vm.stopPrank();
+
+        uint256 actualAccruedCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+        console2.log(
+            "ActualAccruedCommission: %s, TotalExpectedCommissionAccrued: %s",
+            actualAccruedCommission,
+            totalExpectedCommissionAccrued
+        );
+        assertEq(
+            actualAccruedCommission,
+            totalExpectedCommissionAccrued,
+            "Total accrued commission after user claim mismatch"
+        );
+
+        uint256 validatorAdminPusdBalanceBefore = pUSD.balanceOf(validatorAdmin);
+        uint256 treasuryPusdBalanceBeforeValidatorClaim = pUSD.balanceOf(address(treasury));
 
         vm.startPrank(validatorAdmin);
         uint256 tsBeforeRequest = block.timestamp;
 
         ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
-        
+
         vm.warp(tsBeforeRequest + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK + 1 days); // Ensure timelock passes
 
-        uint256 validatorClaimedCommissionAmount = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
+        uint256 validatorClaimedCommissionAmount =
+            ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, token);
         vm.stopPrank();
 
         console2.log("ValidatorClaimedCommissionAmount: %s", validatorClaimedCommissionAmount);
-        assertEq(validatorClaimedCommissionAmount, totalExpectedCommissionAccrued, "Validator claimed commission amount mismatch");
-        assertEq(pUSD.balanceOf(validatorAdmin), validatorAdminPusdBalanceBefore + totalExpectedCommissionAccrued, "Validator pUSD balance after claim mismatch");
-        assertEq(pUSD.balanceOf(address(treasury)), treasuryPusdBalanceBeforeValidatorClaim - totalExpectedCommissionAccrued, "Treasury balance after validator claim mismatch");
+        assertEq(
+            validatorClaimedCommissionAmount,
+            totalExpectedCommissionAccrued,
+            "Validator claimed commission amount mismatch"
+        );
+        assertEq(
+            pUSD.balanceOf(validatorAdmin),
+            validatorAdminPusdBalanceBefore + totalExpectedCommissionAccrued,
+            "Validator pUSD balance after claim mismatch"
+        );
+        assertEq(
+            pUSD.balanceOf(address(treasury)),
+            treasuryPusdBalanceBeforeValidatorClaim - totalExpectedCommissionAccrued,
+            "Treasury balance after validator claim mismatch"
+        );
 
         // --- Final State Checks ---
         // Force settle again AFTER the timelock warp and commission finalization,
         // but BEFORE checking final states. Rewards would have accrued during the warp.
-        vm.prank(admin); 
-        ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(DEFAULT_VALIDATOR_ID); // DEFAULT_VALIDATOR_ID is validatorId
+        vm.prank(admin);
+        ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(DEFAULT_VALIDATOR_ID); // DEFAULT_VALIDATOR_ID
+            // is validatorId
         vm.stopPrank();
 
         // --- Dynamically calculate expected final amounts ---
-        // pusdRewardRate, userStakeAmount, newCommissionRateP2 are already defined in the test scope from earlier parts.
-        // The duration of the final accrual period is from tsBeforeRequest (approx 151 in this test's local time before the big warp)
+        // pusdRewardRate, userStakeAmount, newCommissionRateP2 are already defined in the test scope from earlier
+        // parts.
+        // The duration of the final accrual period is from tsBeforeRequest (approx 151 in this test's local time before
+        // the big warp)
         // up to the block.timestamp after the 7-day warp.
         // From logs, this duration was 691200 seconds for the segment from 151 to 691351 in that specific run.
-        uint256 finalPeriodDuration = 691200; 
+        uint256 finalPeriodDuration = 691_200;
 
         uint256 rptDeltaFinalPeriod = pusdRewardRate * finalPeriodDuration;
         uint256 grossRewardUserFinalPeriod = (rptDeltaFinalPeriod * userStakeAmount) / REWARD_PRECISION;
         // Commission rate for validator 0 during this final period is newCommissionRateP2 (20%)
-        uint256 commissionUserFinalPeriod = (grossRewardUserFinalPeriod * newCommissionRateP2) / REWARD_PRECISION; 
+        uint256 commissionUserFinalPeriod = (grossRewardUserFinalPeriod * newCommissionRateP2) / REWARD_PRECISION;
         uint256 expectedFinalClaimableUser1 = grossRewardUserFinalPeriod - commissionUserFinalPeriod;
-        
-        // Validator's commission was zeroed by requestCommissionClaim. 
-        // The final forceSettleValidatorCommission re-accrues it for this finalPeriodDuration.
-        // Since user1 is the only staker on validatorId=0 for this amount, the validator's commission portion is commissionUserFinalPeriod.
-        uint256 expectedFinalAccruedCommissionV0 = commissionUserFinalPeriod; 
 
-        uint256 finalClaimableUser1_actual = RewardsFacet(address(diamondProxy)).getPendingRewardForValidator(user1, validatorId, token);
-        uint256 finalAccruedCommissionV0_actual = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+        // Validator's commission was zeroed by requestCommissionClaim.
+        // The final forceSettleValidatorCommission re-accrues it for this finalPeriodDuration.
+        // Since user1 is the only staker on validatorId=0 for this amount, the validator's commission portion is
+        // commissionUserFinalPeriod.
+        uint256 expectedFinalAccruedCommissionV0 = commissionUserFinalPeriod;
+
+        uint256 finalClaimableUser1_actual =
+            RewardsFacet(address(diamondProxy)).getPendingRewardForValidator(user1, validatorId, token);
+        uint256 finalAccruedCommissionV0_actual =
+            ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
 
         console2.log("Final Claimable Reward for User1 (Direct Call):", finalClaimableUser1_actual);
         console2.log("Expected Final User Reward: %s", expectedFinalClaimableUser1);
         console2.log("Final Accrued Commission for Validator0 (Direct Call):", finalAccruedCommissionV0_actual);
         console2.log("Expected Final Validator Commission: %s", expectedFinalAccruedCommissionV0);
 
-        assertEq(finalClaimableUser1_actual, expectedFinalClaimableUser1, "User pending rewards for final period mismatch"); 
-        assertEq(finalAccruedCommissionV0_actual, expectedFinalAccruedCommissionV0, "Final validator accrued commission mismatch");
-
-}
-
+        assertEq(
+            finalClaimableUser1_actual, expectedFinalClaimableUser1, "User pending rewards for final period mismatch"
+        );
+        assertEq(
+            finalAccruedCommissionV0_actual,
+            expectedFinalAccruedCommissionV0,
+            "Final validator accrued commission mismatch"
+        );
+    }
 
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<< NEW COMPLEX COOLDOWN TEST START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -3432,8 +3661,8 @@ function testCommissionRateChange_NonRetroactive() public {
         address validator2Admin = address(0x12345); // New admin for validator2
         uint16 validatorId0 = 0;
         uint16 validatorId1 = 1;
-        uint16 validatorId2 = 2;        
-        
+        uint16 validatorId2 = 2;
+
         uint256 initialCommission = 0.05e18; // 5%
 
         // Add validator 2
@@ -3475,26 +3704,50 @@ function testCommissionRateChange_NonRetroactive() public {
 
         // --- Phase 1: Initial Stakes ---
         vm.startPrank(user1);
-        StakingFacet(address(diamondProxy)).stake{value: stake1_U1V0}(validatorId0);
-        StakingFacet(address(diamondProxy)).stake{value: stake2_U1V1}(validatorId1);
+        StakingFacet(address(diamondProxy)).stake{ value: stake1_U1V0 }(validatorId0);
+        StakingFacet(address(diamondProxy)).stake{ value: stake2_U1V1 }(validatorId1);
         vm.stopPrank();
 
         vm.startPrank(user2);
-        StakingFacet(address(diamondProxy)).stake{value: stake3_U2V1}(validatorId1);
-        StakingFacet(address(diamondProxy)).stake{value: stake4_U2V2}(validatorId2);
+        StakingFacet(address(diamondProxy)).stake{ value: stake3_U2V1 }(validatorId1);
+        StakingFacet(address(diamondProxy)).stake{ value: stake4_U2V2 }(validatorId2);
         vm.stopPrank();
 
         vm.startPrank(user3);
-        StakingFacet(address(diamondProxy)).stake{value: stake5_U3V0}(validatorId0);
-        StakingFacet(address(diamondProxy)).stake{value: stake6_U3V2}(validatorId2);
+        StakingFacet(address(diamondProxy)).stake{ value: stake5_U3V0 }(validatorId0);
+        StakingFacet(address(diamondProxy)).stake{ value: stake6_U3V2 }(validatorId2);
         vm.stopPrank();
 
-        assertEq(StakingFacet(address(diamondProxy)).getUserValidatorStake(user1, validatorId0), stake1_U1V0, "U1V0 stake mismatch P1");
-        assertEq(StakingFacet(address(diamondProxy)).getUserValidatorStake(user1, validatorId1), stake2_U1V1, "U1V1 stake mismatch P1");
-        assertEq(StakingFacet(address(diamondProxy)).getUserValidatorStake(user2, validatorId1), stake3_U2V1, "U2V1 stake mismatch P1");
-        assertEq(StakingFacet(address(diamondProxy)).getUserValidatorStake(user2, validatorId2), stake4_U2V2, "U2V2 stake mismatch P1");
-        assertEq(StakingFacet(address(diamondProxy)).getUserValidatorStake(user3, validatorId0), stake5_U3V0, "U3V0 stake mismatch P1");
-        assertEq(StakingFacet(address(diamondProxy)).getUserValidatorStake(user3, validatorId2), stake6_U3V2, "U3V2 stake mismatch P1");
+        assertEq(
+            StakingFacet(address(diamondProxy)).getUserValidatorStake(user1, validatorId0),
+            stake1_U1V0,
+            "U1V0 stake mismatch P1"
+        );
+        assertEq(
+            StakingFacet(address(diamondProxy)).getUserValidatorStake(user1, validatorId1),
+            stake2_U1V1,
+            "U1V1 stake mismatch P1"
+        );
+        assertEq(
+            StakingFacet(address(diamondProxy)).getUserValidatorStake(user2, validatorId1),
+            stake3_U2V1,
+            "U2V1 stake mismatch P1"
+        );
+        assertEq(
+            StakingFacet(address(diamondProxy)).getUserValidatorStake(user2, validatorId2),
+            stake4_U2V2,
+            "U2V2 stake mismatch P1"
+        );
+        assertEq(
+            StakingFacet(address(diamondProxy)).getUserValidatorStake(user3, validatorId0),
+            stake5_U3V0,
+            "U3V0 stake mismatch P1"
+        );
+        assertEq(
+            StakingFacet(address(diamondProxy)).getUserValidatorStake(user3, validatorId2),
+            stake6_U3V2,
+            "U3V2 stake mismatch P1"
+        );
 
         // --- Phase 2 & 3: Unstakes ---
         uint256 expectedCooldownEnd_U1V0_1;
@@ -3534,16 +3787,19 @@ function testCommissionRateChange_NonRetroactive() public {
         StakingFacet.CooldownView[] memory u1Cooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         assertEq(u1Cooldowns.length, 2, "U1 cooldown count mismatch P3");
         // Order in getUserCooldowns might depend on $.userValidators order, check both
-        bool found_u1v0 = false; bool found_u1v1 = false;
-        for (uint i = 0; i < u1Cooldowns.length; i++) {
+        bool found_u1v0 = false;
+        bool found_u1v1 = false;
+        for (uint256 i = 0; i < u1Cooldowns.length; i++) {
             if (u1Cooldowns[i].validatorId == validatorId0) {
                 assertEq(u1Cooldowns[i].amount, unstake1_U1V0, "U1V0 cooldown amount mismatch P3");
-                // vm.assertApproxEqAbs(u1Cooldowns[i].cooldownEndTime, expectedCooldownEnd_U1V0_1, 1, "U1V0 cooldown end time mismatch P3");
+                // vm.assertApproxEqAbs(u1Cooldowns[i].cooldownEndTime, expectedCooldownEnd_U1V0_1, 1, "U1V0 cooldown
+                // end time mismatch P3");
                 found_u1v0 = true;
             }
             if (u1Cooldowns[i].validatorId == validatorId1) {
                 assertEq(u1Cooldowns[i].amount, unstake4_U1V1, "U1V1 cooldown amount mismatch P3");
-                // vm.assertApproxEqAbs(u1Cooldowns[i].cooldownEndTime, expectedCooldownEnd_U1V1_2, 1, "U1V1 cooldown end time mismatch P3");
+                // vm.assertApproxEqAbs(u1Cooldowns[i].cooldownEndTime, expectedCooldownEnd_U1V1_2, 1, "U1V1 cooldown
+                // end time mismatch P3");
                 found_u1v1 = true;
             }
         }
@@ -3562,13 +3818,15 @@ function testCommissionRateChange_NonRetroactive() public {
         vm.stopPrank();
 
         vm.startPrank(user2);
-        StakingFacet(address(diamondProxy)).restake(validatorId1, restake2_U2V1); // Restake all of U2-V1's cooled amount
+        StakingFacet(address(diamondProxy)).restake(validatorId1, restake2_U2V1); // Restake all of U2-V1's cooled
+            // amount
         vm.stopPrank();
 
         // Verify cooldowns after restake
         u1Cooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
-        found_u1v0 = false; found_u1v1 = false;
-        for (uint i = 0; i < u1Cooldowns.length; i++) {
+        found_u1v0 = false;
+        found_u1v1 = false;
+        for (uint256 i = 0; i < u1Cooldowns.length; i++) {
             if (u1Cooldowns[i].validatorId == validatorId0) {
                 assertEq(u1Cooldowns[i].amount, unstake1_U1V0 - restake1_U1V0, "U1V0 cooldown amount mismatch P4");
                 found_u1v0 = true;
@@ -3582,8 +3840,9 @@ function testCommissionRateChange_NonRetroactive() public {
         assertTrue(found_u1v1, "U1V1 cooldown not found P4");
 
         StakingFacet.CooldownView[] memory u2Cooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user2);
-        bool found_u2v1 = false; bool found_u2v2 = false;
-        for (uint i = 0; i < u2Cooldowns.length; i++) {
+        bool found_u2v1 = false;
+        bool found_u2v2 = false;
+        for (uint256 i = 0; i < u2Cooldowns.length; i++) {
             if (u2Cooldowns[i].validatorId == validatorId1) {
                 assertEq(u2Cooldowns[i].amount, 0, "U2V1 cooldown should be zero after full restake P4");
                 found_u2v1 = true; // It might still exist with amount 0, or be removed by getUserCooldowns filter
@@ -3599,8 +3858,16 @@ function testCommissionRateChange_NonRetroactive() public {
         assertTrue(found_u2v2, "U2V2 cooldown not found P4");
 
         // Verify staked amounts after restake
-        assertEq(StakingFacet(address(diamondProxy)).getUserValidatorStake(user1, validatorId0), stake1_U1V0 - unstake1_U1V0 + restake1_U1V0, "U1V0 stake mismatch P4");
-        assertEq(StakingFacet(address(diamondProxy)).getUserValidatorStake(user2, validatorId1), stake3_U2V1 - unstake2_U2V1 + restake2_U2V1, "U2V1 stake mismatch P4");
+        assertEq(
+            StakingFacet(address(diamondProxy)).getUserValidatorStake(user1, validatorId0),
+            stake1_U1V0 - unstake1_U1V0 + restake1_U1V0,
+            "U1V0 stake mismatch P4"
+        );
+        assertEq(
+            StakingFacet(address(diamondProxy)).getUserValidatorStake(user2, validatorId1),
+            stake3_U2V1 - unstake2_U2V1 + restake2_U2V1,
+            "U2V1 stake mismatch P4"
+        );
 
         // --- Phase 5: Withdrawals ---
         vm.warp(block.timestamp + cooldownPeriod * 2); // Advance time past all cooldowns
@@ -3612,13 +3879,17 @@ function testCommissionRateChange_NonRetroactive() public {
         vm.startPrank(user1);
         StakingFacet(address(diamondProxy)).withdraw();
         vm.stopPrank();
-        assertEq(user1.balance, u1_balance_before + (unstake1_U1V0 - restake1_U1V0) + unstake4_U1V1, "User1 balance mismatch after withdraw P5");
+        assertEq(
+            user1.balance,
+            u1_balance_before + (unstake1_U1V0 - restake1_U1V0) + unstake4_U1V1,
+            "User1 balance mismatch after withdraw P5"
+        );
 
         vm.startPrank(user2);
         StakingFacet(address(diamondProxy)).withdraw();
         vm.stopPrank();
         // U2V1 was fully restaked, U2V2 (unstake5_U2V2) should be withdrawn
-        assertEq(user2.balance, u2_balance_before + unstake5_U2V2, "User2 balance mismatch after withdraw P5"); 
+        assertEq(user2.balance, u2_balance_before + unstake5_U2V2, "User2 balance mismatch after withdraw P5");
 
         vm.startPrank(user3);
         StakingFacet(address(diamondProxy)).withdraw();
@@ -3633,7 +3904,7 @@ function testCommissionRateChange_NonRetroactive() public {
         // U2V1 was restaked, U2V2 was withdrawn.
         // If getUserCooldowns returns entries with amount 0, this might be 1. If it filters, then 0.
         // Current StakingFacet filters amount > 0, so expect 0.
-        assertEq(u2Cooldowns.length, 0, "User2 should have no active cooldowns P5"); 
+        assertEq(u2Cooldowns.length, 0, "User2 should have no active cooldowns P5");
 
         StakingFacet.CooldownView[] memory u3Cooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user3);
         assertEq(u3Cooldowns.length, 0, "User3 should have no active cooldowns P5");
@@ -3655,6 +3926,5 @@ function testCommissionRateChange_NonRetroactive() public {
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<< NEW COMPLEX COOLDOWN TEST END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-
 
 }

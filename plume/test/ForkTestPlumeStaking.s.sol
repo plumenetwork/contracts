@@ -1989,10 +1989,10 @@ contract ForkTestPlumeStaking is Test {
         assertEq(stakeInfo.cooled, stakeAmount, "Cooling amount mismatch after unstake"); // CORRECTED
         //assertTrue(stakeInfo.cooldownEnd > block.timestamp, "Cooldown end date should be in the future");
         //uint256 cooldownEnd = stakeInfo.cooldownEnd;
-//        console2.log("User1 unstaked %s ETH, now in cooldown until %s", stakeAmount, cooldownEnd);
+        //        console2.log("User1 unstaked %s ETH, now in cooldown until %s", stakeAmount, cooldownEnd);
 
         // Before cooldown ends, User1 restakes the cooling amount to the *same* validator
-  //      assertTrue(block.timestamp < cooldownEnd, "Attempting restake before cooldown ends");
+        //      assertTrue(block.timestamp < cooldownEnd, "Attempting restake before cooldown ends");
         // CORRECTED: Destructure 4 values
         (bool activeBefore, uint256 commissionBefore, uint256 totalStakedBefore, uint256 stakersCountBefore) =
             ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
@@ -2003,12 +2003,8 @@ contract ForkTestPlumeStaking is Test {
         // Verify state after restake
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         // CORRECTED: Use cooldownEnd
-        console2.log(
-            "State after restake: Staked=%s, Cooling=%s, CooldownEnd=%s",
-            stakeInfo.staked,
-            stakeInfo.cooled
-            //stakeInfo.cooldownEnd
-        );
+        console2.log("State after restake: Staked=%s, Cooling=%s, CooldownEnd=%s", stakeInfo.staked, stakeInfo.cooled);
+        //stakeInfo.cooldownEnd
 
         // EXPECTED CORRECT BEHAVIOR:
         assertEq(stakeInfo.cooled, 0, "Cooling amount should be 0 after restake"); // CORRECTED
@@ -2086,15 +2082,14 @@ contract ForkTestPlumeStaking is Test {
         // Check the specific cooldown entry's end time, it should persist
         cooldowns1 = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         bool foundCooldown1 = false;
-        for(uint i=0; i < cooldowns1.length; i++){
-            if(cooldowns1[i].validatorId == validatorId && cooldowns1[i].amount == (firstUnstake - firstRestake)){
+        for (uint256 i = 0; i < cooldowns1.length; i++) {
+            if (cooldowns1[i].validatorId == validatorId && cooldowns1[i].amount == (firstUnstake - firstRestake)) {
                 assertEq(cooldowns1[i].cooldownEndTime, cooldownEnd1, "Cooldown 1 End Time should NOT reset yet");
                 foundCooldown1 = true;
                 break;
             }
         }
         assertTrue(foundCooldown1, "Relevant cooldown entry for validatorId not found after restake");
-
 
         // 4. Advance time past original cooldown end
         console2.log("4. Advancing time past cooldown 1 (%s)...", cooldownEnd1);
@@ -2110,10 +2105,11 @@ contract ForkTestPlumeStaking is Test {
         assertEq(stakeInfo.cooled, 0, "State Error after Step 5 (Cooled)"); // Cooled sum should be 0
         assertEq(stakeInfo.parked, 0, "State Error after Step 5 (Parked)");
         // After withdraw, the specific cooldown entry should be gone
-        StakingFacet.CooldownView[] memory cooldownsAfterWithdraw = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+        StakingFacet.CooldownView[] memory cooldownsAfterWithdraw =
+            StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         bool stillHasCooldownForVal0 = false;
-        for(uint i=0; i < cooldownsAfterWithdraw.length; i++){
-            if(cooldownsAfterWithdraw[i].validatorId == validatorId && cooldownsAfterWithdraw[i].amount > 0){
+        for (uint256 i = 0; i < cooldownsAfterWithdraw.length; i++) {
+            if (cooldownsAfterWithdraw[i].validatorId == validatorId && cooldownsAfterWithdraw[i].amount > 0) {
                 stillHasCooldownForVal0 = true;
                 break;
             }
@@ -2139,8 +2135,8 @@ contract ForkTestPlumeStaking is Test {
         assertTrue(cooldowns2.length > 0, "Should have a cooldown entry after second unstake");
         uint256 cooldownEnd2 = 0;
         bool foundCooldown2 = false;
-        for(uint i=0; i < cooldowns2.length; i++){
-             if(cooldowns2[i].validatorId == validatorId && cooldowns2[i].amount == secondUnstake){
+        for (uint256 i = 0; i < cooldowns2.length; i++) {
+            if (cooldowns2[i].validatorId == validatorId && cooldowns2[i].amount == secondUnstake) {
                 cooldownEnd2 = cooldowns2[i].cooldownEndTime;
                 foundCooldown2 = true;
                 break;
@@ -2171,13 +2167,13 @@ contract ForkTestPlumeStaking is Test {
         // Check internal STATE
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(stakeInfo.cooled, secondUnstake, "Internal State Error after Step 9 (Cooled)");
-        assertEq(stakeInfo.parked, 0, "Internal State Error after Step 9 (Parked)"); 
+        assertEq(stakeInfo.parked, 0, "Internal State Error after Step 9 (Parked)");
         // Check the specific cooldown entry's end time
         cooldowns2 = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         foundCooldown2 = false;
         uint256 actualCooldown2EndTime = 0;
-        for(uint i=0; i < cooldowns2.length; i++){
-             if(cooldowns2[i].validatorId == validatorId && cooldowns2[i].amount == secondUnstake){
+        for (uint256 i = 0; i < cooldowns2.length; i++) {
+            if (cooldowns2[i].validatorId == validatorId && cooldowns2[i].amount == secondUnstake) {
                 actualCooldown2EndTime = cooldowns2[i].cooldownEndTime;
                 foundCooldown2 = true;
                 break;
@@ -2185,7 +2181,6 @@ contract ForkTestPlumeStaking is Test {
         }
         assertTrue(foundCooldown2, "Cooldown 2 entry missing before withdraw in step 10 setup");
         assertTrue(actualCooldown2EndTime <= block.timestamp, "Cooldown 2 end date should be in the past");
-
 
         // 10. Attempt `restakeRewards` when parked and available cooled are 0 (expect revert)
         console2.log("10. Attempting restakeRewards after withdrawing available balance (expect revert)...");
@@ -2197,16 +2192,18 @@ contract ForkTestPlumeStaking is Test {
         assertEq(stakeInfo.parked, 0, "Parked should be 0 after withdraw");
         assertEq(stakeInfo.cooled, 0, "Cooled should be 0 after withdraw");
         // After withdraw, the specific cooldown entry should be gone
-        StakingFacet.CooldownView[] memory cooldownsAfterWithdraw10 = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+        StakingFacet.CooldownView[] memory cooldownsAfterWithdraw10 =
+            StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
         bool stillHasCooldownForVal0_10 = false;
-        for(uint i=0; i < cooldownsAfterWithdraw10.length; i++){
-            if(cooldownsAfterWithdraw10[i].validatorId == validatorId && cooldownsAfterWithdraw10[i].amount > 0){
+        for (uint256 i = 0; i < cooldownsAfterWithdraw10.length; i++) {
+            if (cooldownsAfterWithdraw10[i].validatorId == validatorId && cooldownsAfterWithdraw10[i].amount > 0) {
                 stillHasCooldownForVal0_10 = true;
                 break;
             }
         }
-        assertFalse(stillHasCooldownForVal0_10, "Cooldown entry for validatorId should be gone after withdraw in step 10");
-
+        assertFalse(
+            stillHasCooldownForVal0_10, "Cooldown entry for validatorId should be gone after withdraw in step 10"
+        );
 
         // Now expect revert when calling restakeRewards as there is nothing to restake
         vm.expectRevert(abi.encodeWithSelector(NoRewardsToRestake.selector)); // Corrected expected revert
@@ -2227,8 +2224,8 @@ contract ForkTestPlumeStaking is Test {
         assertTrue(cooldowns3.length > 0, "Should have a cooldown entry after third unstake");
         uint256 cooldownEnd3 = 0;
         bool foundCooldown3 = false;
-        for(uint i=0; i < cooldowns3.length; i++){
-             if(cooldowns3[i].validatorId == validatorId && cooldowns3[i].amount == finalRestake){
+        for (uint256 i = 0; i < cooldowns3.length; i++) {
+            if (cooldowns3[i].validatorId == validatorId && cooldowns3[i].amount == finalRestake) {
                 cooldownEnd3 = cooldowns3[i].cooldownEndTime;
                 foundCooldown3 = true;
                 break;

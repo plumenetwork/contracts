@@ -294,7 +294,7 @@ contract PlumeStakingStressTest is Test {
      * @param numInitialStakers Number of stakers to setup *before* the test actions begin.
      * @param numActionsToTest Number of random actions to perform and measure for the test staker.
      */
-     /*
+    /*
     function _runGasAndStressTest(uint256 numInitialStakers, uint256 numActionsToTest) internal {
         // 1. Setup Initial Stakers
         _setupInitialStakers(numInitialStakers);
@@ -346,7 +346,7 @@ contract PlumeStakingStressTest is Test {
                         successfulActions++;
                         // Assertions
                         assertEq(
-                            TEST_STAKER.balance, balanceBefore - stakedAmount, "Staker balance incorrect after stake"
+    TEST_STAKER.balance, balanceBefore - stakedAmount, "Staker balance incorrect after stake"
                         );
                         assertEq(
                             staking.getUserValidatorStake(TEST_STAKER, validatorId),
@@ -381,7 +381,7 @@ contract PlumeStakingStressTest is Test {
                             "User validator stake changed after failed stake"
                         );
                         assertEq(
-                            staking.totalAmountStaked(), totalStakedBefore, "Total staked changed after failed stake"
+    staking.totalAmountStaked(), totalStakedBefore, "Total staked changed after failed stake"
                         );
                         (,, uint256 validatorStakeAfter,) = validator.getValidatorStats(validatorId);
                         assertEq(
@@ -400,7 +400,7 @@ contract PlumeStakingStressTest is Test {
                         console2.log("  Gas Used (Stake Revert LowLevel): %d", gasUsed);
                         // Assertions (state should be unchanged)
                         assertEq(
-                            TEST_STAKER.balance, balanceBefore, "Staker balance changed after failed low-level stake"
+    TEST_STAKER.balance, balanceBefore, "Staker balance changed after failed low-level stake"
                         );
                         assertEq(
                             staking.getUserValidatorStake(TEST_STAKER, validatorId),
@@ -434,7 +434,7 @@ contract PlumeStakingStressTest is Test {
                     "Action %d: Unstake from Validator %d (current stake: %d)", j + 1, validatorId, stakeBefore
                 );
                 if (stakeBefore > 0) {
-                    uint256 unstakeAmount = amount > stakeBefore ? stakeBefore : amount; // Unstake max currentStake or
+    uint256 unstakeAmount = amount > stakeBefore ? stakeBefore : amount; // Unstake max currentStake or
                         // random amount
                     if (unstakeAmount == 0) {
                         unstakeAmount = stakeBefore;
@@ -504,10 +504,10 @@ contract PlumeStakingStressTest is Test {
                             );
                             PlumeStakingStorage.StakeInfo memory infoAfter = staking.stakeInfo(TEST_STAKER);
                             assertEq(
-                                infoAfter.staked, infoBefore.staked, "Staker info staked changed after failed unstake"
+    infoAfter.staked, infoBefore.staked, "Staker info staked changed after failed unstake"
                             );
                             assertEq(
-                                infoAfter.cooled, infoBefore.cooled, "Staker info cooled changed after failed unstake"
+    infoAfter.cooled, infoBefore.cooled, "Staker info cooled changed after failed unstake"
                             );
                         } catch (bytes memory) {
                             gasAfter = gasleft();
@@ -602,7 +602,7 @@ contract PlumeStakingStressTest is Test {
                             gasAfter = gasleft();
                             gasUsed = gasBefore - gasAfter;
                             console2.log("  Gas Used (Restake Revert '%s'): %d", reason, gasUsed);
-                            // Assertions (state should be unchanged) - Difficult due to partial restake logic, check
+    // Assertions (state should be unchanged) - Difficult due to partial restake logic, check
                             // overall available remains same
                             PlumeStakingStorage.StakeInfo memory infoAfter = staking.stakeInfo(TEST_STAKER);
                             assertEq(
@@ -611,7 +611,7 @@ contract PlumeStakingStressTest is Test {
                                 "Staker info available changed after failed restake"
                             );
                             assertEq(
-                                infoAfter.staked, infoBefore.staked, "Staker info staked changed after failed restake"
+    infoAfter.staked, infoBefore.staked, "Staker info staked changed after failed restake"
                             );
                             assertEq(
                                 staking.totalAmountStaked(),
@@ -681,7 +681,7 @@ contract PlumeStakingStressTest is Test {
                         PlumeStakingStorage.StakeInfo memory infoAfter = staking.stakeInfo(TEST_STAKER);
                         // Cooled might become 0 or stay same depending on if it was ready
                         assertTrue(infoAfter.cooled <= infoBefore.cooled, "Cooled should not increase on withdraw");
-                        assertEq(infoAfter.parked, 0, "Parked should be 0 after withdraw"); // Assumes withdraw takes
+    assertEq(infoAfter.parked, 0, "Parked should be 0 after withdraw"); // Assumes withdraw takes
                             // all parked
                         assertEq(
                             TEST_STAKER.balance, balanceBefore + withdrawnAmount, "Balance incorrect after withdraw"
@@ -701,9 +701,9 @@ contract PlumeStakingStressTest is Test {
                         console2.log("  Gas Used (Withdraw Revert LowLevel): %d", gasUsed);
                         // Assertions (state should be unchanged)
                         PlumeStakingStorage.StakeInfo memory infoAfter = staking.stakeInfo(TEST_STAKER);
-                        assertEq(infoAfter.cooled, infoBefore.cooled, "Cooled changed after failed low-level withdraw");
-                        assertEq(infoAfter.parked, infoBefore.parked, "Parked changed after failed low-level withdraw");
-                        assertEq(TEST_STAKER.balance, balanceBefore, "Balance changed after failed low-level withdraw");
+    assertEq(infoAfter.cooled, infoBefore.cooled, "Cooled changed after failed low-level withdraw");
+    assertEq(infoAfter.parked, infoBefore.parked, "Parked changed after failed low-level withdraw");
+    assertEq(TEST_STAKER.balance, balanceBefore, "Balance changed after failed low-level withdraw");
                     }
                 } else {
                     console2.log("  Skipping withdraw (nothing available or cooled)");
@@ -860,9 +860,9 @@ contract PlumeStakingStressTest is Test {
         console2.log("Validator 0 Stats: Active=%d", v0Active);
         console2.log("Validator 0 Stats: Commission=%d, TotalStaked=%d, Stakers=%d", v0Comm, v0Total, v0Stakers);
     }
-*/
+    */
     // --- New Top-Level Test Functions ---
-/*
+    /*
     function testGasAndStress_a10() public {
         _runGasAndStressTest(10, GAS_TEST_NUM_ACTIONS);
     }
@@ -878,13 +878,13 @@ contract PlumeStakingStressTest is Test {
     function testGasAndStress_d1000() public {
         _runGasAndStressTest(1000, GAS_TEST_NUM_ACTIONS);
     }
-*/
+    */
     // Note: 10k initial stakers might be very slow or hit gas limits during setup.
     // Run this specific test with increased block gas limit if needed:
     // forge test --match-path plume/test/PlumeStakingStressTest.t.sol --match-test testGasAndStress_10k --gas-limit
     // 300000000 -vv
 
-        /*
+    /*
     function testGasAndStress_e10k() public {
         // Consider increasing block gas limit for setup if this fails
         // vm.blockGasLimit(300_000_000); // Example

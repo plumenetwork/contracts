@@ -10,6 +10,7 @@ import { console2 } from "forge-std/console2.sol";
  * @title PlumeValidatorLogic
  * @notice Internal library containing shared logic for validator management and checks.
  */
+
 library PlumeValidatorLogic {
 
     using PlumeStakingStorage for PlumeStakingStorage.Layout;
@@ -79,74 +80,122 @@ library PlumeValidatorLogic {
      * @param staker The address of the staker.
      * @param validatorId The ID of the validator.
      */
+    // File: plume/src/lib/PlumeValidatorLogic.sol
+
     function removeStakerFromValidator(
         PlumeStakingStorage.Layout storage $,
         address staker,
         uint16 validatorId
     ) internal {
-        // Only proceed if the user has no stake left with this validator AND they were previously a staker
+        console2.log("PVL.removeStakerFromValidator --- ENTRY --- User: %s, ValidatorID: %s", staker, validatorId);
+
+        // Part 1: Manage $.validatorStakers list (validator's list of its ACTIVE stakers)
+        // This runs if active stake with this validator becomes zero AND they were previously listed as an active
+        // staker for it.
         if ($.userValidatorStakes[staker][validatorId].staked == 0 && $.isStakerForValidator[validatorId][staker]) {
-            // --- Swap and Pop from validatorStakers array ---
+            console2.log(
+                "PVL (Part 1): User %s, Val %s - Active stake is 0 and was in validatorStakers. Removing from validatorStakers.",
+                staker,
+                validatorId
+            );
+
             address[] storage stakersList = $.validatorStakers[validatorId];
             uint256 listLength = stakersList.length;
-
-            // Ensure list is not empty before proceeding
             if (listLength > 0) {
-                // 1. Get the index of the staker to remove
                 uint256 indexToRemove = $.userIndexInValidatorStakers[staker][validatorId];
-
-                // Check if index is valid (sanity check)
                 if (indexToRemove < listLength && stakersList[indexToRemove] == staker) {
-                    // 2. Get the address of the last staker in the list
                     address lastStaker = stakersList[listLength - 1];
-
-                    // 3. If the staker to remove is NOT the last element, swap it with the last element
                     if (indexToRemove != listLength - 1) {
                         stakersList[indexToRemove] = lastStaker;
-                        // 4. Update the index mapping for the moved (last) staker
                         $.userIndexInValidatorStakers[lastStaker][validatorId] = indexToRemove;
                     }
-
-                    // 5. Pop the last element (which is either the one we want to remove, or a duplicate of the one we
-                    // moved)
                     stakersList.pop();
-                } else {
-                    // This case should ideally not happen if storage is consistent
-                    // Handle error or log? For now, just skip the swap/pop for safety.
-                    // console.log("Inconsistency: Staker index not found or mismatch in removeStakerFromValidator");
                 }
             }
-
-            // --- Cleanup Mappings ---
-            // Update the mapping to show staker is no longer staking with this validator
-            $.isStakerForValidator[validatorId][staker] = false;
-            // Delete the stored index for the removed staker
+            $.isStakerForValidator[validatorId][staker] = false; // Correctly marks they are no longer an ACTIVE staker
+                // for this validator
             delete $.userIndexInValidatorStakers[staker][validatorId];
+            console2.log(
+                "PVL (Part 1): User %s, Val %s - Done with validatorStakers. isStakerForValidator is now false.",
+                staker,
+                validatorId
+            );
+        }
 
-            // --- Conditionally remove validator from user's list and update userHasStakedWithValidator ---
-            // This should only happen if there's no active stake (checked by outer if condition)
-            // AND no active cooldown for this validator with this staker.
-            if ($.userValidatorCooldowns[staker][validatorId].amount == 0) {
-                console2.log("PVL.removeStakerFromValidator: Conditions met for full removal of val %s from user %s lists.", validatorId, staker);
-                if ($.userHasStakedWithValidator[staker][validatorId]) { // If it was previously associated
-                    uint16[] storage userValidators_ = $.userValidators[staker];
-                    console2.log("PVL.removeStakerFromValidator: user %s, valListLen BEFORE pop for val %s: %s", staker, validatorId, userValidators_.length);
-                    // Use swap and pop for the user's list as well (assuming order doesn't matter)
-                    for (uint256 i = 0; i < userValidators_.length; i++) {
-                        if (userValidators_[i] == validatorId) {
-                            userValidators_[i] = userValidators_[userValidators_.length - 1];
-                            userValidators_.pop();
-                            console2.log("PVL.removeStakerFromValidator: user %s, valListLen AFTER pop for val %s: %s", staker, validatorId, userValidators_.length);
-                            break; // Found and removed
-                        }
+        // Part 2: Manage $.userValidators list (user's list of ANY association with a validator)
+        // This runs if active stake for this validator is zero AND their cooldown amount for this validator is zero.
+        bool hasActiveStakeForThisVal = $.userValidatorStakes[staker][validatorId].staked > 0;
+        bool hasActiveCooldownForThisVal = $.userValidatorCooldowns[staker][validatorId].amount > 0;
+
+        console2.log("PVL (Part 2 PRE-CHECK) - User:", staker);
+        console2.log("PVL (Part 2 PRE-CHECK) - Val:", validatorId);
+        console2.log("PVL (Part 2 PRE-CHECK) - HasActiveStake:", hasActiveStakeForThisVal);
+        console2.log("PVL (Part 2 PRE-CHECK) - HasActiveCooldown:", hasActiveCooldownForThisVal);
+        console2.log("PVL (Part 2 PRE-CHECK) - UserHasStakedMap:", $.userHasStakedWithValidator[staker][validatorId]);
+
+        if (!hasActiveStakeForThisVal && !hasActiveCooldownForThisVal) {
+            console2.log(
+                "PVL (Part 2): User %s, Val %s - Conditions MET to remove from userValidators list (no active stake, no cooldown).",
+                staker,
+                validatorId
+            );
+
+            if ($.userHasStakedWithValidator[staker][validatorId]) {
+                // Check if they are currently in the userValidators list (via this mapping)
+                uint16[] storage userValidators_ = $.userValidators[staker];
+                console2.log(
+                    "PVL (Part 2): User %s, ValListLen BEFORE pop for val %s: %s",
+                    staker,
+                    validatorId,
+                    userValidators_.length
+                );
+
+                bool removed = false;
+                for (uint256 i = 0; i < userValidators_.length; i++) {
+                    if (userValidators_[i] == validatorId) {
+                        // Swap with last and pop
+                        userValidators_[i] = userValidators_[userValidators_.length - 1];
+                        userValidators_.pop();
+                        removed = true;
+                        console2.log(
+                            "PVL (Part 2): User %s, ValListLen AFTER pop for val %s: %s",
+                            staker,
+                            validatorId,
+                            userValidators_.length
+                        );
+                        break;
                     }
-                    // Set to false only if both active stake and cooldown amount are zero.
-                    $.userHasStakedWithValidator[staker][validatorId] = false;
                 }
+                // Only set userHasStakedWithValidator to false if it was actually removed or if the list is now empty
+                // for this validator
+                // This mapping essentially tracks if the validatorId should be in $.userValidators[staker]
+                if (removed) {
+                    // Or if after potential pop, the validator is no longer findable.
+                    $.userHasStakedWithValidator[staker][validatorId] = false;
+                    console2.log(
+                        "PVL (Part 2): Set userHasStakedWithValidator to FALSE for User %s, Val %s.",
+                        staker,
+                        validatorId
+                    );
+                } else {
+                    console2.log(
+                        "PVL (Part 2): Val %s not found in userValidators_ for User %s. userHasStakedWithValidator not changed.",
+                        validatorId,
+                        staker
+                    );
+                }
+            } else {
+                console2.log(
+                    "PVL (Part 2): userHasStakedWithValidator is already FALSE for User %s, Val %s. Pop from userValidators skipped.",
+                    staker,
+                    validatorId
+                );
             }
-            // If $.userValidatorCooldowns[staker][validatorId].amount > 0, the validatorId remains
-            // in $.userValidators[staker] and $.userHasStakedWithValidator[staker][validatorId]
-            // effectively remains true (is not set to false here), so getUserCooldowns can find it.
+        } else {
+            console2.log("PVL (Part 2) - val:", validatorId);
+            console2.log("PVL (Part 2) - user:", staker);
+            console2.log("PVL (Part 2) - HasActiveStake:", hasActiveStakeForThisVal);
+            console2.log("PVL (Part 2) - HasActiveCooldown:", hasActiveCooldownForThisVal);
         }
     }
 

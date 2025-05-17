@@ -3,15 +3,15 @@ pragma solidity ^0.8.25;
 
 import {
     AdminTransferFailed,
+    CooldownTooShortForSlashVote,
     InsufficientFunds,
     InvalidAmount,
     InvalidIndexRange,
-    InvalidMaxCommissionRate,
-    Unauthorized,
-    ZeroAddress,
     InvalidInterval,
-    CooldownTooShortForSlashVote,
-    SlashVoteDurationTooLongForCooldown
+    InvalidMaxCommissionRate,
+    SlashVoteDurationTooLongForCooldown,
+    Unauthorized,
+    ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
     AdminStakeCorrection,
@@ -100,7 +100,9 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @dev Requires ADMIN_ROLE.
      * @param interval New cooldown interval in seconds
      */
-    function setCooldownInterval(uint256 interval) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+    function setCooldownInterval(
+        uint256 interval
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         if (interval == 0) {
             revert InvalidInterval(interval);

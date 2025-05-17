@@ -7,6 +7,7 @@ import {
     ExceedsValidatorCapacity,
     InsufficientCooldownBalance,
     InsufficientCooledAndParkedBalance,
+    InsufficientFunds,
     InvalidAmount,
     NativeTransferFailed,
     NoActiveStake,
@@ -22,8 +23,7 @@ import {
     ValidatorInactive,
     ValidatorPercentageExceeded,
     ZeroAddress,
-    ZeroRecipientAddress,
-    InsufficientFunds
+    ZeroRecipientAddress
 } from "../lib/PlumeErrors.sol";
 import { CooldownStarted } from "../lib/PlumeEvents.sol";
 import { Staked } from "../lib/PlumeEvents.sol";
@@ -103,8 +103,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         if (!isNewStakeForValidator) {
             PlumeRewardLogic.updateRewardsForValidator($, msg.sender, validatorId);
         }
-
-
 
         // Update stake amount
         $.userValidatorStakes[msg.sender][validatorId].staked += stakeAmount;
@@ -209,7 +207,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert InsufficientCooldownBalance(cooldownEntry.amount, amount);
         }
 
-        // --- Funds sourced from userValidatorCooldowns[user][validatorId] --- 
+        // --- Funds sourced from userValidatorCooldowns[user][validatorId] ---
         cooldownEntry.amount -= amount;
 
         // Update user's global sum of cooled funds
@@ -223,7 +221,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             delete $.userValidatorCooldowns[user][validatorId];
         }
 
-        // --- Add to staked --- 
+        // --- Add to staked ---
         userValidatorStake.staked += amount;
         userGlobalStakeInfo.staked += amount;
         $.validators[validatorId].delegatedAmount += amount;
@@ -262,7 +260,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return amountUnstaked The amount actually unstaked
      */
     function unstake(uint16 validatorId, uint256 amount) external returns (uint256 amountUnstaked) {
-        if (amount == 0) { // Added check from previous _unstake version, seems logical here too
+        if (amount == 0) {
+            // Added check from previous _unstake version, seems logical here too
             revert InvalidAmount(0);
         }
         return _unstake(validatorId, amount);
@@ -277,17 +276,17 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function _unstake(uint16 validatorId, uint256 amount) internal returns (uint256 amountToUnstake) {
         PlumeStakingStorage.Layout storage $s = _getPlumeStorage();
 
-        if (!$s.validatorExists[validatorId]) revert ValidatorDoesNotExist(validatorId);
-        if (amount == 0) revert InvalidAmount(amount);
+        if (!$s.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        if (amount == 0) {
+            revert InvalidAmount(amount);
+        }
         if ($s.userValidatorStakes[msg.sender][validatorId].staked < amount) {
-            revert InsufficientFunds(
-                $s.userValidatorStakes[msg.sender][validatorId].staked,
-                amount
-            );
+            revert InsufficientFunds($s.userValidatorStakes[msg.sender][validatorId].staked, amount);
         }
 
         PlumeRewardLogic.updateRewardsForValidator($s, msg.sender, validatorId);
-
 
         // Update user's active stake and totals
         $s.userValidatorStakes[msg.sender][validatorId].staked -= amount;
@@ -335,7 +334,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         cooldownEntrySlot.amount = finalNewCooledAmountForSlot;
         cooldownEntrySlot.cooldownEndTime = newCooldownEndTimestamp;
 
-        // If user's active stake for this validator is now zero, 
+        // If user's active stake for this validator is now zero,
         // PlumeValidatorLogic.removeStakerFromValidator will be called.
         // Its internal logic (checking both active stake and current cooldown amount for this validator)
         // will determine if the staker is fully disassociated from the validator.
@@ -355,33 +354,44 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
         PlumeStakingStorage.StakeInfo storage userGlobalStakeInfo = $.stakeInfo[user];
-        console2.log("SF.withdraw ENTRY: user %s, initial parked: %s, initial cooled: %s", user, userGlobalStakeInfo.parked, userGlobalStakeInfo.cooled);
+        console2.log(
+            "SF.withdraw ENTRY: user %s, initial parked: %s, initial cooled: %s",
+            user,
+            userGlobalStakeInfo.parked,
+            userGlobalStakeInfo.cooled
+        );
 
         uint256 amountReadyToPark = 0;
         uint16[] storage userStakedValidators = $.userValidators[user];
         console2.log("SF.withdraw: user %s, userStakedValidators.length: %s", user, userStakedValidators.length);
 
         // Iterate through validators the user might have cooling funds with
-        for (uint i = 0; i < userStakedValidators.length; i++) {
+        for (uint256 i = 0; i < userStakedValidators.length; i++) {
             uint16 validatorId_iterator = userStakedValidators[i];
-            PlumeStakingStorage.CooldownEntry storage cooldownEntry = $.userValidatorCooldowns[user][validatorId_iterator];
-console2.log("SF.withdraw LOOP - index:", i);
-console2.log("SF.withdraw LOOP - valId:", validatorId_iterator);
-console2.log("SF.withdraw LOOP - cooldownEntry.amount:", cooldownEntry.amount);
-console2.log("SF.withdraw LOOP - cooldownEntry.endTime:", cooldownEntry.cooldownEndTime);
-console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
+            PlumeStakingStorage.CooldownEntry storage cooldownEntry =
+                $.userValidatorCooldowns[user][validatorId_iterator];
+            console2.log("SF.withdraw LOOP - index:", i);
+            console2.log("SF.withdraw LOOP - valId:", validatorId_iterator);
+            console2.log("SF.withdraw LOOP - cooldownEntry.amount:", cooldownEntry.amount);
+            console2.log("SF.withdraw LOOP - cooldownEntry.endTime:", cooldownEntry.cooldownEndTime);
+            console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
 
             if (cooldownEntry.amount > 0 && block.timestamp >= cooldownEntry.cooldownEndTime) {
                 console2.log("SF.withdraw LOOP[%s]: Cooldown for valId %s matured.", i, validatorId_iterator);
                 uint256 amountInThisCooldown = cooldownEntry.amount;
                 amountReadyToPark += amountInThisCooldown;
-                console2.log("SF.withdraw LOOP[%s]: amountInThisCooldown %s, amountReadyToPark now %s", i, amountInThisCooldown, amountReadyToPark);
+                console2.log(
+                    "SF.withdraw LOOP[%s]: amountInThisCooldown %s, amountReadyToPark now %s",
+                    i,
+                    amountInThisCooldown,
+                    amountReadyToPark
+                );
 
                 // Decrement from user's global sum of cooled funds
                 if (userGlobalStakeInfo.cooled >= amountInThisCooldown) {
                     userGlobalStakeInfo.cooled -= amountInThisCooldown;
                 } else {
-                    userGlobalStakeInfo.cooled = 0; 
+                    userGlobalStakeInfo.cooled = 0;
                 }
 
                 // Decrement from validator's total cooling
@@ -397,8 +407,22 @@ console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
                 } else {
                     $.totalCooling = 0; // Should not happen
                 }
-                
+
                 delete $.userValidatorCooldowns[user][validatorId_iterator];
+
+                // --- ADDED SECTION ---
+                // Now that the cooldown for this validator is cleared, attempt to fully remove
+                // the staker's association with this validator if no active stake remains.
+                // The active stake for this specific validator should be 0 if a cooldown was being processed.
+                if ($.userValidatorStakes[user][validatorId_iterator].staked == 0) {
+                    PlumeValidatorLogic.removeStakerFromValidator($, user, validatorId_iterator);
+                    console2.log(
+                        "SF.withdraw: Called removeStakerFromValidator for user %s, val %s after clearing cooldown.",
+                        user,
+                        validatorId_iterator
+                    );
+                }
+                // --- END ADDED SECTION ---
             }
         }
 
@@ -412,9 +436,9 @@ console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
 
         uint256 amountToWithdraw = userGlobalStakeInfo.parked;
         console2.log("SF.withdraw: Amount to actually withdraw (from parked): %s", amountToWithdraw);
-        if (amountToWithdraw == 0) { 
+        if (amountToWithdraw == 0) {
             console2.log("SF.withdraw: amountToWithdraw is 0, REVERTING InvalidAmount(0)");
-            revert InvalidAmount(0); 
+            revert InvalidAmount(0);
         }
 
         userGlobalStakeInfo.parked = 0;
@@ -565,12 +589,17 @@ console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
 
         for (uint256 i = 0; i < userValidators.length; i++) {
             uint16 userValidatorIdLoop = userValidators[i]; // Renamed to avoid confusion
-            console2.log("SF.restakeRewards LOOP [%s]: userValIdLoop %s, checking PLUME rewards", i, userValidatorIdLoop);
+            console2.log(
+                "SF.restakeRewards LOOP [%s]: userValIdLoop %s, checking PLUME rewards", i, userValidatorIdLoop
+            );
 
-            uint256 validatorReward =
-                RewardsFacet(payable(address(this))).getPendingRewardForValidator(msg.sender, userValidatorIdLoop, token);
-            console2.log("SF.restakeRewards LOOP [%s]: pending PLUME for val %s is %s", i, userValidatorIdLoop, validatorReward);
-            
+            uint256 validatorReward = RewardsFacet(payable(address(this))).getPendingRewardForValidator(
+                msg.sender, userValidatorIdLoop, token
+            );
+            console2.log(
+                "SF.restakeRewards LOOP [%s]: pending PLUME for val %s is %s", i, userValidatorIdLoop, validatorReward
+            );
+
             if (validatorReward > 0) {
                 amountRestaked += validatorReward;
                 console2.log("SF.restakeRewards LOOP [%s]: amountRestaked is now %s", i, amountRestaked);
@@ -609,7 +638,11 @@ console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
         uint256 userValStakeBefore = $.userValidatorStakes[msg.sender][validatorId].staked;
         console2.log("SF.restakeRewards: userValStake for val %s BEFORE: %s", validatorId, userValStakeBefore);
         $.userValidatorStakes[msg.sender][validatorId].staked += amountRestaked; // User's stake FOR THIS VALIDATOR
-        console2.log("SF.restakeRewards: userValStake for val %s AFTER: %s", validatorId, $.userValidatorStakes[msg.sender][validatorId].staked);
+        console2.log(
+            "SF.restakeRewards: userValStake for val %s AFTER: %s",
+            validatorId,
+            $.userValidatorStakes[msg.sender][validatorId].staked
+        );
 
         targetValidator.delegatedAmount += amountRestaked; // Validator's delegated amount
         $.validatorTotalStaked[validatorId] += amountRestaked; // Validator's total staked
@@ -740,7 +773,8 @@ console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
         return $.userValidatorStakes[user][validatorId].staked;
     }
 
-    struct CooldownView { // Define struct for the return type
+    struct CooldownView {
+        // Define struct for the return type
         uint16 validatorId;
         uint256 amount;
         uint256 cooldownEndTime;
@@ -751,12 +785,14 @@ console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
      * @param user The address of the user.
      * @return An array of CooldownView structs.
      */
-    function getUserCooldowns(address user) external view returns (CooldownView[] memory) {
+    function getUserCooldowns(
+        address user
+    ) external view returns (CooldownView[] memory) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         uint16[] storage userStakedOrPreviouslyStakedValidators = $.userValidators[user];
 
         uint256 activeCooldownCount = 0;
-        for (uint i = 0; i < userStakedOrPreviouslyStakedValidators.length; i++) {
+        for (uint256 i = 0; i < userStakedOrPreviouslyStakedValidators.length; i++) {
             uint16 validatorId_iterator = userStakedOrPreviouslyStakedValidators[i];
             if ($.userValidatorCooldowns[user][validatorId_iterator].amount > 0) {
                 activeCooldownCount++;
@@ -765,7 +801,7 @@ console2.log("SF.withdraw LOOP - block.timestamp:", block.timestamp);
 
         CooldownView[] memory cooldowns = new CooldownView[](activeCooldownCount);
         uint256 currentIndex = 0;
-        for (uint i = 0; i < userStakedOrPreviouslyStakedValidators.length; i++) {
+        for (uint256 i = 0; i < userStakedOrPreviouslyStakedValidators.length; i++) {
             uint16 validatorId_iterator = userStakedOrPreviouslyStakedValidators[i];
             PlumeStakingStorage.CooldownEntry storage entry = $.userValidatorCooldowns[user][validatorId_iterator];
             if (entry.amount > 0) {

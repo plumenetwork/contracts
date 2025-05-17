@@ -17,6 +17,7 @@ import {
     SlashConditionsNotMet,
     SlashVoteDurationTooLong,
     SlashVoteExpired,
+    TokenDoesNotExist,
     TooManyStakers,
     TreasuryNotSet,
     UnanimityNotReached,
@@ -25,8 +26,7 @@ import {
     ValidatorAlreadySlashed,
     ValidatorDoesNotExist,
     ValidatorInactive,
-    ZeroAddress,
-    TokenDoesNotExist
+    ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
     CommissionClaimFinalized,
@@ -65,6 +65,7 @@ import { console2 } from "forge-std/console2.sol";
  * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Facet handling validator management: adding, updating, commission, capacity.
  */
+
 contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     struct ValidatorListData {
@@ -145,7 +146,9 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         _;
     }
 
-    modifier _validateIsToken(address token) {
+    modifier _validateIsToken(
+        address token
+    ) {
         if (!_getPlumeStorage().isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
@@ -316,7 +319,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (oldCommission != newCommission) {
             // Settle commissions accrued with the old rate up to this point.
             PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
-            
+
             // Now update the validator's commission rate to the new rate.
             validator.commission = newCommission;
 
@@ -328,7 +331,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             // We can just ensure the validator's current commission is what's intended if it was somehow out of sync,
             // though this path implies no change is requested.
             // If validator.commission was already newCommission, this is a no-op.
-            validator.commission = newCommission; 
+            validator.commission = newCommission;
         }
 
         emit ValidatorCommissionSet(validatorId, oldCommission, newCommission);
@@ -431,11 +434,22 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function requestCommissionClaim(
         uint16 validatorId,
         address token
-    ) external onlyValidatorAdmin(validatorId) nonReentrant _validateValidatorExists(validatorId) _validateIsToken(token) {
+    )
+        external
+        onlyValidatorAdmin(validatorId)
+        nonReentrant
+        _validateValidatorExists(validatorId)
+        _validateIsToken(token)
+    {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
-        console2.log("[ReqClaim Entry] Initial $.validatorAccruedCommission[%s][%s]: %s", validatorId, token, $.validatorAccruedCommission[validatorId][token]);
+        console2.log(
+            "[ReqClaim Entry] Initial $.validatorAccruedCommission[%s][%s]: %s",
+            validatorId,
+            token,
+            $.validatorAccruedCommission[validatorId][token]
+        );
 
         uint256 amount = $.validatorAccruedCommission[validatorId][token];
         if (amount == 0) {
@@ -455,7 +469,12 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         // Zero out accrued commission immediately
         $.validatorAccruedCommission[validatorId][token] = 0;
 
-        console2.log("[ReqClaim Exit] Emitting CommissionClaimRequested with amount: %s for validator %s, token %s", amount, validatorId, token);
+        console2.log(
+            "[ReqClaim Exit] Emitting CommissionClaimRequested with amount: %s for validator %s, token %s",
+            amount,
+            validatorId,
+            token
+        );
         emit CommissionClaimRequested(validatorId, token, recipient, amount, nowTs);
     }
 
@@ -597,19 +616,21 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         // This part might need more sophisticated logic based on actual voting power / stake weighted voting
         // For now, let's use the simplified slashVoteCounts which should be populated by voteToSlashValidator
         // A more robust check would involve querying slashingVotes and checking expirations & total voting power.
-        uint256 requiredVotes = 0; // Placeholder: Determine how requiredVotes is calculated (e.g., % of total stake, or number of active validators)
+        uint256 requiredVotes = 0; // Placeholder: Determine how requiredVotes is calculated (e.g., % of total stake, or
+            // number of active validators)
         // Example: Iterate $.validatorIds to count active non-slashed validators if required for quorum
         uint256 activeValidatorsForQuorum = 0;
-        for(uint i = 0; i < $.validatorIds.length; i++){
+        for (uint256 i = 0; i < $.validatorIds.length; i++) {
             uint16 vid = $.validatorIds[i];
-            if($.validators[vid].active && !$.validators[vid].slashed && vid != validatorId){
+            if ($.validators[vid].active && !$.validators[vid].slashed && vid != validatorId) {
                 activeValidatorsForQuorum++;
             }
         }
         // Let's say requires >50% of *other* active validators to vote for slash
         requiredVotes = activeValidatorsForQuorum / 2;
 
-        if ($.slashVoteCounts[validatorId] <= requiredVotes && activeValidatorsForQuorum > 0) { // Ensure some other validators exist
+        if ($.slashVoteCounts[validatorId] <= requiredVotes && activeValidatorsForQuorum > 0) {
+            // Ensure some other validators exist
             revert UnanimityNotReached($.slashVoteCounts[validatorId], requiredVotes + 1);
         }
         // Clear votes after successful slash check
@@ -669,7 +690,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         // Clear any pending commission claims for the slashed validator
         // Iterate reward tokens, as claims are per token
         address[] memory rewardTokens = $.rewardTokens;
-        for (uint j = 0; j < rewardTokens.length; j++) {
+        for (uint256 j = 0; j < rewardTokens.length; j++) {
             address token = rewardTokens[j];
             if ($.pendingCommissionClaims[validatorId][token].amount > 0) {
                 delete $.pendingCommissionClaims[validatorId][token];
@@ -692,18 +713,17 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      *      and their accrued commission storage. It uses the validator's current commission rate for settlement.
      * @param validatorId The ID of the validator.
      */
-    function forceSettleValidatorCommission(uint16 validatorId) external {
+    function forceSettleValidatorCommission(
+        uint16 validatorId
+    ) external {
         PlumeStakingStorage.Layout storage $s = _getPlumeStorage();
-        
+
         // Perform validator existence check directly
         if (!$s.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
 
-        PlumeRewardLogic._settleCommissionForValidatorUpToNow(
-            $s,
-            validatorId
-        );
+        PlumeRewardLogic._settleCommissionForValidatorUpToNow($s, validatorId);
     }
 
     // --- View Functions ---
@@ -761,8 +781,12 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      */
     function getAccruedCommission(uint16 validatorId, address token) public view returns (uint256) {
         PlumeStakingStorage.Layout storage $s = _getPlumeStorage();
-        if (!$s.validatorExists[validatorId]) revert ValidatorDoesNotExist(validatorId);
-        if (!$s.isRewardToken[token]) revert TokenDoesNotExist(token);
+        if (!$s.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        if (!$s.isRewardToken[token]) {
+            revert TokenDoesNotExist(token);
+        }
 
         return $s.validatorAccruedCommission[validatorId][token];
     }

@@ -19,7 +19,7 @@ library PlumeStakingStorage {
 
     // New struct for per-user, per-validator cooldown entries
     struct CooldownEntry {
-        uint256 amount;         // Amount cooling for this user with this validator
+        uint256 amount; // Amount cooling for this user with this validator
         uint256 cooldownEndTime; // Timestamp when this specific cooldown ends
     }
 
