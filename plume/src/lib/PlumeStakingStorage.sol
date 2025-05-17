@@ -17,6 +17,12 @@ library PlumeStakingStorage {
         uint256 cumulativeIndex; // Accumulated reward per token at this checkpoint
     }
 
+    // New struct for per-user, per-validator cooldown entries
+    struct CooldownEntry {
+        uint256 amount; // Amount cooling for this user with this validator
+        uint256 cooldownEndTime; // Timestamp when this specific cooldown ends
+    }
+
     // Main storage struct using ERC-7201 namespaced storage pattern
     struct Layout {
         /// @notice Array of all staker addresses
@@ -33,8 +39,6 @@ library PlumeStakingStorage {
         mapping(address => uint256) lastUpdateTimes;
         /// @notice Maps a token address to the reward per token accumulated so far
         mapping(address => uint256) rewardPerTokenCumulative;
-        /// @notice Maps a token address to the amount of rewards still to be distributed
-        mapping(address => uint256) rewardsAvailable;
         /// @notice Maps a token address to the total amount claimable for that token
         mapping(address => uint256) totalClaimableByToken;
         /// @notice Maps a token address to its history of rate checkpoints
@@ -55,8 +59,6 @@ library PlumeStakingStorage {
         mapping(address => mapping(address => uint256)) userRewardPerTokenPaid;
         /// @notice Maps a (user, token) pair to the reward of that token for that user
         mapping(address => mapping(address => uint256)) rewards;
-        /// @notice Mapping to track if an address is already in stakers array
-        mapping(address => bool) isStaker;
         // Validator related storage
         /// @notice Information about each validator
         mapping(uint16 => ValidatorInfo) validators;
@@ -78,10 +80,12 @@ library PlumeStakingStorage {
         mapping(address => mapping(uint16 => uint256)) userIndexInValidatorStakers;
         /// @notice Maps a validator to its total staked amount
         mapping(uint16 => uint256) validatorTotalStaked;
-        /// @notice Maps a validator to its total cooling amount
+        /// @notice Maps a validator to its total cooling amount (sum of its entries in userValidatorCooldowns)
         mapping(uint16 => uint256) validatorTotalCooling;
         /// @notice Maps a validator to its total withdrawable amount
         mapping(uint16 => uint256) validatorTotalWithdrawable;
+        /// @notice Maps a (user, validator) pair to their specific cooldown details
+        mapping(address => mapping(uint16 => CooldownEntry)) userValidatorCooldowns;
         /// @notice Maps a (validator, token) pair to the last time rewards were updated
         mapping(uint16 => mapping(address => uint256)) validatorLastUpdateTimes;
         /// @notice Maps a (validator, token) pair to the reward per token accumulated
@@ -94,14 +98,8 @@ library PlumeStakingStorage {
         mapping(uint16 => mapping(address => uint256)) validatorAccruedCommission;
         /// @notice Maps a validator ID to its history of commission rate checkpoints
         mapping(uint16 => RateCheckpoint[]) validatorCommissionCheckpoints;
-        /// @notice Flag to indicate if epochs are being used
-        // TODO - remove epochs
-        bool usingEpochs;
-        /// @notice Current epoch number
-        // TODO - remove epochs
-        uint256 currentEpochNumber;
-        /// @notice Maps epoch number to validator amounts for each validator
-        mapping(uint256 => mapping(uint16 => uint256)) epochValidatorAmounts;
+
+ 
         /// @notice Maximum allowed commission for all validators
         // TODO - check where we set this
         uint256 maxValidatorCommission;
@@ -120,6 +118,8 @@ library PlumeStakingStorage {
         /// @notice Maps a role (bytes32) to an address to check if the address has the role.
         mapping(bytes32 => mapping(address => bool)) hasRole;
         bool initialized;
+        /// @notice Flag to indicate if the AccessControlFacet has been initialized
+        bool accessControlFacetInitialized;
         /// @notice Maps a malicious validator ID to the validator that voted to slash it
         mapping(uint16 maliciousValidatorId => mapping(uint16 votingValidatorId => uint256 voteExpiration))
             slashingVotes;
@@ -132,7 +132,14 @@ library PlumeStakingStorage {
         mapping(address => uint16) adminToValidatorId;
         /// @notice Tracks if an admin address is already assigned to *any* validator.
         mapping(address => bool) isAdminAssigned;
+        /// @notice Maximum allowed commission for any validator
+        uint256 maxAllowedValidatorCommission;
+        // Add mapping for pending commission claims: validatorId => token => PendingCommissionClaim
+        mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims;
     }
+    // Add a constant for the commission claim timelock (7 days)
+
+    uint256 constant COMMISSION_CLAIM_TIMELOCK = 7 days;
 
     // Validator info struct to store validator details
     struct ValidatorInfo {
@@ -151,10 +158,16 @@ library PlumeStakingStorage {
 
     struct StakeInfo {
         uint256 staked; // Amount staked
-        uint256 cooled; // Amount in cooldown
+        uint256 cooled; // Amount in cooldown (sum of active userValidatorCooldowns for this user)
         uint256 parked; // Amount that can be withdrawn
-        uint256 cooldownEnd; // Timestamp when cooldown ends
         uint256 lastUpdateTimestamp; // Timestamp of last rewards update
+    }
+
+    struct PendingCommissionClaim {
+        uint256 amount;
+        uint256 requestTimestamp;
+        address token;
+        address recipient;
     }
 
     // Constants

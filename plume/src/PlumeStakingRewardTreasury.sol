@@ -22,7 +22,7 @@ import {
     ZeroAmount,
     ZeroRecipientAddress
 } from "./lib/PlumeErrors.sol";
-import { PlumeReceived, RewardDistributed, RewardTokenAdded, TokenReceived } from "./lib/PlumeEvents.sol";
+import { PlumeReceived, RewardDistributed, RewardTokenAdded } from "./lib/PlumeEvents.sol";
 
 /**
  * @title PlumeStakingRewardTreasury

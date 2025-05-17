@@ -33,29 +33,28 @@ contract VerifyRewardsFacetSelectors is Script {
         selectors[2] = RewardsFacet.removeRewardToken.selector;
         selectors[3] = RewardsFacet.setRewardRates.selector;
         selectors[4] = RewardsFacet.setMaxRewardRate.selector;
-        selectors[5] = RewardsFacet.addRewards.selector;
 
         // Claiming & Restaking (Indices 6-9)
-        selectors[6] = bytes4(keccak256(bytes("claim(address)")));
-        selectors[7] = bytes4(keccak256(bytes("claim(address,uint16)")));
-        selectors[8] = RewardsFacet.claimAll.selector;
-        selectors[9] = bytes4(keccak256(bytes("restakeRewards(uint16)")));
+        selectors[5] = bytes4(keccak256(bytes("claim(address)")));
+        selectors[6] = bytes4(keccak256(bytes("claim(address,uint16)")));
+        selectors[7] = RewardsFacet.claimAll.selector;
+        selectors[8] = bytes4(keccak256(bytes("restakeRewards(uint16)")));
 
         // View Functions (User-specific) (Indices 10-11)
-        selectors[10] = RewardsFacet.earned.selector;
-        selectors[11] = RewardsFacet.getClaimableReward.selector;
+        selectors[9] = RewardsFacet.earned.selector;
+        selectors[10] = RewardsFacet.getClaimableReward.selector;
 
         // View Functions (General Reward Info) (Indices 12-15)
-        selectors[12] = RewardsFacet.getRewardTokens.selector;
-        selectors[13] = RewardsFacet.getMaxRewardRate.selector;
-        selectors[14] = RewardsFacet.tokenRewardInfo.selector;
-        selectors[15] = RewardsFacet.getTreasury.selector;
+        selectors[11] = RewardsFacet.getRewardTokens.selector;
+        selectors[12] = RewardsFacet.getMaxRewardRate.selector;
+        selectors[13] = RewardsFacet.tokenRewardInfo.selector;
+        selectors[14] = RewardsFacet.getTreasury.selector;
 
         // Global View Functions (Added) (Indices 16-19)
-        selectors[16] = bytes4(keccak256(bytes("totalAmountStaked()"))); // This function is now in StakingFacet
-        selectors[17] = bytes4(keccak256(bytes("totalAmountCooling()"))); // This function is now in StakingFacet
-        selectors[18] = bytes4(keccak256(bytes("totalAmountWithdrawable()"))); // This function is now in StakingFacet
-        selectors[19] = bytes4(keccak256(bytes("totalAmountClaimable(address)"))); // This function is now in
+        selectors[15] = bytes4(keccak256(bytes("totalAmountStaked()"))); // This function is now in StakingFacet
+        selectors[16] = bytes4(keccak256(bytes("totalAmountCooling()"))); // This function is now in StakingFacet
+        selectors[17] = bytes4(keccak256(bytes("totalAmountWithdrawable()"))); // This function is now in StakingFacet
+        selectors[18] = bytes4(keccak256(bytes("totalAmountClaimable(address)"))); // This function is now in
             // StakingFacet
 
         // Index 20 is the last assigned.

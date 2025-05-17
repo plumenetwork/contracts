@@ -85,7 +85,6 @@ This proxy pattern enables future upgrades while maintaining the same address an
 | `RewardTokenAdded(address token)`                  | Emitted when a new reward token is registered  |
 | `RewardDistributed(address token, uint256 amount, address recipient)` | Emitted when rewards are distributed |
 | `PlumeReceived(address sender, uint256 amount)`    | Emitted when the treasury receives PLUME       |
-| `TokenReceived(address token, address sender, uint256 amount)` | Emitted when the treasury receives ERC20 tokens |
 
 
 ## Core Functions (Grouped by Facet)
@@ -217,12 +216,8 @@ plumeStaking.addValidator(
 | `StakedOnBehalf(address sender, address staker, uint16 validatorId, uint256 amount)`                                    | Emitted when someone stakes on behalf of another user.                 |
 | `Unstaked(address user, uint16 validatorId, uint256 amount)`                                                            | Emitted when a user initiates unstaking (starts cooldown).             |
 | `CooldownStarted(address staker, uint16 validatorId, uint256 amount, uint256 cooldownEnd)`                              | Emitted when an unstake action successfully starts the cooldown timer. |
-| `TokensParked(address staker, uint16 validatorId, uint256 amount)`                                                      | Emitted when tokens are moved to a 'parked' state (e.g. during restake).|
-| `CoolingCompleted(address staker, uint256 amount)`                                                                      | Emitted when tokens finish cooldown and become withdrawable.           |
 | `Withdrawn(address staker, uint256 amount)`                                                                             | Emitted when a user withdraws PLUME that completed cooldown.           |
 | `RewardsRestaked(address staker, uint16 validatorId, uint256 amount)`                                                   | Emitted when PLUME rewards are claimed and immediately restaked.       |
-| `ParkedRestaked(address user, uint16 validatorId, uint256 amount)`                                                      | Emitted when parked tokens are restaked.                               |
-| `ForceUnstaked(address staker, uint16 validatorId, uint256 amount)`                                                     | Emitted when an admin forces an unstake action (e.g., validator removal).|
 
 ### Reward Events
 
@@ -231,13 +226,11 @@ plumeStaking.addValidator(
 | `RewardTokenAdded(address token)`                                                             | Emitted when a new token is added to the rewards list (in Staking contract).     |
 | `RewardTokenRemoved(address token)`                                                           | Emitted when a token is removed from the rewards list (in Staking contract).     |
 | `RewardRatesSet(address[] tokens, uint256[] rates)`                                           | Emitted when reward rates are updated.                                           |
-| `MaxRewardRatesSet(address[] tokens, uint256[] maxRates)`                                     | Emitted when maximum reward rates are set for multiple tokens.                   |
 | `MaxRewardRateUpdated(address token, uint256 newMaxRate)`                                     | Emitted when the maximum reward rate is updated for a single token.              |
 | `RewardRateCheckpointCreated(address token, uint256 index, uint256 timestamp, uint256 rate)`  | Emitted when a global reward rate checkpoint is created.                         |
 | `RewardsAdded(address token, uint256 amount)`                                                 | Emitted when reward tokens are added (potentially related to `addRewards` fn). |
 | `RewardClaimed(address user, address token, uint256 amount)`                                  | Emitted when a user claims rewards aggregated across all validators.             |
 | `RewardClaimedFromValidator(address user, address token, uint16 validatorId, uint256 amount)` | Emitted when a user claims rewards from a specific validator.                    |
-| `AdminWithdrewUserRewards(address user, address token, uint256 amount)`                       | Emitted when an admin withdraws rewards on behalf of a user (if implemented).    |
 | `TreasurySet(address treasury)`                                                               | Emitted when the reward treasury contract address is updated.                    |
 
 ### Validator Events
@@ -251,14 +244,9 @@ plumeStaking.addValidator(
 | `ValidatorAddressesSet(uint16 validatorId, address oldAdmin, address newAdmin, address oldWithdraw, address newWithdraw)`                                                                      | Emitted when a validator's admin or withdraw addresses are changed.                    |
 | `ValidatorCapacityUpdated(uint16 validatorId, uint256 oldCapacity, uint256 newCapacity)`                                                                                                       | Emitted when validator capacity is updated.                                            |
 | `ValidatorCommissionClaimed(uint16 validatorId, address token, uint256 amount)`                                                                                                                | Emitted when validator commission is claimed.                                          |
-| `ValidatorStakersRewardsUpdated(uint16 validatorId, uint256 startIndex, uint256 endIndex)`                                                                                                     | Emitted during reward updates affecting multiple stakers of a validator.             |
-| `ValidatorDeactivated(uint16 validatorId)`                                                                                                                                                     | Emitted when a validator is deactivated via `setValidatorStatus`.                      |
-| `ValidatorActivated(uint16 validatorId)`                                                                                                                                                       | Emitted when a validator is activated via `setValidatorStatus`.                        |
 | `ValidatorRemoved(uint16 validatorId)`                                                                                                                                                         | Emitted if a validator removal mechanism exists and is triggered.                      |
 | `SlashVoteCast(uint16 targetValidatorId, uint16 voterValidatorId, uint256 voteExpiration)`                                                                                                    | Emitted when a validator admin casts a vote to slash another validator.                |
 | `ValidatorSlashed(uint16 validatorId, address slasher, uint256 penaltyAmount)`                                                                                                               | Emitted when a validator is successfully slashed.                                        |
-| `EmergencyFundsTransferred(uint16 validatorId, address token, uint256 amount, address recipient)`                                                                                              | Emitted during an emergency withdrawal scenario for a validator.                       |
-| `ValidatorEmergencyTransfer(uint16 validatorId, address token, uint256 amount, address recipient)`                                                                                             | Related to emergency fund transfers for a specific validator.                        |
 
 
 ### Administrative Events
@@ -266,20 +254,11 @@ plumeStaking.addValidator(
 | Event                                                                                                                              | Description                                                                            |
 | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `MinStakeAmountSet(uint256 amount)`                                                                                                | Emitted when the global minimum stake amount is set via `setMinStakeAmount`.           |
-| `MinStakeAmountUpdated(uint256 oldAmount, uint256 newAmount)`                                                                      | (Alternative naming convention) Emitted when the minimum stake amount is updated.        |
 | `CooldownIntervalSet(uint256 interval)`                                                                                            | Emitted when the global cooldown interval is set via `setCooldownInterval`.            |
-| `CooldownIntervalUpdated(uint256 oldInterval, uint256 newInterval)`                                                                | (Alternative naming convention) Emitted when the cooldown interval is updated.         |
 | `AdminWithdraw(address token, uint256 amount, address recipient)`                                                                  | Emitted when admin withdraws tokens from the staking contract via `adminWithdraw`.     |
 | `MaxSlashVoteDurationSet(uint256 duration)`                                                                                        | Emitted when the maximum duration for slash votes is set.                              |
-| `MaxValidatorCommissionUpdated(uint256 oldMaxCommission, uint256 newMaxCommission)`                                                | Emitted if a global maximum validator commission setting is updated.                   |
-| `MaxValidatorPercentageUpdated(uint256 oldPercentage, uint256 newPercentage)`                                                      | Emitted if a global max % stake per validator setting is updated.                        |
-| `TotalAmountsUpdated(uint256 totalStaked, uint256 totalCooling, uint256 totalWithdrawable)`                                        | Emitted periodically or on major changes to global staked/cooling/withdrawable totals. |
-| `PartialTotalAmountsUpdated(uint256 changeStaked, uint256 changeCooling, uint256 changeWithdrawable)`                              | Emitted to reflect incremental changes in total amounts.                               |
 | `StakeInfoUpdated(address user, uint256 staked, uint256 cooled, uint256 parked, uint256 cooldownEnd, uint256 lastUpdateTimestamp)` | Emitted when a user's core staking details are updated internally.                     |
 | `AdminStakeCorrection(address user, uint256 oldTotalStake, uint256 newTotalStake)`                                                 | Emitted when an admin corrects a user's staked amount via `adminCorrectUserStakeInfo`. |
-| `StakerAdded(address staker)`                                                                                                      | Emitted if an admin manually adds a staker record (less common).                       |
-| `NativeTokenDeposited(address sender, uint256 amount)`                                                                             | Emitted when the staking contract receives native PLUME via fallback/receive.          |
-| `TransferFailed(address token, address recipient, uint256 amount)`                                                                 | Emitted if an internal token transfer fails.                                           |
 
 ## Errors
 

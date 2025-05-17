@@ -3,9 +3,13 @@ pragma solidity ^0.8.25;
 
 import {
     AdminTransferFailed,
+    CooldownTooShortForSlashVote,
     InsufficientFunds,
     InvalidAmount,
     InvalidIndexRange,
+    InvalidInterval,
+    InvalidMaxCommissionRate,
+    SlashVoteDurationTooLongForCooldown,
     Unauthorized,
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
@@ -13,9 +17,9 @@ import {
     AdminStakeCorrection,
     AdminWithdraw,
     CooldownIntervalSet,
+    MaxAllowedValidatorCommissionSet,
     MaxSlashVoteDurationSet,
     MinStakeAmountSet,
-    PartialTotalAmountsUpdated,
     StakeInfoUpdated
 } from "../lib/PlumeEvents.sol";
 
@@ -47,6 +51,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     // --- Constants ---
     address internal constant PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    uint256 internal constant REWARD_PRECISION = 1e18;
 
     // --- Storage Access ---
     bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
@@ -83,7 +88,6 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
         uint256 oldAmount = $.minStakeAmount;
-        // Add validation? E.g., prevent setting to 0?
         if (_minStakeAmount == 0) {
             revert InvalidAmount(_minStakeAmount);
         }
@@ -94,14 +98,21 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     /**
      * @notice Update the cooldown interval for unstaking
      * @dev Requires ADMIN_ROLE.
-     * @param _cooldownInterval New cooldown interval in seconds
+     * @param interval New cooldown interval in seconds
      */
     function setCooldownInterval(
-        uint256 _cooldownInterval
+        uint256 interval
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        $.cooldownInterval = _cooldownInterval;
-        emit CooldownIntervalSet(_cooldownInterval);
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        if (interval == 0) {
+            revert InvalidInterval(interval);
+        }
+        // New check against maxSlashVoteDuration
+        if ($.maxSlashVoteDurationInSeconds != 0 && interval <= $.maxSlashVoteDurationInSeconds) {
+            revert CooldownTooShortForSlashVote(interval, $.maxSlashVoteDurationInSeconds);
+        }
+        $.cooldownInterval = interval;
+        emit CooldownIntervalSet(interval);
     }
 
     // --- Admin Fund Management (Roles) ---
@@ -177,9 +188,36 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint256 duration
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        if (duration == 0) {
+            revert InvalidInterval(duration);
+        }
+        // New check against cooldownInterval
+        if ($.cooldownInterval != 0 && duration >= $.cooldownInterval) {
+            revert SlashVoteDurationTooLongForCooldown(duration, $.cooldownInterval);
+        }
         $.maxSlashVoteDurationInSeconds = duration;
-
         emit MaxSlashVoteDurationSet(duration);
+    }
+
+    /**
+     * @notice Set the system-wide maximum allowed commission rate for any validator.
+     * @dev Requires TIMELOCK_ROLE. Max rate cannot exceed 50%.
+     * @param newMaxRate The new maximum commission rate (e.g., 50e16 for 50%).
+     */
+    function setMaxAllowedValidatorCommission(
+        uint256 newMaxRate
+    ) external onlyRole(PlumeRoles.TIMELOCK_ROLE) {
+        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+
+        // Max rate cannot be more than 50% (REWARD_PRECISION / 2)
+        if (newMaxRate > REWARD_PRECISION / 2) {
+            revert InvalidMaxCommissionRate(newMaxRate, REWARD_PRECISION / 2);
+        }
+
+        uint256 oldMaxRate = $.maxAllowedValidatorCommission;
+        $.maxAllowedValidatorCommission = newMaxRate;
+
+        emit MaxAllowedValidatorCommissionSet(oldMaxRate, newMaxRate);
     }
 
     // --- Admin Data Correction ---
