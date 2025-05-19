@@ -55,20 +55,6 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     using SafeERC20 for IERC20;
     using Address for address payable;
 
-    // --- Constants ---
-    address internal constant PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-    uint256 internal constant REWARD_PRECISION = 1e18;
-
-    // --- Storage Access ---
-    bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
-
-    function _getPlumeStorage() internal pure returns (PlumeStakingStorage.Layout storage $) {
-        bytes32 position = PLUME_STORAGE_POSITION;
-        assembly {
-            $.slot := position
-        }
-    }
-
     // --- Modifiers ---
 
     /**
@@ -92,7 +78,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function setMinStakeAmount(
         uint256 _minStakeAmount
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         uint256 oldAmount = $.minStakeAmount;
         if (_minStakeAmount == 0) {
             revert InvalidAmount(_minStakeAmount);
@@ -147,7 +133,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert InvalidAmount(amount);
         }
 
-        if (token == PLUME) {
+        if (token == PlumeStakingStorage.PLUME_NATIVE) {
             // Native PLUME withdrawal
             uint256 balance = address(this).balance;
             if (amount > balance) {
@@ -176,14 +162,14 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @notice Gets the current minimum stake amount.
      */
     function getMinStakeAmount() external view returns (uint256) {
-        return _getPlumeStorage().minStakeAmount;
+        return PlumeStakingStorage.layout().minStakeAmount;
     }
 
     /**
      * @notice Gets the current cooldown interval.
      */
     function getCooldownInterval() external view returns (uint256) {
-        return _getPlumeStorage().cooldownInterval;
+        return PlumeStakingStorage.layout().cooldownInterval;
     }
 
     /**
@@ -193,7 +179,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function setMaxSlashVoteDuration(
         uint256 duration
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         if (duration == 0) {
             revert InvalidInterval(duration);
         }
@@ -213,11 +199,11 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function setMaxAllowedValidatorCommission(
         uint256 newMaxRate
     ) external onlyRole(PlumeRoles.TIMELOCK_ROLE) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         // Max rate cannot be more than 50% (REWARD_PRECISION / 2)
-        if (newMaxRate > REWARD_PRECISION / 2) {
-            revert InvalidMaxCommissionRate(newMaxRate, REWARD_PRECISION / 2);
+        if (newMaxRate > PlumeStakingStorage.REWARD_PRECISION / 2) {
+            revert InvalidMaxCommissionRate(newMaxRate, PlumeStakingStorage.REWARD_PRECISION / 2);
         }
 
         uint256 oldMaxRate = $.maxAllowedValidatorCommission;
@@ -226,8 +212,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         emit MaxAllowedValidatorCommissionSet(oldMaxRate, newMaxRate);
     }
 
-    // --- NEW ADMIN SLASH CLEANUP FUNCTION --- (This will become the primary admin data function for slashed
-    // validators)
+    // --- NEW ADMIN SLASH CLEANUP FUNCTION ---
     /**
      * @notice Admin function to clear a user's stale records associated with a slashed validator.
      * @dev This is used because a 100% slash means the user has no funds to recover via a user-facing function.
@@ -240,7 +225,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address user,
         uint16 slashedValidatorId
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if (user == address(0)) {
             revert ZeroAddress("user");
@@ -269,9 +254,6 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             recordChanged = true;
         }
 
-        // Call removeStakerFromValidator to clean up $.userValidators list and $.userHasStakedWithValidator mapping
-        // This will run Part 2 of removeStakerFromValidator, as active stake and cooldown for this validator/user are
-        // now 0.
         if ($.userHasStakedWithValidator[user][slashedValidatorId] || recordChanged) {
             PlumeValidatorLogic.removeStakerFromValidator($, user, slashedValidatorId);
         }
@@ -289,7 +271,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address[] calldata users,
         uint16 slashedValidatorId
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if (!$.validatorExists[slashedValidatorId]) {
             revert ValidatorDoesNotExist(slashedValidatorId);
@@ -304,8 +286,6 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         for (uint256 i = 0; i < users.length; i++) {
             address user = users[i];
             if (user != address(0)) {
-                // Basic check for valid user address in array
-                // Inlining logic of adminClearValidatorRecord for gas efficiency within a loop
                 uint256 userActiveStakeToClear = $.userValidatorStakes[user][slashedValidatorId].staked;
                 uint256 userCooledAmountToClear = $.userValidatorCooldowns[user][slashedValidatorId].amount;
                 bool recordActuallyChangedForThisUser = false;

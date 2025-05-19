@@ -59,6 +59,7 @@ import { IAccessControl } from "../interfaces/IAccessControl.sol";
 
 import { IPlumeStakingRewardTreasury } from "../interfaces/IPlumeStakingRewardTreasury.sol";
 import { PlumeRoles } from "../lib/PlumeRoles.sol";
+import { RewardsFacet } from "./RewardsFacet.sol";
 /**
  * @title ValidatorFacet
  * @author Eugene Y. Q. Shen, Alp Guneysel
@@ -78,42 +79,15 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     using PlumeStakingStorage for PlumeStakingStorage.Layout;
     using SafeCast for uint256;
 
-    // --- Constants ---
-    address private constant PLUME = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-    uint256 private constant REWARD_PRECISION = 1e18;
-
-    // --- Storage Access ---
-    // Storage slot for treasury address (same as in RewardsFacet)
-    bytes32 internal constant TREASURY_STORAGE_POSITION = keccak256("plume.storage.RewardTreasury");
-
-    // --- Storage Access ---
-    bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking");
-
-    function _getPlumeStorage() internal pure returns (PlumeStakingStorage.Layout storage $) {
-        bytes32 position = PLUME_STORAGE_POSITION;
-        assembly {
-            $.slot := position
-        }
-    }
-
-    // Helper to get treasury address (same implementation as in RewardsFacet)
-    function getTreasuryAddress() internal view returns (address) {
-        bytes32 position = TREASURY_STORAGE_POSITION;
-        address treasuryAddress;
-        assembly {
-            treasuryAddress := sload(position)
-        }
-        return treasuryAddress;
-    }
-
     // Modifier for Validator Admin checks
     modifier onlyValidatorAdmin(
         uint16 validatorId
     ) {
-        if (!_getPlumeStorage().validatorExists[validatorId]) {
+        // Use PlumeStakingStorage.layout() directly
+        if (!PlumeStakingStorage.layout().validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
-        if (msg.sender != _getPlumeStorage().validators[validatorId].l2AdminAddress) {
+        if (msg.sender != PlumeStakingStorage.layout().validators[validatorId].l2AdminAddress) {
             revert NotValidatorAdmin(msg.sender);
         }
         _;
@@ -139,7 +113,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     modifier _validateValidatorExists(
         uint16 validatorId
     ) {
-        if (!_getPlumeStorage().validatorExists[validatorId]) {
+        if (!PlumeStakingStorage.layout().validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
         _;
@@ -148,7 +122,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     modifier _validateIsToken(
         address token
     ) {
-        if (!_getPlumeStorage().isRewardToken[token]) {
+        if (!PlumeStakingStorage.layout().isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
         _;
@@ -176,7 +150,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address l1AccountEvmAddress,
         uint256 maxCapacity
     ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if ($.validatorExists[validatorId]) {
             revert ValidatorAlreadyExists(validatorId);
@@ -250,7 +224,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint16 validatorId,
         uint256 maxCapacity
     ) external onlyRole(PlumeRoles.VALIDATOR_ROLE) _validateValidatorExists(validatorId) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
         // Check if validator is active and not slashed
@@ -274,7 +248,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint16 validatorId,
         bool newActiveStatus
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) _validateValidatorExists(validatorId) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
         // Prevent activating an already slashed validator through this function
@@ -299,7 +273,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint16 validatorId,
         uint256 newCommission
     ) external onlyValidatorAdmin(validatorId) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
         // Check if validator is active and not slashed
@@ -355,7 +329,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         string calldata newL1AccountAddress,
         address newL1AccountEvmAddress
     ) external onlyValidatorAdmin(validatorId) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
         // Check if validator is active and not slashed
@@ -440,7 +414,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         _validateValidatorExists(validatorId)
         _validateIsToken(token)
     {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
         if (!validator.active || validator.slashed) {
@@ -476,7 +450,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint16 validatorId,
         address token
     ) external onlyValidatorAdmin(validatorId) nonReentrant returns (uint256) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
         if (!validator.active || validator.slashed) {
@@ -497,7 +471,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         // Clear pending claim
         delete $.pendingCommissionClaims[validatorId][token];
         // Transfer from treasury
-        address treasury = getTreasuryAddress();
+        address treasury = RewardsFacet(address(this)).getTreasury();
         if (treasury == address(0)) {
             revert TreasuryNotSet();
         }
@@ -513,7 +487,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @param voteExpiration Timestamp when this vote expires
      */
     function voteToSlashValidator(uint16 maliciousValidatorId, uint256 voteExpiration) external nonReentrant {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address voterAdmin = msg.sender;
         uint16 voterValidatorId = $.adminToValidatorId[voterAdmin];
 
@@ -573,7 +547,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function slashValidator(
         uint16 validatorId
     ) external nonReentrant onlyRole(PlumeRoles.TIMELOCK_ROLE) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if (!$.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
@@ -659,7 +633,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function forceSettleValidatorCommission(
         uint16 validatorId
     ) external {
-        PlumeStakingStorage.Layout storage $s = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $s = PlumeStakingStorage.layout();
 
         // Perform validator existence check directly
         if (!$s.validatorExists[validatorId]) {
@@ -681,7 +655,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         view
         returns (PlumeStakingStorage.ValidatorInfo memory info, uint256 totalStaked, uint256 stakersCount)
     {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         if (!$.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
@@ -697,7 +671,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function getValidatorStats(
         uint16 validatorId
     ) external view returns (bool active, uint256 commission, uint256 totalStaked, uint256 stakersCount) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         if (!$.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
@@ -715,7 +689,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function getUserValidators(
         address user
     ) external view returns (uint16[] memory) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         uint16[] storage userAssociatedValidators = $.userValidators[user];
         uint256 associatedCount = userAssociatedValidators.length;
 
@@ -748,7 +722,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @return The total accrued commission for the specified token.
      */
     function getAccruedCommission(uint16 validatorId, address token) public view returns (uint256) {
-        PlumeStakingStorage.Layout storage $s = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $s = PlumeStakingStorage.layout();
         if (!$s.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
@@ -764,7 +738,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @return list An array of ValidatorListData structs.
      */
     function getValidatorsList() external view virtual returns (ValidatorFacet.ValidatorListData[] memory list) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         uint16[] memory ids = $.validatorIds;
         uint256 numValidators = ids.length;
         list = new ValidatorFacet.ValidatorListData[](numValidators);
@@ -784,7 +758,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @notice Returns the number of currently active validators.
      */
     function getActiveValidatorCount() external view returns (uint256 count) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         uint16[] memory ids = $.validatorIds;
         count = 0;
         for (uint256 i = 0; i < ids.length; i++) {
@@ -799,7 +773,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function getSlashVoteCount(
         uint16 validatorId
     ) external view returns (uint256) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         return $.slashVoteCounts[validatorId];
     }
     // --- END NEW VIEW FUNCTION ---

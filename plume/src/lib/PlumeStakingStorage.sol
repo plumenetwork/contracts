@@ -10,6 +10,11 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  */
 library PlumeStakingStorage {
 
+    // --- BEGIN ADDED CONSTANTS ---
+    address public constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    uint256 public constant REWARD_PRECISION = 1e18;
+    // --- END ADDED CONSTANTS ---
+
     // Rate checkpoint struct to store historical reward rates
     struct RateCheckpoint {
         uint256 timestamp; // Timestamp when this rate became active
@@ -99,10 +104,8 @@ library PlumeStakingStorage {
         /// @notice Maps a validator ID to its history of commission rate checkpoints
         mapping(uint16 => RateCheckpoint[]) validatorCommissionCheckpoints;
         /// @notice Maximum allowed commission for all validators
-        // TODO - check where we set this
         uint256 maxValidatorCommission;
         /// @notice Maximum percentage of total staked funds any validator can have (in basis points)
-        // TODO - check where we set this
         uint256 maxValidatorPercentage;
         /// @notice Maps a validator ID and token to its history of rate checkpoints
         mapping(uint16 => mapping(address => RateCheckpoint[])) validatorRewardRateCheckpoints;
@@ -122,7 +125,6 @@ library PlumeStakingStorage {
         mapping(uint16 maliciousValidatorId => mapping(uint16 votingValidatorId => uint256 voteExpiration))
             slashingVotes;
         /// @notice The maximum length of time for which a validator's vote to slash another validator is valid
-        // TODO - check where we set this
         uint256 maxSlashVoteDurationInSeconds;
         /// @notice Maps malicious validator ID to the count of active, non-expired votes against it
         mapping(uint16 => uint256) slashVoteCounts;
@@ -135,7 +137,6 @@ library PlumeStakingStorage {
         // Add mapping for pending commission claims: validatorId => token => PendingCommissionClaim
         mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims;
     }
-    // Add a constant for the commission claim timelock (7 days)
 
     uint256 constant COMMISSION_CLAIM_TIMELOCK = 7 days;
 

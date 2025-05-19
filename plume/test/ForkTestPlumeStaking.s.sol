@@ -1394,7 +1394,7 @@ contract ForkTestPlumeStaking is Test {
         // Calculate expected rewards/commission for period 1
         uint256 totalStaked = userStakeAmount; // Initially, the only stake is from user1
         uint256 expectedRewardP1 = (period1Duration * initialRewardRate * userStakeAmount) / totalStaked;
-        uint256 expectedCommissionP1 = (expectedRewardP1 * initialCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedCommissionP1 = (expectedRewardP1 * initialCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedNetRewardP1 = expectedRewardP1 - expectedCommissionP1;
 
         console2.log("Expected Gross Reward P1:", expectedRewardP1);
@@ -1428,7 +1428,7 @@ contract ForkTestPlumeStaking is Test {
 
         // Calculate expected rewards/commission for period 2 (using new commission rate)
         uint256 expectedRewardP2 = (period2Duration * initialRewardRate * userStakeAmount) / totalStaked;
-        uint256 expectedCommissionP2 = (expectedRewardP2 * newCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedCommissionP2 = (expectedRewardP2 * newCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedNetRewardP2 = expectedRewardP2 - expectedCommissionP2;
 
         console2.log("Expected Gross Reward P2:", expectedRewardP2);
@@ -1472,7 +1472,7 @@ contract ForkTestPlumeStaking is Test {
 
         // Calculate expected rewards/commission for period 3 (new reward rate, latest commission rate)
         uint256 expectedRewardP3 = (period3Duration * newRewardRate * userStakeAmount) / totalStaked;
-        uint256 expectedCommissionP3 = (expectedRewardP3 * newCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedCommissionP3 = (expectedRewardP3 * newCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedNetRewardP3 = expectedRewardP3 - expectedCommissionP3;
 
         console2.log("Expected Gross Reward P3:", expectedRewardP3);

@@ -14,7 +14,6 @@ import {
     NoActiveStake,
     NoRewardsToRestake,
     NoWithdrawableBalanceToRestake,
-    NoWithdrawableBalanceToRestake,
     StakeAmountTooSmall,
     TokenDoesNotExist,
     TooManyStakers,
@@ -60,9 +59,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
     using Address for address payable;
 
-    // Define PLUME_NATIVE constant
-    address internal constant PLUME_NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-
     // Constants moved from Base - needed here
     uint256 internal constant REWARD_PRECISION = 1e18;
 
@@ -79,9 +75,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function _checkValidatorSlashedAndRevert(
         uint16 validatorId
     ) internal view {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
-        // validatorExists check is implicitly handled by how $.validators[validatorId] would behave
-        // but explicit check is fine too. If it doesn't exist, .slashed will be false.
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         if ($.validatorExists[validatorId] && $.validators[validatorId].slashed) {
             revert ActionOnSlashedValidatorError(validatorId);
         }
@@ -94,7 +88,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function stake(
         uint16 validatorId
     ) external payable returns (uint256) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         uint256 stakeAmount = msg.value;
 
@@ -196,7 +190,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param amount Amount of PLUME to restake.
      */
     function restake(uint16 validatorId, uint256 amount) external nonReentrant {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
 
         if (!$.validatorExists[validatorId]) {
@@ -259,7 +253,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function unstake(
         uint16 validatorId
     ) external returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
 
         if (info.staked > 0) {
@@ -290,7 +284,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return amountToUnstake The actual amount that was unstaked.
      */
     function _unstake(uint16 validatorId, uint256 amount) internal returns (uint256 amountToUnstake) {
-        PlumeStakingStorage.Layout storage $s = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $s = PlumeStakingStorage.layout();
 
         if (!$s.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
@@ -457,7 +451,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return Amount of PLUME staked
      */
     function stakeOnBehalf(uint16 validatorId, address staker) external payable returns (uint256) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         uint256 stakeAmount = msg.value;
 
@@ -556,7 +550,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function restakeRewards(
         uint16 validatorId
     ) external nonReentrant returns (uint256 amountRestaked) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         // Verify target validator exists and is active
         if (!$.validatorExists[validatorId]) {
@@ -568,7 +562,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         }
 
         // Native token is represented by PLUME_NATIVE constant
-        address token = PLUME_NATIVE;
+        address token = PlumeStakingStorage.PLUME_NATIVE;
 
         // Check if PLUME_NATIVE is actually configured as a reward token
         if (!$.isRewardToken[token]) {
@@ -660,14 +654,14 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @notice Returns the amount of PLUME currently staked by the caller
      */
     function amountStaked() external view returns (uint256 amount) {
-        return _getPlumeStorage().stakeInfo[msg.sender].staked;
+        return PlumeStakingStorage.layout().stakeInfo[msg.sender].staked;
     }
 
     /**
      * @notice Returns the amount of PLUME currently in cooling period for the caller
      */
     function amountCooling() external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
 
         // info.cooled already represents the sum of all active cooling entries for the user
@@ -678,7 +672,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @notice Returns the amount of PLUME that is withdrawable for the caller
      */
     function amountWithdrawable() external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
         // info.parked represents funds that have completed cooldown and are ready for withdrawal.
         // The withdraw() function moves amounts from completed cooldowns to parked.
@@ -691,7 +685,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function stakeInfo(
         address user
     ) external view returns (PlumeStakingStorage.StakeInfo memory) {
-        return _getPlumeStorage().stakeInfo[user];
+        return PlumeStakingStorage.layout().stakeInfo[user];
     }
 
     /**
@@ -699,7 +693,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return amount Total amount of PLUME staked.
      */
     function totalAmountStaked() external view returns (uint256 amount) {
-        return _getPlumeStorage().totalStaked;
+        return PlumeStakingStorage.layout().totalStaked;
     }
 
     /**
@@ -707,7 +701,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return amount Total amount of PLUME cooling.
      */
     function totalAmountCooling() external view returns (uint256 amount) {
-        return _getPlumeStorage().totalCooling;
+        return PlumeStakingStorage.layout().totalCooling;
     }
 
     /**
@@ -715,7 +709,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return amount Total amount of PLUME withdrawable.
      */
     function totalAmountWithdrawable() external view returns (uint256 amount) {
-        return _getPlumeStorage().totalWithdrawable;
+        return PlumeStakingStorage.layout().totalWithdrawable;
     }
 
     /**
@@ -726,7 +720,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function totalAmountClaimable(
         address token
     ) external view returns (uint256 amount) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         // Check if token is a reward token using the mapping
         require($.isRewardToken[token], "Token is not a reward token");
@@ -742,7 +736,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @return The staked amount.
      */
     function getUserValidatorStake(address user, uint16 validatorId) external view returns (uint256) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         return $.userValidatorStakes[user][validatorId].staked;
     }
 
@@ -761,7 +755,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function getUserCooldowns(
         address user
     ) external view returns (CooldownView[] memory) {
-        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         uint16[] storage userAssociatedValidators = $.userValidators[user]; // This list might contain slashed validator
             // IDs
 

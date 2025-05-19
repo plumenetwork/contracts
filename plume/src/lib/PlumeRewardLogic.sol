@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import { RewardRateCheckpointCreated, ValidatorCommissionCheckpointCreated } from "./PlumeEvents.sol";
 import { PlumeStakingStorage } from "./PlumeStakingStorage.sol";
 import { PlumeValidatorLogic } from "./PlumeValidatorLogic.sol";
+import { console2 } from "forge-std/console2.sol";
 
 /**
  * @title PlumeRewardLogic
@@ -12,8 +13,6 @@ import { PlumeValidatorLogic } from "./PlumeValidatorLogic.sol";
 library PlumeRewardLogic {
 
     using PlumeStakingStorage for PlumeStakingStorage.Layout;
-
-    uint256 internal constant REWARD_PRECISION = 1e18;
 
     /**
      * @notice Finds the index of the checkpoint active at or just before a given timestamp.
@@ -146,9 +145,10 @@ library PlumeRewardLogic {
                         uint256 commissionRateForSegment =
                             getEffectiveCommissionRateAt($, validatorId, currentLastUpdateTime);
                         uint256 grossRewardForValidatorThisSegment =
-                            (totalStakedForCalc * rewardPerTokenIncrease) / REWARD_PRECISION;
-                        uint256 commissionDeltaForValidator =
-                            (grossRewardForValidatorThisSegment * commissionRateForSegment) / REWARD_PRECISION;
+                            (totalStakedForCalc * rewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
+                        uint256 commissionDeltaForValidator = (
+                            grossRewardForValidatorThisSegment * commissionRateForSegment
+                        ) / PlumeStakingStorage.REWARD_PRECISION;
                         if (commissionDeltaForValidator > 0) {
                             $.validatorAccruedCommission[validatorId][token] += commissionDeltaForValidator;
                         }
@@ -188,9 +188,10 @@ library PlumeRewardLogic {
                     // The commission rate should be the one effective at the START of this segment (oldLastUpdateTime)
                     uint256 commissionRateForSegment = getEffectiveCommissionRateAt($, validatorId, oldLastUpdateTime);
                     uint256 grossRewardForValidatorThisSegment =
-                        (totalStaked * rewardPerTokenIncrease) / REWARD_PRECISION;
-                    uint256 commissionDeltaForValidator =
-                        (grossRewardForValidatorThisSegment * commissionRateForSegment) / REWARD_PRECISION;
+                        (totalStaked * rewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
+                    uint256 commissionDeltaForValidator = (
+                        grossRewardForValidatorThisSegment * commissionRateForSegment
+                    ) / PlumeStakingStorage.REWARD_PRECISION;
 
                     if (commissionDeltaForValidator > 0) {
                         uint256 previousAccrued = $.validatorAccruedCommission[validatorId][token];
@@ -276,10 +277,13 @@ library PlumeRewardLogic {
             }
 
             if (rewardPerTokenDeltaForSegment > 0 && userStakedAmount > 0) {
-                uint256 grossRewardForSegment = (userStakedAmount * rewardPerTokenDeltaForSegment) / REWARD_PRECISION;
+                uint256 grossRewardForSegment =
+                    (userStakedAmount * rewardPerTokenDeltaForSegment) / PlumeStakingStorage.REWARD_PRECISION;
                 uint256 effectiveCommissionRate = getEffectiveCommissionRateAt($, validatorId, segmentStartTime);
 
-                uint256 commissionForThisSegment = (grossRewardForSegment * effectiveCommissionRate) / REWARD_PRECISION;
+                uint256 commissionForThisSegment =
+                    (grossRewardForSegment * effectiveCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
+                console2.log("CRWC_LOOP_CALC5 [%s]: commSeg:%s", k, commissionForThisSegment);
 
                 // Check for underflow before subtraction
                 if (grossRewardForSegment < commissionForThisSegment) {

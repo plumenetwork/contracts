@@ -310,7 +310,9 @@ contract PlumeStakingDiamondTest is Test {
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.TIMELOCK_ROLE, admin);
 
         // Set the system-wide maximum allowed validator commission before adding any validators
-        ManagementFacet(address(diamondProxy)).setMaxAllowedValidatorCommission(PlumeRewardLogic.REWARD_PRECISION / 2); // 50%
+        ManagementFacet(address(diamondProxy)).setMaxAllowedValidatorCommission(
+            PlumeStakingStorage.REWARD_PRECISION / 2
+        ); // 50%
 
         // 6. Deploy and setup reward treasury
         PlumeStakingRewardTreasury treasuryImpl = new PlumeStakingRewardTreasury();
@@ -787,9 +789,10 @@ contract PlumeStakingDiamondTest is Test {
         // CORRECTED CALCULATION FOR THE REVERT EXPECTATION:
         uint256 rptDelta_for_revert_calc = actualTimeDelta * plumeRate;
         uint256 totalGrossRewardUser1_for_revert_calc =
-            (user1Stake * rptDelta_for_revert_calc) / PlumeRewardLogic.REWARD_PRECISION; // Changed userStake to user1Stake
+            (user1Stake * rptDelta_for_revert_calc) / PlumeStakingStorage.REWARD_PRECISION; // Changed userStake to
+            // user1Stake
         uint256 totalCommissionUser1_for_revert_calc =
-            (totalGrossRewardUser1_for_revert_calc * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+            (totalGrossRewardUser1_for_revert_calc * commissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedNetReward_for_revert =
             totalGrossRewardUser1_for_revert_calc - totalCommissionUser1_for_revert_calc;
 
@@ -799,7 +802,7 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("DEBUG_TEST: user1Stake = %s", user1Stake); // Changed userStake to user1Stake
         console2.log("DEBUG_TEST: validatorTotalStake (should equal user1Stake here) = %s", validatorTotalStake);
         console2.log("DEBUG_TEST: commissionRate = %s", commissionRate);
-        console2.log("DEBUG_TEST: REWARD_PRECISION = %s", PlumeRewardLogic.REWARD_PRECISION);
+        console2.log("DEBUG_TEST: REWARD_PRECISION = %s", PlumeStakingStorage.REWARD_PRECISION);
         console2.log("DEBUG_TEST: rptDelta_for_revert_calc = %s", rptDelta_for_revert_calc);
         console2.log("DEBUG_TEST: totalGrossRewardUser1_for_revert_calc = %s", totalGrossRewardUser1_for_revert_calc);
         console2.log("DEBUG_TEST: totalCommissionUser1_for_revert_calc = %s", totalCommissionUser1_for_revert_calc);
@@ -829,7 +832,7 @@ contract PlumeStakingDiamondTest is Test {
         // Check accrued rewards for user1
         uint256 user1ExpectedReward = user1Stake * plumeRate * actualTimeDelta / 1e18; // Simplified calculation - Using
             // actualTimeDelta from PLUME check above
-        uint256 user1Commission = (user1ExpectedReward * commissionRate) / PlumeRewardLogic.REWARD_PRECISION; // Use
+        uint256 user1Commission = (user1ExpectedReward * commissionRate) / PlumeStakingStorage.REWARD_PRECISION; // Use
             // correct commissionRate and PRECISION
         uint256 user1NetReward = user1ExpectedReward - user1Commission;
 
@@ -2900,7 +2903,7 @@ contract PlumeStakingDiamondTest is Test {
             grossReward = (actualTimeDelta * plumeRate * userStake) / validatorTotalStake;
         }
 
-        uint256 commissionAmount = (grossReward * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 commissionAmount = (grossReward * commissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedNetReward = (grossReward - commissionAmount);
 
         // --- DEBUG LOGS ---
@@ -2909,7 +2912,7 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("DEBUG: userStake = %s", userStake);
         console2.log("DEBUG: validatorTotalStake = %s", validatorTotalStake);
         console2.log("DEBUG: commissionRate = %s", commissionRate);
-        console2.log("DEBUG: REWARD_PRECISION = %s", PlumeRewardLogic.REWARD_PRECISION);
+        console2.log("DEBUG: REWARD_PRECISION = %s", PlumeStakingStorage.REWARD_PRECISION);
         console2.log("DEBUG: grossReward = %s", grossReward);
         console2.log("DEBUG: commissionAmount = %s", commissionAmount);
         console2.log("DEBUG: expectedNetReward = %s", expectedNetReward);
@@ -2918,9 +2921,9 @@ contract PlumeStakingDiamondTest is Test {
 
         // Corrected calculation for expectedNetReward for the vm.expectRevert
         uint256 rptDeltaForPeriod = actualTimeDelta * plumeRate; // Reward Per Token increase for the period
-        uint256 expectedGrossRewardForUser = (userStake * rptDeltaForPeriod) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedGrossRewardForUser = (userStake * rptDeltaForPeriod) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedCommissionAmountForUser =
-            (expectedGrossRewardForUser * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+            (expectedGrossRewardForUser * commissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedNetRewardForRevert = expectedGrossRewardForUser - expectedCommissionAmountForUser;
 
         // --- DEBUG LOGS (Single block, ensure no duplication) ---
@@ -2929,7 +2932,7 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("DEBUG: userStake = %s", userStake);
         console2.log("DEBUG: validatorTotalStake = %s", validatorTotalStake);
         console2.log("DEBUG: commissionRate = %s", commissionRate);
-        console2.log("DEBUG: REWARD_PRECISION = %s", PlumeRewardLogic.REWARD_PRECISION);
+        console2.log("DEBUG: REWARD_PRECISION = %s", PlumeStakingStorage.REWARD_PRECISION);
         console2.log("DEBUG: grossReward (user actual) = %s", expectedGrossRewardForUser);
         console2.log("DEBUG: commissionAmount (user actual) = %s", expectedCommissionAmountForUser);
         console2.log("DEBUG: expectedNetReward (for revert) = %s", expectedNetRewardForRevert);
@@ -3254,9 +3257,10 @@ contract PlumeStakingDiamondTest is Test {
 
         // 9. Calculate expected reward: only for 1 hour, not for 1 day + 1 hour
         uint256 rptDeltaForWarp2 = rewardRate * warp2; // Reward Per Token increase for the warp2 period
-        uint256 expectedRewardGross = (stakeAmount * rptDeltaForWarp2) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedRewardGross = (stakeAmount * rptDeltaForWarp2) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 validatorCommissionRate = 5e16; // newValidatorId (99) is added with 5% commission in this test
-        uint256 commissionAmount = (expectedRewardGross * validatorCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 commissionAmount =
+            (expectedRewardGross * validatorCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedRewardNet = expectedRewardGross - commissionAmount;
 
         console2.log("TEST_DEBUG: stakeAmount = %s", stakeAmount);
@@ -3278,9 +3282,9 @@ contract PlumeStakingDiamondTest is Test {
 
         // 10. Assert that the claimed reward is NOT for the entire period since validator creation or epoch
         uint256 rptDeltaExcessive = rewardRate * (warp1 + warp2);
-        uint256 excessiveRewardGross = (stakeAmount * rptDeltaExcessive) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 excessiveRewardGross = (stakeAmount * rptDeltaExcessive) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 excessiveCommission =
-            (excessiveRewardGross * validatorCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+            (excessiveRewardGross * validatorCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 excessiveNetReward = excessiveRewardGross - excessiveCommission;
 
         assertTrue(
@@ -3320,8 +3324,9 @@ contract PlumeStakingDiamondTest is Test {
 
         // Calculate expected net rewards for Period 1 (Rate R1)
         uint256 rptDeltaP1_calc = rateR1 * timeT1;
-        uint256 totalGrossRewardUserP1_calc = (stakeAmount * rptDeltaP1_calc) / PlumeRewardLogic.REWARD_PRECISION;
-        uint256 commissionP1_calc = (totalGrossRewardUserP1_calc * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 totalGrossRewardUserP1_calc = (stakeAmount * rptDeltaP1_calc) / PlumeStakingStorage.REWARD_PRECISION;
+        uint256 commissionP1_calc =
+            (totalGrossRewardUserP1_calc * commissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 netRewardP1_calc = totalGrossRewardUserP1_calc - commissionP1_calc;
 
         // Admin changes reward rate to R2
@@ -3338,8 +3343,9 @@ contract PlumeStakingDiamondTest is Test {
 
         // Calculate expected net rewards for Period 2 (Rate R2)
         uint256 rptDeltaP2_calc = rateR2 * timeT2;
-        uint256 totalGrossRewardUserP2_calc = (stakeAmount * rptDeltaP2_calc) / PlumeRewardLogic.REWARD_PRECISION;
-        uint256 commissionP2_calc = (totalGrossRewardUserP2_calc * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 totalGrossRewardUserP2_calc = (stakeAmount * rptDeltaP2_calc) / PlumeStakingStorage.REWARD_PRECISION;
+        uint256 commissionP2_calc =
+            (totalGrossRewardUserP2_calc * commissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 netRewardP2_calc = totalGrossRewardUserP2_calc - commissionP2_calc;
 
         // User 1 claims rewards
@@ -3366,7 +3372,7 @@ contract PlumeStakingDiamondTest is Test {
         // Scenario 1: If R2 was applied to T1+T2
         uint256 grossRewardRetroactiveR2 = rateR2 * (timeT1 + timeT2);
         uint256 commissionRetroactiveR2 =
-            (grossRewardRetroactiveR2 * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+            (grossRewardRetroactiveR2 * commissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 netRewardRetroactiveR2 = grossRewardRetroactiveR2 - commissionRetroactiveR2;
 
         assertTrue(
@@ -3377,7 +3383,7 @@ contract PlumeStakingDiamondTest is Test {
         // Scenario 2: If R1 was applied to T1+T2 (less likely, but for completeness)
         uint256 grossRewardRetroactiveR1 = rateR1 * (timeT1 + timeT2);
         uint256 commissionRetroactiveR1 =
-            (grossRewardRetroactiveR1 * commissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+            (grossRewardRetroactiveR1 * commissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 netRewardRetroactiveR1 = grossRewardRetroactiveR1 - commissionRetroactiveR1;
 
         assertTrue(
@@ -3427,7 +3433,7 @@ contract PlumeStakingDiamondTest is Test {
         // Calculate expected earned rewards (commission is 0)
         // User1 is the only staker on validatorId at this point in the test.
         uint256 rptDeltaForPeriod = rewardRate * warpSeconds;
-        uint256 expectedEarnedRewards = (stakeAmount * rptDeltaForPeriod) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedEarnedRewards = (stakeAmount * rptDeltaForPeriod) / PlumeStakingStorage.REWARD_PRECISION;
 
         console2.log("DEBUG TEST: stakeAmount = %s", stakeAmount);
         console2.log("DEBUG TEST: rewardRate = %s", rewardRate);
@@ -3503,9 +3509,9 @@ contract PlumeStakingDiamondTest is Test {
         vm.roll(block.number + period1Duration / 12); // Approx block advance
 
         uint256 rewardPerTokenDeltaP1 = period1Duration * initialRewardRate;
-        uint256 expectedGrossRewardP1 = (userStakeAmount * rewardPerTokenDeltaP1) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedGrossRewardP1 = (userStakeAmount * rewardPerTokenDeltaP1) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedCommissionP1 =
-            (expectedGrossRewardP1 * initialCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+            (expectedGrossRewardP1 * initialCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedNetRewardP1 = expectedGrossRewardP1 - expectedCommissionP1;
 
         console2.log("Expected RewardPerTokenDelta P1:", rewardPerTokenDeltaP1);
@@ -3553,8 +3559,9 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("Test: Commission settlement call completed. Current timestamp: %s", block.timestamp);
 
         uint256 rewardPerTokenDeltaP2 = period2Duration * initialRewardRate; // Reward rate is still initialRewardRate
-        uint256 expectedGrossRewardP2 = (userStakeAmount * rewardPerTokenDeltaP2) / PlumeRewardLogic.REWARD_PRECISION;
-        uint256 expectedCommissionP2 = (expectedGrossRewardP2 * newCommissionRateP2) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedGrossRewardP2 = (userStakeAmount * rewardPerTokenDeltaP2) / PlumeStakingStorage.REWARD_PRECISION;
+        uint256 expectedCommissionP2 =
+            (expectedGrossRewardP2 * newCommissionRateP2) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedNetRewardP2 = expectedGrossRewardP2 - expectedCommissionP2;
 
         console2.log("Expected RewardPerTokenDelta P2:", rewardPerTokenDeltaP2);
@@ -3603,8 +3610,9 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
 
         uint256 rewardPerTokenDeltaP3 = period3Duration * newRewardRate;
-        uint256 expectedGrossRewardP3 = (userStakeAmount * rewardPerTokenDeltaP3) / PlumeRewardLogic.REWARD_PRECISION;
-        uint256 expectedCommissionP3 = (expectedGrossRewardP3 * newCommissionRateP2) / PlumeRewardLogic.REWARD_PRECISION; // Commission
+        uint256 expectedGrossRewardP3 = (userStakeAmount * rewardPerTokenDeltaP3) / PlumeStakingStorage.REWARD_PRECISION;
+        uint256 expectedCommissionP3 =
+            (expectedGrossRewardP3 * newCommissionRateP2) / PlumeStakingStorage.REWARD_PRECISION; // Commission
             // rate is still newCommissionRateP2
         uint256 expectedNetRewardP3 = expectedGrossRewardP3 - expectedCommissionP3;
 
@@ -3740,7 +3748,7 @@ contract PlumeStakingDiamondTest is Test {
         uint16 validatorId = DEFAULT_VALIDATOR_ID;
         address token = address(pUSD);
         uint256 userStakeAmount = 100 ether;
-        uint256 REWARD_PRECISION = PlumeRewardLogic.REWARD_PRECISION;
+        uint256 REWARD_PRECISION = PlumeStakingStorage.REWARD_PRECISION;
 
         // --- P0: Setup and Initial Stake ---
         vm.startPrank(user1);

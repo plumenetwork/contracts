@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { PlumeStakingStorage } from "./lib/PlumeStakingStorage.sol";
 import { InvalidAmount } from "./lib/PlumeErrors.sol";
+import { PlumeStakingStorage } from "./lib/PlumeStakingStorage.sol";
 import { OwnableInternal } from "@solidstate/access/ownable/Ownable.sol";
 import { ISolidStateDiamond, SolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol";
 

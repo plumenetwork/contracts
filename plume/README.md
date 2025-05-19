@@ -31,9 +31,24 @@ graph TD
 - **AccessControlFacet**: Manages roles and permissions.
 - **StakingFacet**: Handles staking and unstaking operations.
 - **RewardsFacet**: Manages reward tokens, rates, and distribution.
-- **ValidatorFacet**: Handles validator management.
-- **ManagementFacet**: Provides administrative functions.
+- **ValidatorFacet**: Handles validator management, including voting and execution of slashing.
+- **ManagementFacet**: Provides administrative functions, including cleanup of records for slashed validators.
 - **PlumeStakingRewardTreasury**: Separate contract for holding and distributing rewards.
+
+## Slashing Mechanism
+
+The system implements a slashing mechanism with the following key features:
+- **Lazy Slashing / Staker-Initiated Penalty Application:** Slashing is a two-step process involving voting by active, non-slashed validators and then execution by an address with `TIMELOCK_ROLE`.
+- **100% Penalty:** When a validator is slashed, 100% of their staked and cooling PLUME tokens are effectively burned (removed from circulation by reducing total supply trackers).
+- **Voting Requirement:** A unanimous vote from all other active, non-slashed validators is required to slash a validator.
+- **No User Recovery for Slashed Funds:** Since the penalty is 100%, users do not recover funds staked with or cooling for a validator that gets slashed.
+- **Admin Cleanup:** Administrative functions (`adminClearValidatorRecord`, `adminBatchClearValidatorRecords`) are provided to clean up stale user-validator association records after a validator is slashed and their funds are accounted for as lost.
+- **Operational Restrictions for Slashed Validators:**
+    - Slashed validators cannot have new stake directed to them.
+    - Stakers cannot unstake or restake with a slashed validator.
+    - Slashed validators cannot set their commission or request/finalize commission claims.
+    - Rewards stop accruing for a slashed validator from the `slashedAtTimestamp`.
+- **View Function Adjustments:** View functions like `getUserValidators` and `getUserCooldowns` filter out slashed validators or their associated data.
 
 ## Treasury System
 
@@ -95,24 +110,23 @@ Functions related to OpenZeppelin's `AccessControl` (like `grantRole`, `revokeRo
 
 | Function                                            | Description                                                                     |
 | --------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `stake(uint16 validatorId)`                         | (Payable) Stake PLUME tokens to a specific validator.                           |
-| `stakeOnBehalf(uint16 validatorId, address staker)` | (Payable) Stake PLUME on behalf of another user.                                |
-| `restake(uint16 validatorId, uint256 amount)`       | Restake PLUME tokens that are currently in cooling or parked state.             |
-| `unstake(uint16 validatorId)`                       | Unstake all PLUME tokens from a specific validator, initiating cooldown.        |
-| `unstake(uint16 validatorId, uint256 amount)`       | Unstake a specific amount of PLUME tokens from a validator, initiating cooldown. |
-| `withdraw()`                                        | Withdraw PLUME tokens that have completed the cooldown period.                  |
-| `restakeRewards(uint16 validatorId)`                | Claim and immediately restake PLUME rewards for a specific validator.           |
+| `stake(uint16 validatorId)`                         | (Payable) Stake PLUME tokens to a specific validator. Reverts if validator is slashed/inactive. |
+| `stakeOnBehalf(uint16 validatorId, address staker)` | (Payable) Stake PLUME on behalf of another user. Reverts if validator is slashed/inactive.     |
+| `restake(uint16 validatorId, uint256 amount)`       | Restake PLUME tokens that are currently in cooling state for a specific validator. Reverts if validator is slashed/inactive. |
+| `unstake(uint16 validatorId)`                       | Unstake all PLUME tokens from a specific validator, initiating cooldown. Reverts if validator is slashed.        |
+| `unstake(uint16 validatorId, uint256 amount)`       | Unstake a specific amount of PLUME tokens from a validator, initiating cooldown. Reverts if validator is slashed. |
+| `withdraw()`                                        | Withdraw PLUME tokens that have completed the cooldown period. Skips slashed validators.                  |
+| `restakeRewards(uint16 validatorId)`                | Claim and immediately restake PLUME rewards for a specific validator. Reverts if validator is slashed/inactive.          |
 | **View Functions**                                  |                                                                                 |
 | `amountStaked()`                                    | Get the amount of PLUME staked by the caller.                                   |
-| `amountCooling()`                                   | Get the amount of PLUME in cooling period for the caller.                       |
-| `amountWithdrawable()`                              | Get the amount of PLUME that is withdrawable for the caller.                    |
-| `cooldownEndDate()`                                 | Get the timestamp when the caller's current cooldown period ends.               |
+| `amountCooling()`                                   | Get the amount of PLUME in cooling period for the caller (sum across non-slashed validators).                       |
+| `amountWithdrawable()`                              | Get the amount of PLUME that is withdrawable (parked) for the caller.                    |
 | `stakeInfo(address user)`                           | Get staking information (staked, cooling, parked, etc.) for a specific user.    |
 | `totalAmountStaked()`                               | Get the total amount of PLUME staked across the entire system.                  |
 | `totalAmountCooling()`                              | Get the total amount of PLUME currently in cooldown across the system.          |
 | `totalAmountWithdrawable()`                         | Get the total amount of PLUME currently withdrawable across the system.         |
-| `totalAmountClaimable(address user, address token)` | Get the total claimable reward amount for a user and token across all validators. |
 | `getUserValidatorStake(address user, uint16 validatorId)` | Get the amount staked by a user for a specific validator.                   |
+| `getUserCooldowns(address user)`                    | Get a list of active cooldown entries for a user, filtering out slashed validators. |
 
 ### RewardsFacet Functions
 
@@ -121,46 +135,48 @@ Functions related to OpenZeppelin's `AccessControl` (like `grantRole`, `revokeRo
 | `setTreasury(address treasury)`                                     | Set the address of the `PlumeStakingRewardTreasury` contract.                   |
 | `addRewardToken(address token)`                                     | Add a token to the list of recognized reward tokens.                            |
 | `removeRewardToken(address token)`                                  | Remove a token from the list of reward tokens.                                  |
-| `setRewardRates(address[] tokens, uint256[] rates)`                 | Set the reward emission rates (per second) for multiple tokens.                 |
+| `setRewardRates(address[] tokens, uint256[] rates)`                 | Set the reward emission rates (per second) for multiple tokens. Creates checkpoints, handles slashed validators correctly. |
 | `setMaxRewardRate(address token, uint256 newMaxRate)`               | Set the maximum allowed reward rate for a specific token.                       |
-| `addRewards(address token, uint256 amount)`                         | **(Deprecated/Internal Use?)** Adds reward tokens (likely requires pre-approval).|
-| `claim(address token, uint16 validatorId)`                          | Claim rewards for a specific token from a specific validator.                   |
-| `claim(address token)`                                              | Claim rewards for a specific token from all validators the user has staked with. |
-| `claimAll()`                                                        | Claim all accumulated rewards for all tokens from all validators staked with.   |
+| `claim(address token, uint16 validatorId)`                          | Claim rewards for a specific token from a specific validator. Reverts if validator is inactive.                   |
+| `claim(address token)`                                              | Claim rewards for a specific token from all active, non-slashed validators the user has staked with. |
+| `claimAll()`                                                        | Claim all accumulated rewards for all tokens from all active, non-slashed validators staked with.   |
 | **View Functions**                                                  |                                                                                 |
-| `earned(address user, address token)`                               | Get the total accumulated (including potentially future) rewards for a user/token. |
-| `getClaimableReward(address user, address token)`                   | Get the currently claimable reward amount for a user/token across all validators. |
+| `earned(address user, address token)`                               | Get the total accumulated rewards for a user/token across all their active, non-slashed validator stakes. |
+| `getClaimableReward(address user, address token)`                   | Get the currently claimable reward amount for a user/token across all their active, non-slashed validator stakes. |
 | `getRewardTokens()`                                                 | Get the list of registered reward token addresses.                              |
 | `getMaxRewardRate(address token)`                                   | Get the maximum reward rate for a specific token.                               |
 | `getRewardRate(address token)`                                      | Get the current reward rate for a specific token.                               |
 | `tokenRewardInfo(address token)`                                    | Get detailed reward information (rate, index, etc.) for a specific token.       |
 | `getRewardRateCheckpointCount(address token)`                       | Get the number of global reward rate checkpoints for a token.                   |
 | `getValidatorRewardRateCheckpointCount(uint16 vId, address token)`  | Get the number of validator-specific reward rate checkpoints.                   |
-| `getUserLastCheckpointIndex(address user, address token, uint16 vId)` | Get the index of the last reward checkpoint processed for a user/validator/token. |
+| `getUserLastCheckpointIndex(address user, uint16 vId, address token)` | Get the index of the last reward checkpoint processed for a user/validator/token. |
 | `getRewardRateCheckpoint(address token, uint256 index)`             | Get details of a specific global reward rate checkpoint.                        |
 | `getValidatorRewardRateCheckpoint(uint16 vId, address token, uint256 index)` | Get details of a specific validator reward rate checkpoint.              |
 | `getTreasury()`                                                     | Get the address of the currently configured reward treasury contract.           |
-| `getPendingRewardForValidator(address user, address token, uint16 vId)` | Get the pending (claimable) reward amount for a user on a specific validator.   |
+| `getPendingRewardForValidator(address user, uint16 vId, address token)` | Get the pending (claimable) reward amount for a user on a specific validator (considers slash status).   |
 
 ### ValidatorFacet Functions
 
 | Function                                                                     | Description                                                                                        |
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `addValidator(...)`                                                          | Add a new validator to the system (see parameters below).                                          |
-| `setValidatorCapacity(uint16 validatorId, uint256 maxCapacity)`              | Set the maximum staking capacity for a validator.                                                  |
-| `setValidatorStatus(uint16 validatorId, bool active)`                        | Activate or deactivate a validator.                                                                |
-| `setValidatorCommission(uint16 validatorId, uint256 commission)`             | Update the commission rate for a validator.                                                        |
-| `setValidatorAddresses(uint16 vId, address l2AdminAddress, address l2WithdrawAddress)` | Update the admin and withdrawal addresses for a validator.                                 |
-| `claimValidatorCommission(uint16 validatorId, address token)`                | Claim accumulated commission rewards for a specific token. Called by validator admin/withdraw addr. |
-| `voteToSlashValidator(uint16 maliciousValidatorId, uint256 voteExpiration)` | Cast a vote to slash a potentially malicious validator (requires caller to be validator admin).    |
-| `slashValidator(uint16 validatorId)`                                         | Execute the slashing process for a validator if quorum and conditions are met.                   |
+| `setValidatorCapacity(uint16 validatorId, uint256 maxCapacity)`              | Set the maximum staking capacity for a validator. Reverts if validator inactive/slashed.                                                  |
+| `setValidatorStatus(uint16 validatorId, bool active)`                        | Activate or deactivate a validator. Cannot activate a slashed validator.                                                                |
+| `setValidatorCommission(uint16 validatorId, uint256 commission)`             | Update the commission rate for a validator. Reverts if validator inactive/slashed.                                                        |
+| `setValidatorAddresses(uint16 vId, ...)`                                     | Update the admin and withdrawal addresses for a validator. Reverts if validator inactive/slashed.                                 |
+| `requestCommissionClaim(uint16 validatorId, address token)`                | Request commission claim (starts timelock). Reverts if validator inactive/slashed. Called by validator admin. |
+| `finalizeCommissionClaim(uint16 validatorId, address token)`               | Finalize commission claim after timelock. Reverts if validator inactive/slashed. Called by validator admin. |
+| `voteToSlashValidator(uint16 maliciousValidatorId, uint256 voteExpiration)` | Cast a vote by an active, non-slashed validator admin to slash another active, non-slashed validator. |
+| `slashValidator(uint16 validatorId)`                                         | Execute the slashing process for a validator if unanimous vote from other active, non-slashed validators is met. Callable by `TIMELOCK_ROLE`. Marks validator slashed, inactive, burns stake & cooled amounts. |
+| `forceSettleValidatorCommission(uint16 validatorId)`                         | Manually triggers settlement of accrued commission for a validator.                                |
 | **View Functions**                                                           |                                                                                                    |
-| `getValidatorInfo(uint16 validatorId)`                                       | Get detailed information about a specific validator.                                               |
+| `getValidatorInfo(uint16 validatorId)`                                       | Get detailed information about a specific validator (includes `slashed` and `slashedAtTimestamp`).                                               |
 | `getValidatorStats(uint16 validatorId)`                                      | Get essential stats (status, commission, stake, stakers) for a validator.                      |
-| `getUserValidators(address user)`                                            | Get the list of validator IDs a user has staked with.                                              |
-| `getAccruedCommission(uint16 validatorId, address token)`                    | View the currently accrued (unclaimed) commission for a validator and token.                     |
+| `getUserValidators(address user)`                                            | Get the list of non-slashed validator IDs a user has (or had) an association with.               |
+| `getAccruedCommission(uint16 validatorId, address token)`                    | View the currently accrued (unclaimed) commission for a validator and token (considers slash status).                     |
 | `getValidatorsList()`                                                        | Get a list of all registered validators and their core data.                                     |
-| `getActiveValidatorCount()`                                                  | Get the number of currently active validators.                                                     |
+| `getActiveValidatorCount()`                                                  | Get the number of currently active (and not slashed) validators.                                                     |
+| `getSlashVoteCount(uint16 validatorId)`                                      | Gets the current number of active, unexpired slash votes against a validator.                  |
 
 ### ManagementFacet Functions
 
@@ -170,19 +186,19 @@ Functions related to OpenZeppelin's `AccessControl` (like `grantRole`, `revokeRo
 | `setCooldownInterval(uint256 interval)`                           | Set the duration (in seconds) of the unstaking cooldown period.                          |
 | `adminWithdraw(address token, uint256 amount, address recipient)` | Admin function to withdraw tokens directly from the *staking contract* (not the treasury). |
 | `setMaxSlashVoteDuration(uint256 duration)`                       | Set the maximum duration (in seconds) a slash vote remains valid.                        |
-| `adminCorrectUserStakeInfo(address user)`                         | Admin function to recalculate and potentially correct a user's internal stake tracking.  |
+| `setMaxAllowedValidatorCommission(uint256 newMaxRate)`            | Set the system-wide maximum allowed commission rate for any validator (max 50%).         |
+| `adminClearValidatorRecord(address user, uint16 slashedValidatorId)`| Admin function to clear a user's stake/cooldown records for a specific *slashed* validator. |
+| `adminBatchClearValidatorRecords(address[] users, uint16 slashedValidatorId)` | Admin function to batch clear records for multiple users for a specific *slashed* validator. |
 | **View Functions**                                                |                                                                                          |
 | `getMinStakeAmount()`                                             | Get the currently configured minimum stake amount.                                       |
 | `getCooldownInterval()`                                           | Get the currently configured cooldown interval duration.                                 |
 
 ### AddValidator Parameters
 
-The `addValidator` function requires the following parameters:
-
 | Parameter             | Type      | Description                                                                                        |
 | --------------------- | --------- | -------------------------------------------------------------------------------------------------- |
 | `validatorId`         | `uint16`  | Unique identifier for the validator                                                                |
-| `commission`          | `uint256` | Commission rate as a fraction of REWARD_PRECISION (e.g., 5% = 5e16, 10% = 1e17, 20% = 2e17)        |
+| `commission`          | `uint256` | Commission rate as a fraction of `PlumeStakingStorage.REWARD_PRECISION` (e.g., 5% = 5e16). Must be <= `maxAllowedValidatorCommission`.        |
 | `l2AdminAddress`      | `address` | Admin address that can manage the validator (l2Address should be a multisig with Plume Foundation) |
 | `l2WithdrawAddress`   | `address` | Address to receive validator commission rewards                                                    |
 | `l1ValidatorAddress`  | `string`  | L1 validator address (informational)                                                               |
@@ -212,7 +228,7 @@ plumeStaking.addValidator(
 
 | Event                                                                                                                   | Description                                                            |
 | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `Staked(address user, uint16 validatorId, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 fromWallet)` | Emitted when a user stakes PLUME. Includes breakdown of source funds.  |
+| `Staked(address user, uint16 validatorId, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 pendingRewards)` | Emitted when a user stakes PLUME. Includes breakdown of source funds.  |
 | `StakedOnBehalf(address sender, address staker, uint16 validatorId, uint256 amount)`                                    | Emitted when someone stakes on behalf of another user.                 |
 | `Unstaked(address user, uint16 validatorId, uint256 amount)`                                                            | Emitted when a user initiates unstaking (starts cooldown).             |
 | `CooldownStarted(address staker, uint16 validatorId, uint256 amount, uint256 cooldownEnd)`                              | Emitted when an unstake action successfully starts the cooldown timer. |
@@ -227,8 +243,7 @@ plumeStaking.addValidator(
 | `RewardTokenRemoved(address token)`                                                           | Emitted when a token is removed from the rewards list (in Staking contract).     |
 | `RewardRatesSet(address[] tokens, uint256[] rates)`                                           | Emitted when reward rates are updated.                                           |
 | `MaxRewardRateUpdated(address token, uint256 newMaxRate)`                                     | Emitted when the maximum reward rate is updated for a single token.              |
-| `RewardRateCheckpointCreated(address token, uint256 index, uint256 timestamp, uint256 rate)`  | Emitted when a global reward rate checkpoint is created.                         |
-| `RewardsAdded(address token, uint256 amount)`                                                 | Emitted when reward tokens are added (potentially related to `addRewards` fn). |
+| `RewardRateCheckpointCreated(address token, uint16 validatorId, uint256 rate, uint256 timestamp, uint256 index, uint256 cumulativeIndex)`  | Emitted when a validator-specific reward rate checkpoint is created.             |
 | `RewardClaimed(address user, address token, uint256 amount)`                                  | Emitted when a user claims rewards aggregated across all validators.             |
 | `RewardClaimedFromValidator(address user, address token, uint16 validatorId, uint256 amount)` | Emitted when a user claims rewards from a specific validator.                    |
 | `TreasurySet(address treasury)`                                                               | Emitted when the reward treasury contract address is updated.                    |
@@ -241,13 +256,12 @@ plumeStaking.addValidator(
 | `ValidatorUpdated(uint16 vId, uint256 commission, address l2Admin, address l2Withdraw, string l1Val, string l1Acc, address l1AccEvm)`                                                         | Emitted when a validator's core details are updated.                                   |
 | `ValidatorStatusUpdated(uint16 validatorId, bool active, bool slashed)`                                                                                                                        | Emitted when a validator's active or slashed status changes.                           |
 | `ValidatorCommissionSet(uint16 validatorId, uint256 oldCommission, uint256 newCommission)`                                                                                                     | Emitted when a validator's commission rate is changed via `setValidatorCommission`.    |
-| `ValidatorAddressesSet(uint16 validatorId, address oldAdmin, address newAdmin, address oldWithdraw, address newWithdraw)`                                                                      | Emitted when a validator's admin or withdraw addresses are changed.                    |
+| `ValidatorAddressesSet(uint16 vId, address oldL2Admin, address newL2Admin, address oldL2Withdraw, address newL2Withdraw, string oldL1Val, string newL1Val, string oldL1Acc, string newL1Acc, address oldL1AccEvm, address newL1AccEvm)` | Emitted when a validator's admin or withdraw addresses are changed.                    |
 | `ValidatorCapacityUpdated(uint16 validatorId, uint256 oldCapacity, uint256 newCapacity)`                                                                                                       | Emitted when validator capacity is updated.                                            |
 | `ValidatorCommissionClaimed(uint16 validatorId, address token, uint256 amount)`                                                                                                                | Emitted when validator commission is claimed.                                          |
-| `ValidatorRemoved(uint16 validatorId)`                                                                                                                                                         | Emitted if a validator removal mechanism exists and is triggered.                      |
 | `SlashVoteCast(uint16 targetValidatorId, uint16 voterValidatorId, uint256 voteExpiration)`                                                                                                    | Emitted when a validator admin casts a vote to slash another validator.                |
-| `ValidatorSlashed(uint16 validatorId, address slasher, uint256 penaltyAmount)`                                                                                                               | Emitted when a validator is successfully slashed.                                        |
-
+| `ValidatorSlashed(uint16 validatorId, address slasher, uint256 penaltyAmount)`                                                                                                                | Emitted when a validator is successfully slashed. `penaltyAmount` is the total stake + cooled amount lost/burned. |
+| `ValidatorCommissionCheckpointCreated(uint16 indexed validatorId, uint256 rate, uint256 timestamp)`                                                                                             | Emitted when a validator commission rate checkpoint is created.                         |
 
 ### Administrative Events
 
@@ -257,8 +271,9 @@ plumeStaking.addValidator(
 | `CooldownIntervalSet(uint256 interval)`                                                                                            | Emitted when the global cooldown interval is set via `setCooldownInterval`.            |
 | `AdminWithdraw(address token, uint256 amount, address recipient)`                                                                  | Emitted when admin withdraws tokens from the staking contract via `adminWithdraw`.     |
 | `MaxSlashVoteDurationSet(uint256 duration)`                                                                                        | Emitted when the maximum duration for slash votes is set.                              |
-| `StakeInfoUpdated(address user, uint256 staked, uint256 cooled, uint256 parked, uint256 cooldownEnd, uint256 lastUpdateTimestamp)` | Emitted when a user's core staking details are updated internally.                     |
-| `AdminStakeCorrection(address user, uint256 oldTotalStake, uint256 newTotalStake)`                                                 | Emitted when an admin corrects a user's staked amount via `adminCorrectUserStakeInfo`. |
+| `MaxAllowedValidatorCommissionSet(uint256 oldMaxRate, uint256 newMaxRate)`                                                         | Emitted when the system-wide maximum allowed validator commission is set.              |
+| `AdminClearedSlashedStake(address indexed user, uint16 indexed slashedValidatorId, uint256 amountCleared)`                        | Emitted when admin clears a user's active stake from a slashed validator.             |
+| `AdminClearedSlashedCooldown(address indexed user, uint16 indexed slashedValidatorId, uint256 amountCleared)`                     | Emitted when admin clears a user's cooled funds from a slashed validator.             |
 
 ## Errors
 
@@ -271,72 +286,52 @@ This section lists custom errors defined in `PlumeErrors.sol`.
 | `ZeroAddress(string parameter)`                 | A required address parameter was `address(0)`.                                    |
 | `TokenDoesNotExist(address token)`              | The specified token is not recognized or registered.                              |
 | `TransferError()`                               | Generic error during a token transfer.                                            |
-| `TokensInCoolingPeriod()`                       | Operation failed because user has tokens still in the cooling period.             |
 | `CooldownPeriodNotEnded()`                      | Attempt to withdraw or restake before cooldown finished.                          |
 | `StakeAmountTooSmall(uint256 provided, uint256 min)` | Provided stake amount is less than the minimum required.                      |
 | `InsufficientCooldownBalance(uint256 available, uint256 requested)` | Trying to restake more from cooldown than available.           |
-| `InsufficientCooledAndParkedBalance(uint256 available, uint256 requested)` | Trying to restake more from cooled+parked than available. |
 | `NoRewardsToRestake()`                          | Called `restakeRewards` but user has no claimable PLUME rewards.                  |
 | `ValidatorDoesNotExist(uint16 validatorId)`     | The specified validator ID does not exist.                                        |
 | `ValidatorAlreadyExists(uint16 validatorId)`    | Trying to add a validator ID that already exists.                                 |
 | `ValidatorInactive(uint16 validatorId)`         | Operation requires an active validator, but it's inactive.                      |
 | `NotValidatorAdmin(address caller)`             | Caller does not have administrative privileges for the validator.               |
-| `ValidatorCapacityExceeded()`                   | Staking would exceed the validator's maximum capacity.                            |
 | `ExceedsValidatorCapacity(uint16 vId, uint256 current, uint256 max, uint256 requested)` | Detailed capacity exceeded error.         |
 | `ValidatorPercentageExceeded()`                 | Staking would exceed the maximum percentage of total stake allowed per validator. |
-| `TooManyStakers()`                              | Validator has reached its maximum staker count limit (if applicable).             |
 | `TokenAlreadyExists()`                          | Trying to add a reward token that already exists.                                 |
 | `ArrayLengthMismatch()`                         | Provided arrays (e.g., tokens and rates) have different lengths.                  |
 | `EmptyArray()`                                  | Provided array cannot be empty for the operation.                                 |
-| `CommissionTooHigh()`                           | Specified commission rate exceeds the allowed maximum.                            |
-| `CommissionRateTooHigh(uint256 requested, uint256 max)` | Detailed commission too high error.                                     |
+| `CommissionExceedsMaxAllowed(uint256 requested, uint256 maxAllowed)` | Validator commission exceeds system-wide maximum allowed rate.      |
+| `InvalidMaxCommissionRate(uint256 requested, uint256 limit)` | Attempt to set max allowed commission > 50%.                       |
 | `RewardRateExceedsMax()`                        | Trying to set a reward rate higher than the configured maximum rate.              |
 | `NativeTransferFailed()`                        | Transfer of native PLUME failed.                                                  |
-| `IndexOutOfRange(uint256 index, uint256 length)` | Accessing an array or list with an invalid index.                               |
-| `InvalidIndexRange(uint256 start, uint256 end)` | Provided start/end index for range operation is invalid.                        |
-| `StakerExists(address staker)`                  | Trying to add a staker record that already exists.                              |
-| `InsufficientFunds(uint256 available, uint256 requested)` | Generic insufficient funds error (likely for internal operations).      |
+| `InsufficientFunds(uint256 available, uint256 requested)` | Generic insufficient funds error.                                               |
 | `AdminTransferFailed()`                         | Admin withdrawal operation failed.                                                |
-| `InvalidRewardRateCheckpoint(address token, uint256 index)` | Invalid checkpoint data accessed.                                     |
-| `SlashVoteDurationTooLong()`                    | Specified slash vote expiration is too far in the future.                         |
+| `SlashVoteDurationTooLong()`                    | Specified slash vote expiration is too far in the future or duration not set.     |
 | `CannotVoteForSelf()`                           | Validator admin attempted to vote to slash their own validator.                   |
-| `AlreadyVotedToSlash(uint16 target, uint16 voter)` | Voter has already cast a slash vote for this target.                        |
-| `ValidatorNotActive(uint16 validatorId)`        | Validator must be active for this operation (e.g., slash voting).                 |
+| `AlreadyVotedToSlash(uint16 target, uint16 voter)` | Voter has already cast an active slash vote for this target.                  |
 | `ValidatorAlreadySlashed(uint16 validatorId)`   | Target validator has already been slashed.                                        |
-| `UnanimityNotReached(uint256 votes, uint256 required)` | Slash quorum/condition not met.                                           |
+| `UnanimityNotReached(uint256 votes, uint256 required)` | Slash quorum (all other active non-slashed validators) not met.             |
 | `SlashVoteExpired(uint16 target, uint16 voter)` | The slash vote being referenced has expired.                                      |
-| `SlashConditionsNotMet(uint16 validatorId)`     | General error indicating conditions for slashing are not met.                     |
-| `ZeroAddressToken()`                            | Token address provided is `address(0)`. (Treasury specific)                       |
-| `TokenAlreadyAdded(address token)`              | Token already added. (Treasury specific)                                          |
-| `ZeroRecipientAddress()`                        | Recipient address provided is `address(0)`. (Treasury specific)                   |
-| `ZeroAmount()`                                  | Amount provided is zero. (Treasury specific)                                      |
-| `TokenNotRegistered(address token)`             | Token not registered as a reward token. (Treasury specific)                       |
-| `InsufficientPlumeBalance(uint256 requested, uint256 available)` | Insufficient native PLUME balance. (Treasury specific)            |
-| `InsufficientTokenBalance(address token, uint256 requested, uint256 available)` | Insufficient ERC20 token balance. (Treasury specific) |
-| `PlumeTransferFailed(address recipient, uint256 amount)` | Native PLUME transfer failed. (Treasury specific)                       |
-| `InsufficientBalance(address token, uint256 available, uint256 required)` | Insufficient token balance (generic, used in Treasury).  |
-| `InvalidToken()`                                | Invalid token address provided. (Treasury specific)                               |
-| `TokenTransferFailed(address token, address recipient, uint256 amount)` | ERC20 transfer failed. (Treasury specific)                |
-| `UnsupportedToken(address token)`               | Token type is not supported (e.g., non-standard ERC20).                         |
-| `ZeroAddressProvided()`                         | Generic zero address error.                                                       |
-| `TreasuryInsufficientBalance(address token, uint256 requested, uint256 available)` | Treasury lacks funds for distribution.        |
-| `ValidatorIdExists()`                           | Validator ID 0 check failed (likely internal).                                    |
-| `NoWithdrawableBalanceToRestake()`              | Attempted restake with zero withdrawable balance.                                 |
-| `CooldownNotComplete(uint256 cooldownEnd, uint256 currentTime)` | Cooldown period is not yet finished.                              |
-| `Unauthorized(address caller, bytes32 requiredRole)` | Caller lacks the required role for the operation.                           |
+| `AdminAlreadyAssigned(address admin)`           | The L2 admin address is already assigned to another validator.                    |
 | `TreasuryNotSet()`                              | The reward treasury address has not been configured.                              |
 | `InternalInconsistency(string message)`         | Indicates an unexpected internal state error.                                     |
-| `InvalidUpdateType(uint8 providedType)`         | An invalid type identifier was provided (e.g., for validator updates).            |
-
+| `PendingClaimExists(uint16 validatorId, address token)` | A commission claim is already pending for this validator/token.                |
+| `NoPendingClaim(uint16 validatorId, address token)`   | No pending commission claim found to finalize for this validator/token.          |
+| `ClaimNotReady(uint16 validatorId, address token, uint256 readyTimestamp)` | Commission claim timelock has not yet passed.           |
+| `CooldownTooShortForSlashVote(uint256 newCooldown, uint256 currentMaxSlashVote)` | Cooldown interval must be longer than max slash vote duration. |
+| `SlashVoteDurationTooLongForCooldown(uint256 newMaxSlashVote, uint256 currentCooldown)` | Max slash vote duration must be shorter than cooldown interval. |
+| `InvalidInterval(uint256 interval)`             | Provided interval (e.g., for cooldown or slash vote duration) is invalid (likely 0). |
+| `ActionOnSlashedValidatorError(uint16 validatorId)` | User/Admin action attempted on a validator that has been slashed.                 |
+| `ValidatorNotSlashed(uint16 validatorId)`       | Admin action (like `adminClearValidatorRecord`) attempted on a validator that is not slashed. |
 
 ## Constants
 
 | Constant           | Value                                        | Description                             |
 | ------------------ | -------------------------------------------- | --------------------------------------- |
 | `ADMIN_ROLE`       | `keccak256("ADMIN_ROLE")`                    | Role with administrative privileges across the system. Can manage reward tokens, validators, system parameters, and other roles. |
-| `DISTRIBUTOR_ROLE`  | `keccak256("DISTRIBUTOR_ROLE")`               | Role with permission to distribute rewards |
-| `UPGRADER_ROLE`     | `keccak256("UPGRADER_ROLE")`                   | Role with permission to upgrade the contract |
-| `DEFAULT_ADMIN_ROLE`| `keccak256("DEFAULT_ADMIN_ROLE")`              | Super admin role for initial setup       |
+| `UPGRADER_ROLE`     | `keccak256("UPGRADER_ROLE")`                   | Role with permission to upgrade the contract (diamondCut). |
+| `VALIDATOR_ROLE`   | `keccak256("VALIDATOR_ROLE")`                | Role for managing global validator settings (e.g., adding validators). Specific validator actions are controlled by validator admins. |
+| `REWARD_MANAGER_ROLE`| `keccak256("REWARD_MANAGER_ROLE")`             | Role for managing reward settings and distribution (e.g., setting rates, adding/removing reward tokens). |
+| `TIMELOCK_ROLE`    | `keccak256("TIMELOCK_ROLE")`                 | Role for executing time-locked actions like finalizing slashing or setting critical parameters. |
 
 ## Spin and Raffle specific:
 
