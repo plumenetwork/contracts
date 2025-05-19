@@ -216,7 +216,7 @@ contract PlumeStakingDiamondTest is Test {
         rewardsSigs_Manual[21] = bytes4(keccak256(bytes("getRewardRate(address)")));
 
         // Validator Facet Selectors
-        bytes4[] memory validatorSigs_Manual = new bytes4[](16); // Increased size
+        bytes4[] memory validatorSigs_Manual = new bytes4[](17); // Size updated to 17
         validatorSigs_Manual[0] =
             bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
@@ -235,17 +235,21 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[13] = bytes4(keccak256(bytes("voteToSlashValidator(uint16,uint256)")));
         validatorSigs_Manual[14] = bytes4(keccak256(bytes("slashValidator(uint16)")));
         validatorSigs_Manual[15] = bytes4(keccak256(bytes("forceSettleValidatorCommission(uint16)")));
+        validatorSigs_Manual[16] = bytes4(keccak256(bytes("getSlashVoteCount(uint16)"))); // <<< NEW SELECTOR
 
         // Management Facet Selectors
-        bytes4[] memory managementSigs_Manual = new bytes4[](8);
+        bytes4[] memory managementSigs_Manual = new bytes4[](9); // Size updated
         managementSigs_Manual[0] = bytes4(keccak256(bytes("setMinStakeAmount(uint256)")));
         managementSigs_Manual[1] = bytes4(keccak256(bytes("setCooldownInterval(uint256)")));
         managementSigs_Manual[2] = bytes4(keccak256(bytes("adminWithdraw(address,uint256,address)")));
-        managementSigs_Manual[3] = bytes4(keccak256(bytes("updateTotalAmounts(uint256,uint256)")));
-        managementSigs_Manual[4] = bytes4(keccak256(bytes("getMinStakeAmount()")));
-        managementSigs_Manual[5] = bytes4(keccak256(bytes("getCooldownInterval()")));
-        managementSigs_Manual[6] = bytes4(keccak256(bytes("setMaxSlashVoteDuration(uint256)")));
-        managementSigs_Manual[7] = bytes4(keccak256(bytes("setMaxAllowedValidatorCommission(uint256)")));
+        // updateTotalAmounts was at index 3, it's removed.
+        managementSigs_Manual[3] = bytes4(keccak256(bytes("getMinStakeAmount()"))); // Index shifted
+        managementSigs_Manual[4] = bytes4(keccak256(bytes("getCooldownInterval()"))); // Index shifted
+        managementSigs_Manual[5] = bytes4(keccak256(bytes("setMaxSlashVoteDuration(uint256)"))); // Index shifted
+        managementSigs_Manual[6] = bytes4(keccak256(bytes("setMaxAllowedValidatorCommission(uint256)"))); // Index
+            // shifted
+        managementSigs_Manual[7] = bytes4(keccak256(bytes("adminClearValidatorRecord(address,uint16)"))); // New
+        managementSigs_Manual[8] = bytes4(keccak256(bytes("adminBatchClearValidatorRecords(address[],uint16)"))); // New
 
         console2.log("Manual selectors initialized");
 
@@ -3459,233 +3463,278 @@ contract PlumeStakingDiamondTest is Test {
         );
     }
 
+    // --- Test Commission & Reward Rate Changes ---
 
-        // --- Test Commission & Reward Rate Changes ---
+    function testCommissionAndRewardRateChanges() public {
+        console2.log("\\n--- Starting Commission & Reward Rate Change Test ---");
 
-function testCommissionAndRewardRateChanges() public {
-    console2.log("\\n--- Starting Commission & Reward Rate Change Test ---");
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        uint256 userStakeAmount = 100 ether;
 
-    uint16 validatorId = DEFAULT_VALIDATOR_ID;
-    uint256 userStakeAmount = 100 ether;
+        // Initial commission and reward rates
+        uint256 initialCommissionRate = 0.1 ether; // 10%
+        uint256 initialRewardRate = 0.01 ether; // PUSD per second per 1e18 PLUME staked
 
-    // Initial commission and reward rates
-    uint256 initialCommissionRate = 0.1 ether; // 10%
-    uint256 initialRewardRate = 0.01 ether; // PUSD per second per 1e18 PLUME staked
+        console2.log("Setting initial rates and staking...");
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, initialCommissionRate);
+        vm.stopPrank();
 
-    console2.log("Setting initial rates and staking...");
-    vm.startPrank(validatorAdmin);
-    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, initialCommissionRate);
-    vm.stopPrank();
+        vm.startPrank(admin);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(pUSD);
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = initialRewardRate;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        // Fund treasury sufficiently for all expected rewards and commissions
+        pUSD.transfer(address(treasury), 3000 ether); // Increased funding
+        vm.stopPrank();
 
-    vm.startPrank(admin);
-    address[] memory tokens = new address[](1);
-    tokens[0] = address(pUSD);
-    uint256[] memory rates = new uint256[](1);
-    rates[0] = initialRewardRate;
-    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
-    // Fund treasury sufficiently for all expected rewards and commissions
-    pUSD.transfer(address(treasury), 3000 ether); // Increased funding
-    vm.stopPrank();
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: userStakeAmount }(validatorId);
+        vm.stopPrank();
+        console2.log("User 1 staked", userStakeAmount, "with Validator", validatorId);
 
-    vm.startPrank(user1);
-    StakingFacet(address(diamondProxy)).stake{value: userStakeAmount}(validatorId);
-    vm.stopPrank();
-    console2.log("User 1 staked", userStakeAmount, "with Validator", validatorId);
+        // --- Period 1: Initial Rates (1 Day) ---
+        uint256 period1Duration = 1 days;
+        uint256 startTimeP1 = block.timestamp;
+        console2.log("\\nAdvancing time for Period 1 (", period1Duration, " seconds)");
+        vm.warp(startTimeP1 + period1Duration);
+        vm.roll(block.number + period1Duration / 12); // Approx block advance
 
-    // --- Period 1: Initial Rates (1 Day) ---
-    uint256 period1Duration = 1 days;
-    uint256 startTimeP1 = block.timestamp;
-    console2.log("\\nAdvancing time for Period 1 (", period1Duration, " seconds)");
-    vm.warp(startTimeP1 + period1Duration);
-    vm.roll(block.number + period1Duration / 12); // Approx block advance
+        uint256 rewardPerTokenDeltaP1 = period1Duration * initialRewardRate;
+        uint256 expectedGrossRewardP1 = (userStakeAmount * rewardPerTokenDeltaP1) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedCommissionP1 =
+            (expectedGrossRewardP1 * initialCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedNetRewardP1 = expectedGrossRewardP1 - expectedCommissionP1;
 
-    uint256 rewardPerTokenDeltaP1 = period1Duration * initialRewardRate;
-    uint256 expectedGrossRewardP1 = (userStakeAmount * rewardPerTokenDeltaP1) / PlumeRewardLogic.REWARD_PRECISION;
-    uint256 expectedCommissionP1 = (expectedGrossRewardP1 * initialCommissionRate) / PlumeRewardLogic.REWARD_PRECISION;
-    uint256 expectedNetRewardP1 = expectedGrossRewardP1 - expectedCommissionP1;
+        console2.log("Expected RewardPerTokenDelta P1:", rewardPerTokenDeltaP1);
+        console2.log("Expected Gross Reward P1:", expectedGrossRewardP1);
+        console2.log("Expected Commission P1:", expectedCommissionP1);
+        console2.log("Expected Net Reward P1:", expectedNetRewardP1);
 
-    console2.log("Expected RewardPerTokenDelta P1:", rewardPerTokenDeltaP1);
-    console2.log("Expected Gross Reward P1:", expectedGrossRewardP1);
-    console2.log("Expected Commission P1:", expectedCommissionP1);
-    console2.log("Expected Net Reward P1:", expectedNetRewardP1);
+        console2.log("Test: Force settling commission for Validator 0 at t=%s before P1 assertions.", block.timestamp);
+        vm.prank(admin);
+        ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
+        vm.stopPrank();
 
-    console2.log("Test: Force settling commission for Validator 0 at t=%s before P1 assertions.", block.timestamp);
-    vm.prank(admin);
-    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
-    vm.stopPrank();
+        uint256 actualClaimableP1 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+        uint256 actualCommissionP1 =
+            ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, address(pUSD));
+        console2.log("Actual Claimable Reward P1:", actualClaimableP1);
+        console2.log("Actual Accrued Commission P1:", actualCommissionP1);
+        assertApproxEqAbs(
+            actualClaimableP1, expectedNetRewardP1, expectedNetRewardP1 / 100, "Period 1 Claimable mismatch"
+        );
+        assertApproxEqAbs(
+            actualCommissionP1, expectedCommissionP1, expectedCommissionP1 / 100, "Period 1 Commission mismatch"
+        );
 
-    uint256 actualClaimableP1 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
-    uint256 actualCommissionP1 = ValidatorFacet(address(diamondProxy)).getAccruedCommission(
-        validatorId,
-        address(pUSD)
-    );
-    console2.log("Actual Claimable Reward P1:", actualClaimableP1);
-    console2.log("Actual Accrued Commission P1:", actualCommissionP1);
-    assertApproxEqAbs(actualClaimableP1, expectedNetRewardP1, expectedNetRewardP1 / 100, "Period 1 Claimable mismatch");
-    assertApproxEqAbs(actualCommissionP1, expectedCommissionP1, expectedCommissionP1 / 100, "Period 1 Commission mismatch");
+        // --- Period 2: New Commission Rate, Same Reward Rate (1 Day) ---
+        uint256 newCommissionRateP2 = 0.2 ether; // 20%
+        console2.log("\\nUpdating Commission Rate to", newCommissionRateP2);
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, newCommissionRateP2);
+        vm.stopPrank();
 
-    // --- Period 2: New Commission Rate, Same Reward Rate (1 Day) ---
-    uint256 newCommissionRateP2 = 0.2 ether; // 20%
-    console2.log("\\nUpdating Commission Rate to", newCommissionRateP2);
-    vm.startPrank(validatorAdmin);
-    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, newCommissionRateP2);
-    vm.stopPrank();
+        uint256 period2Duration = 1 days;
+        uint256 startTimeP2 = block.timestamp;
+        console2.log("Advancing time for Period 2 (", period2Duration, " seconds)");
+        vm.warp(startTimeP2 + period2Duration);
+        vm.roll(block.number + period2Duration / 12);
 
-    uint256 period2Duration = 1 days;
-    uint256 startTimeP2 = block.timestamp;
-    console2.log("Advancing time for Period 2 (", period2Duration, " seconds)");
-    vm.warp(startTimeP2 + period2Duration);
-    vm.roll(block.number + period2Duration / 12);
+        console2.log(
+            "Test: Force settling commission for Validator 0 at t=%s to update reward/commission states after P2.",
+            block.timestamp
+        );
+        vm.prank(admin);
+        ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
+        vm.stopPrank();
+        console2.log("Test: Commission settlement call completed. Current timestamp: %s", block.timestamp);
 
-    console2.log("Test: Force settling commission for Validator 0 at t=%s to update reward/commission states after P2.", block.timestamp);
-    vm.prank(admin);
-    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
-    vm.stopPrank();
-    console2.log("Test: Commission settlement call completed. Current timestamp: %s", block.timestamp);
+        uint256 rewardPerTokenDeltaP2 = period2Duration * initialRewardRate; // Reward rate is still initialRewardRate
+        uint256 expectedGrossRewardP2 = (userStakeAmount * rewardPerTokenDeltaP2) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedCommissionP2 = (expectedGrossRewardP2 * newCommissionRateP2) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedNetRewardP2 = expectedGrossRewardP2 - expectedCommissionP2;
 
-    uint256 rewardPerTokenDeltaP2 = period2Duration * initialRewardRate; // Reward rate is still initialRewardRate
-    uint256 expectedGrossRewardP2 = (userStakeAmount * rewardPerTokenDeltaP2) / PlumeRewardLogic.REWARD_PRECISION;
-    uint256 expectedCommissionP2 = (expectedGrossRewardP2 * newCommissionRateP2) / PlumeRewardLogic.REWARD_PRECISION;
-    uint256 expectedNetRewardP2 = expectedGrossRewardP2 - expectedCommissionP2;
+        console2.log("Expected RewardPerTokenDelta P2:", rewardPerTokenDeltaP2);
+        console2.log("Expected Gross Reward P2:", expectedGrossRewardP2);
+        console2.log("Expected Commission P2:", expectedCommissionP2);
+        console2.log("Expected Net Reward P2:", expectedNetRewardP2);
 
-    console2.log("Expected RewardPerTokenDelta P2:", rewardPerTokenDeltaP2);
-    console2.log("Expected Gross Reward P2:", expectedGrossRewardP2);
-    console2.log("Expected Commission P2:", expectedCommissionP2);
-    console2.log("Expected Net Reward P2:", expectedNetRewardP2);
+        uint256 totalExpectedNetReward_P1P2 = expectedNetRewardP1 + expectedNetRewardP2;
+        uint256 totalExpectedCommission_P1P2 = expectedCommissionP1 + expectedCommissionP2;
 
-    uint256 totalExpectedNetReward_P1P2 = expectedNetRewardP1 + expectedNetRewardP2;
-    uint256 totalExpectedCommission_P1P2 = expectedCommissionP1 + expectedCommissionP2;
+        uint256 actualClaimableP1P2 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+        uint256 actualCommissionP1P2 =
+            ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, address(pUSD));
+        console2.log("Actual Claimable Reward (P1+P2):", actualClaimableP1P2);
+        console2.log("Actual Accrued Commission (P1+P2):", actualCommissionP1P2);
+        assertApproxEqAbs(
+            actualClaimableP1P2,
+            totalExpectedNetReward_P1P2,
+            totalExpectedNetReward_P1P2 / 100,
+            "Period 1+2 Claimable mismatch"
+        );
+        assertApproxEqAbs(
+            actualCommissionP1P2,
+            totalExpectedCommission_P1P2,
+            totalExpectedCommission_P1P2 / 100,
+            "Period 1+2 Commission mismatch"
+        );
 
-    uint256 actualClaimableP1P2 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
-    uint256 actualCommissionP1P2 = ValidatorFacet(address(diamondProxy)).getAccruedCommission(
-        validatorId,
-        address(pUSD)
-    );
-    console2.log("Actual Claimable Reward (P1+P2):", actualClaimableP1P2);
-    console2.log("Actual Accrued Commission (P1+P2):", actualCommissionP1P2);
-    assertApproxEqAbs(actualClaimableP1P2, totalExpectedNetReward_P1P2, totalExpectedNetReward_P1P2 / 100, "Period 1+2 Claimable mismatch");
-    assertApproxEqAbs(actualCommissionP1P2, totalExpectedCommission_P1P2, totalExpectedCommission_P1P2 / 100, "Period 1+2 Commission mismatch");
+        // --- Period 3: New Reward Rate, Same (Latest) Commission Rate (1 Day) ---
+        uint256 newRewardRate = 0.005 ether; // New PUSD rate
+        console2.log("\\nUpdating Reward Rate to", newRewardRate);
+        vm.startPrank(admin);
+        rates[0] = newRewardRate; // rates array still has pUSD at index 0
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates); // tokens array still has pUSD
+        vm.stopPrank();
 
-    // --- Period 3: New Reward Rate, Same (Latest) Commission Rate (1 Day) ---
-    uint256 newRewardRate = 0.005 ether; // New PUSD rate
-    console2.log("\\nUpdating Reward Rate to", newRewardRate);
-    vm.startPrank(admin);
-    rates[0] = newRewardRate; // rates array still has pUSD at index 0
-    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates); // tokens array still has pUSD
-    vm.stopPrank();
+        uint256 period3Duration = 1 days;
+        uint256 startTimeP3 = block.timestamp;
+        console2.log("Advancing time for Period 3 (", period3Duration, " seconds)");
+        vm.warp(startTimeP3 + period3Duration);
+        vm.roll(block.number + period3Duration / 12);
 
-    uint256 period3Duration = 1 days;
-    uint256 startTimeP3 = block.timestamp;
-    console2.log("Advancing time for Period 3 (", period3Duration, " seconds)");
-    vm.warp(startTimeP3 + period3Duration);
-    vm.roll(block.number + period3Duration / 12);
+        console2.log("Test: Force settling commission for Validator 0 at t=%s before P3 assertions.", block.timestamp);
+        vm.prank(admin);
+        ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
+        vm.stopPrank();
 
-    console2.log("Test: Force settling commission for Validator 0 at t=%s before P3 assertions.", block.timestamp);
-    vm.prank(admin);
-    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
-    vm.stopPrank();
+        uint256 rewardPerTokenDeltaP3 = period3Duration * newRewardRate;
+        uint256 expectedGrossRewardP3 = (userStakeAmount * rewardPerTokenDeltaP3) / PlumeRewardLogic.REWARD_PRECISION;
+        uint256 expectedCommissionP3 = (expectedGrossRewardP3 * newCommissionRateP2) / PlumeRewardLogic.REWARD_PRECISION; // Commission
+            // rate is still newCommissionRateP2
+        uint256 expectedNetRewardP3 = expectedGrossRewardP3 - expectedCommissionP3;
 
-    uint256 rewardPerTokenDeltaP3 = period3Duration * newRewardRate;
-    uint256 expectedGrossRewardP3 = (userStakeAmount * rewardPerTokenDeltaP3) / PlumeRewardLogic.REWARD_PRECISION;
-    uint256 expectedCommissionP3 = (expectedGrossRewardP3 * newCommissionRateP2) / PlumeRewardLogic.REWARD_PRECISION; // Commission rate is still newCommissionRateP2
-    uint256 expectedNetRewardP3 = expectedGrossRewardP3 - expectedCommissionP3;
+        console2.log("Expected RewardPerTokenDelta P3:", rewardPerTokenDeltaP3);
+        console2.log("Expected Gross Reward P3:", expectedGrossRewardP3);
+        console2.log("Expected Commission P3:", expectedCommissionP3);
+        console2.log("Expected Net Reward P3:", expectedNetRewardP3);
 
-    console2.log("Expected RewardPerTokenDelta P3:", rewardPerTokenDeltaP3);
-    console2.log("Expected Gross Reward P3:", expectedGrossRewardP3);
-    console2.log("Expected Commission P3:", expectedCommissionP3);
-    console2.log("Expected Net Reward P3:", expectedNetRewardP3);
+        uint256 totalExpectedNetReward_P1P2P3 = totalExpectedNetReward_P1P2 + expectedNetRewardP3;
+        uint256 totalExpectedCommission_P1P2P3 = totalExpectedCommission_P1P2 + expectedCommissionP3;
 
-    uint256 totalExpectedNetReward_P1P2P3 = totalExpectedNetReward_P1P2 + expectedNetRewardP3;
-    uint256 totalExpectedCommission_P1P2P3 = totalExpectedCommission_P1P2 + expectedCommissionP3;
+        uint256 actualClaimableP1P2P3 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+        uint256 actualCommissionP1P2P3 =
+            ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, address(pUSD));
+        console2.log("Actual Claimable Reward (P1+P2+P3):", actualClaimableP1P2P3);
+        console2.log("Actual Accrued Commission (P1+P2+P3):", actualCommissionP1P2P3);
+        assertApproxEqAbs(
+            actualClaimableP1P2P3,
+            totalExpectedNetReward_P1P2P3,
+            totalExpectedNetReward_P1P2P3 / 100,
+            "Period 1+2+3 Claimable mismatch"
+        );
+        assertApproxEqAbs(
+            actualCommissionP1P2P3,
+            totalExpectedCommission_P1P2P3,
+            totalExpectedCommission_P1P2P3 / 100,
+            "Period 1+2+3 Commission mismatch"
+        );
 
-    uint256 actualClaimableP1P2P3 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
-    uint256 actualCommissionP1P2P3 = ValidatorFacet(address(diamondProxy)).getAccruedCommission(
-        validatorId,
-        address(pUSD)
-    );
-    console2.log("Actual Claimable Reward (P1+P2+P3):", actualClaimableP1P2P3);
-    console2.log("Actual Accrued Commission (P1+P2+P3):", actualCommissionP1P2P3);
-    assertApproxEqAbs(actualClaimableP1P2P3, totalExpectedNetReward_P1P2P3, totalExpectedNetReward_P1P2P3 / 100, "Period 1+2+3 Claimable mismatch");
-    assertApproxEqAbs(actualCommissionP1P2P3, totalExpectedCommission_P1P2P3, totalExpectedCommission_P1P2P3 / 100, "Period 1+2+3 Commission mismatch");
+        // --- Claiming Rewards and Commission ---
+        console2.log("\\nClaiming rewards and commission...");
+        // User1 claims all their rewards for P1, P2, P3
+        vm.startPrank(user1);
+        uint256 userBalanceBeforeClaim = pUSD.balanceOf(user1);
+        uint256 claimedAmountUser1 = RewardsFacet(address(diamondProxy)).claim(address(pUSD), validatorId);
+        uint256 userBalanceAfterClaim = pUSD.balanceOf(user1);
+        vm.stopPrank();
 
-    // --- Claiming Rewards and Commission ---
-    console2.log("\\nClaiming rewards and commission...");
-    // User1 claims all their rewards for P1, P2, P3
-    vm.startPrank(user1);
-    uint256 userBalanceBeforeClaim = pUSD.balanceOf(user1);
-    uint256 claimedAmountUser1 = RewardsFacet(address(diamondProxy)).claim(address(pUSD), validatorId);
-    uint256 userBalanceAfterClaim = pUSD.balanceOf(user1);
-    vm.stopPrank();
+        assertApproxEqAbs(
+            claimedAmountUser1,
+            totalExpectedNetReward_P1P2P3,
+            totalExpectedNetReward_P1P2P3 / 100,
+            "Claimed amount vs total expected net reward mismatch"
+        );
+        assertApproxEqAbs(
+            userBalanceAfterClaim - userBalanceBeforeClaim,
+            claimedAmountUser1,
+            claimedAmountUser1 / 10_000,
+            "User PUSD balance change mismatch after claim"
+        );
 
-    assertApproxEqAbs(claimedAmountUser1, totalExpectedNetReward_P1P2P3, totalExpectedNetReward_P1P2P3 / 100, "Claimed amount vs total expected net reward mismatch");
-    assertApproxEqAbs(userBalanceAfterClaim - userBalanceBeforeClaim, claimedAmountUser1, claimedAmountUser1 / 10000, "User PUSD balance change mismatch after claim");
+        // Validator Admin requests commission claim for Validator 0
+        vm.startPrank(validatorAdmin);
+        uint256 valAdminBalanceBeforeClaim = pUSD.balanceOf(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, address(pUSD));
+        // vm.stopPrank(); // Keep validatorAdmin prank for a moment
 
-    // Validator Admin requests commission claim for Validator 0
-    vm.startPrank(validatorAdmin);
-    uint256 valAdminBalanceBeforeClaim = pUSD.balanceOf(validatorAdmin);
-    ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, address(pUSD));
-    // vm.stopPrank(); // Keep validatorAdmin prank for a moment
+        // <<<< MODIFICATION START >>>>
+        // Set reward rate to 0 before warping time for commission timelock
+        vm.stopPrank(); // Ensure no specific prank is active
+        console2.log(
+            "Test: Setting reward rate to 0 for PUSD at t=%s before commission timelock warp.", block.timestamp
+        );
 
-    // <<<< MODIFICATION START >>>>
-    // Set reward rate to 0 before warping time for commission timelock
-    vm.stopPrank(); // Ensure no specific prank is active
-    console2.log("Test: Setting reward rate to 0 for PUSD at t=%s before commission timelock warp.", block.timestamp);
+        bool isAdmin_check = AccessControlFacet(address(diamondProxy)).hasRole(PlumeRoles.ADMIN_ROLE, admin);
+        console2.log("TEST_LOG: Before prank for rate=0, admin has ADMIN_ROLE: %s", isAdmin_check);
+        bool hasRewManagerRole_check =
+            AccessControlFacet(address(diamondProxy)).hasRole(PlumeRoles.REWARD_MANAGER_ROLE, admin);
+        console2.log("TEST_LOG: Before prank for rate=0, admin has REWARD_MANAGER_ROLE: %s", hasRewManagerRole_check);
+        bytes32 rewardManagerAdmin_check =
+            AccessControlFacet(address(diamondProxy)).getRoleAdmin(PlumeRoles.REWARD_MANAGER_ROLE);
 
-    bool isAdmin_check = AccessControlFacet(address(diamondProxy)).hasRole(PlumeRoles.ADMIN_ROLE, admin);
-    console2.log("TEST_LOG: Before prank for rate=0, admin has ADMIN_ROLE: %s", isAdmin_check);
-    bool hasRewManagerRole_check = AccessControlFacet(address(diamondProxy)).hasRole(PlumeRoles.REWARD_MANAGER_ROLE, admin);
-    console2.log("TEST_LOG: Before prank for rate=0, admin has REWARD_MANAGER_ROLE: %s", hasRewManagerRole_check);
-    bytes32 rewardManagerAdmin_check = AccessControlFacet(address(diamondProxy)).getRoleAdmin(PlumeRoles.REWARD_MANAGER_ROLE);
+        console2.log("TEST_LOG: Pranking as ADMIN for setRewardRates(rate=0)");
+        vm.startPrank(admin); // 'admin' (0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5) should have REWARD_MANAGER_ROLE
+        address[] memory tokensToZero = new address[](1);
+        tokensToZero[0] = address(pUSD);
+        uint256[] memory ratesToZero = new uint256[](1);
+        ratesToZero[0] = 0;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokensToZero, ratesToZero);
+        console2.log("TEST_LOG: Call to setRewardRates(rate=0) completed.");
+        vm.stopPrank();
+        // <<<< MODIFICATION END >>>>
 
-    console2.log("TEST_LOG: Pranking as ADMIN for setRewardRates(rate=0)");
-    vm.startPrank(admin); // 'admin' (0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5) should have REWARD_MANAGER_ROLE
-    address[] memory tokensToZero = new address[](1);
-    tokensToZero[0] = address(pUSD);
-    uint256[] memory ratesToZero = new uint256[](1);
-    ratesToZero[0] = 0;
-    RewardsFacet(address(diamondProxy)).setRewardRates(tokensToZero, ratesToZero);
-    console2.log("TEST_LOG: Call to setRewardRates(rate=0) completed.");
-    vm.stopPrank();
-    // <<<< MODIFICATION END >>>>
-    
-    // Warp time for timelock
-    uint256 commissionFinalizeTime = block.timestamp + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK + 1; // Ensure current block.timestamp is used
-    vm.warp(commissionFinalizeTime);
-    vm.roll(block.number + 10); // Advance some blocks too during the warp
+        // Warp time for timelock
+        uint256 commissionFinalizeTime = block.timestamp + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK + 1; // Ensure
+            // current block.timestamp is used
+        vm.warp(commissionFinalizeTime);
+        vm.roll(block.number + 10); // Advance some blocks too during the warp
 
-    // Validator Admin finalizes commission claim
-    vm.startPrank(validatorAdmin); // Re-prank as validatorAdmin to finalize
-    uint256 claimedCommissionV0 = ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, address(pUSD));
-    uint256 valAdminBalanceAfterClaim = pUSD.balanceOf(validatorAdmin);
-    vm.stopPrank();
-    
-    assertApproxEqAbs(claimedCommissionV0, totalExpectedCommission_P1P2P3, totalExpectedCommission_P1P2P3 / 100, "Claimed commission vs total expected commission mismatch");
-    assertApproxEqAbs(valAdminBalanceAfterClaim - valAdminBalanceBeforeClaim, claimedCommissionV0, claimedCommissionV0 / 10000, "Validator PUSD balance change mismatch after commission claim");
-    
-    // --- Final Checks: After all claims, rewards should be ~0 ---
-    // Force settle again AFTER the timelock warp and commission finalization,
-    // but BEFORE checking final states. Since reward rate is now 0, this should not generate new rewards/commission.
-    vm.prank(admin); 
-    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(DEFAULT_VALIDATOR_ID);
-    vm.stopPrank();
+        // Validator Admin finalizes commission claim
+        vm.startPrank(validatorAdmin); // Re-prank as validatorAdmin to finalize
+        uint256 claimedCommissionV0 =
+            ValidatorFacet(address(diamondProxy)).finalizeCommissionClaim(validatorId, address(pUSD));
+        uint256 valAdminBalanceAfterClaim = pUSD.balanceOf(validatorAdmin);
+        vm.stopPrank();
 
-    uint256 finalClaimableUser1 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
-    uint256 finalAccruedCommissionV0 = ValidatorFacet(address(diamondProxy)).getAccruedCommission(
-        validatorId,
-        address(pUSD)
-    );
+        assertApproxEqAbs(
+            claimedCommissionV0,
+            totalExpectedCommission_P1P2P3,
+            totalExpectedCommission_P1P2P3 / 100,
+            "Claimed commission vs total expected commission mismatch"
+        );
+        assertApproxEqAbs(
+            valAdminBalanceAfterClaim - valAdminBalanceBeforeClaim,
+            claimedCommissionV0,
+            claimedCommissionV0 / 10_000,
+            "Validator PUSD balance change mismatch after commission claim"
+        );
 
-    console2.log("Final Claimable Reward for User1 (after claim):", finalClaimableUser1);
-    console2.log("Final Accrued Commission for Validator0 (after claim):", finalAccruedCommissionV0);
+        // --- Final Checks: After all claims, rewards should be ~0 ---
+        // Force settle again AFTER the timelock warp and commission finalization,
+        // but BEFORE checking final states. Since reward rate is now 0, this should not generate new
+        // rewards/commission.
+        vm.prank(admin);
+        ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(DEFAULT_VALIDATOR_ID);
+        vm.stopPrank();
 
+        uint256 finalClaimableUser1 = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, address(pUSD));
+        uint256 finalAccruedCommissionV0 =
+            ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, address(pUSD));
 
-    // After claiming, these should be very close to zero.
-    assertApproxEqAbs(finalClaimableUser1, 0, 1e12, "Final user claimable should be near zero"); 
-    assertApproxEqAbs(finalAccruedCommissionV0, 0, 1e12, "Final validator accrued commission should be near zero"); 
+        console2.log("Final Claimable Reward for User1 (after claim):", finalClaimableUser1);
+        console2.log("Final Accrued Commission for Validator0 (after claim):", finalAccruedCommissionV0);
 
+        // After claiming, these should be very close to zero.
+        assertApproxEqAbs(finalClaimableUser1, 0, 1e12, "Final user claimable should be near zero");
+        assertApproxEqAbs(finalAccruedCommissionV0, 0, 1e12, "Final validator accrued commission should be near zero");
 
-    console2.log("--- Commission & Reward Rate Change Test Complete ---");
-}
+        console2.log("--- Commission & Reward Rate Change Test Complete ---");
+    }
 
     function testCommissionRateChange_NonRetroactive() public {
         uint16 validatorId = DEFAULT_VALIDATOR_ID;
@@ -4154,5 +4203,219 @@ function testCommissionAndRewardRateChanges() public {
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<< NEW COMPLEX COOLDOWN TEST END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+    function testValidatorSlashingWorkflow() public {
+        console2.log("\n--- Test: testValidatorSlashingWorkflow START ---");
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout(); // For direct storage checks if needed
+
+        // --- 1. Setup ---
+        uint16 validatorId0 = DEFAULT_VALIDATOR_ID; // Admin: validatorAdmin
+        uint16 validatorId1 = 1; // Admin: user2 (from setUp)
+        uint16 maliciousValId = 2; // Use a new ID
+
+        address validator2Admin = makeAddr("validator2Admin_slashTest");
+        vm.deal(validator2Admin, 1 ether);
+
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            maliciousValId,
+            5e16, // 5% commission
+            validator2Admin,
+            validator2Admin,
+            "l1val_malicious",
+            "l1acc_malicious",
+            address(0xbadbad),
+            1_000_000 ether
+        );
+
+        address pusdTokenAddress = address(pUSD);
+        // Ensure PUSD is a reward token if not already (it is in setUp, but good to be explicit)
+        // MODIFIED CHECK START
+        bool isPusdARewardToken = false;
+        address[] memory currentRewardTokens = RewardsFacet(address(diamondProxy)).getRewardTokens();
+        for (uint256 i = 0; i < currentRewardTokens.length; i++) {
+            if (currentRewardTokens[i] == pusdTokenAddress) {
+                isPusdARewardToken = true;
+                break;
+            }
+        }
+        if (!isPusdARewardToken) {
+            // END MODIFIED CHECK
+            RewardsFacet(address(diamondProxy)).addRewardToken(pusdTokenAddress);
+        }
+        if (!treasury.isRewardToken(pusdTokenAddress)) {
+            // Assuming isRewardToken view exists on treasury
+            treasury.addRewardToken(pusdTokenAddress);
+        }
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(pusdTokenAddress, 1e18);
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = pusdTokenAddress;
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = 1e15;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        pUSD.transfer(address(treasury), 10_000 ether);
+
+        uint256 slashVoteDuration = 2 days;
+        ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(slashVoteDuration);
+        vm.stopPrank();
+
+        uint256 user1StakeMalicious = 100 ether;
+        uint256 user2StakeMalicious = 150 ether;
+
+        vm.startPrank(user1);
+        StakingFacet(address(diamondProxy)).stake{ value: user1StakeMalicious }(maliciousValId);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        StakingFacet(address(diamondProxy)).stake{ value: user2StakeMalicious }(maliciousValId);
+        vm.stopPrank();
+
+        console2.log("Setup complete: maliciousValId=%s staked by user1 & user2.", maliciousValId);
+        uint256 initialTotalStaked_Overall = StakingFacet(address(diamondProxy)).totalAmountStaked();
+
+        (
+            PlumeStakingStorage.ValidatorInfo memory valMaliciousInfoBeforeSlash,
+            uint256 valMaliciousInitialStakeFromInfo,
+        ) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(maliciousValId);
+
+        assertEq(
+            valMaliciousInitialStakeFromInfo,
+            user1StakeMalicious + user2StakeMalicious,
+            "Malicious validator initial stake mismatch"
+        );
+
+        // --- 2. Voting Phase ---
+        console2.log(
+            "Voting Phase: Validator 0 (admin: %s) and Validator 1 (admin: %s) vote to slash Validator %s",
+            validatorAdmin,
+            user2,
+            maliciousValId
+        );
+
+        vm.startPrank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(maliciousValId, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(maliciousValId, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        // assertEq($.slashVoteCounts[maliciousValId], 2, "Slash vote count for maliciousValId should be 2"); // <<< OLD
+        // ASSERTION
+        uint256 voteCountFromFacet = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(maliciousValId); // <<< NEW
+            // WAY TO GET COUNT
+        assertEq(voteCountFromFacet, 2, "Slash vote count from facet for maliciousValId should be 2"); // <<< NEW
+            // ASSERTION
+
+        // --- 3. Execute Slash ---
+        console2.log("Executing Slash for validator %s", maliciousValId);
+        vm.startPrank(admin);
+
+        vm.expectEmit(true, false, false, true, address(diamondProxy));
+        emit ValidatorSlashed(maliciousValId, admin, valMaliciousInitialStakeFromInfo);
+
+        vm.expectEmit(true, false, false, true, address(diamondProxy));
+        emit ValidatorStatusUpdated(maliciousValId, false, true);
+
+        ValidatorFacet(address(diamondProxy)).slashValidator(maliciousValId);
+        vm.stopPrank();
+
+        // --- 4. Post-Slash State Verification (Validator and Global) ---
+        (PlumeStakingStorage.ValidatorInfo memory slashedValInfo, uint256 slashedValTotalStakedAfterSlash,) =
+            ValidatorFacet(address(diamondProxy)).getValidatorInfo(maliciousValId);
+
+        assertTrue(slashedValInfo.slashed, "Validator should be marked as slashed");
+        assertFalse(slashedValInfo.active, "Slashed validator should be inactive");
+        assertTrue(
+            slashedValInfo.slashedAtTimestamp > 0 && slashedValInfo.slashedAtTimestamp <= block.timestamp,
+            "slashedAtTimestamp should be set"
+        );
+        assertEq(slashedValTotalStakedAfterSlash, 0, "Slashed validator's total staked should be 0 after slash");
+
+        (,,, uint256 finalStakerCountMalicious) =
+            ValidatorFacet(address(diamondProxy)).getValidatorStats(maliciousValId);
+        assertEq(finalStakerCountMalicious, 0, "Slashed validator staker count should be 0 via getValidatorStats");
+
+        uint256 finalTotalStaked_Overall = StakingFacet(address(diamondProxy)).totalAmountStaked();
+        assertEq(
+            finalTotalStaked_Overall,
+            initialTotalStaked_Overall - valMaliciousInitialStakeFromInfo,
+            "Global totalStaked not reduced correctly"
+        );
+
+        // --- 5. Post-Slash Interactions (Stakers of Slashed Validator) ---
+        console2.log("Post-Slash: User1 attempts interactions with slashed validator %s", maliciousValId);
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(ActionOnSlashedValidatorError.selector, maliciousValId)); // NEW
+        StakingFacet(address(diamondProxy)).stake{ value: 1 ether }(maliciousValId);
+
+        vm.expectRevert(abi.encodeWithSelector(ActionOnSlashedValidatorError.selector, maliciousValId)); // NEW
+        StakingFacet(address(diamondProxy)).unstake(maliciousValId, 1 ether);
+        vm.stopPrank();
+
+        // --- 6. Post-Slash Interactions (Admin of Slashed Validator) ---
+        console2.log("Post-Slash: Admin of slashed validator %s attempts actions", maliciousValId);
+        vm.startPrank(validator2Admin);
+        vm.expectRevert(abi.encodeWithSelector(ValidatorInactive.selector, maliciousValId)); // NEW
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(maliciousValId, 10e16);
+
+        vm.expectRevert(abi.encodeWithSelector(ValidatorInactive.selector, maliciousValId)); // NEW
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(maliciousValId, address(pUSD));
+        vm.stopPrank();
+
+        // --- 7. View Function Behavior ---
+        uint16[] memory user1Validators = ValidatorFacet(address(diamondProxy)).getUserValidators(user1);
+        bool foundMaliciousValForUser1 = false;
+        for (uint256 i = 0; i < user1Validators.length; i++) {
+            if (user1Validators[i] == maliciousValId) {
+                foundMaliciousValForUser1 = true;
+            }
+        }
+        assertFalse(foundMaliciousValForUser1, "Slashed validator should NOT be in user1's list from getUserValidators");
+
+        StakingFacet.CooldownView[] memory user1Cooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+        for (uint256 i = 0; i < user1Cooldowns.length; i++) {
+            assertNotEq(
+                user1Cooldowns[i].validatorId, maliciousValId, "Slashed validator should not appear in getUserCooldowns"
+            );
+        }
+
+        // --- 8. Admin Cleanup ---
+        console2.log("Admin Cleanup: Clearing records for user1 and malicious validator %s", maliciousValId);
+        vm.startPrank(admin);
+        vm.expectEmit(true, true, true, true, address(diamondProxy));
+        emit AdminClearedSlashedStake(user1, maliciousValId, user1StakeMalicious);
+
+        ManagementFacet(address(diamondProxy)).adminClearValidatorRecord(user1, maliciousValId);
+
+        user1Validators = ValidatorFacet(address(diamondProxy)).getUserValidators(user1);
+        foundMaliciousValForUser1 = false; // reset
+        for (uint256 i = 0; i < user1Validators.length; i++) {
+            if (user1Validators[i] == maliciousValId) {
+                foundMaliciousValForUser1 = true;
+            }
+        }
+        // After adminClearValidatorRecord, the specific user-validator link (for user1 to maliciousValId)
+        // should be gone from user1's list if PlumeValidatorLogic.removeStakerFromValidator worked as intended.
+        // However, getUserValidators already filters slashed. So this check might be redundant if previous one passed.
+        // The key effect of adminClearValidatorRecord is clearing the $.userHasStakedWithValidator map for this pair.
+        assertFalse(
+            $.userHasStakedWithValidator[user1][maliciousValId],
+            "userHasStakedWithValidator should be false after adminClear"
+        );
+
+        // Repeat for user2
+        vm.expectEmit(true, true, true, true, address(diamondProxy));
+        emit AdminClearedSlashedStake(user2, maliciousValId, user2StakeMalicious);
+        ManagementFacet(address(diamondProxy)).adminClearValidatorRecord(user2, maliciousValId);
+        assertFalse(
+            $.userHasStakedWithValidator[user2][maliciousValId],
+            "userHasStakedWithValidator for user2 should be false after adminClear"
+        );
+        vm.stopPrank();
+
+        console2.log("--- Test: testValidatorSlashingWorkflow END ---");
+    }
 
 }

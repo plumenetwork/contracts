@@ -149,7 +149,7 @@ contract PlumeStakingStressTest is Test {
         validatorSigs[8] = ValidatorFacet.getAccruedCommission.selector;
         validatorSigs[9] = ValidatorFacet.getValidatorsList.selector;
         validatorSigs[10] = ValidatorFacet.getActiveValidatorCount.selector;
-        validatorSigs[11] = ValidatorFacet.claimValidatorCommission.selector;
+        validatorSigs[11] = ValidatorFacet.requestCommissionClaim.selector;
         validatorSigs[12] = ValidatorFacet.voteToSlashValidator.selector;
         validatorSigs[13] = ValidatorFacet.slashValidator.selector;
 

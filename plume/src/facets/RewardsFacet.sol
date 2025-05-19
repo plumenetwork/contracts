@@ -109,28 +109,15 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     // --- Internal View Function (_earned) ---
     function _earned(address user, address token, uint16 validatorId) internal returns (uint256 rewards) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        console2.log("_earned ENTRY: u:%s t:%s v:%s", user, token, validatorId);
         uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
         if (userStakedAmount == 0) {
-            console2.log(
-                "_earned: userStakedAmount is 0 for v:%s, returning stored rewards %s",
-                validatorId,
-                $.userRewards[user][validatorId][token]
-            );
             return $.userRewards[user][validatorId][token];
         }
-        console2.log("_earned - user:", user);
-        console2.log("_earned - token:", token);
-        console2.log("_earned - validatorId:", validatorId);
-        console2.log("_earned - userStakedAmount:", userStakedAmount);
 
         (uint256 userRewardDelta,,) =
             PlumeRewardLogic.calculateRewardsWithCheckpoints($, user, validatorId, token, userStakedAmount);
         rewards = $.userRewards[user][validatorId][token] + userRewardDelta;
-        console2.log("_earned EXIT - validatorId:", validatorId);
-        console2.log("_earned EXIT - userRewardDelta:", userRewardDelta);
-        console2.log("_earned EXIT - storedRewards:", $.userRewards[user][validatorId][token]);
-        console2.log("_earned EXIT - totalRewardsToReturn:", rewards);
+
         return rewards;
     }
 
@@ -209,12 +196,6 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint256[] calldata rewardRates_
     ) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = plumeStorage();
-        console2.log(
-            "SRR_FACET_ENTRY_V2: ts %s, tokens.len %s, rates.len %s",
-            block.timestamp,
-            tokens.length,
-            rewardRates_.length
-        );
 
         if (tokens.length == 0) {
             revert EmptyArray();
@@ -223,14 +204,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert ArrayLengthMismatch();
         }
         uint16[] memory validatorIds = $.validatorIds;
-        console2.log("validatorIds length", validatorIds.length);
         for (uint256 i = 0; i < tokens.length; i++) {
             address token_loop = tokens[i];
             uint256 rate_loop = rewardRates_[i];
-
-            console2.log(
-                "SRR_FACET_OUTER_LOOP: token %s, rate %s, num_val_ids %s", token_loop, rate_loop, validatorIds.length
-            );
 
             if (!$.isRewardToken[token_loop]) {
                 revert TokenDoesNotExist(token_loop);
@@ -242,15 +218,6 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
             for (uint256 j = 0; j < validatorIds.length; j++) {
                 uint16 validatorId_for_crrc = validatorIds[j];
-                console2.log("validatorId_for_crrc", validatorId_for_crrc);
-
-                // CRITICAL LOG POINT
-                if (
-                    validatorId_for_crrc == 0 && rate_loop == 0
-                        && token_loop == address(0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f)
-                ) {
-                    console2.log("SRR_FACET_WILL_CALL_CRRC_FOR_VAL0_RATE0_PUSD: ts %s", block.timestamp);
-                }
 
                 PlumeRewardLogic.createRewardRateCheckpoint($, token_loop, validatorId_for_crrc, rate_loop);
             }
@@ -465,12 +432,6 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Make the treasury send the rewards directly to the user
         IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);
-
-        // Update accounting
-        // PlumeStakingStorage.Layout storage $ = plumeStorage(); // This line would be redundant if uncommented, $
-        // already in scope from plumeStorage() in prior version, but it's removed now.
-        // $.rewardsAvailable[token] = ($.rewardsAvailable[token] > amount) ? $.rewardsAvailable[token] - amount : 0; //
-        // Already commented out, but confirming removal.
     }
 
     function _isRewardToken(
@@ -623,7 +584,6 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return getTreasuryAddress();
     }
 
-    // --- NEW PUBLIC WRAPPER ---
     /**
      * @notice Calculates the pending reward for a specific user, validator, and token.
      * @dev Calls the internal PlumeRewardLogic.calculateRewardsWithCheckpoints function.

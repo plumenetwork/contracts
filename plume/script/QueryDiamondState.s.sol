@@ -164,7 +164,7 @@ contract QueryDiamondState is Script {
             console2.log("  - staked:", info.staked);
             console2.log("  - cooled:", info.cooled);
             console2.log("  - parked:", info.parked);
-            console2.log("  - cooldownEnd:", info.cooldownEnd);
+            //console2.log("  - cooldownEnd:", info.cooldownEnd);
             console2.log("  - lastUpdateTimestamp:", info.lastUpdateTimestamp);
         } catch Error(string memory reason) {
             if (keccak256(bytes(reason)) == PROXY_ERROR_HASH) {
@@ -211,7 +211,7 @@ contract QueryDiamondState is Script {
         } catch Panic(uint256 code) {
             console2.log("amountWithdrawable(msg.sender) PANICKED:", code);
         }
-
+        /*
         try staking.cooldownEndDate() returns (uint256 endDate) {
             console2.log("cooldownEndDate(msg.sender):", endDate);
         } catch Error(string memory reason) {
@@ -223,7 +223,7 @@ contract QueryDiamondState is Script {
         } catch Panic(uint256 code) {
             console2.log("cooldownEndDate(msg.sender) PANICKED:", code);
         }
-
+        */
         try staking.getUserValidatorStake(SAMPLE_USER_FOR_QUERY, DEFAULT_VALIDATOR_ID) returns (uint256 stake) {
             console2.log("getUserValidatorStake(SAMPLE_USER, Validator %s): %s", DEFAULT_VALIDATOR_ID, stake);
         } catch Error(string memory reason) {
@@ -546,55 +546,6 @@ contract QueryDiamondState is Script {
                         "getUserLastCheckpointIndex(SAMPLE_USER, Val %s, Token %s) PANICKED: %s", vId, token, code
                     );
                 }
-
-                try rewards.getPendingRewardForValidator(SAMPLE_USER_FOR_QUERY, vId, token) returns (uint256 pending) {
-                    console2.log(
-                        "  getPendingRewardForValidator(SAMPLE_USER, Val %s, Token %s): %s", vId, token, pending
-                    );
-                } catch Error(string memory reason) {
-                    if (keccak256(bytes(reason)) == PROXY_ERROR_HASH) {
-                        console2.log(
-                            "getPendingRewardForValidator(SAMPLE_USER, Val %s, Token %s) FAILED: Proxy__ImplementationIsNotContract()",
-                            vId,
-                            token
-                        );
-                    } else {
-                        console2.log(
-                            "getPendingRewardForValidator(SAMPLE_USER, Val %s, Token %s) FAILED: %s", vId, token, reason
-                        );
-                    }
-                } catch Panic(uint256 code) {
-                    console2.log(
-                        "getPendingRewardForValidator(SAMPLE_USER, Val %s, Token %s) PANICKED: %s", vId, token, code
-                    );
-                }
-            }
-
-            // User-Specific checks (not validator specific)
-            try rewards.getClaimableReward(SAMPLE_USER_FOR_QUERY, token) returns (uint256 claimable) {
-                console2.log("  getClaimableReward(SAMPLE_USER, Token %s): %s", token, claimable);
-            } catch Error(string memory reason) {
-                if (keccak256(bytes(reason)) == PROXY_ERROR_HASH) {
-                    console2.log(
-                        "getClaimableReward(SAMPLE_USER, Token %s) FAILED: Proxy__ImplementationIsNotContract()", token
-                    );
-                } else {
-                    console2.log("getClaimableReward(SAMPLE_USER, Token %s) FAILED: %s", token, reason);
-                }
-            } catch Panic(uint256 code) {
-                console2.log("getClaimableReward(SAMPLE_USER, Token %s) PANICKED: %s", token, code);
-            }
-
-            try rewards.earned(SAMPLE_USER_FOR_QUERY, token) returns (uint256 _earned) {
-                console2.log("  earned(SAMPLE_USER, Token %s): %s", token, _earned);
-            } catch Error(string memory reason) {
-                if (keccak256(bytes(reason)) == PROXY_ERROR_HASH) {
-                    console2.log("earned(SAMPLE_USER, Token %s) FAILED: Proxy__ImplementationIsNotContract()", token);
-                } else {
-                    console2.log("earned(SAMPLE_USER, Token %s) FAILED: %s", token, reason);
-                }
-            } catch Panic(uint256 code) {
-                console2.log("earned(SAMPLE_USER, Token %s) PANICKED: %s", token, code);
             }
         }
 

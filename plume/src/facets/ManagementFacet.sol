@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import {
     AdminTransferFailed,
     CooldownTooShortForSlashVote,
+    EmptyArray,
     InsufficientFunds,
     InvalidAmount,
     InvalidIndexRange,
@@ -11,9 +12,13 @@ import {
     InvalidMaxCommissionRate,
     SlashVoteDurationTooLongForCooldown,
     Unauthorized,
+    ValidatorDoesNotExist,
+    ValidatorNotSlashed,
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
+    AdminClearedSlashedCooldown,
+    AdminClearedSlashedStake,
     AdminStakeCorrection,
     AdminWithdraw,
     CooldownIntervalSet,
@@ -24,6 +29,7 @@ import {
 } from "../lib/PlumeEvents.sol";
 
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
+import { PlumeValidatorLogic } from "../lib/PlumeValidatorLogic.sol";
 
 import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
@@ -220,57 +226,108 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         emit MaxAllowedValidatorCommissionSet(oldMaxRate, newMaxRate);
     }
 
-    // --- Admin Data Correction ---
-
+    // --- NEW ADMIN SLASH CLEANUP FUNCTION --- (This will become the primary admin data function for slashed
+    // validators)
     /**
-     * @notice Admin function to recalculate and correct a user's total staked amount in stakeInfoMap.
-     * @dev This is useful if past inconsistencies occurred between global and per-validator stakes.
-     * Requires caller to have ADMIN_ROLE.
-     * @param user The address of the user whose stake info needs correction.
+     * @notice Admin function to clear a user's stale records associated with a slashed validator.
+     * @dev This is used because a 100% slash means the user has no funds to recover via a user-facing function.
+     *      This function cleans up their internal tracking for that validator.
+     *      Requires caller to have ADMIN_ROLE.
+     * @param user The address of the user whose records need cleanup.
+     * @param slashedValidatorId The ID of the validator that was slashed.
      */
-    function adminCorrectUserStakeInfo(
-        address user
+    function adminClearValidatorRecord(
+        address user,
+        uint16 slashedValidatorId
     ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+
         if (user == address(0)) {
             revert ZeroAddress("user");
         }
-
-        // Get the list of validators the user is currently staked with.
-        // We need to call the ValidatorFacet for this information.
-        // Assuming the ValidatorFacet interface/address is accessible or known.
-        // NOTE: This requires the ManagementFacet to somehow call or have access to ValidatorFacet's getUserValidators.
-        // A cleaner approach might be to put this function directly in ValidatorFacet if it needs validator data,
-        // or pass the validator list as an argument.
-        // For simplicity here, we'll assume direct access to storage is sufficient if getUserValidators is complex to
-        // call across facets.
-
-        // Alternative (less ideal, requires knowing potential validators):
-        // Iterate through ALL validators and check stake? Less efficient.
-
-        // Preferred: Recalculate by summing userValidatorStakes.
-        // This requires iterating through the user's validator stakes stored in PlumeStakingStorage.
-        // Solidity maps are not iterable directly. We need the list of validators the user *might* be staked with.
-        // Calling getUserValidators is the clean way.
-
-        // Simplified approach for script: Assume we know the relevant validator IDs (e.g., from off-chain data or logs)
-        // OR, if getUserValidators is available via the diamond proxy:
-
-        // Let's assume we can get the list via the proxy (this is the best approach)
-        uint16[] memory validatorIds = ValidatorFacet(address(this)).getUserValidators(user);
-
-        uint256 correctTotalStake = 0;
-        for (uint256 i = 0; i < validatorIds.length; i++) {
-            correctTotalStake += $.userValidatorStakes[user][validatorIds[i]].staked; // Access .staked member
+        if (!$.validatorExists[slashedValidatorId]) {
+            revert ValidatorDoesNotExist(slashedValidatorId);
+        }
+        if (!$.validators[slashedValidatorId].slashed) {
+            revert ValidatorNotSlashed(slashedValidatorId);
         }
 
-        uint256 oldTotalStake = $.stakeInfo[user].staked; // Use correct mapping name 'stakeInfo'
-        if (correctTotalStake != oldTotalStake) {
-            $.stakeInfo[user].staked = correctTotalStake; // Use correct mapping name 'stakeInfo'
-            emit AdminStakeCorrection(user, oldTotalStake, correctTotalStake);
-        } else {
-            // Optionally emit an event indicating no change was needed
+        uint256 userActiveStakeToClear = $.userValidatorStakes[user][slashedValidatorId].staked;
+        uint256 userCooledAmountToClear = $.userValidatorCooldowns[user][slashedValidatorId].amount;
+
+        bool recordChanged = false;
+
+        if (userActiveStakeToClear > 0) {
+            $.userValidatorStakes[user][slashedValidatorId].staked = 0;
+            emit AdminClearedSlashedStake(user, slashedValidatorId, userActiveStakeToClear);
+            recordChanged = true;
+        }
+
+        if (userCooledAmountToClear > 0) {
+            delete $.userValidatorCooldowns[user][slashedValidatorId];
+            emit AdminClearedSlashedCooldown(user, slashedValidatorId, userCooledAmountToClear);
+            recordChanged = true;
+        }
+
+        // Call removeStakerFromValidator to clean up $.userValidators list and $.userHasStakedWithValidator mapping
+        // This will run Part 2 of removeStakerFromValidator, as active stake and cooldown for this validator/user are
+        // now 0.
+        if ($.userHasStakedWithValidator[user][slashedValidatorId] || recordChanged) {
+            PlumeValidatorLogic.removeStakerFromValidator($, user, slashedValidatorId);
         }
     }
+
+    /**
+     * @notice Admin function to clear stale records for multiple users associated with a single slashed validator.
+     * @dev This iterates through a list of users and calls the single-user cleanup logic.
+     *      Due to gas limits, this should be called with reasonably sized batches of users.
+     *      Requires caller to have ADMIN_ROLE.
+     * @param users Array of user addresses whose records need cleanup for the given validator.
+     * @param slashedValidatorId The ID of the validator that was slashed.
+     */
+    function adminBatchClearValidatorRecords(
+        address[] calldata users,
+        uint16 slashedValidatorId
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = _getPlumeStorage();
+
+        if (!$.validatorExists[slashedValidatorId]) {
+            revert ValidatorDoesNotExist(slashedValidatorId);
+        }
+        if (!$.validators[slashedValidatorId].slashed) {
+            revert ValidatorNotSlashed(slashedValidatorId);
+        }
+        if (users.length == 0) {
+            revert EmptyArray();
+        }
+
+        for (uint256 i = 0; i < users.length; i++) {
+            address user = users[i];
+            if (user != address(0)) {
+                // Basic check for valid user address in array
+                // Inlining logic of adminClearValidatorRecord for gas efficiency within a loop
+                uint256 userActiveStakeToClear = $.userValidatorStakes[user][slashedValidatorId].staked;
+                uint256 userCooledAmountToClear = $.userValidatorCooldowns[user][slashedValidatorId].amount;
+                bool recordActuallyChangedForThisUser = false;
+
+                if (userActiveStakeToClear > 0) {
+                    $.userValidatorStakes[user][slashedValidatorId].staked = 0;
+                    emit AdminClearedSlashedStake(user, slashedValidatorId, userActiveStakeToClear);
+                    recordActuallyChangedForThisUser = true;
+                }
+
+                if (userCooledAmountToClear > 0) {
+                    delete $.userValidatorCooldowns[user][slashedValidatorId];
+                    emit AdminClearedSlashedCooldown(user, slashedValidatorId, userCooledAmountToClear);
+                    recordActuallyChangedForThisUser = true;
+                }
+
+                if ($.userHasStakedWithValidator[user][slashedValidatorId] || recordActuallyChangedForThisUser) {
+                    PlumeValidatorLogic.removeStakerFromValidator($, user, slashedValidatorId);
+                }
+            }
+        }
+    }
+    // --- END NEW ADMIN SLASH CLEANUP FUNCTION ---
 
 }

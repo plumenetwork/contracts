@@ -2,15 +2,11 @@
 pragma solidity ^0.8.25;
 
 import { PlumeStakingStorage } from "./PlumeStakingStorage.sol";
-// Import errors/events if needed by logic
-import "./PlumeErrors.sol";
-import "./PlumeEvents.sol";
-import { console2 } from "forge-std/console2.sol";
+
 /**
  * @title PlumeValidatorLogic
  * @notice Internal library containing shared logic for validator management and checks.
  */
-
 library PlumeValidatorLogic {
 
     using PlumeStakingStorage for PlumeStakingStorage.Layout;
@@ -80,25 +76,15 @@ library PlumeValidatorLogic {
      * @param staker The address of the staker.
      * @param validatorId The ID of the validator.
      */
-    // File: plume/src/lib/PlumeValidatorLogic.sol
-
     function removeStakerFromValidator(
         PlumeStakingStorage.Layout storage $,
         address staker,
         uint16 validatorId
     ) internal {
-        console2.log("PVL.removeStakerFromValidator --- ENTRY --- User: %s, ValidatorID: %s", staker, validatorId);
-
         // Part 1: Manage $.validatorStakers list (validator's list of its ACTIVE stakers)
         // This runs if active stake with this validator becomes zero AND they were previously listed as an active
         // staker for it.
         if ($.userValidatorStakes[staker][validatorId].staked == 0 && $.isStakerForValidator[validatorId][staker]) {
-            console2.log(
-                "PVL (Part 1): User %s, Val %s - Active stake is 0 and was in validatorStakers. Removing from validatorStakers.",
-                staker,
-                validatorId
-            );
-
             address[] storage stakersList = $.validatorStakers[validatorId];
             uint256 listLength = stakersList.length;
             if (listLength > 0) {
@@ -115,11 +101,6 @@ library PlumeValidatorLogic {
             $.isStakerForValidator[validatorId][staker] = false; // Correctly marks they are no longer an ACTIVE staker
                 // for this validator
             delete $.userIndexInValidatorStakers[staker][validatorId];
-            console2.log(
-                "PVL (Part 1): User %s, Val %s - Done with validatorStakers. isStakerForValidator is now false.",
-                staker,
-                validatorId
-            );
         }
 
         // Part 2: Manage $.userValidators list (user's list of ANY association with a validator)
@@ -127,28 +108,10 @@ library PlumeValidatorLogic {
         bool hasActiveStakeForThisVal = $.userValidatorStakes[staker][validatorId].staked > 0;
         bool hasActiveCooldownForThisVal = $.userValidatorCooldowns[staker][validatorId].amount > 0;
 
-        console2.log("PVL (Part 2 PRE-CHECK) - User:", staker);
-        console2.log("PVL (Part 2 PRE-CHECK) - Val:", validatorId);
-        console2.log("PVL (Part 2 PRE-CHECK) - HasActiveStake:", hasActiveStakeForThisVal);
-        console2.log("PVL (Part 2 PRE-CHECK) - HasActiveCooldown:", hasActiveCooldownForThisVal);
-        console2.log("PVL (Part 2 PRE-CHECK) - UserHasStakedMap:", $.userHasStakedWithValidator[staker][validatorId]);
-
         if (!hasActiveStakeForThisVal && !hasActiveCooldownForThisVal) {
-            console2.log(
-                "PVL (Part 2): User %s, Val %s - Conditions MET to remove from userValidators list (no active stake, no cooldown).",
-                staker,
-                validatorId
-            );
-
             if ($.userHasStakedWithValidator[staker][validatorId]) {
                 // Check if they are currently in the userValidators list (via this mapping)
                 uint16[] storage userValidators_ = $.userValidators[staker];
-                console2.log(
-                    "PVL (Part 2): User %s, ValListLen BEFORE pop for val %s: %s",
-                    staker,
-                    validatorId,
-                    userValidators_.length
-                );
 
                 bool removed = false;
                 for (uint256 i = 0; i < userValidators_.length; i++) {
@@ -157,12 +120,7 @@ library PlumeValidatorLogic {
                         userValidators_[i] = userValidators_[userValidators_.length - 1];
                         userValidators_.pop();
                         removed = true;
-                        console2.log(
-                            "PVL (Part 2): User %s, ValListLen AFTER pop for val %s: %s",
-                            staker,
-                            validatorId,
-                            userValidators_.length
-                        );
+
                         break;
                     }
                 }
@@ -172,30 +130,8 @@ library PlumeValidatorLogic {
                 if (removed) {
                     // Or if after potential pop, the validator is no longer findable.
                     $.userHasStakedWithValidator[staker][validatorId] = false;
-                    console2.log(
-                        "PVL (Part 2): Set userHasStakedWithValidator to FALSE for User %s, Val %s.",
-                        staker,
-                        validatorId
-                    );
-                } else {
-                    console2.log(
-                        "PVL (Part 2): Val %s not found in userValidators_ for User %s. userHasStakedWithValidator not changed.",
-                        validatorId,
-                        staker
-                    );
-                }
-            } else {
-                console2.log(
-                    "PVL (Part 2): userHasStakedWithValidator is already FALSE for User %s, Val %s. Pop from userValidators skipped.",
-                    staker,
-                    validatorId
-                );
-            }
-        } else {
-            console2.log("PVL (Part 2) - val:", validatorId);
-            console2.log("PVL (Part 2) - user:", staker);
-            console2.log("PVL (Part 2) - HasActiveStake:", hasActiveStakeForThisVal);
-            console2.log("PVL (Part 2) - HasActiveCooldown:", hasActiveCooldownForThisVal);
+                } else { }
+            } else { }
         }
     }
 

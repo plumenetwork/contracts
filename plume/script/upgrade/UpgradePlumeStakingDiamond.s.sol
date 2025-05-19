@@ -222,7 +222,7 @@ contract UpgradePlumeStakingDiamond is Script {
         selectors[0] = ValidatorFacet.addValidator.selector; // addValidator(uint16,uint256,address,address,string,string,address,uint256)
         selectors[1] = ValidatorFacet.setValidatorCapacity.selector; // setValidatorCapacity(uint16,uint256)
         //selectors[2] = ValidatorFacet.updateValidator.selector; // updateValidator(uint16,uint8,bytes)
-        selectors[3] = ValidatorFacet.claimValidatorCommission.selector; // claimValidatorCommission(uint16,address)
+        selectors[3] = ValidatorFacet.requestCommissionClaim.selector; // requestCommissionClaim(uint16,address)
         selectors[4] = ValidatorFacet.getValidatorInfo.selector; // getValidatorInfo(uint16)
         selectors[5] = ValidatorFacet.getValidatorStats.selector; // getValidatorStats(uint16)
         selectors[6] = ValidatorFacet.getUserValidators.selector; // getUserValidators(address)
@@ -247,11 +247,11 @@ contract UpgradePlumeStakingDiamond is Script {
         selectors[8] = StakingFacet.amountStaked.selector; // amountStaked()
         selectors[9] = StakingFacet.amountCooling.selector; // amountCooling()
         selectors[10] = StakingFacet.amountWithdrawable.selector; // amountWithdrawable()
-        selectors[11] = StakingFacet.cooldownEndDate.selector; // cooldownEndDate()
-        selectors[12] = StakingFacet.getUserValidatorStake.selector; // getUserValidatorStake(address,uint16)
-        selectors[13] = StakingFacet.totalAmountStaked.selector; // totalAmountStaked()
-        selectors[14] = StakingFacet.totalAmountCooling.selector; // totalAmountCooling()
-        selectors[15] = StakingFacet.totalAmountWithdrawable.selector; // totalAmountWithdrawable()
+        //selectors[11] = StakingFacet.cooldownEndDate.selector; // cooldownEndDate()
+        selectors[11] = StakingFacet.getUserValidatorStake.selector; // getUserValidatorStake(address,uint16)
+        selectors[12] = StakingFacet.totalAmountStaked.selector; // totalAmountStaked()
+        selectors[13] = StakingFacet.totalAmountCooling.selector; // totalAmountCooling()
+        selectors[14] = StakingFacet.totalAmountWithdrawable.selector; // totalAmountWithdrawable()
         return selectors;
     }
 

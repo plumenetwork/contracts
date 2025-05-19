@@ -544,7 +544,7 @@ contract ForkTestPlumeStaking is Test {
         // No staking, no time warp -> commission should be 0
         vm.startPrank(user1); // user1 is NOT the admin for validator 1
         vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
-        ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validatorId, token);
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
         vm.stopPrank();
     }
 
@@ -554,7 +554,7 @@ contract ForkTestPlumeStaking is Test {
 
         vm.startPrank(validatorAdmin); // Prank as a valid admin for *some* validator (e.g., ID 0)
         vm.expectRevert(abi.encodeWithSelector(ValidatorDoesNotExist.selector, nonExistentId));
-        ValidatorFacet(address(diamondProxy)).claimValidatorCommission(nonExistentId, token);
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(nonExistentId, token);
         vm.stopPrank();
     }
 
@@ -564,7 +564,7 @@ contract ForkTestPlumeStaking is Test {
 
         vm.startPrank(user1); // user1 is not the admin for validator 0
         vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user1));
-        ValidatorFacet(address(diamondProxy)).claimValidatorCommission(validatorId, token);
+        ValidatorFacet(address(diamondProxy)).requestCommissionClaim(validatorId, token);
         vm.stopPrank();
     }
 

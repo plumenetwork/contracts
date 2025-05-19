@@ -98,8 +98,6 @@ library PlumeStakingStorage {
         mapping(uint16 => mapping(address => uint256)) validatorAccruedCommission;
         /// @notice Maps a validator ID to its history of commission rate checkpoints
         mapping(uint16 => RateCheckpoint[]) validatorCommissionCheckpoints;
-
- 
         /// @notice Maximum allowed commission for all validators
         // TODO - check where we set this
         uint256 maxValidatorCommission;
@@ -154,6 +152,7 @@ library PlumeStakingStorage {
         bool active; // Whether the validator is active
         bool slashed; // Whether the validator has been slashed
         uint256 maxCapacity; // Maximum amount of PLUME that can be staked with this validator
+        uint256 slashedAtTimestamp; // Timestamp when the validator was slashed
     }
 
     struct StakeInfo {

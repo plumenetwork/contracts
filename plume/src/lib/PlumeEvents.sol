@@ -328,3 +328,20 @@ event CommissionClaimFinalized(
  * @param timestamp The timestamp of this checkpoint.
  */
 event ValidatorCommissionCheckpointCreated(uint16 indexed validatorId, uint256 rate, uint256 timestamp);
+
+// --- NEW SLASH CLEANUP EVENTS ---
+/**
+ * @notice Emitted when an admin clears a user's active stake record for a slashed validator.
+ * @param user The user whose record was cleared.
+ * @param slashedValidatorId The ID of the slashed validator.
+ * @param amountCleared The amount of active stake that was cleared (considered lost).
+ */
+event AdminClearedSlashedStake(address indexed user, uint16 indexed slashedValidatorId, uint256 amountCleared);
+
+/**
+ * @notice Emitted when an admin clears a user's cooldown record for a slashed validator.
+ * @param user The user whose record was cleared.
+ * @param slashedValidatorId The ID of the slashed validator.
+ * @param amountCleared The amount of cooled funds that were cleared (considered lost).
+ */
+event AdminClearedSlashedCooldown(address indexed user, uint16 indexed slashedValidatorId, uint256 amountCleared);

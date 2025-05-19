@@ -299,3 +299,15 @@ error SlashVoteDurationTooLongForCooldown(uint256 newMaxSlashVoteDuration, uint2
 /// @notice Thrown when an invalid interval is provided (e.g. zero)
 /// @param interval The invalid interval.
 error InvalidInterval(uint256 interval);
+
+/**
+ * @notice Thrown when an action is attempted on a validator that has been slashed.
+ * @param validatorId The ID of the slashed validator.
+ */
+error ActionOnSlashedValidatorError(uint16 validatorId);
+
+/**
+ * @notice Thrown when an admin tries to clear records for a validator that isn't actually slashed.
+ * @param validatorId The ID of the validator that is not slashed.
+ */
+error ValidatorNotSlashed(uint16 validatorId);

@@ -5,7 +5,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 
 // --- SolidState Diamond Interfaces ---
 // REMOVE the direct import - it will be picked up via ISolidStateDiamond
-// import { IERC2535DiamondCutInternal } from "@solidstate//interfaces/IERC2535DiamondCutInternal.sol"; 
+// import { IERC2535DiamondCutInternal } from "@solidstate//interfaces/IERC2535DiamondCutInternal.sol";
 
 import { IERC2535DiamondLoupe } from "@solidstate/interfaces/IERC2535DiamondLoupe.sol";
 import { ISolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol";
@@ -87,4 +87,3 @@ contract FixAccessControlRoles is Script {
     }
 
 }
-
