@@ -234,7 +234,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         // _earned will correctly use rate=0 for delta calculation if token is removed.
         if (!$.isRewardToken[token]) {
             if (_earned(msg.sender, token, validatorId) == 0) {
-                revert TokenDoesNotExist(token);
+            revert TokenDoesNotExist(token);
             }
         }
 
@@ -294,7 +294,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
                 }
             }
             if (!canClaimRemovedToken) {
-                revert TokenDoesNotExist(token);
+            revert TokenDoesNotExist(token);
             }
         }
 
