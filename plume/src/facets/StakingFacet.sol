@@ -257,7 +257,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         PlumeStakingStorage.StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
 
         if (info.staked > 0) {
-            // Call internal _unstake which is now part of this facet
+            // Call internal _unstake
             return _unstake(validatorId, info.staked);
         }
         revert NoActiveStake();
@@ -271,7 +271,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      */
     function unstake(uint16 validatorId, uint256 amount) external returns (uint256 amountUnstaked) {
         if (amount == 0) {
-            // Added check from previous _unstake version, seems logical here too
             revert InvalidAmount(0);
         }
         return _unstake(validatorId, amount);
@@ -406,7 +405,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
                 delete $.userValidatorCooldowns[user][validatorId_iterator];
 
-                // --- ADDED SECTION ---
                 // Now that the cooldown for this validator is cleared, attempt to fully remove
                 // the staker's association with this validator if no active stake remains.
                 // The active stake for this specific validator should be 0 if a cooldown was being processed.
