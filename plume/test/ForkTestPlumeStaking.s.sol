@@ -86,7 +86,7 @@ contract ForkTestPlumeStaking is Test {
     uint256 public constant INITIAL_COOLDOWN = 180 seconds;
     uint256 public constant INITIAL_BALANCE = 1000e18;
     uint256 public constant PUSD_REWARD_RATE = 1e18; // Example rate
-    uint256 public constant EXPECTED_PLUME_RATE_PER_SEC = 1744038559; // CORRECTED for 5.5% APR
+    uint256 public constant EXPECTED_PLUME_RATE_PER_SEC = 1_744_038_559; // CORRECTED for 5.5% APR
 
     uint16 public constant DEFAULT_VALIDATOR_ID = 1;
     uint256 public constant DEFAULT_COMMISSION = 5e16; // 5% commission
@@ -150,7 +150,7 @@ contract ForkTestPlumeStaking is Test {
 
         vm.startPrank(admin);
         // Check if validator 2 already exists (unlikely, but safe)
-/*
+        /*
         ValidatorFacet(address(diamondProxy)).addValidator(
             validatorId_2,
             commission,
@@ -162,7 +162,7 @@ contract ForkTestPlumeStaking is Test {
             maxCapacity
         );
         console2.log("Added validator 2 in setUp.");
-*/
+        */
         vm.stopPrank();
 
         // Deal to admin *after* treasury setup
@@ -171,11 +171,15 @@ contract ForkTestPlumeStaking is Test {
 
         console2.log("Fork setup complete. Testing against Diamond:", DIAMOND_PROXY_ADDRESS);
 
-        vm.startPrank(admin); 
-        try rewardsFacet.addRewardToken(PlumeStakingStorage.PLUME_NATIVE) {} catch { console2.log("PLUME_NATIVE likely already a reward token on forked contract."); }
+        vm.startPrank(admin);
+        try rewardsFacet.addRewardToken(PlumeStakingStorage.PLUME_NATIVE) { }
+        catch {
+            console2.log("PLUME_NATIVE likely already a reward token on forked contract.");
+        }
 
         // Set a known max rate and the specific rate we are testing
-        rewardsFacet.setMaxRewardRate(PlumeStakingStorage.PLUME_NATIVE, EXPECTED_PLUME_RATE_PER_SEC * 2); // Max rate based on corrected expected rate
+        rewardsFacet.setMaxRewardRate(PlumeStakingStorage.PLUME_NATIVE, EXPECTED_PLUME_RATE_PER_SEC * 2); // Max rate
+            // based on corrected expected rate
         address[] memory tokens = new address[](1);
         tokens[0] = PlumeStakingStorage.PLUME_NATIVE;
         uint256[] memory rates = new uint256[](1);
@@ -2362,58 +2366,85 @@ contract ForkTestPlumeStaking is Test {
     function testFork_PlumeRewardRate_5_5_Percent_APR() public {
         console2.log("\\n--- Test: testFork_PlumeRewardRate_5_5_Percent_APR ---");
 
-        uint16 testValidatorId = DEFAULT_VALIDATOR_ID; 
+        uint16 testValidatorId = DEFAULT_VALIDATOR_ID;
         address tokenToClaim = PlumeStakingStorage.PLUME_NATIVE;
         uint256 stakeAmount = 1 ether; // 1 PLUME (1 * 10^18 wei-PLUME)
         uint256 durationSeconds = 120; // 2 minutes
-        
+
         (PlumeStakingStorage.ValidatorInfo memory valInfoInitial,,) = validatorFacet.getValidatorInfo(testValidatorId);
         address currentValAdmin = valInfoInitial.l2AdminAddress;
-        
+
         bool commissionSetToZero = false;
         try vm.prank(currentValAdmin) {
             validatorFacet.setValidatorCommission(testValidatorId, 0);
             commissionSetToZero = true;
-            console2.log("Validator %s commission successfully set to 0 for test by admin %s.", testValidatorId, currentValAdmin);
+            console2.log(
+                "Validator %s commission successfully set to 0 for test by admin %s.", testValidatorId, currentValAdmin
+            );
         } catch Error(string memory reason) {
-            console2.log("Could not set commission for validator %s to 0 (Admin: %s). Reason: %s. Test will use existing commission.", testValidatorId, currentValAdmin, reason);
-        } catch (bytes memory /*lowLevelData*/) {
-            console2.log("Could not set commission for validator %s to 0 (Admin: %s) due to low-level revert. Test will use existing commission.", testValidatorId, currentValAdmin);
+            console2.log(
+                "Could not set commission for validator %s to 0 (Admin: %s). Reason: %s. Test will use existing commission.",
+                testValidatorId,
+                currentValAdmin,
+                reason
+            );
+        } catch (bytes memory) /*lowLevelData*/ {
+            console2.log(
+                "Could not set commission for validator %s to 0 (Admin: %s) due to low-level revert. Test will use existing commission.",
+                testValidatorId,
+                currentValAdmin
+            );
         }
-        if (commissionSetToZero) { 
-             try vm.stopPrank() {} catch {}
+        if (commissionSetToZero) {
+            try vm.stopPrank() { } catch { }
         }
 
         (PlumeStakingStorage.ValidatorInfo memory valInfoForTest,,) = validatorFacet.getValidatorInfo(testValidatorId);
-        uint256 commissionRateForCalc = valInfoForTest.commission; 
-        console2.log("Using commission rate for validator %s: %s (%s %%) ", testValidatorId, commissionRateForCalc, commissionRateForCalc / (PlumeStakingStorage.REWARD_PRECISION/100));
+        uint256 commissionRateForCalc = valInfoForTest.commission;
+        console2.log(
+            "Using commission rate for validator %s: %s (%s %%) ",
+            testValidatorId,
+            commissionRateForCalc,
+            commissionRateForCalc / (PlumeStakingStorage.REWARD_PRECISION / 100)
+        );
 
         vm.startPrank(user1);
         console2.log("User1 (%s) staking %s PLUME with validator %s", user1, stakeAmount, testValidatorId);
-        stakingFacet.stake{value: stakeAmount}(testValidatorId);
+        stakingFacet.stake{ value: stakeAmount }(testValidatorId);
         uint256 stakeTimestamp = block.timestamp;
         console2.log("Stake successful at timestamp: %s", stakeTimestamp);
-        vm.stopPrank(); 
+        vm.stopPrank();
 
         uint256 targetTimestamp = stakeTimestamp + durationSeconds;
         vm.warp(targetTimestamp);
-        vm.roll(block.number + (durationSeconds / 12 < 1 ? 1 : durationSeconds / 12) ); 
-        console2.log("Warped time by %s seconds. New block: %s, New timestamp: %s", durationSeconds, block.number, block.timestamp);
-        
+        vm.roll(block.number + (durationSeconds / 12 < 1 ? 1 : durationSeconds / 12));
+        console2.log(
+            "Warped time by %s seconds. New block: %s, New timestamp: %s",
+            durationSeconds,
+            block.number,
+            block.timestamp
+        );
+
         uint256 expectedRewardPerTokenIncrease = EXPECTED_PLUME_RATE_PER_SEC * durationSeconds;
-        uint256 expectedGrossUserReward = (stakeAmount * expectedRewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
-        uint256 expectedCommission = (expectedGrossUserReward * commissionRateForCalc) / PlumeStakingStorage.REWARD_PRECISION;
+        uint256 expectedGrossUserReward =
+            (stakeAmount * expectedRewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
+        uint256 expectedCommission =
+            (expectedGrossUserReward * commissionRateForCalc) / PlumeStakingStorage.REWARD_PRECISION;
         uint256 expectedNetUserReward = expectedGrossUserReward - expectedCommission;
 
         console2.log("Expected Reward Per Token Increase (for duration): %s", expectedRewardPerTokenIncrease);
         console2.log("Expected Gross User Reward (off-chain calc): %s wei-PLUME", expectedGrossUserReward);
         console2.log("Expected Commission (off-chain calc): %s wei-PLUME", expectedCommission);
-        console2.log("Expected Net User Reward (off-chain calc): %s wei-PLUME (%s PLUME)", expectedNetUserReward, vm.toString(expectedNetUserReward)); // Use vm.toString on the wei amount
+        console2.log(
+            "Expected Net User Reward (off-chain calc): %s wei-PLUME (%s PLUME)",
+            expectedNetUserReward,
+            vm.toString(expectedNetUserReward)
+        ); // Use vm.toString on the wei amount
 
         vm.startPrank(user1);
         uint256 balanceBeforeClaim = user1.balance;
         console2.log("User1 balance before claim: %s", balanceBeforeClaim);
-        
+
         uint256 pendingBeforeClaim = rewardsFacet.getPendingRewardForValidator(user1, testValidatorId, tokenToClaim);
         console2.log("Pending reward via getPendingRewardForValidator just before claim: %s", pendingBeforeClaim);
 
@@ -2421,17 +2452,24 @@ contract ForkTestPlumeStaking is Test {
         uint256 balanceAfterClaim = user1.balance;
         vm.stopPrank();
 
-        console2.log("Actual claimed PLUME from claim() call: %s wei-PLUME (%s PLUME)", claimedAmount, vm.toString(claimedAmount)); // Use vm.toString on the wei amount
+        console2.log(
+            "Actual claimed PLUME from claim() call: %s wei-PLUME (%s PLUME)", claimedAmount, vm.toString(claimedAmount)
+        ); // Use vm.toString on the wei amount
         console2.log("User1 balance after claim: %s", balanceAfterClaim);
         console2.log("User1 balance change due to claim: %s wei-PLUME", balanceAfterClaim - balanceBeforeClaim);
 
         uint256 tolerance = EXPECTED_PLUME_RATE_PER_SEC; // Tolerance of 1 second of rewards at the expected rate
-        assertApproxEqAbs(claimedAmount, expectedNetUserReward, tolerance, "Claimed PLUME reward does not match expected 5.5% APR");
-        
-        assertTrue((balanceAfterClaim + (1 ether / 1000)) >= balanceBeforeClaim + claimedAmount && balanceAfterClaim <= balanceBeforeClaim + claimedAmount, "Balance change vs claimed amount discrepancy too large, accounting for potential gas");
+        assertApproxEqAbs(
+            claimedAmount, expectedNetUserReward, tolerance, "Claimed PLUME reward does not match expected 5.5% APR"
+        );
+
+        assertTrue(
+            (balanceAfterClaim + (1 ether / 1000)) >= balanceBeforeClaim + claimedAmount
+                && balanceAfterClaim <= balanceBeforeClaim + claimedAmount,
+            "Balance change vs claimed amount discrepancy too large, accounting for potential gas"
+        );
 
         console2.log("--- Test: testFork_PlumeRewardRate_5_5_Percent_APR END ---");
     }
-
 
 }

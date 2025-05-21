@@ -15,14 +15,16 @@ import { StakingFacet } from "../src/facets/StakingFacet.sol";
 import { ValidatorFacet } from "../src/facets/ValidatorFacet.sol";
 
 // Interfaces
+
+import { IPlumeStakingRewardTreasury } from "../src/interfaces/IPlumeStakingRewardTreasury.sol";
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
-import { IPlumeStakingRewardTreasury } from "../src/interfaces/IPlumeStakingRewardTreasury.sol";
 
 // Libs & Others
 import { PlumeRoles } from "../src/lib/PlumeRoles.sol";
 
 contract DeployPlumeStaking is Script {
+
     // --- Configuration Constants ---
     // Replace with your generated addresses after running GenerateValidatorAdmins.s.sol
     address[] internal validatorAdminAddresses = [
@@ -43,19 +45,16 @@ contract DeployPlumeStaking is Script {
         0x2875A33D4Ae4304F6ea451Ca04A3304B7CA4c495
     ];
 
-
-
-
     address internal constant EXISTING_TREASURY_ADDRESS = 0x14789D64465f0F5521593e58cB120724bDf7d2cF;
     uint256 internal constant INITIAL_MIN_STAKE_AMOUNT = 0.1 ether; // 0.1 PLUME
     uint256 internal constant INITIAL_COOLDOWN_INTERVAL = 21 days;
     uint256 internal constant INITIAL_MAX_SLASH_VOTE_DURATION = 2 days;
-    uint256 internal constant INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION = 25 * 10**16; // 25%
-    uint256 internal constant VALIDATOR_COMMISSION = 0.5 * 10**16; // 0.5%
+    uint256 internal constant INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION = 25 * 10 ** 16; // 25%
+    uint256 internal constant VALIDATOR_COMMISSION = 0.5 * 10 ** 16; // 0.5%
     uint256 internal constant VALIDATOR_MAX_CAPACITY = 1_000_000 ether;
-    
+
     // PLUME (Native) reward rate: 5.5% yearly approx 1744038559107051 per second per 1e18 staked
-    uint256 internal constant PLUME_REWARD_RATE_PER_SECOND = 1744038559107051; 
+    uint256 internal constant PLUME_REWARD_RATE_PER_SECOND = 1_744_038_559_107_051;
     uint256 internal constant PLUME_MAX_REWARD_RATE = 4e15; // Slightly higher than actual rate
 
     function run() external {
@@ -103,7 +102,9 @@ contract DeployPlumeStaking is Script {
         accessControlSigs[8] = bytes4(keccak256(bytes("UPGRADER_ROLE()")));
         accessControlSigs[9] = bytes4(keccak256(bytes("VALIDATOR_ROLE()")));
         accessControlSigs[10] = bytes4(keccak256(bytes("REWARD_MANAGER_ROLE()")));
-        cut[0] = IERC2535DiamondCutInternal.FacetCut(address(accessControlFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, accessControlSigs);
+        cut[0] = IERC2535DiamondCutInternal.FacetCut(
+            address(accessControlFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, accessControlSigs
+        );
 
         // Management Facet Selectors
         bytes4[] memory managementSigs = new bytes4[](9);
@@ -116,13 +117,15 @@ contract DeployPlumeStaking is Script {
         managementSigs[6] = ManagementFacet.setMaxAllowedValidatorCommission.selector;
         managementSigs[7] = ManagementFacet.adminClearValidatorRecord.selector;
         managementSigs[8] = ManagementFacet.adminBatchClearValidatorRecords.selector;
-        cut[1] = IERC2535DiamondCutInternal.FacetCut(address(managementFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, managementSigs);
+        cut[1] = IERC2535DiamondCutInternal.FacetCut(
+            address(managementFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, managementSigs
+        );
 
         // Staking Facet Selectors
         bytes4[] memory stakingSigs = new bytes4[](17);
         stakingSigs[0] = StakingFacet.stake.selector;
         stakingSigs[1] = StakingFacet.restake.selector;
-        stakingSigs[2] = bytes4(keccak256(bytes("unstake(uint16)"))); 
+        stakingSigs[2] = bytes4(keccak256(bytes("unstake(uint16)")));
         stakingSigs[3] = bytes4(keccak256(bytes("unstake(uint16,uint256)")));
         stakingSigs[4] = StakingFacet.withdraw.selector;
         stakingSigs[5] = StakingFacet.stakeOnBehalf.selector;
@@ -134,10 +137,12 @@ contract DeployPlumeStaking is Script {
         stakingSigs[11] = StakingFacet.getUserValidatorStake.selector;
         stakingSigs[12] = StakingFacet.restakeRewards.selector;
         stakingSigs[13] = StakingFacet.totalAmountStaked.selector;
-        stakingSigs[14] = StakingFacet.totalAmountCooling.selector; 
+        stakingSigs[14] = StakingFacet.totalAmountCooling.selector;
         stakingSigs[15] = StakingFacet.totalAmountWithdrawable.selector;
         stakingSigs[16] = StakingFacet.totalAmountClaimable.selector;
-        cut[2] = IERC2535DiamondCutInternal.FacetCut(address(stakingFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, stakingSigs);
+        cut[2] = IERC2535DiamondCutInternal.FacetCut(
+            address(stakingFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, stakingSigs
+        );
 
         // Validator Facet Selectors
         bytes4[] memory validatorSigs = new bytes4[](17);
@@ -158,32 +163,36 @@ contract DeployPlumeStaking is Script {
         validatorSigs[14] = ValidatorFacet.slashValidator.selector;
         validatorSigs[15] = ValidatorFacet.forceSettleValidatorCommission.selector;
         validatorSigs[16] = ValidatorFacet.getSlashVoteCount.selector;
-        cut[3] = IERC2535DiamondCutInternal.FacetCut(address(validatorFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, validatorSigs);
+        cut[3] = IERC2535DiamondCutInternal.FacetCut(
+            address(validatorFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, validatorSigs
+        );
 
         // Rewards Facet Selectors (Corrected)
-        bytes4[] memory rewardsSigs = new bytes4[](21); 
+        bytes4[] memory rewardsSigs = new bytes4[](21);
         rewardsSigs[0] = RewardsFacet.addRewardToken.selector;
         rewardsSigs[1] = RewardsFacet.removeRewardToken.selector;
         rewardsSigs[2] = RewardsFacet.setRewardRates.selector;
         rewardsSigs[3] = RewardsFacet.setMaxRewardRate.selector;
-        rewardsSigs[4] = bytes4(keccak256(bytes("claim(address)")));     
+        rewardsSigs[4] = bytes4(keccak256(bytes("claim(address)")));
         rewardsSigs[5] = bytes4(keccak256(bytes("claim(address,uint16)")));
-        rewardsSigs[6] = RewardsFacet.claimAll.selector;               
-        rewardsSigs[7] = RewardsFacet.earned.selector;                   
-        rewardsSigs[8] = RewardsFacet.getClaimableReward.selector;      
-        rewardsSigs[9] = RewardsFacet.getRewardTokens.selector;         
-        rewardsSigs[10] = RewardsFacet.getMaxRewardRate.selector;      
-        rewardsSigs[11] = RewardsFacet.tokenRewardInfo.selector;      
-        rewardsSigs[12] = RewardsFacet.getRewardRateCheckpointCount.selector; 
+        rewardsSigs[6] = RewardsFacet.claimAll.selector;
+        rewardsSigs[7] = RewardsFacet.earned.selector;
+        rewardsSigs[8] = RewardsFacet.getClaimableReward.selector;
+        rewardsSigs[9] = RewardsFacet.getRewardTokens.selector;
+        rewardsSigs[10] = RewardsFacet.getMaxRewardRate.selector;
+        rewardsSigs[11] = RewardsFacet.tokenRewardInfo.selector;
+        rewardsSigs[12] = RewardsFacet.getRewardRateCheckpointCount.selector;
         rewardsSigs[13] = RewardsFacet.getValidatorRewardRateCheckpointCount.selector;
-        rewardsSigs[14] = RewardsFacet.getUserLastCheckpointIndex.selector;   
-        rewardsSigs[15] = RewardsFacet.getRewardRateCheckpoint.selector;   
+        rewardsSigs[14] = RewardsFacet.getUserLastCheckpointIndex.selector;
+        rewardsSigs[15] = RewardsFacet.getRewardRateCheckpoint.selector;
         rewardsSigs[16] = RewardsFacet.getValidatorRewardRateCheckpoint.selector;
-        rewardsSigs[17] = RewardsFacet.setTreasury.selector;            
-        rewardsSigs[18] = RewardsFacet.getTreasury.selector;           
-        rewardsSigs[19] = RewardsFacet.getPendingRewardForValidator.selector; 
-        rewardsSigs[20] = RewardsFacet.getRewardRate.selector;          
-        cut[4] = IERC2535DiamondCutInternal.FacetCut(address(rewardsFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, rewardsSigs);
+        rewardsSigs[17] = RewardsFacet.setTreasury.selector;
+        rewardsSigs[18] = RewardsFacet.getTreasury.selector;
+        rewardsSigs[19] = RewardsFacet.getPendingRewardForValidator.selector;
+        rewardsSigs[20] = RewardsFacet.getRewardRate.selector;
+        cut[4] = IERC2535DiamondCutInternal.FacetCut(
+            address(rewardsFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, rewardsSigs
+        );
 
         console2.log("Diamond cut prepared.");
 
@@ -210,10 +219,16 @@ contract DeployPlumeStaking is Script {
         // --- 7. Configure Treasury ---
         RewardsFacet(address(diamondProxy)).setTreasury(EXISTING_TREASURY_ADDRESS);
         console2.log("Treasury address set to:", EXISTING_TREASURY_ADDRESS);
-        
+
         // --- 8. Configure ManagementFacet Settings ---
-        ManagementFacet(address(diamondProxy)).setMaxAllowedValidatorCommission(INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION);
-        console2.log("Max allowed validator commission set to: %s (%s%)", INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION, INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION / (10**16) );
+        ManagementFacet(address(diamondProxy)).setMaxAllowedValidatorCommission(
+            INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION
+        );
+        console2.log(
+            "Max allowed validator commission set to: %s (%s%)",
+            INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION,
+            INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION / (10 ** 16)
+        );
         ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(INITIAL_MAX_SLASH_VOTE_DURATION);
         console2.log("Max slash vote duration set to: %s seconds", INITIAL_MAX_SLASH_VOTE_DURATION);
 
@@ -221,10 +236,12 @@ contract DeployPlumeStaking is Script {
         address plumeNativeToken = PlumeStakingStorage.PLUME_NATIVE;
         RewardsFacet(address(diamondProxy)).addRewardToken(plumeNativeToken);
         console2.log("PLUME_NATIVE added as reward token.");
-        
-        // Check if treasury is configured for PLUME_NATIVE (external step, cannot do from script directly if it requires treasury admin)
+
+        // Check if treasury is configured for PLUME_NATIVE (external step, cannot do from script directly if it
+        // requires treasury admin)
         // For now, assume treasury will accept it or is already configured.
-        // IPlumeStakingRewardTreasury(EXISTING_TREASURY_ADDRESS).addRewardToken(plumeNativeToken); // This would fail if deployer is not treasury admin
+        // IPlumeStakingRewardTreasury(EXISTING_TREASURY_ADDRESS).addRewardToken(plumeNativeToken); // This would fail
+        // if deployer is not treasury admin
 
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(plumeNativeToken, PLUME_MAX_REWARD_RATE);
         console2.log("Max reward rate for PLUME_NATIVE set to: %s", PLUME_MAX_REWARD_RATE);
@@ -235,9 +252,11 @@ contract DeployPlumeStaking is Script {
         plumeRates[0] = PLUME_REWARD_RATE_PER_SECOND;
         RewardsFacet(address(diamondProxy)).setRewardRates(plumeTokens, plumeRates);
         console2.log("Reward rate for PLUME_NATIVE set to: %s per second", PLUME_REWARD_RATE_PER_SECOND);
-        
-        // Note: Funding the treasury with PLUME_NATIVE (ETH) needs to be done via a separate transaction sending ETH to the treasury address.
-        // This script cannot directly fund an existing contract with ETH from deployer's balance unless Treasury has a payable deposit function.
+
+        // Note: Funding the treasury with PLUME_NATIVE (ETH) needs to be done via a separate transaction sending ETH to
+        // the treasury address.
+        // This script cannot directly fund an existing contract with ETH from deployer's balance unless Treasury has a
+        // payable deposit function.
 
         // --- 10. Add 15 Validators ---
         console2.log("Adding 15 validators...");
@@ -264,8 +283,11 @@ contract DeployPlumeStaking is Script {
 
         console2.log("--- Plume Staking Diamond Deployment and Initial Setup Complete ---");
         console2.log("Diamond Proxy Address:", address(diamondProxy));
-        console2.log("Remember to fund the Treasury (%s) with PLUME (native ETH) for rewards.", EXISTING_TREASURY_ADDRESS);
+        console2.log(
+            "Remember to fund the Treasury (%s) with PLUME (native ETH) for rewards.", EXISTING_TREASURY_ADDRESS
+        );
 
         vm.stopBroadcast();
     }
-} 
+
+}

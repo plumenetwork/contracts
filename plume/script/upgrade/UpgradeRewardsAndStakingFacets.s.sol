@@ -48,7 +48,7 @@ contract UpgradeRewardsAndStakingFacets is Script {
         bytes4[] memory stakingSigs = new bytes4[](17);
         stakingSigs[0] = StakingFacet.stake.selector;
         stakingSigs[1] = StakingFacet.restake.selector;
-        stakingSigs[2] = bytes4(keccak256(bytes("unstake(uint16)"))); 
+        stakingSigs[2] = bytes4(keccak256(bytes("unstake(uint16)")));
         stakingSigs[3] = bytes4(keccak256(bytes("unstake(uint16,uint256)")));
         stakingSigs[4] = StakingFacet.withdraw.selector;
         stakingSigs[5] = StakingFacet.stakeOnBehalf.selector;
@@ -60,7 +60,7 @@ contract UpgradeRewardsAndStakingFacets is Script {
         stakingSigs[11] = StakingFacet.getUserValidatorStake.selector;
         stakingSigs[12] = StakingFacet.restakeRewards.selector;
         stakingSigs[13] = StakingFacet.totalAmountStaked.selector;
-        stakingSigs[14] = StakingFacet.totalAmountCooling.selector; 
+        stakingSigs[14] = StakingFacet.totalAmountCooling.selector;
         stakingSigs[15] = StakingFacet.totalAmountWithdrawable.selector;
         stakingSigs[16] = StakingFacet.totalAmountClaimable.selector;
         cut[0] = IERC2535DiamondCutInternal.FacetCut({
@@ -71,28 +71,28 @@ contract UpgradeRewardsAndStakingFacets is Script {
         console2.log("StakingFacet cut prepared for REPLACE with new implementation:", address(newStakingFacet));
 
         // Rewards Facet Selectors (assuming no changes from initial deployment script - uses 21 selectors)
-        bytes4[] memory rewardsSigs = new bytes4[](21); 
+        bytes4[] memory rewardsSigs = new bytes4[](21);
         rewardsSigs[0] = RewardsFacet.addRewardToken.selector;
         rewardsSigs[1] = RewardsFacet.removeRewardToken.selector;
         rewardsSigs[2] = RewardsFacet.setRewardRates.selector;
         rewardsSigs[3] = RewardsFacet.setMaxRewardRate.selector;
-        rewardsSigs[4] = bytes4(keccak256(bytes("claim(address)")));      
-        rewardsSigs[5] = bytes4(keccak256(bytes("claim(address,uint16)"))); 
-        rewardsSigs[6] = RewardsFacet.claimAll.selector;               
-        rewardsSigs[7] = RewardsFacet.earned.selector;                   
-        rewardsSigs[8] = RewardsFacet.getClaimableReward.selector;      
-        rewardsSigs[9] = RewardsFacet.getRewardTokens.selector;         
-        rewardsSigs[10] = RewardsFacet.getMaxRewardRate.selector;      
-        rewardsSigs[11] = RewardsFacet.tokenRewardInfo.selector;      
-        rewardsSigs[12] = RewardsFacet.getRewardRateCheckpointCount.selector; 
+        rewardsSigs[4] = bytes4(keccak256(bytes("claim(address)")));
+        rewardsSigs[5] = bytes4(keccak256(bytes("claim(address,uint16)")));
+        rewardsSigs[6] = RewardsFacet.claimAll.selector;
+        rewardsSigs[7] = RewardsFacet.earned.selector;
+        rewardsSigs[8] = RewardsFacet.getClaimableReward.selector;
+        rewardsSigs[9] = RewardsFacet.getRewardTokens.selector;
+        rewardsSigs[10] = RewardsFacet.getMaxRewardRate.selector;
+        rewardsSigs[11] = RewardsFacet.tokenRewardInfo.selector;
+        rewardsSigs[12] = RewardsFacet.getRewardRateCheckpointCount.selector;
         rewardsSigs[13] = RewardsFacet.getValidatorRewardRateCheckpointCount.selector;
-        rewardsSigs[14] = RewardsFacet.getUserLastCheckpointIndex.selector;   
-        rewardsSigs[15] = RewardsFacet.getRewardRateCheckpoint.selector;   
+        rewardsSigs[14] = RewardsFacet.getUserLastCheckpointIndex.selector;
+        rewardsSigs[15] = RewardsFacet.getRewardRateCheckpoint.selector;
         rewardsSigs[16] = RewardsFacet.getValidatorRewardRateCheckpoint.selector;
-        rewardsSigs[17] = RewardsFacet.setTreasury.selector;            
-        rewardsSigs[18] = RewardsFacet.getTreasury.selector;           
-        rewardsSigs[19] = RewardsFacet.getPendingRewardForValidator.selector; 
-        rewardsSigs[20] = RewardsFacet.getRewardRate.selector;          
+        rewardsSigs[17] = RewardsFacet.setTreasury.selector;
+        rewardsSigs[18] = RewardsFacet.getTreasury.selector;
+        rewardsSigs[19] = RewardsFacet.getPendingRewardForValidator.selector;
+        rewardsSigs[20] = RewardsFacet.getRewardRate.selector;
         cut[1] = IERC2535DiamondCutInternal.FacetCut({
             target: address(newRewardsFacet),
             action: IERC2535DiamondCutInternal.FacetCutAction.REPLACE,
@@ -107,4 +107,5 @@ contract UpgradeRewardsAndStakingFacets is Script {
 
         vm.stopBroadcast();
     }
+
 }
