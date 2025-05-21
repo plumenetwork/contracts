@@ -4426,4 +4426,378 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("--- Test: testValidatorSlashingWorkflow END ---");
     }
 
+    // --- END NEW ADMIN SLASH CLEANUP FUNCTION ---
+
+
+// --- BEGIN NEW TEST FILE CONTENT (Or append to existing PlumeStakingDiamond.t.sol) ---
+// It's generally better to keep tests in the same file if they test the same overarching contract (diamond)
+// unless the file becomes excessively large.
+
+// --- Test Admin Slash Cleanup Functions ---
+
+// --- Test Admin Slash Cleanup Functions ---
+    function testAdminClearValidatorRecord_FullCleanup() public {
+        console2.log("\n--- Test: testAdminClearValidatorRecord_FullCleanup START ---");
+
+        // Add this to set maxSlashVoteDuration
+        vm.startPrank(admin);
+        uint256 twoDaysInSeconds = 2 * 24 * 60 * 60; // 172800 seconds
+        ManagementFacet(payable(address(diamondProxy))).setMaxSlashVoteDuration(twoDaysInSeconds);
+        vm.stopPrank();
+        console2.log("Set maxSlashVoteDuration to 2 days (%s seconds)", twoDaysInSeconds);
+
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout(); 
+
+        uint16 validatorA = 100; 
+        uint16 validatorB = 101; 
+        address adminValA = makeAddr("adminValA_cleanup");
+        address adminValB = makeAddr("adminValB_cleanup");
+        vm.deal(adminValA, 1 ether);
+        vm.deal(adminValB, 1 ether);
+
+        vm.startPrank(admin); 
+        ValidatorFacet(payable(address(diamondProxy))).addValidator(validatorA, 5e16, adminValA, adminValA, "l1A", "accA", address(0xA1), 10000 ether);
+        ValidatorFacet(payable(address(diamondProxy))).addValidator(validatorB, 5e16, adminValB, adminValB, "l1B", "accB", address(0xB1), 10000 ether);
+        uint256 cooldownInterval = ManagementFacet(payable(address(diamondProxy))).getCooldownInterval();
+
+        // --- Corrected Voter Selection Logic ---
+        uint16 voter1_id = DEFAULT_VALIDATOR_ID; 
+        uint16 voter2_id = 1;       
+
+
+
+        if (voter1_id == validatorA) {
+            if (validatorExists(2) && 2 != validatorA) { 
+                voter1_id = 2;
+            } else if (DEFAULT_VALIDATOR_ID != validatorA) { 
+                 voter1_id = DEFAULT_VALIDATOR_ID; // Should be 0 if valA is not 0
+            } else if (1 != validatorA) { // Check if valId 1 can be used
+                 voter1_id = 1;
+            } else { 
+                address tempAdminV1 = makeAddr("tempVoter1Admin_cleanupTest"); vm.deal(tempAdminV1, 1 ether);
+                ValidatorFacet(payable(address(diamondProxy))).addValidator(102, 5e16, tempAdminV1, tempAdminV1, "v102", "a102", address(0x102), 1 ether);
+                voter1_id = 102;
+            }
+        }
+        
+        if (voter2_id == validatorA || voter2_id == voter1_id) {
+            if (DEFAULT_VALIDATOR_ID != validatorA && DEFAULT_VALIDATOR_ID != voter1_id) {
+                voter2_id = DEFAULT_VALIDATOR_ID;
+            } else if (1 != validatorA && 1 != voter1_id) {
+                voter2_id = 1;
+            } else if (validatorExists(2) && 2 != validatorA && 2 != voter1_id) {
+                voter2_id = 2;
+            } else { 
+                address tempAdminV2 = makeAddr("tempVoter2Admin_cleanupTest"); vm.deal(tempAdminV2, 1 ether);
+                ValidatorFacet(payable(address(diamondProxy))).addValidator(103, 5e16, tempAdminV2, tempAdminV2, "v103", "a103", address(0x103), 1 ether);
+                voter2_id = 103;
+            }
+        }
+        
+        (bool v1_active,,,) = ValidatorFacet(payable(address(diamondProxy))).getValidatorStats(voter1_id);
+        if (!v1_active) {
+             ValidatorFacet(payable(address(diamondProxy))).setValidatorStatus(voter1_id, true);
+        }
+        (bool v2_active,,,) = ValidatorFacet(payable(address(diamondProxy))).getValidatorStats(voter2_id);
+        if (!v2_active) {
+             ValidatorFacet(payable(address(diamondProxy))).setValidatorStatus(voter2_id, true);
+        }
+        console2.log("Selected voter1_id: %s, voter2_id: %s for slashing validatorA: %s", voter1_id, voter2_id, validatorA);
+        
+        (PlumeStakingStorage.ValidatorInfo memory voter1Info,,) = ValidatorFacet(payable(address(diamondProxy))).getValidatorInfo(voter1_id);
+        (PlumeStakingStorage.ValidatorInfo memory voter2Info,,) = ValidatorFacet(payable(address(diamondProxy))).getValidatorInfo(voter2_id);
+        address adminVoter1 = voter1Info.l2AdminAddress;
+        address adminVoter2 = voter2Info.l2AdminAddress;
+        vm.stopPrank(); // Stop admin prank from adding validators
+        // --- End Corrected Voter Selection Logic ---
+
+        address testUser = user3; 
+        uint256 stakeActiveValA = 50 ether;
+        uint256 stakeToCooldownValA = 30 ether;
+        uint256 stakeToCooldownValB = 20 ether;
+
+        vm.startPrank(testUser);
+        StakingFacet(payable(address(diamondProxy))).stake{value: stakeActiveValA + stakeToCooldownValA}(validatorA);
+        StakingFacet(payable(address(diamondProxy))).stake{value: stakeToCooldownValB}(validatorB);
+        console2.log("User %s staked %s to ValA, %s to ValB", testUser, stakeActiveValA + stakeToCooldownValA, stakeToCooldownValB);
+        StakingFacet(payable(address(diamondProxy))).unstake(validatorA, stakeToCooldownValA);
+        uint256 cooldownEndValA = block.timestamp + cooldownInterval;
+        StakingFacet(payable(address(diamondProxy))).unstake(validatorB, stakeToCooldownValB); 
+        uint256 cooldownEndValB = block.timestamp + cooldownInterval;
+console2.log("Unstake - user:", testUser);
+console2.log("Unstake - amount from ValA:", stakeToCooldownValA);
+console2.log("Unstake - cooldown end ValA:", cooldownEndValA);
+console2.log("Unstake - amount from ValB:", stakeToCooldownValB);
+console2.log("Unstake - cooldown end ValB:", cooldownEndValB);
+
+        vm.stopPrank();
+
+        PlumeStakingStorage.StakeInfo memory stakeInfoBeforeSlash = StakingFacet(payable(address(diamondProxy))).stakeInfo(testUser);
+        uint256 userGlobalStakedBeforeSlash = stakeInfoBeforeSlash.staked;
+        uint256 userGlobalCooledBeforeSlash = stakeInfoBeforeSlash.cooled;
+        uint256 userValAStakedBeforeSlash = StakingFacet(payable(address(diamondProxy))).getUserValidatorStake(testUser, validatorA); // This is the active stake part
+        uint256 userValACooledBeforeSlash = 0; 
+        StakingFacet.CooldownView[] memory cooldownsUserA_before;
+        cooldownsUserA_before = StakingFacet(payable(address(diamondProxy))).getUserCooldowns(testUser);
+        for(uint i=0; i<cooldownsUserA_before.length; i++) {
+            if(cooldownsUserA_before[i].validatorId == validatorA) userValACooledBeforeSlash = cooldownsUserA_before[i].amount;
+        }
+        console2.log("User Global State Before Slash: Staked=%s, Cooled=%s", userGlobalStakedBeforeSlash, userGlobalCooledBeforeSlash);
+        console2.log("User ValA State Before Slash: Staked=%s (active), Cooled=%s", userValAStakedBeforeSlash, userValACooledBeforeSlash);
+
+        // --- Slash validatorA ---
+        vm.prank(adminVoter1); 
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(validatorA, block.timestamp + 1 days);
+        
+        vm.prank(adminVoter2); 
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(validatorA, block.timestamp + 1 days);
+
+        // ADD VOTE FROM THE THIRD ACTIVE VALIDATOR (adminValB_cleanup for validatorB/101)
+        vm.prank(adminValB);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(validatorA, block.timestamp + 1 days);
+        console2.log("Admin for validatorB (%s) also voted to slash validatorA (%s)", adminValB, validatorA);
+
+
+        vm.startPrank(admin); // TIMELOCK_ROLE (admin) executes slash
+        
+        // Re-fetch storage pointer to ensure it's up-to-date
+        PlumeStakingStorage.Layout storage $s_slash = PlumeStakingStorage.layout();
+        uint256 expectedPenaltyAmount = userValAStakedBeforeSlash + userValACooledBeforeSlash;
+        
+        vm.expectEmit(true, false, false, true, address(diamondProxy)); 
+        emit ValidatorSlashed(validatorA, admin, expectedPenaltyAmount); 
+        vm.expectEmit(true, false, false, true, address(diamondProxy)); 
+        emit ValidatorStatusUpdated(validatorA, false, true);
+        ValidatorFacet(address(diamondProxy)).slashValidator(validatorA);
+        console2.log("Validator %s slashed.", validatorA);
+        vm.stopPrank();
+        
+        // --- Call adminClearValidatorRecord ---
+        console2.log("Calling adminClearValidatorRecord for user %s, slashedValidatorId %s", testUser, validatorA);
+        vm.startPrank(admin); 
+        // userValAStakedBeforeSlash is the active portion. userValACooledBeforeSlash is the cooled portion.
+        if (userValAStakedBeforeSlash > 0) {
+             vm.expectEmit(true, true, true, true, address(diamondProxy));
+             emit AdminClearedSlashedStake(testUser, validatorA, userValAStakedBeforeSlash); 
+        }
+        if (userValACooledBeforeSlash > 0) {
+            vm.expectEmit(true, true, true, true, address(diamondProxy));
+            emit AdminClearedSlashedCooldown(testUser, validatorA, userValACooledBeforeSlash);
+        }
+        ManagementFacet(address(diamondProxy)).adminClearValidatorRecord(testUser, validatorA);
+        vm.stopPrank();
+
+        // --- Assertions ---
+        // 1. User's state for validatorA is zeroed
+        assertEq(StakingFacet(payable(address(diamondProxy))).getUserValidatorStake(testUser, validatorA), 0, "User active stake with ValA should be 0 after clear");
+        
+        StakingFacet.CooldownView[] memory cooldownsUserA_after;
+        cooldownsUserA_after = StakingFacet(payable(address(diamondProxy))).getUserCooldowns(testUser);
+        bool foundValACooldownAfterClear = false;
+        for(uint i=0; i<cooldownsUserA_after.length; i++) {
+            if(cooldownsUserA_after[i].validatorId == validatorA && cooldownsUserA_after[i].amount > 0) {
+                foundValACooldownAfterClear = true;
+                break;
+            }
+        }
+        assertFalse(foundValACooldownAfterClear, "User cooldown with ValA should be 0 or gone after clear");
+
+        PlumeStakingStorage.StakeInfo memory stakeInfoAfterClear = StakingFacet(address(diamondProxy)).stakeInfo(testUser);
+        assertEq(stakeInfoAfterClear.staked, userGlobalStakedBeforeSlash - userValAStakedBeforeSlash, "User global staked not reduced correctly");
+        assertEq(stakeInfoAfterClear.cooled, userGlobalCooledBeforeSlash - userValACooledBeforeSlash, "User global cooled not reduced correctly");
+
+        uint16[] memory userValidatorsAfterClear = ValidatorFacet(address(diamondProxy)).getUserValidators(testUser);
+        bool stillAssociatedWithValA = false;
+        for (uint i = 0; i < userValidatorsAfterClear.length; i++) {
+            if (userValidatorsAfterClear[i] == validatorA) {
+                stillAssociatedWithValA = true;
+                break;
+            }
+        }
+        assertFalse(stillAssociatedWithValA, "User should no longer be associated with slashed ValA in userValidators list");
+        
+        assertFalse($.userHasStakedWithValidator[testUser][validatorA], "userHasStakedWithValidator for ValA should be false after adminClear");
+
+        assertEq(StakingFacet(address(diamondProxy)).getUserValidatorStake(testUser, validatorB), 0, "User stake with ValB should be unaffected (was 0 active)");
+        StakingFacet.CooldownView[] memory cooldownsUserB_after;
+        cooldownsUserB_after = StakingFacet(payable(address(diamondProxy))).getUserCooldowns(testUser);
+        bool foundValBCooldown = false;
+        uint256 valBCooledAmount = 0;
+        for(uint i=0; i<cooldownsUserB_after.length; i++) {
+            if(cooldownsUserB_after[i].validatorId == validatorB) {
+                foundValBCooldown = true;
+                valBCooledAmount = cooldownsUserB_after[i].amount;
+                break;
+            }
+        }
+        assertTrue(foundValBCooldown, "User cooldown with ValB should still exist");
+        assertEq(valBCooledAmount, stakeToCooldownValB, "User cooldown amount with ValB incorrect");
+
+        console2.log("--- Test: testAdminClearValidatorRecord_FullCleanup END ---");
+    }
+
+        // Helper embedded for clarity in this context; could be a private function in the contract
+        function validatorExists(uint16 valId) internal view returns (bool) {
+            bool exists = true;
+            try ValidatorFacet(payable(address(diamondProxy))).getValidatorInfo(valId) {
+                // Exists if no revert
+            } catch {
+                exists = false;
+            }
+            return exists;
+        }
+
+    function testMultiValidatorStakeUnstakeWithdrawCycle() public {
+        console2.log("\\n--- Test: testMultiValidatorStakeUnstakeWithdrawCycle START ---");
+
+        uint256 stakeAmount = 1 ether;
+        uint16 numValidatorsToTest = 10;
+        uint16[] memory validatorIds = new uint16[](numValidatorsToTest);
+
+        // Use existing validators from setUp for the first two
+        validatorIds[0] = DEFAULT_VALIDATOR_ID; // 0
+        validatorIds[1] = 1;
+
+        // Add new validators for the test (IDs 2 through 9)
+        vm.startPrank(admin); // admin has VALIDATOR_ROLE
+        for (uint16 i = 2; i < numValidatorsToTest; i++) {
+            validatorIds[i] = i;
+            address valAdmin = makeAddr(string(abi.encodePacked("valAdmin_", vm.toString(i))));
+            vm.deal(valAdmin, 1 ether);
+            ValidatorFacet(payable(address(diamondProxy))).addValidator(
+                i,              // validatorId
+                DEFAULT_COMMISSION, // 5%
+                valAdmin,       // l2AdminAddress
+                valAdmin,       // l2WithdrawAddress
+                string(abi.encodePacked("l1val_", vm.toString(i))),
+                string(abi.encodePacked("l1acc_", vm.toString(i))),
+                address(uint160(uint256(keccak256(abi.encodePacked("evm_", vm.toString(i)))))), // pseudo-random EVM addr
+                1_000_000 ether // maxCapacity
+            );
+            console2.log("Added validator %s with admin %s for test.", i, valAdmin);
+        }
+        vm.stopPrank();
+
+        uint256 cooldownInterval = ManagementFacet(payable(address(diamondProxy))).getCooldownInterval();
+        console2.log("Cooldown interval is: %s seconds", cooldownInterval);
+
+        // --- Phase 1: Stake to 10 Validators ---
+        console2.log("\\n--- Phase 1: User1 staking %s ETH to %s validators ---", stakeAmount, numValidatorsToTest);
+        vm.startPrank(user1);
+        for (uint256 i = 0; i < numValidatorsToTest; i++) {
+            uint16 currentValId = validatorIds[i];
+            StakingFacet(payable(address(diamondProxy))).stake{value: stakeAmount}(currentValId);
+            assertEq(StakingFacet(payable(address(diamondProxy))).getUserValidatorStake(user1, currentValId), stakeAmount, string(abi.encodePacked("User stake mismatch for Val ", vm.toString(currentValId))));
+        }
+        // Check total staked by user1
+        PlumeStakingStorage.StakeInfo memory user1GlobalInfo = StakingFacet(payable(address(diamondProxy))).stakeInfo(user1);
+        assertEq(user1GlobalInfo.staked, stakeAmount * numValidatorsToTest, "User1 total staked amount mismatch after Phase 1");
+        vm.stopPrank();
+
+        // --- Phase 2: Unstake and Withdraw from Each Validator Sequentially ---
+        console2.log("\\n--- Phase 2: User1 unstaking and withdrawing from each validator sequentially ---");
+        for (uint256 i = 0; i < numValidatorsToTest; i++) {
+            uint16 currentValId = validatorIds[i];
+            console2.log("Processing Validator ID: %s", currentValId);
+
+            vm.startPrank(user1);
+            uint256 balanceBeforeCycle = user1.balance;
+
+            // Unstake
+            console2.log("  Unstaking from Validator ID: %s", currentValId);
+            StakingFacet(payable(address(diamondProxy))).unstake(currentValId, stakeAmount);
+            
+            StakingFacet.CooldownView[] memory cooldowns = StakingFacet(payable(address(diamondProxy))).getUserCooldowns(user1);
+            uint256 cooldownEndTimeForCurrentVal = 0;
+            bool foundCooldown = false;
+            for(uint j=0; j < cooldowns.length; j++){
+                if(cooldowns[j].validatorId == currentValId && cooldowns[j].amount == stakeAmount){
+                    cooldownEndTimeForCurrentVal = cooldowns[j].cooldownEndTime;
+                    foundCooldown = true;
+                    break;
+                }
+            }
+            assertTrue(foundCooldown, string(abi.encodePacked("Cooldown entry not found for Val ", vm.toString(currentValId))));
+            assertTrue(cooldownEndTimeForCurrentVal > block.timestamp, string(abi.encodePacked("Cooldown end time not in future for Val ", vm.toString(currentValId))));
+            console2.log("  Cooldown for Val %s ends at: %s", currentValId, cooldownEndTimeForCurrentVal);
+
+            // Warp time
+            vm.warp(cooldownEndTimeForCurrentVal + 1 seconds); // Warp 1 second past cooldown end
+            console2.log("  Warped time to %s for Val %s withdrawal", block.timestamp, currentValId);
+            
+            // Withdraw
+            console2.log("  Withdrawing from Val %s (funds originally staked)", currentValId);
+            StakingFacet(payable(address(diamondProxy))).withdraw();
+            
+            uint256 balanceAfterCycle = user1.balance;
+            // Gas makes exact comparison hard, check it increased by approx. stakeAmount
+            assertTrue(balanceAfterCycle > balanceBeforeCycle && balanceAfterCycle <= balanceBeforeCycle + stakeAmount, string(abi.encodePacked("Balance change incorrect for Val ", vm.toString(currentValId)))); 
+            
+            user1GlobalInfo = StakingFacet(payable(address(diamondProxy))).stakeInfo(user1);
+            assertEq(StakingFacet(payable(address(diamondProxy))).getUserValidatorStake(user1, currentValId), 0, string(abi.encodePacked("User stake for Val ", vm.toString(currentValId), " not zero after withdraw")));
+            
+            bool cooldownStillExists = false;
+            cooldowns = StakingFacet(payable(address(diamondProxy))).getUserCooldowns(user1);
+             for(uint j=0; j < cooldowns.length; j++){
+                if(cooldowns[j].validatorId == currentValId && cooldowns[j].amount > 0){
+                    cooldownStillExists = true;
+                    break;
+                }
+            }
+            assertFalse(cooldownStillExists, string(abi.encodePacked("Cooldown entry for Val ", vm.toString(currentValId), " should be gone after withdraw")));
+
+            vm.stopPrank();
+        }
+        
+        user1GlobalInfo = StakingFacet(payable(address(diamondProxy))).stakeInfo(user1);
+        assertEq(user1GlobalInfo.staked, 0, "User1 total staked amount should be 0 after Phase 2");
+        assertEq(user1GlobalInfo.cooled, 0, "User1 total cooled amount should be 0 after Phase 2");
+        assertEq(user1GlobalInfo.parked, 0, "User1 total parked amount should be 0 after Phase 2");
+
+        // --- Phase 3: Re-Stake and Withdraw from First Validator ---
+        uint16 firstValidatorId = validatorIds[0];
+        console2.log("\\n--- Phase 3: User1 final stake/unstake/withdraw cycle with Validator ID: %s ---", firstValidatorId);
+        
+        vm.startPrank(user1);
+        // uint256 balanceBeforeFinalCycle = user1.balance; // MOVED
+
+        console2.log("  Staking %s to Validator ID: %s", stakeAmount, firstValidatorId);
+        StakingFacet(payable(address(diamondProxy))).stake{value: stakeAmount}(firstValidatorId);
+        
+        console2.log("  Unstaking %s from Validator ID: %s", stakeAmount, firstValidatorId);
+        StakingFacet(payable(address(diamondProxy))).unstake(firstValidatorId, stakeAmount);
+
+        StakingFacet.CooldownView[] memory finalCooldowns = StakingFacet(payable(address(diamondProxy))).getUserCooldowns(user1);
+        uint256 finalCooldownEndTime = 0;
+        bool foundFinalCooldown = false;
+        for(uint j=0; j < finalCooldowns.length; j++){
+            if(finalCooldowns[j].validatorId == firstValidatorId && finalCooldowns[j].amount == stakeAmount){
+                finalCooldownEndTime = finalCooldowns[j].cooldownEndTime;
+                foundFinalCooldown = true;
+                break;
+            }
+        }
+        assertTrue(foundFinalCooldown, string(abi.encodePacked("Final cooldown entry not found for Val ", vm.toString(firstValidatorId))));
+        console2.log("  Final cooldown for Val %s ends at: %s", firstValidatorId, finalCooldownEndTime);
+
+        vm.warp(finalCooldownEndTime + 1 seconds);
+        console2.log("  Warped time to %s for final withdrawal", block.timestamp);
+
+        uint256 balanceJustBeforeFinalWithdraw = user1.balance; // CAPTURE HERE
+        StakingFacet(payable(address(diamondProxy))).withdraw();
+        uint256 balanceAfterFinalWithdraw = user1.balance; // RENAMED
+
+        // Now, balanceAfterFinalWithdraw should be balanceJustBeforeFinalWithdraw + stakeAmount - gas(withdraw)
+        // So, balanceAfterFinalWithdraw - balanceJustBeforeFinalWithdraw should be approx stakeAmount.
+        assertApproxEqAbs(balanceAfterFinalWithdraw - balanceJustBeforeFinalWithdraw, stakeAmount, stakeAmount / 100); // Allow 1% for gas, REMOVED custom message
+
+        vm.stopPrank();
+
+        user1GlobalInfo = StakingFacet(payable(address(diamondProxy))).stakeInfo(user1);
+        assertEq(user1GlobalInfo.staked, 0, "User1 final total staked amount should be 0");
+        assertEq(user1GlobalInfo.cooled, 0, "User1 final total cooled amount should be 0");
+        assertEq(user1GlobalInfo.parked, 0, "User1 final total parked amount should be 0");
+
+        console2.log("--- Test: testMultiValidatorStakeUnstakeWithdrawCycle END ---");
+    }
 }

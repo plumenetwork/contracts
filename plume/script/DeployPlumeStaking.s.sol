@@ -91,7 +91,7 @@ contract DeployPlumeStaking is Script {
         IERC2535DiamondCutInternal.FacetCut[] memory cut = new IERC2535DiamondCutInternal.FacetCut[](5);
 
         // AccessControl Facet Selectors
-        bytes4[] memory accessControlSigs = new bytes4[](7);
+        bytes4[] memory accessControlSigs = new bytes4[](11);
         accessControlSigs[0] = bytes4(keccak256(bytes("initializeAccessControl()")));
         accessControlSigs[1] = AccessControlFacet.hasRole.selector;
         accessControlSigs[2] = AccessControlFacet.getRoleAdmin.selector;
@@ -99,6 +99,10 @@ contract DeployPlumeStaking is Script {
         accessControlSigs[4] = AccessControlFacet.revokeRole.selector;
         accessControlSigs[5] = AccessControlFacet.renounceRole.selector;
         accessControlSigs[6] = AccessControlFacet.setRoleAdmin.selector;
+        accessControlSigs[7] = bytes4(keccak256(bytes("ADMIN_ROLE()")));
+        accessControlSigs[8] = bytes4(keccak256(bytes("UPGRADER_ROLE()")));
+        accessControlSigs[9] = bytes4(keccak256(bytes("VALIDATOR_ROLE()")));
+        accessControlSigs[10] = bytes4(keccak256(bytes("REWARD_MANAGER_ROLE()")));
         cut[0] = IERC2535DiamondCutInternal.FacetCut(address(accessControlFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, accessControlSigs);
 
         // Management Facet Selectors

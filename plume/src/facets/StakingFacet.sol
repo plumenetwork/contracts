@@ -358,85 +358,122 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
     /**
      * @notice Withdraw PLUME that has completed the cooldown period.
+     * @dev Processes matured cooldowns, moving them to the user's parked balance.
+     *      Then allows withdrawal of the total parked balance.
+     *      If a validator a user was cooling with has been slashed, only funds whose cooldown
+     *      ended *before* the validator was slashed are considered matured and moved to parked.
      */
     function withdraw() external {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
         PlumeStakingStorage.StakeInfo storage userGlobalStakeInfo = $.stakeInfo[user];
+        // console2.log("SF.withdraw ENTRY: user %s, initial parked: %s, initial cooled: %s", user, userGlobalStakeInfo.parked, userGlobalStakeInfo.cooled);
 
-        uint256 amountReadyToPark = 0;
-        uint16[] storage userStakedValidators = $.userValidators[user];
+        uint256 amountMovedToParkedThisCall = 0;
+        uint16[] storage userAssociatedValidators = $.userValidators[user]; 
+        // console2.log("SF.withdraw: user %s, userStakedValidators.length: %s", user, userAssociatedValidators.length);
 
         // Iterate through validators the user might have cooling funds with
-        for (uint256 i = 0; i < userStakedValidators.length; i++) {
-            uint16 validatorId_iterator = userStakedValidators[i];
-
-            if ($.validators[validatorId_iterator].slashed) {
-                continue; // Skip slashed validators
-            }
-
+        // to process any matured cooldowns and move them to the user's parked balance.
+        for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
+            uint16 validatorId_iterator = userAssociatedValidators[i];
             PlumeStakingStorage.CooldownEntry storage cooldownEntry =
                 $.userValidatorCooldowns[user][validatorId_iterator];
 
-            if (cooldownEntry.amount > 0 && block.timestamp >= cooldownEntry.cooldownEndTime) {
+            // console2.log("SF.withdraw LOOP - index:%s, valId:%s, cd.amount:%s, cd.endTime:%s, block.ts:%s", 
+            //     i, validatorId_iterator, cooldownEntry.amount, cooldownEntry.cooldownEndTime, block.timestamp);
+
+            if (cooldownEntry.amount == 0) {
+                continue; // No active cooldown with this validator for this user
+            }
+
+            bool canRecoverFromThisCooldown = false;
+            if ($.validatorExists[validatorId_iterator] && $.validators[validatorId_iterator].slashed) {
+                // Validator is slashed. Check if cooldown ended BEFORE the slash.
+                uint256 slashTs = $.validators[validatorId_iterator].slashedAtTimestamp;
+                if (cooldownEntry.cooldownEndTime < slashTs && block.timestamp >= cooldownEntry.cooldownEndTime) {
+                    // console2.log("SF.withdraw LOOP[%s]: Val %s IS SLASHED but cooldown matured BEFORE slash (end: %s, slash: %s). Recoverable.", 
+                    //     i, validatorId_iterator, cooldownEntry.cooldownEndTime, slashTs);
+                    canRecoverFromThisCooldown = true;
+                }
+                // else { console2.log("SF.withdraw LOOP[%s]: Val %s IS SLASHED and cooldown did not mature before slash. Funds lost.", i, validatorId_iterator); }
+            } else if ($.validatorExists[validatorId_iterator] && !$.validators[validatorId_iterator].slashed) {
+                // Validator is NOT slashed. Check if cooldown matured normally.
+                if (block.timestamp >= cooldownEntry.cooldownEndTime) {
+                    // console2.log("SF.withdraw LOOP[%s]: Cooldown for valId %s (not slashed) matured.", i, validatorId_iterator);
+                    canRecoverFromThisCooldown = true;
+                }
+            }
+            // If validator doesn't exist, cooldownEntry.amount should be 0 (or it's stale data we ignore)
+
+            if (canRecoverFromThisCooldown) {
                 uint256 amountInThisCooldown = cooldownEntry.amount;
-                amountReadyToPark += amountInThisCooldown;
+                amountMovedToParkedThisCall += amountInThisCooldown;
+                // console2.log("SF.withdraw LOOP[%s]: amountInThisCooldown %s, amountMovedToParkedThisCall now %s", 
+                //     i, amountInThisCooldown, amountMovedToParkedThisCall);
 
                 // Decrement from user's global sum of cooled funds
                 if (userGlobalStakeInfo.cooled >= amountInThisCooldown) {
                     userGlobalStakeInfo.cooled -= amountInThisCooldown;
                 } else {
-                    userGlobalStakeInfo.cooled = 0;
+                    userGlobalStakeInfo.cooled = 0; // Safety
                 }
 
-                // Decrement from validator's total cooling
-                if ($.validatorTotalCooling[validatorId_iterator] >= amountInThisCooldown) {
-                    $.validatorTotalCooling[validatorId_iterator] -= amountInThisCooldown;
-                } else {
-                    $.validatorTotalCooling[validatorId_iterator] = 0; // Should not happen
+                // Decrement from validator's total cooling (only if not slashed, as slashValidator handles it)
+                if (!$.validators[validatorId_iterator].slashed) {
+                    if ($.validatorTotalCooling[validatorId_iterator] >= amountInThisCooldown) {
+                        $.validatorTotalCooling[validatorId_iterator] -= amountInThisCooldown;
+                    } else {
+                        $.validatorTotalCooling[validatorId_iterator] = 0; 
+                    }
                 }
-
-                // Decrement from system's total cooling
+                // Note: $.totalCooling is a global sum. If validator was slashed, its contribution was already removed.
+                // If not slashed, we remove it here.
                 if ($.totalCooling >= amountInThisCooldown) {
                     $.totalCooling -= amountInThisCooldown;
                 } else {
-                    $.totalCooling = 0; // Should not happen
+                    $.totalCooling = 0; 
                 }
 
                 delete $.userValidatorCooldowns[user][validatorId_iterator];
 
-                // Now that the cooldown for this validator is cleared, attempt to fully remove
-                // the staker's association with this validator if no active stake remains.
-                // The active stake for this specific validator should be 0 if a cooldown was being processed.
                 if ($.userValidatorStakes[user][validatorId_iterator].staked == 0) {
                     PlumeValidatorLogic.removeStakerFromValidator($, user, validatorId_iterator);
+                    // console2.log("SF.withdraw: Called removeStakerFromValidator for user %s, val %s after clearing cooldown.", 
+                    //     user, validatorId_iterator);
                 }
-                // --- END ADDED SECTION ---
             }
         }
 
-        if (amountReadyToPark > 0) {
-            userGlobalStakeInfo.parked += amountReadyToPark;
-            $.totalWithdrawable += amountReadyToPark;
+        // console2.log("SF.withdraw: After loop, amountMovedToParkedThisCall: %s", amountMovedToParkedThisCall);
+
+        if (amountMovedToParkedThisCall > 0) {
+            userGlobalStakeInfo.parked += amountMovedToParkedThisCall;
+            // $.totalWithdrawable is already tracking $.stakeInfo[user].parked effectively, 
+            // plus what withdraw() itself makes available. We add the newly parked amount here.
+            // This was previously missing direct addition if funds were moved from cooled to parked within this call.
+            $.totalWithdrawable += amountMovedToParkedThisCall; 
+            // console2.log("SF.withdraw: Updated userGlobalStakeInfo.parked to: %s and totalWithdrawable to %s", 
+            //     userGlobalStakeInfo.parked, $.totalWithdrawable);
         }
 
-        uint256 amountToWithdraw = userGlobalStakeInfo.parked;
-
-        if (amountToWithdraw == 0) {
+        uint256 amountToActuallyWithdraw = userGlobalStakeInfo.parked;
+        // console2.log("SF.withdraw: Amount to actually withdraw (from final parked): %s", amountToActuallyWithdraw);
+        if (amountToActuallyWithdraw == 0) {
+            // console2.log("SF.withdraw: amountToActuallyWithdraw is 0, REVERTING InvalidAmount(0)");
             revert InvalidAmount(0);
         }
 
         userGlobalStakeInfo.parked = 0;
-        if ($.totalWithdrawable >= amountToWithdraw) {
-            $.totalWithdrawable -= amountToWithdraw;
+        if ($.totalWithdrawable >= amountToActuallyWithdraw) {
+            $.totalWithdrawable -= amountToActuallyWithdraw;
         } else {
-            $.totalWithdrawable = 0; // Should not happen if totals are managed correctly
+            $.totalWithdrawable = 0; 
         }
 
-        emit Withdrawn(user, amountToWithdraw);
+        emit Withdrawn(user, amountToActuallyWithdraw);
 
-        // Transfer PLUME to user
-        (bool success,) = user.call{ value: amountToWithdraw }("");
+        (bool success,) = user.call{ value: amountToActuallyWithdraw }("");
         if (!success) {
             revert NativeTransferFailed();
         }
@@ -660,21 +697,47 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      */
     function amountCooling() external view returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
-
-        // info.cooled already represents the sum of all active cooling entries for the user
+        address user = msg.sender;
+        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[user];
+        // info.cooled already represents the sum of all active cooling entries for the user (from non-slashed validators implicitly by how it's updated)
         return info.cooled;
     }
 
     /**
-     * @notice Returns the amount of PLUME that is withdrawable for the caller
+     * @notice Returns the amount of PLUME that is withdrawable for the caller.
+     * This includes already parked funds plus any funds in matured cooldowns.
+     * For slashed validators, cooled funds are only considered withdrawable if their
+     * cooldownEndTime was *before* the validator's slashedAtTimestamp.
      */
-    function amountWithdrawable() external view returns (uint256 amount) {
+    function amountWithdrawable() external view returns (uint256 totalWithdrawableAmount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        PlumeStakingStorage.StakeInfo storage info = $.stakeInfo[msg.sender];
-        // info.parked represents funds that have completed cooldown and are ready for withdrawal.
-        // The withdraw() function moves amounts from completed cooldowns to parked.
-        return info.parked;
+        address user = msg.sender; 
+        
+        totalWithdrawableAmount = $.stakeInfo[user].parked;
+
+        uint16[] storage userAssociatedValidators = $.userValidators[user]; 
+
+        for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
+            uint16 validatorId_iterator = userAssociatedValidators[i];
+            PlumeStakingStorage.CooldownEntry storage cooldownEntry = 
+                $.userValidatorCooldowns[user][validatorId_iterator];
+
+            if (cooldownEntry.amount > 0 && block.timestamp >= cooldownEntry.cooldownEndTime) {
+                // Cooldown has matured in terms of time
+                if ($.validatorExists[validatorId_iterator] && $.validators[validatorId_iterator].slashed) {
+                    // Validator is slashed, check if cooldown ended BEFORE the slash time
+                    if (cooldownEntry.cooldownEndTime < $.validators[validatorId_iterator].slashedAtTimestamp) {
+                        totalWithdrawableAmount += cooldownEntry.amount;
+                    }
+                    // If cooldown ended at/after slash, it's not considered user-withdrawable here
+                } else if ($.validatorExists[validatorId_iterator] && !$.validators[validatorId_iterator].slashed) {
+                    // Validator is not slashed, matured cooldown is withdrawable
+                    totalWithdrawableAmount += cooldownEntry.amount;
+                } 
+                // If validator doesn't exist (shouldn't happen if userAssociatedValidators is clean), ignore.
+            }
+        }
+        return totalWithdrawableAmount;
     }
 
     /**

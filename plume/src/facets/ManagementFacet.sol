@@ -244,12 +244,24 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         if (userActiveStakeToClear > 0) {
             $.userValidatorStakes[user][slashedValidatorId].staked = 0;
+            // Decrement user's global stake
+            if ($.stakeInfo[user].staked >= userActiveStakeToClear) {
+                $.stakeInfo[user].staked -= userActiveStakeToClear;
+            } else {
+                $.stakeInfo[user].staked = 0; // Should not happen if state is consistent
+            }
             emit AdminClearedSlashedStake(user, slashedValidatorId, userActiveStakeToClear);
             recordChanged = true;
         }
 
         if (userCooledAmountToClear > 0) {
             delete $.userValidatorCooldowns[user][slashedValidatorId];
+            // Decrement user's global cooled amount
+            if ($.stakeInfo[user].cooled >= userCooledAmountToClear) {
+                $.stakeInfo[user].cooled -= userCooledAmountToClear;
+            } else {
+                $.stakeInfo[user].cooled = 0; // Should not happen
+            }
             emit AdminClearedSlashedCooldown(user, slashedValidatorId, userCooledAmountToClear);
             recordChanged = true;
         }
@@ -292,12 +304,24 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
                 if (userActiveStakeToClear > 0) {
                     $.userValidatorStakes[user][slashedValidatorId].staked = 0;
+                    // Decrement user's global stake
+                    if ($.stakeInfo[user].staked >= userActiveStakeToClear) {
+                        $.stakeInfo[user].staked -= userActiveStakeToClear;
+                    } else {
+                        $.stakeInfo[user].staked = 0;
+                    }
                     emit AdminClearedSlashedStake(user, slashedValidatorId, userActiveStakeToClear);
                     recordActuallyChangedForThisUser = true;
                 }
 
                 if (userCooledAmountToClear > 0) {
                     delete $.userValidatorCooldowns[user][slashedValidatorId];
+                    // Decrement user's global cooled amount
+                    if ($.stakeInfo[user].cooled >= userCooledAmountToClear) {
+                        $.stakeInfo[user].cooled -= userCooledAmountToClear;
+                    } else {
+                        $.stakeInfo[user].cooled = 0;
+                    }
                     emit AdminClearedSlashedCooldown(user, slashedValidatorId, userCooledAmountToClear);
                     recordActuallyChangedForThisUser = true;
                 }

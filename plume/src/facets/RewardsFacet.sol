@@ -46,7 +46,6 @@ import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { IAccessControl } from "../interfaces/IAccessControl.sol";
 import { PlumeRoles } from "../lib/PlumeRoles.sol";
 import { OwnableInternal } from "@solidstate/access/ownable/OwnableInternal.sol";
-import { console2 } from "forge-std/console2.sol";
 
 using PlumeRewardLogic for PlumeStakingStorage.Layout;
 
