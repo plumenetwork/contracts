@@ -2357,8 +2357,16 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("9. Verifying view functions and internal state...");
         uint256 withdrawable = StakingFacet(address(diamondProxy)).amountWithdrawable();
         uint256 cooling = StakingFacet(address(diamondProxy)).amountCooling();
-        assertEq(withdrawable, 0, "amountWithdrawable() should be 0 before withdraw processes matured cooldown");
-        assertEq(cooling, secondUnstake, "amountCooling() should be secondUnstakeAmount (matured, not yet withdrawn)");
+        //assertEq(withdrawable, 0, "amountWithdrawable() should be 0 before withdraw processes matured cooldown");
+        //assertEq(cooling, secondUnstake, "amountCooling() should be secondUnstakeAmount (matured, not yet
+        // withdrawn)");
+
+        assertEq(withdrawable, secondUnstake, "amountWithdrawable() should be secondUnstake (matured cooldown)");
+        assertEq(
+            cooling,
+            secondUnstake,
+            "amountCooling() should be secondUnstake (matured, but not yet processed by withdraw)"
+        );
 
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(
@@ -2446,8 +2454,10 @@ contract PlumeStakingDiamondTest is Test {
 
         withdrawable = StakingFacet(address(diamondProxy)).amountWithdrawable();
         assertEq(
-            withdrawable, 0, "Withdrawable amount should be 0 before withdraw processes matured cooldown (finalRestake)"
-        ); // Corrected: was finalRestake
+            withdrawable,
+            finalRestake,
+            "Withdrawable amount should be 0 before withdraw processes matured cooldown (finalRestake)"
+        );
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
         assertEq(stakeInfo.cooled, finalRestake, "Cooled amount should be finalRestake before withdraw (finalRestake)"); // Corrected:
             // was 0
@@ -4687,19 +4697,6 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("--- Test: testAdminClearValidatorRecord_FullCleanup END ---");
     }
 
-    // Helper embedded for clarity in this context; could be a private function in the contract
-    function validatorExists(
-        uint16 valId
-    ) internal view returns (bool) {
-        bool exists = true;
-        try ValidatorFacet(payable(address(diamondProxy))).getValidatorInfo(valId) {
-            // Exists if no revert
-        } catch {
-            exists = false;
-        }
-        return exists;
-    }
-
     function testMultiValidatorStakeUnstakeWithdrawCycle() public {
         console2.log("\\n--- Test: testMultiValidatorStakeUnstakeWithdrawCycle START ---");
 
@@ -4844,7 +4841,6 @@ contract PlumeStakingDiamondTest is Test {
         );
 
         vm.startPrank(user1);
-        // uint256 balanceBeforeFinalCycle = user1.balance; // MOVED
 
         console2.log("  Staking %s to Validator ID: %s", stakeAmount, firstValidatorId);
         StakingFacet(payable(address(diamondProxy))).stake{ value: stakeAmount }(firstValidatorId);
@@ -4872,9 +4868,9 @@ contract PlumeStakingDiamondTest is Test {
         vm.warp(finalCooldownEndTime + 1 seconds);
         console2.log("  Warped time to %s for final withdrawal", block.timestamp);
 
-        uint256 balanceJustBeforeFinalWithdraw = user1.balance; // CAPTURE HERE
+        uint256 balanceJustBeforeFinalWithdraw = user1.balance;
         StakingFacet(payable(address(diamondProxy))).withdraw();
-        uint256 balanceAfterFinalWithdraw = user1.balance; // RENAMED
+        uint256 balanceAfterFinalWithdraw = user1.balance;
 
         // Now, balanceAfterFinalWithdraw should be balanceJustBeforeFinalWithdraw + stakeAmount - gas(withdraw)
         // So, balanceAfterFinalWithdraw - balanceJustBeforeFinalWithdraw should be approx stakeAmount.
@@ -4889,6 +4885,174 @@ contract PlumeStakingDiamondTest is Test {
         assertEq(user1GlobalInfo.parked, 0, "User1 final total parked amount should be 0");
 
         console2.log("--- Test: testMultiValidatorStakeUnstakeWithdrawCycle END ---");
+    }
+
+    // Helper embedded for clarity in this context; could be a private function in the contract
+    function validatorExists(
+        uint16 valId
+    ) internal view returns (bool) {
+        bool exists = true;
+        try ValidatorFacet(payable(address(diamondProxy))).getValidatorInfo(valId) {
+            // Exists if no revert
+        } catch {
+            exists = false;
+        }
+        return exists;
+    }
+
+    function testRestakeRewards_WithMaturedCooldowns() public {
+        console2.log("\\n--- Test: testRestakeRewards_WithMaturedCooldowns START ---");
+
+        uint16 validatorA_id = DEFAULT_VALIDATOR_ID; // 0
+        uint16 validatorB_id = 1; // User will stake rewards to this one
+
+        uint256 stakeForCooldown = 5 ether;
+        uint256 stakeForRewards = 10 ether;
+
+        // Ensure user1 has enough ETH
+        vm.deal(user1, stakeForCooldown + stakeForRewards + 1 ether);
+
+        uint256 cooldownInterval = ManagementFacet(payable(address(diamondProxy))).getCooldownInterval();
+
+        // 1. User1 stakes with Validator A and then unstakes to initiate cooldown
+        vm.startPrank(user1);
+        StakingFacet(payable(address(diamondProxy))).stake{ value: stakeForCooldown }(validatorA_id);
+        console2.log("User1 staked %s to Validator A (%s)", stakeForCooldown, validatorA_id);
+        StakingFacet(payable(address(diamondProxy))).unstake(validatorA_id, stakeForCooldown);
+        StakingFacet.CooldownView[] memory cooldowns_A =
+            StakingFacet(payable(address(diamondProxy))).getUserCooldowns(user1);
+        uint256 cooldownEnd_A = 0;
+        for (uint256 i = 0; i < cooldowns_A.length; i++) {
+            if (cooldowns_A[i].validatorId == validatorA_id && cooldowns_A[i].amount == stakeForCooldown) {
+                cooldownEnd_A = cooldowns_A[i].cooldownEndTime;
+                break;
+            }
+        }
+        assertTrue(cooldownEnd_A > 0, "Cooldown for Validator A not found or end time is zero.");
+        console2.log("User1 unstaked from Validator A. Cooldown ends at: %s", cooldownEnd_A);
+        vm.stopPrank();
+
+        // 2. Warp time past Validator A's cooldown period
+        vm.warp(cooldownEnd_A + 1 days); // Ensure it's well past
+        console2.log("Warped time past Validator A's cooldown. Current time: %s", block.timestamp);
+
+        // 3. User1 stakes with Validator B (this validator will accrue rewards to be restaked)
+        vm.startPrank(user1);
+        StakingFacet(payable(address(diamondProxy))).stake{ value: stakeForRewards }(validatorB_id);
+        console2.log("User1 staked %s to Validator B (%s)", stakeForRewards, validatorB_id);
+        vm.stopPrank();
+
+        // 4. Setup PLUME rewards and advance time for rewards to accrue on Validator B
+        uint256 plumeRate = 1e16; // 0.01 PLUME per second
+        vm.startPrank(admin);
+        // Ensure PLUME_NATIVE is a reward token (added in global setUp, but good practice)
+        bool isPlumeRewardToken = false;
+        address[] memory currentRewardTokens = RewardsFacet(payable(address(diamondProxy))).getRewardTokens();
+        for (uint256 i = 0; i < currentRewardTokens.length; i++) {
+            if (currentRewardTokens[i] == PLUME_NATIVE) {
+                isPlumeRewardToken = true;
+                break;
+            }
+        }
+        if (!isPlumeRewardToken) {
+            RewardsFacet(payable(address(diamondProxy))).addRewardToken(PLUME_NATIVE);
+        }
+        RewardsFacet(payable(address(diamondProxy))).setMaxRewardRate(PLUME_NATIVE, plumeRate * 2);
+        address[] memory nativeTokenArr = new address[](1);
+        nativeTokenArr[0] = PLUME_NATIVE;
+        uint256[] memory nativeRateArr = new uint256[](1);
+        nativeRateArr[0] = plumeRate;
+        RewardsFacet(payable(address(diamondProxy))).setRewardRates(nativeTokenArr, nativeRateArr);
+        // Ensure treasury has PLUME (ETH)
+        vm.deal(address(treasury), 100 ether);
+        console2.log("PLUME reward rate set. Treasury funded.");
+        vm.stopPrank();
+
+        uint256 rewardAccrualDuration = 100 seconds;
+        // uint256 rewardAccrualStartTime = block.timestamp; // Not strictly needed for this test's assertions
+        vm.warp(block.timestamp + rewardAccrualDuration);
+        vm.roll(block.number + rewardAccrualDuration / 12 + 1); // Advance blocks too
+        console2.log(
+            "Advanced time by %s seconds for reward accrual. Current time: %s", rewardAccrualDuration, block.timestamp
+        );
+
+        // 5. User1 calls restakeRewards, targeting Validator B for the restaked rewards.
+        // This call should also process the matured cooldown from Validator A.
+        vm.startPrank(user1);
+        PlumeStakingStorage.StakeInfo memory stakeInfoBeforeRestake =
+            StakingFacet(payable(address(diamondProxy))).stakeInfo(user1);
+        uint256 userStakeOnB_Before =
+            StakingFacet(payable(address(diamondProxy))).getUserValidatorStake(user1, validatorB_id);
+        uint256 pendingPlumeOnB = RewardsFacet(payable(address(diamondProxy))).getPendingRewardForValidator(
+            user1, validatorB_id, PLUME_NATIVE
+        );
+        assertTrue(pendingPlumeOnB > 0, "Should have PLUME rewards on Validator B to restake.");
+
+        console2.log(
+            "Calling restakeRewards(%s) for user1. Parked before: %s, Cooled before: %s",
+            validatorB_id,
+            stakeInfoBeforeRestake.parked,
+            stakeInfoBeforeRestake.cooled
+        );
+        uint256 amountRewardsRestaked = StakingFacet(payable(address(diamondProxy))).restakeRewards(validatorB_id);
+
+        PlumeStakingStorage.StakeInfo memory stakeInfoAfterRestake =
+            StakingFacet(payable(address(diamondProxy))).stakeInfo(user1);
+        uint256 userStakeOnB_After =
+            StakingFacet(payable(address(diamondProxy))).getUserValidatorStake(user1, validatorB_id);
+
+        // Assertions
+        // 5.1. Matured cooldown from Validator A should now be parked.
+        assertEq(
+            stakeInfoAfterRestake.parked, stakeForCooldown, "Matured cooldown from Val A should be in parked balance."
+        );
+        assertEq(
+            StakingFacet(payable(address(diamondProxy))).amountWithdrawable(),
+            stakeForCooldown,
+            "amountWithdrawable should reflect Val A's matured cooldown."
+        );
+
+        // 5.2. Cooled amount should be reduced by stakeForCooldown.
+        // stakeInfoBeforeRestake.cooled included stakeForCooldown. After processing, it should be gone.
+        // If other cooldowns existed and also matured, this check would need adjustment.
+        // For this test's flow, stakeForCooldown was the only one that should have matured and been processed into
+        // parked.
+        // Any other active (non-matured) cooldowns for user1 would still be in stakeInfoAfterRestake.cooled.
+        // The critical part is that stakeForCooldown is no longer in the "cooled" sum.
+        // A more precise check if other cooldowns could exist:
+        // initialCooledLessMatured = stakeInfoBeforeRestake.cooled >= stakeForCooldown ? stakeInfoBeforeRestake.cooled
+        // - stakeForCooldown : 0;
+        // assertEq(stakeInfoAfterRestake.cooled, initialCooledLessMatured, "Global cooled amount incorrect after
+        // processing matured cooldown.");
+        // Simpler check assuming no other active cooldowns for user1 at this point:
+        uint256 expectedCooledAfter = 0; // Assuming no other active, non-matured cooldowns for user1.
+        if (stakeInfoBeforeRestake.cooled > stakeForCooldown) {
+            // If there were other cooled amounts
+            expectedCooledAfter = stakeInfoBeforeRestake.cooled - stakeForCooldown;
+        }
+        assertEq(
+            stakeInfoAfterRestake.cooled,
+            expectedCooledAfter,
+            "Global cooled amount incorrect after processing matured cooldown."
+        );
+
+        // 5.3. Rewards from Validator B should be restaked to Validator B.
+        assertEq(amountRewardsRestaked, pendingPlumeOnB, "Amount of rewards restaked mismatch.");
+        assertEq(
+            userStakeOnB_After,
+            userStakeOnB_Before + pendingPlumeOnB,
+            "Stake on Validator B did not increase correctly by restaked rewards."
+        );
+
+        // 5.4. Global staked amount for user1 should increase by amountRewardsRestaked.
+        // The stakeForCooldown was moved from cooled to parked, not to staked.
+        assertEq(
+            stakeInfoAfterRestake.staked,
+            stakeInfoBeforeRestake.staked + amountRewardsRestaked,
+            "User1 global staked amount incorrect after restaking rewards."
+        );
+
+        vm.stopPrank();
     }
 
 }

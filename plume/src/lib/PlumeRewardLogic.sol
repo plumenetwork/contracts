@@ -230,78 +230,106 @@ library PlumeRewardLogic {
         if (lastUserRewardUpdateTime == 0) {
             lastUserRewardUpdateTime = $.userValidatorStakeStartTime[user][validatorId];
             if (lastUserRewardUpdateTime == 0 && $.userValidatorStakes[user][validatorId].staked > 0) {
-                lastUserRewardUpdateTime = block.timestamp;
+                lastUserRewardUpdateTime = block.timestamp; // Should ideally be stake time, but block.timestamp is
+                    // fallback
             }
         }
 
-        if (block.timestamp <= lastUserRewardUpdateTime) {
+        // If no time has passed or user hasn't earned anything yet (e.g. paid index is already current)
+        if (
+            block.timestamp <= lastUserRewardUpdateTime
+                || finalCumulativeRewardPerToken <= lastUserPaidCumulativeRewardPerToken
+        ) {
             return (0, 0, 0);
         }
 
-        effectiveTimeDelta = block.timestamp - lastUserRewardUpdateTime;
+        effectiveTimeDelta = block.timestamp - lastUserRewardUpdateTime; // This is the total duration of interest
 
         uint256[] memory distinctTimestamps =
             getDistinctTimestamps($, validatorId, token, lastUserRewardUpdateTime, block.timestamp);
 
+        // If only start and end (or fewer), means no intermediate checkpoints relevant to this user's period.
+        // The simple delta calculation using final - initial cumulative should work, but it's already part of the loop.
+        // The loop needs at least two points to form a segment.
         if (distinctTimestamps.length < 2) {
-            return (0, 0, 0);
+            // This can happen if lastUserRewardUpdateTime == block.timestamp or no checkpoints exist.
+            // The check above (block.timestamp <= lastUserRewardUpdateTime) should catch the first case.
+            // If no checkpoints, getDistinctTimestamps returns [lastUserRewardUpdateTime, block.timestamp].
+            // So length should be 2. If less than 2, something is off, or it's a zero-duration.
+            return (0, 0, 0); // Should be caught by initial checks.
         }
 
-        uint256 currentCumulativeRewardPerToken = lastUserPaidCumulativeRewardPerToken;
+        uint256 rptTracker = lastUserPaidCumulativeRewardPerToken;
 
         for (uint256 k = 0; k < distinctTimestamps.length - 1; ++k) {
             uint256 segmentStartTime = distinctTimestamps[k];
-            uint256 actualSegmentEndTime = distinctTimestamps[k + 1];
+            uint256 segmentEndTime = distinctTimestamps[k + 1];
 
-            if (actualSegmentEndTime <= segmentStartTime) {
+            if (segmentEndTime <= segmentStartTime) {
+                // Should not happen with sorted distinct timestamps
                 continue;
             }
 
-            uint256 rptAtSegmentStart = currentCumulativeRewardPerToken;
-            PlumeStakingStorage.RateCheckpoint memory rewardRateInfoAtSegmentStart =
-                getEffectiveRewardRateAt($, token, validatorId, segmentStartTime);
-            uint256 effectiveRewardRateForSegment = rewardRateInfoAtSegmentStart.rate;
-            uint256 timeDeltaForSegment = actualSegmentEndTime - segmentStartTime;
-            uint256 rewardPerTokenIncreaseForSegment = 0;
-
-            if (effectiveRewardRateForSegment > 0 && timeDeltaForSegment > 0) {
-                rewardPerTokenIncreaseForSegment = timeDeltaForSegment * effectiveRewardRateForSegment;
+            // The RPT for the validator at the START of this segment.
+            // This needs to be carefully determined. It's not necessarily rptTracker if there were prior segments.
+            // It's the validator's cumulative RPT as of segmentStartTime.
+            // For the *first* segment (k=0), segmentStartTime is lastUserRewardUpdateTime, and
+            // rptAtSegmentStart IS lastUserPaidCumulativeRewardPerToken (or rptTracker).
+            // For subsequent segments, rptAtSegmentStart is the rptAtSegmentEnd of the previous segment.
+            uint256 rptAtSegmentStart;
+            if (k == 0) {
+                rptAtSegmentStart = lastUserPaidCumulativeRewardPerToken;
+            } else {
+                // For k > 0, rptAtSegmentStart is the cumulative value at distinctTimestamps[k]
+                // This implies we need a way to get the validator's cumulative RPT at ANY timestamp,
+                // not just by stepping through.
+                // The current logic correctly uses rptTracker which IS the rptAtSegmentEnd of the previous segment.
+                rptAtSegmentStart = rptTracker;
             }
-            uint256 rptAtSegmentEnd = rptAtSegmentStart + rewardPerTokenIncreaseForSegment;
 
-            uint256 rewardPerTokenDeltaForSegment = 0;
-            if (rptAtSegmentEnd > rptAtSegmentStart) {
-                rewardPerTokenDeltaForSegment = rptAtSegmentEnd - rptAtSegmentStart;
+            // What is the validator's RPT at segmentEndTime?
+            // This requires calculating the RPT increase *within this specific segment*.
+            PlumeStakingStorage.RateCheckpoint memory rewardRateInfoForSegment =
+                getEffectiveRewardRateAt($, token, validatorId, segmentStartTime); // Rate at START of segment
+            uint256 effectiveRewardRate = rewardRateInfoForSegment.rate;
+            uint256 segmentDuration = segmentEndTime - segmentStartTime;
+
+            uint256 rptIncreaseInSegment = 0;
+            if (effectiveRewardRate > 0 && segmentDuration > 0) {
+                rptIncreaseInSegment = segmentDuration * effectiveRewardRate;
             }
 
-            if (rewardPerTokenDeltaForSegment > 0 && userStakedAmount > 0) {
+            uint256 rptAtSegmentEnd = rptAtSegmentStart + rptIncreaseInSegment;
+
+            // The actual RPT delta for the user in this segment.
+            // The user "catches up" from rptAtSegmentStart to rptAtSegmentEnd.
+            uint256 rewardPerTokenDeltaForUserInSegment = rptAtSegmentEnd - rptAtSegmentStart;
+
+            if (rewardPerTokenDeltaForUserInSegment > 0 && userStakedAmount > 0) {
                 uint256 grossRewardForSegment =
-                    (userStakedAmount * rewardPerTokenDeltaForSegment) / PlumeStakingStorage.REWARD_PRECISION;
-                uint256 effectiveCommissionRate = getEffectiveCommissionRateAt($, validatorId, segmentStartTime);
+                    (userStakedAmount * rewardPerTokenDeltaForUserInSegment) / PlumeStakingStorage.REWARD_PRECISION;
 
+                // Commission rate effective at the START of this segment
+                uint256 effectiveCommissionRate = getEffectiveCommissionRateAt($, validatorId, segmentStartTime);
                 uint256 commissionForThisSegment =
                     (grossRewardForSegment * effectiveCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
 
-                // Check for underflow before subtraction
-                if (grossRewardForSegment < commissionForThisSegment) {
-                    // This should ideally not happen with commission <= 100%
-                    // If it does, it means an issue elsewhere (e.g. commissionRate > REWARD_PRECISION)
-                    // For safety, can treat net reward as 0 in this case, or revert explicitly.
-                    // Reverting here would give a more specific error than a generic panic 0x11.
-                    // revert("Commission exceeds gross reward in segment calculation");
-                }
-                totalUserRewardDelta += (grossRewardForSegment - commissionForThisSegment);
+                if (grossRewardForSegment >= commissionForThisSegment) {
+                    totalUserRewardDelta += (grossRewardForSegment - commissionForThisSegment);
+                } // else, net reward is 0 for this segment for the user.
+                // Commission is still generated for the validator based on gross.
+                // This was previously missing, commission should always be based on gross.
                 totalCommissionAmountDelta += commissionForThisSegment;
             }
-            currentCumulativeRewardPerToken = rptAtSegmentEnd;
+            rptTracker = rptAtSegmentEnd; // Update tracker for the next segment's start
         }
-
         return (totalUserRewardDelta, totalCommissionAmountDelta, effectiveTimeDelta);
     }
 
     /**
      * @notice Helper to get a sorted list of unique timestamps relevant for a claim period.
      * Includes period start, period end, and all reward/commission checkpoints in between.
+     * Uses a merge-style approach for efficiency, assuming checkpoint arrays are sorted.
      */
     function getDistinctTimestamps(
         PlumeStakingStorage.Layout storage $,
@@ -310,68 +338,95 @@ library PlumeRewardLogic {
         uint256 periodStart,
         uint256 periodEnd
     ) internal view returns (uint256[] memory) {
-        // Max possible points: start, end, all reward checkpoints, all commission checkpoints
-        uint256 rewardCheckpointCount = $.validatorRewardRateCheckpoints[validatorId][token].length;
-        uint256 commissionCheckpointCount = $.validatorCommissionCheckpoints[validatorId].length;
-        uint256[] memory tempTimestamps = new uint256[](2 + rewardCheckpointCount + commissionCheckpointCount);
-        uint256 count = 0;
+        PlumeStakingStorage.RateCheckpoint[] storage rewardCheckpoints =
+            $.validatorRewardRateCheckpoints[validatorId][token];
+        PlumeStakingStorage.RateCheckpoint[] storage commissionCheckpoints =
+            $.validatorCommissionCheckpoints[validatorId];
 
-        tempTimestamps[count++] = periodStart;
+        uint256 len1 = rewardCheckpoints.length;
+        uint256 len2 = commissionCheckpoints.length;
 
-        for (uint256 i = 0; i < rewardCheckpointCount; i++) {
-            uint256 ts = $.validatorRewardRateCheckpoints[validatorId][token][i].timestamp;
-            if (ts > periodStart && ts < periodEnd) {
-                tempTimestamps[count++] = ts;
-            }
-        }
-        for (uint256 i = 0; i < commissionCheckpointCount; i++) {
-            uint256 ts = $.validatorCommissionCheckpoints[validatorId][i].timestamp;
-            if (ts > periodStart && ts < periodEnd) {
-                tempTimestamps[count++] = ts;
-            }
-        }
-
-        tempTimestamps[count++] = periodEnd;
-
-        // Sort and unique
-        // For simplicity in this draft, basic bubble sort, not for production due to gas.
-        // A more gas-efficient sort (e.g., Timsort if available or off-chain precomputation for known N) would be
-        // needed.
-        // Solidity does not have a built-in sort. For on-chain, if N is small, simple sort is okay.
-        // For now, we'll assume these are processed or the number of checkpoints is manageable.
-        // This part is critical for correctness and gas.
-        // A heap-based approach to build the sorted unique list might be better.
-
-        // Bubble sort for this example (NOT PRODUCTION READY FOR LARGE ARRAYS)
-        for (uint256 i = 0; i < count; i++) {
-            for (uint256 j = i + 1; j < count; j++) {
-                if (tempTimestamps[i] > tempTimestamps[j]) {
-                    (tempTimestamps[i], tempTimestamps[j]) = (tempTimestamps[j], tempTimestamps[i]);
-                }
-            }
-        }
-
-        if (count == 0) {
+        if (periodStart > periodEnd) {
+            // Invalid period
             return new uint256[](0);
-        } // Should not happen if periodStart/End are added
+        }
+        if (periodStart == periodEnd) {
+            // Zero-duration period
+            uint256[] memory singlePoint = new uint256[](1);
+            singlePoint[0] = periodStart;
+            return singlePoint;
+        }
 
-        // Remove duplicates
-        uint256[] memory distinctSortedTimestamps = new uint256[](count);
-        uint256 distinctCount = 0;
-        if (count > 0) {
-            distinctSortedTimestamps[distinctCount++] = tempTimestamps[0];
-            for (uint256 i = 1; i < count; i++) {
-                if (tempTimestamps[i] != tempTimestamps[i - 1]) {
-                    distinctSortedTimestamps[distinctCount++] = tempTimestamps[i];
-                }
+        // Max possible output length = len1 + len2 + 2 (start, end, all unique checkpoints)
+        uint256[] memory result = new uint256[](len1 + len2 + 2);
+        uint256 i = 0; // Pointer for rewardCheckpoints
+        uint256 j = 0; // Pointer for commissionCheckpoints
+        uint256 k = 0; // Pointer for result array
+
+        result[k++] = periodStart;
+        uint256 lastAddedTimestamp = periodStart;
+
+        // Skip checkpoints at or before periodStart
+        while (i < len1 && rewardCheckpoints[i].timestamp <= periodStart) {
+            i++;
+        }
+        while (j < len2 && commissionCheckpoints[j].timestamp <= periodStart) {
+            j++;
+        }
+
+        // Merge the two arrays, adding distinct timestamps strictly between periodStart and periodEnd
+        while (i < len1 || j < len2) {
+            uint256 t1 = (i < len1) ? rewardCheckpoints[i].timestamp : type(uint256).max;
+            uint256 t2 = (j < len2) ? commissionCheckpoints[j].timestamp : type(uint256).max;
+            uint256 currentTimestampToAdd;
+
+            bool advanceI = false;
+            bool advanceJ = false;
+
+            if (t1 < t2) {
+                currentTimestampToAdd = t1;
+                advanceI = true;
+            } else if (t2 < t1) {
+                currentTimestampToAdd = t2;
+                advanceJ = true;
+            } else if (t1 != type(uint256).max) {
+                // t1 == t2 and not max_value (both arrays exhausted)
+                currentTimestampToAdd = t1; // or t2
+                advanceI = true;
+                advanceJ = true;
+            } else {
+                // Both t1 and t2 are type(uint256).max, meaning both arrays are exhausted
+                break;
+            }
+
+            if (currentTimestampToAdd >= periodEnd) {
+                // Stop if we reach or exceed periodEnd
+                break;
+            }
+
+            // Add if it's a new distinct timestamp that is > lastAddedTimestamp (which was periodStart initially)
+            if (currentTimestampToAdd > lastAddedTimestamp) {
+                result[k++] = currentTimestampToAdd;
+                lastAddedTimestamp = currentTimestampToAdd;
+            }
+
+            if (advanceI) {
+                i++;
+            }
+            if (advanceJ) {
+                j++;
             }
         }
 
-        uint256[] memory finalResult = new uint256[](distinctCount);
-        for (uint256 i = 0; i < distinctCount; i++) {
-            finalResult[i] = distinctSortedTimestamps[i];
+        // Add periodEnd if it's not already the last element added and is greater
+        if (lastAddedTimestamp < periodEnd) {
+            result[k++] = periodEnd;
         }
-        return finalResult;
+
+        assembly {
+            mstore(result, k)
+        }
+        return result;
     }
 
     /**
@@ -392,13 +447,43 @@ library PlumeRewardLogic {
 
             // Check if checkpoints[idx] is actually valid for this timestamp.
             if (idx < chkCount && checkpoints[idx].timestamp <= timestamp) {
+                // Additionally, ensure that if there's a *next* checkpoint, its timestamp is > current query timestamp
+                // This ensures we pick the one *immediately* at or before.
+                if (idx + 1 < chkCount && checkpoints[idx + 1].timestamp <= timestamp) {
+                    // This means a later checkpoint (idx+1) is also <= timestamp.
+                    // The binary search should ideally give the *latest* one.
+                    // Let's re-verify findRewardRateCheckpointIndexAtOrBefore.
+                    // For now, assume `idx` is the correct one.
+                }
                 return checkpoints[idx];
             }
         }
         // Fallback: No validator-specific checkpoint found that is <= timestamp, or no checkpoints exist.
+        // The global rate itself doesn't have a cumulative index in the same way here.
+        // We need to construct a checkpoint-like struct.
+        // The cumulative index part is tricky for global fallbacks if we expect it to be accurate globally.
+        // For rate, this is fine. For cumulativeIndex, it should reflect
+        // $.validatorRewardPerTokenCumulative[validatorId][token]
+        // if we are at "now" or need to calculate up to "now" for a segment ending at "now".
+        // However, getEffectiveRewardRateAt is used to find the *rate* for a segment.
+        // The cumulative index for the *start* of the segment is taken from the previous segment's end or initial user
+        // state.
+        // So, for rate calculation, this is okay.
+
         effectiveCheckpoint.rate = $.rewardRates[token]; // Global rate
-        effectiveCheckpoint.timestamp = timestamp;
-        effectiveCheckpoint.cumulativeIndex = 0;
+        effectiveCheckpoint.timestamp = timestamp; // Timestamp of query
+
+        // If falling back to global rate, what should cumulativeIndex be?
+        // If the query timestamp is for the *current* live segment (ending at block.timestamp),
+        // then the "live" cumulative index for the validator is relevant.
+        // If it's for a historical segment, this fallback is more about just getting the rate.
+        // The calculateRewardsWithCheckpoints uses this to find the *rate* for a segment.
+        // The cumulative index for the *start* of the segment is taken from the previous segment's end or initial user
+        // state.
+        // So, for rate calculation, this is okay.
+        effectiveCheckpoint.cumulativeIndex = 0; // Or perhaps the validator's current cumulative if timestamp ==
+            // block.timestamp?
+            // Let's assume 0 is fine for rate-finding purpose. The loop handles accumulation.
         return effectiveCheckpoint;
     }
 
@@ -417,9 +502,12 @@ library PlumeRewardLogic {
         if (chkCount > 0) {
             uint256 idx = findCommissionCheckpointIndexAtOrBefore($, validatorId, timestamp);
             if (idx < chkCount && checkpoints[idx].timestamp <= timestamp) {
+                // Similar to above, ensure this is the latest one.
                 return checkpoints[idx].rate;
             }
         }
+        // Fallback to the current commission rate stored directly in ValidatorInfo
+        // This is important if no checkpoints exist or all are in the future.
         uint256 fallbackComm = $.validators[validatorId].commission;
         return fallbackComm;
     }
@@ -437,30 +525,36 @@ library PlumeRewardLogic {
         uint256 len = checkpoints.length;
 
         if (len == 0) {
-            return 0;
+            return 0; // Indicates no checkpoints, caller might use global rate.
         }
 
         uint256 low = 0;
         uint256 high = len - 1;
         uint256 ans = 0;
+        // If all checkpoints are in the future, ans remains 0.
+        // The caller (getEffectiveRewardRateAt) should check if checkpoints[0].timestamp > timestamp.
+        // If so, it correctly falls back to global. If not, checkpoints[0] is a candidate.
+
         bool foundSuitable = false;
 
         while (low <= high) {
             uint256 mid = low + (high - low) / 2;
             if (checkpoints[mid].timestamp <= timestamp) {
-                ans = mid;
+                ans = mid; // This checkpoint is a candidate
                 foundSuitable = true;
-                low = mid + 1;
+                low = mid + 1; // Try to find a later one
             } else {
                 // checkpoints[mid].timestamp > timestamp
                 if (mid == 0) {
-                    break; // All remaining (or only) elements are in the future
+                    // If even the first is too new
+                    break;
                 }
                 high = mid - 1;
             }
         }
-        // If !foundSuitable, ans is 0. Caller must check checkpoints[0].timestamp against query timestamp.
-        // If foundSuitable, ans is the index of the latest checkpoint <= timestamp.
+        // If !foundSuitable, it means all checkpoints were > timestamp.
+        // `ans` would be 0. getEffectiveRewardRateAt will then check checkpoints[0].timestamp.
+        // If foundSuitable, `ans` is the index of the latest checkpoint with .timestamp <= query_timestamp.
         return ans;
     }
 
@@ -475,7 +569,7 @@ library PlumeRewardLogic {
         PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorCommissionCheckpoints[validatorId];
         uint256 len = checkpoints.length;
         if (len == 0) {
-            return 0;
+            return 0; // No checkpoints, caller uses current validator.commission
         }
 
         uint256 low = 0;
@@ -488,21 +582,15 @@ library PlumeRewardLogic {
 
             if (checkpoints[mid].timestamp <= timestamp) {
                 ans = mid;
-                foundSuitable = true; // Mark that we found at least one suitable checkpoint
+                foundSuitable = true;
                 low = mid + 1;
             } else {
-                // checkpoints[mid].timestamp > timestamp
                 if (mid == 0) {
-                    // If the first element is already too new
                     break;
                 }
                 high = mid - 1;
             }
         }
-        // If !foundSuitable, ans is 0. The caller (getEffectiveCommissionRateAt) must handle this by checking
-        // the timestamp of checkpoints[0] if it intends to use it, or fall back.
-        // The current `getEffectiveCommissionRateAt` does this: `if (idx < chkCount && checkpoints[idx].timestamp <=
-        // timestamp)`
         return ans;
     }
 
@@ -522,13 +610,14 @@ library PlumeRewardLogic {
         uint256 len_before = 0;
         len_before = $.validatorRewardRateCheckpoints[validatorId][token].length;
 
-        updateRewardPerTokenForValidator($, token, validatorId);
+        updateRewardPerTokenForValidator($, token, validatorId); // Settle up to now with old rate
         uint256 currentCumulativeIndex = $.validatorRewardPerTokenCumulative[validatorId][token];
+
         PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({
-            timestamp: block.timestamp,
-            rate: rate,
-            cumulativeIndex: currentCumulativeIndex
-        });
+            timestamp: block.timestamp, // New rate effective from now
+            rate: rate, // The new rate
+            cumulativeIndex: currentCumulativeIndex // Cumulative index *before* this new rate applies
+         });
         $.validatorRewardRateCheckpoints[validatorId][token].push(checkpoint);
         uint256 len_after = $.validatorRewardRateCheckpoints[validatorId][token].length;
 
@@ -550,16 +639,18 @@ library PlumeRewardLogic {
         uint16 validatorId,
         uint256 commissionRate
     ) internal {
-        // It's important that validatorLastUpdateTimes and validatorRewardPerTokenCumulative
-        // are up-to-date before creating any kind of checkpoint that might rely on them
-        // or before the rate itself changes.
-        // However, for commission checkpoints specifically, the "settling" should happen
-        // in setValidatorCommission *before* this is called with the *new* rate.
-        // This function's role is just to record the new rate at this timestamp.
+        // In setValidatorCommission, _settleCommissionForValidatorUpToNow is called *before* this,
+        // using the *old* commission rate.
+        // This function then records the *new* commission rate, effective from block.timestamp.
+        // The cumulativeIndex for commission checkpoints is not as critical as for reward rates
+        // if commission is always applied to the gross reward of a segment.
 
-        PlumeStakingStorage.RateCheckpoint memory checkpoint =
-            PlumeStakingStorage.RateCheckpoint({ timestamp: block.timestamp, rate: commissionRate, cumulativeIndex: 0 }); // cumulativeIndex
-            // is not strictly used for commission here
+        PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({
+            timestamp: block.timestamp,
+            rate: commissionRate,
+            cumulativeIndex: 0 // Or perhaps $.validatorAccruedCommission[validatorId][ANY_TOKEN_AS_PROXY]?
+                // Let's stick to 0 as it's primarily rate + timestamp.
+         });
 
         $.validatorCommissionCheckpoints[validatorId].push(checkpoint);
         emit ValidatorCommissionCheckpointCreated(validatorId, commissionRate, block.timestamp);

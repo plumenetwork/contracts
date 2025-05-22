@@ -114,7 +114,7 @@ contract DeployPlumeStaking is Script {
         managementSigs[3] = ManagementFacet.getMinStakeAmount.selector;
         managementSigs[4] = ManagementFacet.getCooldownInterval.selector;
         managementSigs[5] = ManagementFacet.setMaxSlashVoteDuration.selector;
-        managementSigs[6] = ManagementFacet.setMaxAllowedValidatorCommission.selector;
+        managementSigs[6] = bytes4(keccak256(bytes("setMaxAllowedValidatorCommission(uint256)")));
         managementSigs[7] = ManagementFacet.adminClearValidatorRecord.selector;
         managementSigs[8] = ManagementFacet.adminBatchClearValidatorRecords.selector;
         cut[1] = IERC2535DiamondCutInternal.FacetCut(
