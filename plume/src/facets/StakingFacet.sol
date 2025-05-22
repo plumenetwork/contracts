@@ -47,7 +47,6 @@ import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 
 using PlumeRewardLogic for PlumeStakingStorage.Layout;
 
-// --- BEGIN INLINE INTERFACE DEFINITION ---
 interface IRewardsGetter {
 
     function getPendingRewardForValidator(
@@ -57,7 +56,6 @@ interface IRewardsGetter {
     ) external returns (uint256 pendingReward);
 
 }
-// --- END INLINE INTERFACE DEFINITION ---
 
 /**
  * @title StakingFacet
@@ -69,20 +67,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
     using Address for address payable;
 
-    // Constants moved from Base - needed here
-    // uint256 internal constant REWARD_PRECISION = 1e18; // Already in PlumeStakingStorage
-
-    // --- Storage Access ---
-    // bytes32 internal constant PLUME_STORAGE_POSITION = keccak256("plume.storage.PlumeStaking"); // Already in
-    // PlumeStakingStorage
-
-    // function _getPlumeStorage() internal pure returns (PlumeStakingStorage.Layout storage $) { // Already in
-    // PlumeStakingStorage
-    //     bytes32 position = PLUME_STORAGE_POSITION;
-    //     assembly {
-    //         $.slot := position
-    //     }
-    // }
 
     function _checkValidatorSlashedAndRevert(
         uint16 validatorId
@@ -405,28 +389,22 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 // Validator is slashed. Check if cooldown ended BEFORE the slash.
                 uint256 slashTs = $.validators[validatorId_iterator].slashedAtTimestamp;
                 if (cooldownEntry.cooldownEndTime < slashTs && block.timestamp >= cooldownEntry.cooldownEndTime) {
-                    // console2.log("SF.withdraw LOOP[%s]: Val %s IS SLASHED but cooldown matured BEFORE slash (end: %s,
-                    // slash: %s). Recoverable.",
-                    //     i, validatorId_iterator, cooldownEntry.cooldownEndTime, slashTs);
+
                     canRecoverFromThisCooldown = true;
                 }
-                // else { console2.log("SF.withdraw LOOP[%s]: Val %s IS SLASHED and cooldown did not mature before
-                // slash. Funds lost.", i, validatorId_iterator); }
+
             } else if ($.validatorExists[validatorId_iterator] && !$.validators[validatorId_iterator].slashed) {
                 // Validator is NOT slashed. Check if cooldown matured normally.
                 if (block.timestamp >= cooldownEntry.cooldownEndTime) {
-                    // console2.log("SF.withdraw LOOP[%s]: Cooldown for valId %s (not slashed) matured.", i,
-                    // validatorId_iterator);
                     canRecoverFromThisCooldown = true;
                 }
             }
-            // If validator doesn't exist, cooldownEntry.amount should be 0 (or it's stale data we ignore)
 
+            // If validator doesn't exist, cooldownEntry.amount should be 0 (or it's stale data we ignore)
             if (canRecoverFromThisCooldown) {
                 uint256 amountInThisCooldown = cooldownEntry.amount;
                 amountMovedToParkedThisCall += amountInThisCooldown;
-                // console2.log("SF.withdraw LOOP[%s]: amountInThisCooldown %s, amountMovedToParkedThisCall now %s",
-                //     i, amountInThisCooldown, amountMovedToParkedThisCall);
+
 
                 // Decrement from user's global sum of cooled funds
                 if (userGlobalStakeInfo.cooled >= amountInThisCooldown) {
@@ -455,14 +433,10 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
                 if ($.userValidatorStakes[user][validatorId_iterator].staked == 0) {
                     PlumeValidatorLogic.removeStakerFromValidator($, user, validatorId_iterator);
-                    // console2.log("SF.withdraw: Called removeStakerFromValidator for user %s, val %s after clearing
-                    // cooldown.",
-                    //     user, validatorId_iterator);
                 }
             }
         }
 
-        // console2.log("SF.withdraw: After loop, amountMovedToParkedThisCall: %s", amountMovedToParkedThisCall);
 
         if (amountMovedToParkedThisCall > 0) {
             userGlobalStakeInfo.parked += amountMovedToParkedThisCall;
@@ -470,14 +444,11 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             // plus what withdraw() itself makes available. We add the newly parked amount here.
             // This was previously missing direct addition if funds were moved from cooled to parked within this call.
             $.totalWithdrawable += amountMovedToParkedThisCall;
-            // console2.log("SF.withdraw: Updated userGlobalStakeInfo.parked to: %s and totalWithdrawable to %s",
-            //     userGlobalStakeInfo.parked, $.totalWithdrawable);
+
         }
 
         uint256 amountToActuallyWithdraw = userGlobalStakeInfo.parked;
-        // console2.log("SF.withdraw: Amount to actually withdraw (from final parked): %s", amountToActuallyWithdraw);
         if (amountToActuallyWithdraw == 0) {
-            // console2.log("SF.withdraw: amountToActuallyWithdraw is 0, REVERTING InvalidAmount(0)");
             revert InvalidAmount(0);
         }
 
@@ -608,8 +579,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // --- BEGIN: Process Matured Cooldowns (similar to withdraw() beginning) ---
         PlumeStakingStorage.StakeInfo storage userGlobalStakeInfo = $.stakeInfo[user];
         uint256 amountMovedToParkedThisCall = 0;
-        uint16[] storage userAssociatedValidatorsLoop = $.userValidators[user]; // Use a different name to avoid
-            // conflict
+        uint16[] storage userAssociatedValidatorsLoop = $.userValidators[user]; 
 
         for (uint256 i = 0; i < userAssociatedValidatorsLoop.length; i++) {
             uint16 validatorId_iterator = userAssociatedValidatorsLoop[i];
