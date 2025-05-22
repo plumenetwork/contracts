@@ -6,8 +6,9 @@ import { Script, console2 } from "forge-std/Script.sol";
 // --- SolidState Diamond Interfaces ---
 import { IERC2535DiamondCutInternal } from "@solidstate/interfaces/IERC2535DiamondCutInternal.sol";
 import { IERC2535DiamondLoupe } from "@solidstate/interfaces/IERC2535DiamondLoupe.sol";
-import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
+
 import { IERC2535DiamondLoupeInternal } from "@solidstate/interfaces/IERC2535DiamondLoupeInternal.sol";
+import { ISolidStateDiamond } from "@solidstate/proxy/diamond/ISolidStateDiamond.sol";
 import { SolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol";
 // --- Plume Facets ---
 import { AccessControlFacet } from "../../src/facets/AccessControlFacet.sol";
@@ -192,7 +193,7 @@ contract UpgradePlumeStakingDiamond is Script {
         selectors[0] = ManagementFacet.setMinStakeAmount.selector; // setMinStakeAmount(uint256)
         selectors[1] = ManagementFacet.setCooldownInterval.selector; // setCooldownInterval(uint256)
         selectors[2] = ManagementFacet.adminWithdraw.selector; // adminWithdraw(address,uint256,address)
-//        selectors[3] = ManagementFacet.updateTotalAmounts.selector; // updateTotalAmounts(uint256,uint256)
+        //        selectors[3] = ManagementFacet.updateTotalAmounts.selector; // updateTotalAmounts(uint256,uint256)
         selectors[3] = ManagementFacet.getMinStakeAmount.selector; // getMinStakeAmount()
         selectors[4] = ManagementFacet.getCooldownInterval.selector; // getCooldownInterval()
         selectors[5] = ManagementFacet.setMaxSlashVoteDuration.selector; // setMaxSlashVoteDuration(uint256)
@@ -221,7 +222,7 @@ contract UpgradePlumeStakingDiamond is Script {
         selectors[0] = ValidatorFacet.addValidator.selector; // addValidator(uint16,uint256,address,address,string,string,address,uint256)
         selectors[1] = ValidatorFacet.setValidatorCapacity.selector; // setValidatorCapacity(uint16,uint256)
         //selectors[2] = ValidatorFacet.updateValidator.selector; // updateValidator(uint16,uint8,bytes)
-        selectors[3] = ValidatorFacet.claimValidatorCommission.selector; // claimValidatorCommission(uint16,address)
+        selectors[3] = ValidatorFacet.requestCommissionClaim.selector; // requestCommissionClaim(uint16,address)
         selectors[4] = ValidatorFacet.getValidatorInfo.selector; // getValidatorInfo(uint16)
         selectors[5] = ValidatorFacet.getValidatorStats.selector; // getValidatorStats(uint16)
         selectors[6] = ValidatorFacet.getUserValidators.selector; // getUserValidators(address)
@@ -246,11 +247,11 @@ contract UpgradePlumeStakingDiamond is Script {
         selectors[8] = StakingFacet.amountStaked.selector; // amountStaked()
         selectors[9] = StakingFacet.amountCooling.selector; // amountCooling()
         selectors[10] = StakingFacet.amountWithdrawable.selector; // amountWithdrawable()
-        selectors[11] = StakingFacet.cooldownEndDate.selector; // cooldownEndDate()
-        selectors[12] = StakingFacet.getUserValidatorStake.selector; // getUserValidatorStake(address,uint16)
-        selectors[13] = StakingFacet.totalAmountStaked.selector; // totalAmountStaked()
-        selectors[14] = StakingFacet.totalAmountCooling.selector; // totalAmountCooling()
-        selectors[15] = StakingFacet.totalAmountWithdrawable.selector; // totalAmountWithdrawable()
+        //selectors[11] = StakingFacet.cooldownEndDate.selector; // cooldownEndDate()
+        selectors[11] = StakingFacet.getUserValidatorStake.selector; // getUserValidatorStake(address,uint16)
+        selectors[12] = StakingFacet.totalAmountStaked.selector; // totalAmountStaked()
+        selectors[13] = StakingFacet.totalAmountCooling.selector; // totalAmountCooling()
+        selectors[14] = StakingFacet.totalAmountWithdrawable.selector; // totalAmountWithdrawable()
         return selectors;
     }
 
@@ -260,24 +261,23 @@ contract UpgradePlumeStakingDiamond is Script {
         selectors[1] = RewardsFacet.removeRewardToken.selector; // removeRewardToken(address)
         selectors[2] = RewardsFacet.setRewardRates.selector; // setRewardRates(address[],uint256[])
         selectors[3] = RewardsFacet.setMaxRewardRate.selector; // setMaxRewardRate(address,uint256)
-        selectors[4] = RewardsFacet.addRewards.selector; // addRewards(address,uint256)
-        selectors[5] = bytes4(keccak256("claim(address)")); // claim(address) overload
-        selectors[6] = bytes4(keccak256("claim(address,uint16)")); // claim(address,uint16) overload
-        selectors[7] = RewardsFacet.claimAll.selector; // claimAll()
-        selectors[8] = RewardsFacet.earned.selector; // earned(address,address)
-        selectors[9] = RewardsFacet.getClaimableReward.selector; // getClaimableReward(address,address)
-        selectors[10] = RewardsFacet.getRewardTokens.selector; // getRewardTokens()
-        selectors[11] = RewardsFacet.getMaxRewardRate.selector; // getMaxRewardRate(address)
-        selectors[12] = RewardsFacet.tokenRewardInfo.selector; // tokenRewardInfo(address)
-        selectors[13] = RewardsFacet.getRewardRateCheckpointCount.selector; // getRewardRateCheckpointCount(address)
-        selectors[14] = RewardsFacet.getValidatorRewardRateCheckpointCount.selector; // getValidatorRewardRateCheckpointCount(uint16,address)
-        selectors[15] = RewardsFacet.getUserLastCheckpointIndex.selector; // getUserLastCheckpointIndex(address,uint16,address)
-        selectors[16] = RewardsFacet.getRewardRateCheckpoint.selector; // getRewardRateCheckpoint(address,uint256)
-        selectors[17] = RewardsFacet.getValidatorRewardRateCheckpoint.selector; // getValidatorRewardRateCheckpoint(uint16,address,uint256)
-        selectors[18] = RewardsFacet.setTreasury.selector; // setTreasury(address)
-        selectors[19] = RewardsFacet.getTreasury.selector; // getTreasury()
-        selectors[20] = RewardsFacet.getPendingRewardForValidator.selector; // getPendingRewardForValidator(address,uint16,address)
-        selectors[21] = bytes4(keccak256("getRewardRate(address)"));
+        selectors[4] = bytes4(keccak256("claim(address)")); // claim(address) overload
+        selectors[5] = bytes4(keccak256("claim(address,uint16)")); // claim(address,uint16) overload
+        selectors[6] = RewardsFacet.claimAll.selector; // claimAll()
+        selectors[7] = RewardsFacet.earned.selector; // earned(address,address)
+        selectors[8] = RewardsFacet.getClaimableReward.selector; // getClaimableReward(address,address)
+        selectors[9] = RewardsFacet.getRewardTokens.selector; // getRewardTokens()
+        selectors[10] = RewardsFacet.getMaxRewardRate.selector; // getMaxRewardRate(address)
+        selectors[11] = RewardsFacet.tokenRewardInfo.selector; // tokenRewardInfo(address)
+        selectors[12] = RewardsFacet.getRewardRateCheckpointCount.selector; // getRewardRateCheckpointCount(address)
+        selectors[13] = RewardsFacet.getValidatorRewardRateCheckpointCount.selector; // getValidatorRewardRateCheckpointCount(uint16,address)
+        selectors[14] = RewardsFacet.getUserLastCheckpointIndex.selector; // getUserLastCheckpointIndex(address,uint16,address)
+        selectors[15] = RewardsFacet.getRewardRateCheckpoint.selector; // getRewardRateCheckpoint(address,uint256)
+        selectors[16] = RewardsFacet.getValidatorRewardRateCheckpoint.selector; // getValidatorRewardRateCheckpoint(uint16,address,uint256)
+        selectors[17] = RewardsFacet.setTreasury.selector; // setTreasury(address)
+        selectors[18] = RewardsFacet.getTreasury.selector; // getTreasury()
+        selectors[19] = RewardsFacet.getPendingRewardForValidator.selector; // getPendingRewardForValidator(address,uint16,address)
+        selectors[20] = bytes4(keccak256("getRewardRate(address)"));
         return selectors;
     }
 

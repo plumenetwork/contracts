@@ -18,7 +18,7 @@ import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol"; // For pot
 contract AccessControlFacet is IAccessControl, AccessControlInternal {
 
     // Simple flag to prevent re-initialization within this facet's context
-    bool private _initializedAC;
+    // bool private _initializedAC; // REMOVED
 
     // Define all roles locally for clarity and direct access
     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
@@ -34,7 +34,9 @@ contract AccessControlFacet is IAccessControl, AccessControlInternal {
      */
 
     function initializeAccessControl() external {
-        require(!_initializedAC, "ACF: init"); // AccessControlFacet: Already initialized
+        // require(!_initializedAC, "ACF: init"); // AccessControlFacet: Already initialized // OLD CHECK
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        require(!$.accessControlFacetInitialized, "ACF: init"); // NEW CHECK
 
         // Grant the essential DEFAULT_ADMIN_ROLE to the caller
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -54,7 +56,8 @@ contract AccessControlFacet is IAccessControl, AccessControlInternal {
         _grantRole(UPGRADER_ROLE, msg.sender);
         _grantRole(REWARD_MANAGER_ROLE, msg.sender);
 
-        _initializedAC = true;
+        // _initializedAC = true; // OLD FLAG
+        $.accessControlFacetInitialized = true; // NEW FLAG
     }
 
     // --- External Functions ---
