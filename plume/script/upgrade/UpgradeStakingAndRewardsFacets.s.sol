@@ -145,7 +145,7 @@ contract UpgradeStakingAndRewardsFacets is Script {
             bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         selectors[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
         selectors[2] = bytes4(keccak256(bytes("updateValidator(uint16,uint8,bytes)")));
-        selectors[3] = bytes4(keccak256(bytes("claimValidatorCommission(uint16,address)")));
+        selectors[3] = bytes4(keccak256(bytes("requestCommissionClaim(uint16,address)")));
         selectors[4] = bytes4(keccak256(bytes("getValidatorInfo(uint16)")));
         selectors[5] = bytes4(keccak256(bytes("getValidatorStats(uint16)")));
         selectors[6] = bytes4(keccak256(bytes("getUserValidators(address)")));

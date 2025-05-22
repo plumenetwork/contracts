@@ -194,7 +194,6 @@ error SlashVoteDurationTooLong();
 // Slashing Errors
 error CannotVoteForSelf();
 error AlreadyVotedToSlash(uint16 targetValidatorId, uint16 voterValidatorId);
-error ValidatorNotActive(uint16 validatorId);
 error ValidatorAlreadySlashed(uint16 validatorId);
 error UnanimityNotReached(uint256 votes, uint256 required);
 error SlashVoteExpired(uint16 targetValidatorId, uint16 voterValidatorId);
@@ -277,3 +276,38 @@ error InternalInconsistency(string message);
 
 // Validator errors
 error InvalidUpdateType(uint8 providedType);
+
+// --- New Max Commission Errors ---
+error CommissionExceedsMaxAllowed(uint256 requested, uint256 maxAllowed);
+error InvalidMaxCommissionRate(uint256 requested, uint256 limit);
+
+// --- Commission Claim Timelock Errors ---
+error PendingClaimExists(uint16 validatorId, address token);
+error NoPendingClaim(uint16 validatorId, address token);
+error ClaimNotReady(uint16 validatorId, address token, uint256 readyTimestamp);
+
+/// @notice Thrown when cooldown interval is too short relative to max slash vote duration.
+/// @param newCooldownInterval The proposed cooldown interval.
+/// @param currentMaxSlashVoteDuration The current maximum slash vote duration.
+error CooldownTooShortForSlashVote(uint256 newCooldownInterval, uint256 currentMaxSlashVoteDuration);
+
+/// @notice Thrown when max slash vote duration is too long relative to cooldown interval.
+/// @param newMaxSlashVoteDuration The proposed maximum slash vote duration.
+/// @param currentCooldownInterval The current cooldown interval.
+error SlashVoteDurationTooLongForCooldown(uint256 newMaxSlashVoteDuration, uint256 currentCooldownInterval);
+
+/// @notice Thrown when an invalid interval is provided (e.g. zero)
+/// @param interval The invalid interval.
+error InvalidInterval(uint256 interval);
+
+/**
+ * @notice Thrown when an action is attempted on a validator that has been slashed.
+ * @param validatorId The ID of the slashed validator.
+ */
+error ActionOnSlashedValidatorError(uint16 validatorId);
+
+/**
+ * @notice Thrown when an admin tries to clear records for a validator that isn't actually slashed.
+ * @param validatorId The ID of the validator that is not slashed.
+ */
+error ValidatorNotSlashed(uint16 validatorId);
