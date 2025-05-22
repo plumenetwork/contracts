@@ -149,7 +149,7 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
             // 18 decimals
 
         // Buy tokens - Alice spends 200 USDC (200e6)
-        purchase.buy(address(token), USDC_TO_SPEND_ALICE);
+        purchase.buy(address(token), USDC_TO_SPEND_ALICE, tokensToBuyAlice);
 
         // Verify Alice's balances
         assertEq(token.balanceOf(alice), tokensToBuyAlice, "Alice ArcToken balance mismatch");
@@ -175,7 +175,7 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         emit PurchaseMade(buyer2, address(token), tokensToBuyBuyer2, usdcToSpendBuyer2);
 
         // Buyer2 buys 50 ArcTokens by spending 5000 USDC (5000e6)
-        purchase.buy(address(token), usdcToSpendBuyer2);
+        purchase.buy(address(token), usdcToSpendBuyer2, tokensToBuyBuyer2);
 
         // Verify Buyer2's balances
         assertEq(token.balanceOf(buyer2), tokensToBuyBuyer2, "Buyer2 ArcToken balance mismatch");
@@ -249,7 +249,7 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
 
         vm.prank(alice);
         vm.expectRevert(ArcTokenPurchase.TokenNotEnabled.selector);
-        purchase.buy(address(newToken), USDC_TO_SPEND_ALICE);
+        purchase.buy(address(newToken), USDC_TO_SPEND_ALICE, 0);
     }
 
     function test_RevertWhen_BuyWithoutApproval() public {
@@ -262,7 +262,7 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
                 IERC20Errors.ERC20InsufficientAllowance.selector, address(purchase), 0, USDC_TO_SPEND_ALICE
             )
         );
-        purchase.buy(address(token), USDC_TO_SPEND_ALICE);
+        purchase.buy(address(token), USDC_TO_SPEND_ALICE, 0);
     }
 
     function test_RevertWhen_BuyMoreThanAvailable() public {
@@ -282,7 +282,20 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
 
         vm.expectRevert(ArcTokenPurchase.NotEnoughTokensForSale.selector);
         // Attempt to buy with the USDC amount calculated to be just over the limit
-        purchase.buy(address(token), usdcAmountToCauseRevert);
+        purchase.buy(address(token), usdcAmountToCauseRevert, 0);
+        vm.stopPrank();
+    }
+
+    function test_RevertWhen_BuyTooLittleReceived() public {
+        purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
+
+        vm.startPrank(alice);
+        purchaseToken.approve(address(purchase), TOKEN_PRICE * 30);
+
+        vm.expectRevert(ArcTokenPurchase.TooLittleReceived.selector);
+        // Give a value far exceeding the normal output amount (30e18) to trigger TooLittleReceived
+        uint256 amountOutExceededMinimum = 1000e18;
+        purchase.buy(address(token), TOKEN_PRICE * 30, amountOutExceededMinimum);
         vm.stopPrank();
     }
 
@@ -316,14 +329,15 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         purchaseToken.approve(address(purchase), TOKEN_PRICE * 30);
         vm.prank(alice);
         uint256 alicePurchaseAmount = 30 * TOKEN_PRICE; // Buy 30 tokens worth of USDC
-        purchase.buy(address(token), alicePurchaseAmount);
+        purchase.buy(address(token), alicePurchaseAmount, 30e18);
 
         // Second purchase
         uint256 buyer2PurchaseAmount = 50 * TOKEN_PRICE; // Buy 50 tokens worth of USDC
+        uint256 buyer2AmountOutMinimum = (50 * TOKEN_PRICE * 1e18) / TOKEN_PRICE; // 50 tokens
         vm.prank(buyer2);
         purchaseToken.approve(address(purchase), buyer2PurchaseAmount);
         vm.prank(buyer2);
-        purchase.buy(address(token), buyer2PurchaseAmount);
+        purchase.buy(address(token), buyer2PurchaseAmount, buyer2AmountOutMinimum);
 
         // Verify final state
         assertEq(token.balanceOf(alice), 30e18); // Assuming 1 token = 1e18

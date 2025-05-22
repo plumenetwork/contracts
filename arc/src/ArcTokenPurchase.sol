@@ -68,6 +68,7 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     // -------------- Custom Errors --------------
     error PurchaseTokenNotSet();
     error PurchaseAmountTooLow();
+    error TooLittleReceived();
     error NotEnoughTokensForSale();
     error ContractBalanceInsufficient();
     error PurchaseTransferFailed();
@@ -150,8 +151,13 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
      *      Requires the buyer to have approved this contract to spend their purchaseToken.
      * @param _tokenContract Address of the ArcToken to purchase
      * @param _purchaseAmount Amount of purchase tokens to spend
+     * @param _amountOutMinimum Minimum amount of tokens to receive (in base units)
      */
-    function buy(address _tokenContract, uint256 _purchaseAmount) external nonReentrant {
+    function buy(
+        address _tokenContract,
+        uint256 _purchaseAmount,
+        uint256 _amountOutMinimum
+    ) external nonReentrant {
         PurchaseStorage storage ps = _getPurchaseStorage();
         TokenInfo storage info = ps.tokenInfo[_tokenContract];
 
@@ -178,6 +184,11 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         uint256 arcTokensBaseUnitsToBuy = (_purchaseAmount * scalingFactor) / info.tokenPrice;
         if (arcTokensBaseUnitsToBuy == 0) {
             revert PurchaseAmountTooLow();
+        }
+
+        // Check if the calculated amount meets the minimum output requirement
+        if (arcTokensBaseUnitsToBuy < _amountOutMinimum) {
+            revert TooLittleReceived();
         }
 
         uint256 remainingForSale = info.totalAmountForSale - info.amountSold; // Remaining in base units
