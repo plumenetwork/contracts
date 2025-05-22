@@ -12,6 +12,7 @@ import { console } from "forge-std/console.sol";
 import { RestrictionsRouter } from "../src/restrictions/RestrictionsRouter.sol";
 import { WhitelistRestrictions } from "../src/restrictions/WhitelistRestrictions.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 contract ArcTokenFactoryTest is Test {
 
@@ -229,4 +230,133 @@ contract ArcTokenFactoryTest is Test {
         assertTrue(factory.isImplementationWhitelisted(anotherImpl));
     }
 
+    // ============ Token Upgrade Tests ============
+
+    function test_UpgradeToken() public {
+        // Create initial token
+        address tokenAddress = factory.createToken(
+            "Test Token",
+            "TEST",
+            1000e18,
+            address(yieldToken),
+            "uri",
+            admin,
+            18
+        );
+        address initialImpl = factory.getTokenImplementation(tokenAddress);
+
+        // Whitelist the creator
+        address wlAddr = ArcToken(tokenAddress).getRestrictionModule(
+            TRANSFER_RESTRICTION_TYPE
+        );
+        WhitelistRestrictions(wlAddr).addToWhitelist(admin);
+
+        // Create new implementation
+        address newImpl = address(new ArcToken());
+        factory.whitelistImplementation(newImpl);
+
+        // Upgrade token
+        factory.upgradeToken(tokenAddress, newImpl);
+
+        // Verify upgrade
+        address currentImpl = factory.getTokenImplementation(tokenAddress);
+        assertEq(currentImpl, newImpl, "Implementation should be updated");
+        assertTrue(
+            currentImpl != initialImpl,
+            "New implementation should be different from initial"
+        );
+
+        // Verify token still works after upgrade
+        ArcToken token = ArcToken(tokenAddress);
+        assertEq(
+            token.name(),
+            "Test Token",
+            "Token name should remain the same"
+        );
+        assertEq(token.symbol(), "TEST", "Token symbol should remain the same");
+        assertEq(
+            token.totalSupply(),
+            1000e18,
+            "Token supply should remain the same"
+        );
+    }
+
+    function test_RevertWhen_UpgradeTokenWithNonWhitelistedImplementation()
+        public
+    {
+        // Create initial token
+        address tokenAddress = factory.createToken(
+            "Test Token",
+            "TEST",
+            1000e18,
+            address(yieldToken),
+            "uri",
+            admin,
+            18
+        );
+
+        // Whitelist the creator
+        address wlAddr = ArcToken(tokenAddress).getRestrictionModule(
+            TRANSFER_RESTRICTION_TYPE
+        );
+        WhitelistRestrictions(wlAddr).addToWhitelist(admin);
+
+        // Create new implementation but don't whitelist it
+        address newImpl = address(new ArcToken());
+
+        // Attempt to upgrade with non-whitelisted implementation
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ArcTokenFactory.ImplementationNotWhitelisted.selector
+            )
+        );
+        factory.upgradeToken(tokenAddress, newImpl);
+    }
+
+    function test_RevertWhen_UpgradeTokenWithNonAdmin() public {
+        // Create initial token
+        address tokenAddress = factory.createToken(
+            "Test Token",
+            "TEST",
+            1000e18,
+            address(yieldToken),
+            "uri",
+            admin,
+            18
+        );
+
+        // Whitelist the creator
+        address wlAddr = ArcToken(tokenAddress).getRestrictionModule(
+            TRANSFER_RESTRICTION_TYPE
+        );
+        WhitelistRestrictions(wlAddr).addToWhitelist(admin);
+
+        // Create and whitelist new implementation
+        address newImpl = address(new ArcToken());
+        factory.whitelistImplementation(newImpl);
+
+        // Attempt to upgrade with non-admin account
+        vm.startPrank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                user,
+                factory.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        factory.upgradeToken(tokenAddress, newImpl);
+        vm.stopPrank();
+
+        // Attempt to upgrade directly through ArcToken's upgradeToAndCall
+        vm.startPrank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                user,
+                ArcToken(tokenAddress).UPGRADER_ROLE()
+            )
+        );
+        UUPSUpgradeable(tokenAddress).upgradeToAndCall(newImpl, "");
+        vm.stopPrank();
+    }
 }

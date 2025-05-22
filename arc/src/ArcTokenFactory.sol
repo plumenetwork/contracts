@@ -13,7 +13,6 @@ import "./restrictions/YieldBlacklistRestrictions.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-//import "@openzeppelin/contracts/proxy/ERC1967/ArcTokenProxy.sol";
 
 /**
  * @title ArcTokenFactory
@@ -197,7 +196,7 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         token.grantRole(token.YIELD_DISTRIBUTOR_ROLE(), msg.sender);
         token.grantRole(token.MINTER_ROLE(), msg.sender);
         token.grantRole(token.BURNER_ROLE(), msg.sender);
-        token.grantRole(token.UPGRADER_ROLE(), msg.sender);
+        token.grantRole(token.UPGRADER_ROLE(), address(this));
 
         // --- Create and link Restriction Modules ---
 
