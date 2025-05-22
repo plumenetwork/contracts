@@ -56,7 +56,8 @@ contract DeployArcServices is Script, Test {
         console2.log("ArcTokenPurchase implementation deployed to:", address(purchaseImpl));
 
         // Create initialization data for the purchase contract - using encodeWithSelector instead of encodeCall
-        bytes memory purchaseInitData = abi.encodeWithSelector(ArcTokenPurchase.initialize.selector, ADMIN_ADDRESS);
+        // TODO: Add the factory address to the purchase contract
+        bytes memory purchaseInitData = abi.encodeWithSelector(ArcTokenPurchase.initialize.selector, ADMIN_ADDRESS, address(factoryProxy));
 
         // Deploy the proxy for purchase contract using ArcTokenProxy
         ArcTokenProxy purchaseProxy = new ArcTokenProxy(address(purchaseImpl), purchaseInitData);

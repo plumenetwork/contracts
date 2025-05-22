@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 import { ArcToken } from "../src/ArcToken.sol";
+import { ArcTokenFactory } from "../src/ArcTokenFactory.sol";
 import { ArcTokenPurchase } from "../src/ArcTokenPurchase.sol";
 import { MockUSDC } from "../src/mock/MockUSDC.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
@@ -18,7 +19,11 @@ import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.
 
 contract ArcTokenPurchaseTest is Test, IERC20Errors {
 
+    ArcTokenFactory public factory;
+    // token created by factory
     ArcToken public token;
+    // maliciousToken - token not created by factory
+    ArcToken public maliciousToken;
     ArcTokenPurchase public purchase;
     MockUSDC public purchaseToken;
     ERC20Mock public yieldToken; // For ArcToken itself
@@ -64,9 +69,13 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         yieldBlacklistModule = new YieldBlacklistRestrictions();
         yieldBlacklistModule.initialize(owner);
 
+        // Deploy factory
+        factory = new ArcTokenFactory();
+        factory.initialize(address(router)); // Initialize factory with router address
+
         // --- Deploy ArcToken ---
-        token = new ArcToken();
-        token.initialize(
+        maliciousToken = new ArcToken();
+        maliciousToken.initialize(
             "Test ArcToken", // name_
             "TAT", // symbol_
             INITIAL_SUPPLY,
@@ -76,13 +85,24 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
             address(router) // router address
         );
 
+        // Deploy token by factory
+        string memory name = "Test ArcToken";
+        string memory symbol = "TAT";
+        string memory tokenUri = "ipfs://test-uri";
+        address initialHolder = owner; // Use admin as initial holder
+
+        // Create token and get its address
+        address tokenAddress =
+            factory.createToken(name, symbol, INITIAL_SUPPLY, address(yieldToken), tokenUri, initialHolder, 18);
+        token = ArcToken(tokenAddress);
+
         // --- Link Modules to Token ---
-        token.setRestrictionModule(TRANSFER_RESTRICTION_TYPE, address(whitelistModule));
-        token.setRestrictionModule(YIELD_RESTRICTION_TYPE, address(yieldBlacklistModule));
+        maliciousToken.setRestrictionModule(TRANSFER_RESTRICTION_TYPE, address(whitelistModule));
+        maliciousToken.setRestrictionModule(YIELD_RESTRICTION_TYPE, address(yieldBlacklistModule));
 
         // --- Deploy ArcTokenPurchase ---
         purchase = new ArcTokenPurchase();
-        purchase.initialize(address(this)); // Initialize with admin
+        purchase.initialize(address(this), address(factory)); // Initialize with admin and factory
 
         // --- Setup Initial State ---
         // Whitelist relevant addresses in the Whitelist Module
@@ -101,16 +121,19 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         purchase.setPurchaseToken(address(purchaseToken));
 
         // Owner transfers tokens TO the purchase contract
+        maliciousToken.transfer(address(purchase), TOKENS_FOR_SALE);
         token.transfer(address(purchase), TOKENS_FOR_SALE);
 
         // Now enable sale - purchase contract checks its own balance
+        // purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
         purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
     }
 
     // ============ Initialization Tests ============
 
-    function test_Initialization() public {
+    function test_Initialization() public view {
         assertEq(address(purchase.purchaseToken()), address(purchaseToken));
+        assertEq(address(purchase.tokenFactory()), address(factory));
     }
 
     // ============ Sale Management Tests ============
@@ -306,6 +329,12 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         purchase.setStorefrontConfig(
             address(token), "test.arc", "Test Sale", "Description", "image.url", "#FFFFFF", "#000000", "logo.url", true
         );
+    }
+
+    function test_RevertWhen_TokenNotCreatedByFactory() public {
+        vm.prank(owner);
+        vm.expectRevert(ArcTokenPurchase.TokenNotCreatedByFactory.selector);
+        purchase.enableToken(address(maliciousToken), TOKENS_FOR_SALE, TOKEN_PRICE);
     }
 
     // ============ Integration Tests ============

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 import "./ArcToken.sol";
+import "./ArcTokenFactory.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -43,6 +44,8 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     struct PurchaseStorage {
         // The token used for purchasing ArcTokens (e.g., USDC)
         IERC20 purchaseToken;
+        // The factory that created the tokens
+        address tokenFactory;
         // Mappings
         mapping(address => TokenInfo) tokenInfo;
         mapping(address => StorefrontConfig) storefrontConfigs;
@@ -64,6 +67,7 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     event TokenSaleEnabled(address indexed tokenContract, uint256 numberOfTokens, uint256 tokenPrice);
     event StorefrontConfigSet(address indexed tokenContract, string domain);
     event PurchaseTokenUpdated(address indexed newPurchaseToken);
+    event TokenFactoryUpdated(address indexed newFactory);
 
     // -------------- Custom Errors --------------
     error PurchaseTokenNotSet();
@@ -88,19 +92,25 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     error PurchaseTokenWithdrawalFailed();
     error TokenNotEnabled(); // Replaces "Token is not enabled for purchase"
     error ZeroAmount(); // Added for consistency if needed
+    error TokenFactoryNotSet();
+    error TokenNotCreatedByFactory();
 
     /**
      * @dev Initializes the contract and sets up admin role
      * @param admin Address to be granted admin role
+     * @param factory Address of the ArcTokenFactory
      */
-    function initialize(
-        address admin
-    ) public initializer {
+    function initialize(address admin, address factory) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
+
+        if (factory == address(0)) {
+            revert TokenFactoryNotSet();
+        }
+        _getPurchaseStorage().tokenFactory = factory;
     }
 
     /**
@@ -136,7 +146,20 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         }
 
         PurchaseStorage storage ps = _getPurchaseStorage();
-        if (ArcToken(_tokenContract).balanceOf(address(this)) < _numberOfTokens) {
+        if (ps.tokenFactory == address(0)) {
+            revert TokenFactoryNotSet();
+        }
+
+        // Verify token was created by the factory
+        address implementation = ArcTokenFactory(ps.tokenFactory)
+            .getTokenImplementation(_tokenContract);
+        if (implementation == address(0)) {
+            revert TokenNotCreatedByFactory();
+        }
+
+        if (
+            ArcToken(_tokenContract).balanceOf(address(this)) < _numberOfTokens
+        ) {
             revert ContractMissingRequiredTokens();
         }
 
@@ -144,6 +167,20 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
             TokenInfo({ isEnabled: true, tokenPrice: _tokenPrice, totalAmountForSale: _numberOfTokens, amountSold: 0 });
 
         emit TokenSaleEnabled(_tokenContract, _numberOfTokens, _tokenPrice);
+    }
+
+    /**
+     * @dev Set token factory address
+     * @param factoryAddress Address of the ArcTokenFactory
+     */
+    function setTokenFactory(
+        address factoryAddress
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (factoryAddress == address(0)) {
+            revert TokenFactoryNotSet();
+        }
+        _getPurchaseStorage().tokenFactory = factoryAddress;
+        emit TokenFactoryUpdated(factoryAddress);
     }
 
     /**
@@ -336,6 +373,13 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
      */
     function purchaseToken() external view returns (IERC20) {
         return _getPurchaseStorage().purchaseToken;
+    }
+
+    /**
+     * @dev Returns the token factory address
+     */
+    function tokenFactory() external view returns (address) {
+        return _getPurchaseStorage().tokenFactory;
     }
 
     /**
