@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "./restrictions/IRestrictionsRouter.sol";
 import "./restrictions/ITransferRestrictions.sol";
 import "./restrictions/IYieldRestrictions.sol";
+import "./restrictions/RestrictionTypes.sol";
 
 /**
  * @title ArcToken
@@ -44,11 +45,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     error ZeroAmount();
     error ModuleNotSetForType(bytes32 typeId);
     error RouterNotSet();
-
-    // -------------- Constants for Module Type IDs --------------
-    bytes32 public constant TRANSFER_RESTRICTION_TYPE = keccak256("TRANSFER_RESTRICTION");
-    bytes32 public constant YIELD_RESTRICTION_TYPE = keccak256("YIELD_RESTRICTION");
-    bytes32 public constant GLOBAL_SANCTIONS_TYPE = keccak256("GLOBAL_SANCTIONS");
 
     // -------------- Storage --------------
     /// @custom:storage-location erc7201:asset.token.storage
@@ -211,7 +207,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         ArcTokenStorage storage $ = _getArcTokenStorage();
         bool allowed = true;
 
-        address specificYieldModule = $.specificRestrictionModules[YIELD_RESTRICTION_TYPE];
+        address specificYieldModule = $.specificRestrictionModules[RestrictionTypes.YIELD_RESTRICTION_TYPE];
         if (specificYieldModule != address(0)) {
             allowed = allowed && IYieldRestrictions(specificYieldModule).isYieldAllowed(account);
         }
@@ -220,7 +216,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         if (routerAddr == address(0)) {
             revert RouterNotSet();
         }
-        address globalYieldModule = IRestrictionsRouter(routerAddr).getGlobalModuleAddress(GLOBAL_SANCTIONS_TYPE);
+        address globalYieldModule = IRestrictionsRouter(routerAddr).getGlobalModuleAddress(RestrictionTypes.GLOBAL_SANCTIONS_TYPE);
         if (globalYieldModule != address(0)) {
             try IYieldRestrictions(globalYieldModule).isYieldAllowed(account) returns (bool globalAllowed) {
                 allowed = allowed && globalAllowed;
@@ -361,9 +357,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             nextIndex = endIndex < totalHolders ? endIndex : 0;
             return (holders, amounts, nextIndex, totalHolders);
         }
-
-        ERC20Upgradeable yToken = ERC20Upgradeable($.yieldToken);
-        amounts = new uint256[](batchSize);
 
         for (uint256 i = 0; i < batchSize; i++) {
             uint256 holderIndex = startIndex + i;
@@ -590,7 +583,6 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
     function setTokenURI(
         string memory newTokenURI
     ) external onlyRole(MANAGER_ROLE) {
-        ArcTokenStorage storage $ = _getArcTokenStorage();
         _getArcTokenStorage().tokenURI = newTokenURI;
         emit TokenURIUpdated(newTokenURI);
     }
@@ -668,13 +660,13 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
             revert RouterNotSet();
         }
 
-        address specificTransferModule = $.specificRestrictionModules[TRANSFER_RESTRICTION_TYPE];
+        address specificTransferModule = $.specificRestrictionModules[RestrictionTypes.TRANSFER_RESTRICTION_TYPE];
         if (specificTransferModule != address(0)) {
             transferAllowed =
                 transferAllowed && ITransferRestrictions(specificTransferModule).isTransferAllowed(from, to, amount);
         }
 
-        address globalTransferModule = IRestrictionsRouter(routerAddr).getGlobalModuleAddress(GLOBAL_SANCTIONS_TYPE);
+        address globalTransferModule = IRestrictionsRouter(routerAddr).getGlobalModuleAddress(RestrictionTypes.GLOBAL_SANCTIONS_TYPE);
         if (globalTransferModule != address(0)) {
             try ITransferRestrictions(globalTransferModule).isTransferAllowed(from, to, amount) returns (
                 bool globalAllowed

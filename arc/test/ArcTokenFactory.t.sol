@@ -59,8 +59,8 @@ contract ArcTokenFactoryTest is Test {
 
     // ============ Initialization Tests ============
 
-    function test_Initialization() public {
-        assertEq(factory.restrictionsRouter(), address(router)); // Check router address is set
+    function test_Initialization() public view {
+        assertEq(factory.getRestrictionsRouter(), address(router)); // Check router address is set
         assertTrue(factory.hasRole(factory.DEFAULT_ADMIN_ROLE(), address(this)));
     }
 
