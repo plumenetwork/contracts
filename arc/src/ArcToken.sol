@@ -240,7 +240,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
      */
     function previewYieldDistribution(
         uint256 amount
-    ) external returns (address[] memory holders, uint256[] memory amounts) {
+    ) external view returns (address[] memory holders, uint256[] memory amounts) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
 
         if (amount == 0) {
@@ -315,7 +315,7 @@ contract ArcToken is ERC20Upgradeable, AccessControlUpgradeable, ReentrancyGuard
         uint256 amount,
         uint256 startIndex,
         uint256 maxHolders
-    ) external returns (address[] memory holders, uint256[] memory amounts, uint256 nextIndex, uint256 totalHolders) {
+    ) external view returns (address[] memory holders, uint256[] memory amounts, uint256 nextIndex, uint256 totalHolders) {
         ArcTokenStorage storage $ = _getArcTokenStorage();
 
         if (amount == 0) {
