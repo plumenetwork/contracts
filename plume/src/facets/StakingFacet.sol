@@ -150,7 +150,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                         $.validatorRewardPerTokenCumulative[validatorId][token];
                     $.userValidatorRewardPerTokenPaidTimestamp[msg.sender][validatorId][token] = block.timestamp;
 
-                    // 4. Set user's last processed checkpoint index for this validator/token.
+                    // 3. Set user's last processed checkpoint index for this validator/token.
                     if ($.validatorRewardRateCheckpoints[validatorId][token].length > 0) {
                         $.userLastCheckpointIndex[msg.sender][validatorId][token] =
                             $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
