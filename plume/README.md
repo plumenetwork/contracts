@@ -1,22 +1,78 @@
-#PlumeS
+# PlumeStaking and Spin/Raffle Contracts
 
+## Table of Contents
 
-# PlumeStaking
+1. [PlumeStaking System](#plumestaking-system)
+   - [Overview](#overview)
+   - [Architecture](#architecture)
+     - [Diamond Pattern Implementation](#diamond-pattern-implementation)
+     - [Treasury System](#treasury-system)
+   - [Core Concepts](#core-concepts)
+     - [Staking Mechanism](#staking-mechanism)
+     - [Reward Distribution](#reward-distribution)
+     - [Slashing Mechanism](#slashing-mechanism)
+     - [Commission System](#commission-system)
+   - [Contract Reference](#contract-reference)
+     - [StakingFacet](#stakingfacet)
+     - [RewardsFacet](#rewardsfacet)
+     - [ValidatorFacet](#validatorfacet)
+     - [ManagementFacet](#managementfacet)
+     - [AccessControlFacet](#accesscontrolfacet)
+   - [Events Reference](#events-reference)
+   - [Errors Reference](#errors-reference)
+   - [Constants and Roles](#constants-and-roles)
+2. [Spin and Raffle Contracts](#spin-and-raffle-contracts)
+   - [Environment Setup](#environment-setup)
+   - [Build Instructions](#build-instructions)
+   - [Deployment Guide](#deployment-guide)
+   - [Upgrade Process](#upgrade-process)
+   - [Launch Steps](#launch-steps)
 
-PlumeStaking is a flexible and comprehensive staking system for PLUME tokens that supports multiple validators, reward distribution, and a cooling period for unstaked tokens.
+---
 
-## Architecture
+## PlumeStaking System
 
-PlumeStaking now uses a Diamond architecture with multiple facets to organize functionality:
+### High-Level Architecture Overview
+
+PlumeStaking is a Diamond proxy-based staking system that separates concerns across multiple facets. The system implements a delegated proof-of-stake mechanism where users stake PLUME tokens to validators and earn rewards in multiple ERC20 tokens.
+
+**Core Design Principles:**
+- **Diamond Pattern (EIP-2535)**: Modular architecture allowing selective upgrades without full redeployment
+- **Checkpoint-Based Rewards**: Historical rate tracking enables accurate reward calculations across rate changes
+- **Validator-Specific Accounting**: Each validator maintains independent reward rates and commission structures
+- **Lazy Evaluation**: Rewards calculated on-demand rather than continuously updated
+- **Separate Treasury**: Reward funds custody isolated from staking logic
+
+**Key Mechanics:**
+1. Users stake PLUME to validators, earning rewards based on validator-specific emission rates
+2. Validators earn commission on generated rewards (configurable per validator, max 50%)
+3. Unstaking initiates a cooldown period before funds become withdrawable
+4. Slashing requires unanimous vote from all other active validators
+5. All reward distributions flow through a separate treasury contract
+
+**Initialization:**
+```solidity
+// After Diamond deployment, initialize PlumeStaking
+plumeStaking.initializePlume(initialOwner, minStake, cooldownInterval)
+
+// Initialize AccessControlFacet
+accessControlFacet.initializeAccessControl()
+```
+
+### Architecture
+
+#### Diamond Pattern Implementation
+
+PlumeStaking uses the EIP-2535 Diamond standard to organize functionality into modular facets:
 
 ```mermaid
 graph TD
-    A[PlumeStaking<br>Diamond Proxy] --> B[AccessControlFacet]
+    A[PlumeStaking Diamond Proxy] --> B[AccessControlFacet]
     A --> C[StakingFacet]
     A --> D[RewardsFacet]
     A --> E[ValidatorFacet]
     A --> F[ManagementFacet]
-    D --> G[PlumeStakingRewardTreasury]
+    D -.->|Distributes Rewards| G[PlumeStakingRewardTreasury]
 
     style A fill:#f96,stroke:#333,stroke-width:2px
     style B fill:#9cf,stroke:#333,stroke-width:1px
@@ -27,353 +83,707 @@ graph TD
     style G fill:#ffc,stroke:#333,stroke-width:1px
 ```
 
-- **PlumeStaking (Diamond)**: The main entry point that implements the Diamond standard.
-- **AccessControlFacet**: Manages roles and permissions.
-- **StakingFacet**: Handles staking and unstaking operations.
-- **RewardsFacet**: Manages reward tokens, rates, and distribution.
-- **ValidatorFacet**: Handles validator management, including voting and execution of slashing.
-- **ManagementFacet**: Provides administrative functions, including cleanup of records for slashed validators.
-- **PlumeStakingRewardTreasury**: Separate contract for holding and distributing rewards.
+**Facet Responsibilities:**
+- **AccessControlFacet**: OpenZeppelin AccessControl implementation
+- **StakingFacet**: stake(), unstake(), withdraw(), restake()
+- **RewardsFacet**: Reward calculation, distribution, treasury integration
+- **ValidatorFacet**: Validator lifecycle, slashing, commission management
+- **ManagementFacet**: System parameters, admin functions
 
-## Slashing Mechanism
+#### Treasury System
 
-The system implements a slashing mechanism with the following key features:
-- **Lazy Slashing / Staker-Initiated Penalty Application:** Slashing is a two-step process involving voting by active, non-slashed validators and then execution by an address with `TIMELOCK_ROLE`.
-- **100% Penalty:** When a validator is slashed, 100% of their staked and cooling PLUME tokens are effectively burned (removed from circulation by reducing total supply trackers).
-- **Voting Requirement:** A unanimous vote from all other active, non-slashed validators is required to slash a validator.
-- **No User Recovery for Slashed Funds:** Since the penalty is 100%, users do not recover funds staked with or cooling for a validator that gets slashed.
-- **Admin Cleanup:** Administrative functions (`adminClearValidatorRecord`, `adminBatchClearValidatorRecords`) are provided to clean up stale user-validator association records after a validator is slashed and their funds are accounted for as lost.
-- **Operational Restrictions for Slashed Validators:**
-    - Slashed validators cannot have new stake directed to them.
-    - Stakers cannot unstake or restake with a slashed validator.
-    - Slashed validators cannot set their commission or request/finalize commission claims.
-    - Rewards stop accruing for a slashed validator from the `slashedAtTimestamp`.
-- **View Function Adjustments:** View functions like `getUserValidators` and `getUserCooldowns` filter out slashed validators or their associated data.
+The protocol separates fund custody from staking logic using a dedicated treasury contract:
 
-## Treasury System
+```mermaid
+graph LR
+    A[Users] -->|Stake PLUME| B[Diamond Proxy]
+    B -->|Calculates Rewards| B
+    B -->|Requests Distribution| C[Treasury Proxy]
+    C -->|Delegates to| D[Treasury Implementation]
+    D -->|Transfers Rewards| A
+    
+    style B fill:#f96,stroke:#333,stroke-width:2px
+    style C fill:#ffc,stroke:#333,stroke-width:2px
+    style D fill:#cfc,stroke:#333,stroke-width:1px
+```
 
-### PlumeStakingRewardTreasury
+**Treasury Implementation:**
+- UUPS upgradeable proxy pattern
+- Role-based access (only Diamond can distribute)
+- Multi-token support
+- Direct transfers to users
 
-The protocol uses a dedicated upgradeable treasury contract to securely hold and distribute rewards:
+### Core Concepts
 
-- **Upgradeable Design**: Implements UUPS pattern for upgradeability with proper access control
-- **Separation of Concerns**: Dedicated treasury contract for better security and fund management
-- **Role-Based Access**: Implements a comprehensive role system:
-  - `DISTRIBUTOR_ROLE`: Only the Diamond proxy can distribute rewards
-  - `ADMIN_ROLE`: Can add reward tokens and manage other roles
-  - `UPGRADER_ROLE`: Can authorize contract upgrades
-  - `DEFAULT_ADMIN_ROLE`: Super admin role for initial setup
+#### Staking Mechanism
 
-### Treasury Architecture
+Staking lifecycle:
 
-The treasury system consists of two main components:
+```mermaid
+stateDiagram-v2
+    [*] --> Liquid: User has PLUME
+    Liquid --> Staked: stake()
+    Staked --> Cooling: unstake()
+    Cooling --> Liquid: withdraw() after cooldown
+    Cooling --> Staked: restake()
+    Staked --> Staked: restakeRewards()
+```
 
-1. **PlumeStakingRewardTreasury**: The main implementation contract
-2. **PlumeStakingRewardTreasuryProxy**: ERC1967 proxy that delegates to the implementation
+**Implementation Details:**
+- Global minimum stake amount check
+- Per-validator capacity limits
+- Validator must be active and not slashed
+- stake() accepts msg.value, stakeOnBehalf() allows third-party staking
+- Cooldown period prevents immediate withdrawals after unstaking
 
-This proxy pattern enables future upgrades while maintaining the same address and state.
+#### Reward Calculation System
 
-### Reward Distribution Flow
+The reward system uses a sophisticated checkpoint-based mechanism to handle variable rates, validator-specific multipliers, and commission deductions.
 
-1. Users stake their PLUME tokens to validators
-2. Rewards accrue over time based on configured reward rates
-3. When users claim rewards:
-   - The RewardsFacet calculates earned rewards
-   - The RewardsFacet (with DISTRIBUTOR_ROLE) calls the treasury
-   - The treasury verifies the caller's role and transfers tokens directly to the user
+##### Core Components
 
-### Treasury Functions
+**1. Multi-Level Rate Tracking**
+```
+Global Rate → Validator Rate → User Rewards
+     ↓              ↓                ↓
+  Default      Checkpoint        Calculate
+   Rate         History          w/Commission
+```
 
-| Function                                           | Description                                                    | Access Control |
-| -------------------------------------------------- | -------------------------------------------------------------- | -------------- |
-| `initialize(address admin, address distributor)`    | Initialize the treasury with admin and distributor addresses    | Once only      |
-| `addRewardToken(address token)`                    | Register a token as a valid reward token                       | ADMIN_ROLE     |
-| `distributeReward(address token, uint256 amount, address recipient)` | Distribute rewards to a recipient            | DISTRIBUTOR_ROLE |
-| `getRewardTokens()`                                | Get the list of registered reward tokens                       | Public View    |
-| `getBalance(address token)`                        | Get the balance of a specific token                            | Public View    |
-| `isRewardToken(address token)`                     | Check if a token is registered as a reward token               | Public View    |
+**2. Checkpoint Structure**
+```solidity
+struct RateCheckpoint {
+    uint256 timestamp;       // When rate changed
+    uint256 rate;           // New rate (tokens/second/staked token)
+    uint256 cumulativeIndex; // Accumulated rewards up to this point
+}
+```
 
-### Treasury Events
+**3. Key Storage Mappings**
+- `validatorRewardRateCheckpoints[validatorId][token]`: Rate history
+- `validatorCommissionCheckpoints[validatorId]`: Commission history
+- `validatorRewardPerTokenCumulative[validatorId][token]`: Accumulated rewards
+- `userValidatorRewardPerTokenPaid[user][validatorId][token]`: User's last settled index
 
-| Event                                              | Description                                    |
-| -------------------------------------------------- | ---------------------------------------------- |
-| `RewardTokenAdded(address token)`                  | Emitted when a new reward token is registered  |
-| `RewardDistributed(address token, uint256 amount, address recipient)` | Emitted when rewards are distributed |
-| `PlumeReceived(address sender, uint256 amount)`    | Emitted when the treasury receives PLUME       |
+##### Calculation Algorithm
 
+**Step 1: Time Segmentation**
 
-## Core Functions (Grouped by Facet)
+When calculating rewards, the system identifies all rate change points:
 
-Functions related to OpenZeppelin's `AccessControl` (like `grantRole`, `revokeRole`, `hasRole`, etc. in `AccessControlFacet`) are standard and omitted here for brevity.
+```mermaid
+gantt
+    title Reward Calculation Timeline Example
+    dateFormat YYYY-MM-DD
+    axisFormat %m/%d
 
-### StakingFacet Functions
+    section User Activity
+    Stake 1000 PLUME         :milestone, 2024-01-01, 0d
+    Claim Rewards            :milestone, 2024-01-30, 0d
 
-| Function                                            | Description                                                                     |
-| --------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `stake(uint16 validatorId)`                         | (Payable) Stake PLUME tokens to a specific validator. Reverts if validator is slashed/inactive. |
-| `stakeOnBehalf(uint16 validatorId, address staker)` | (Payable) Stake PLUME on behalf of another user. Reverts if validator is slashed/inactive.     |
-| `restake(uint16 validatorId, uint256 amount)`       | Restake PLUME tokens that are currently in cooling state for a specific validator. Reverts if validator is slashed/inactive. |
-| `unstake(uint16 validatorId)`                       | Unstake all PLUME tokens from a specific validator, initiating cooldown. Reverts if validator is slashed.        |
-| `unstake(uint16 validatorId, uint256 amount)`       | Unstake a specific amount of PLUME tokens from a validator, initiating cooldown. Reverts if validator is slashed. |
-| `withdraw()`                                        | Withdraw PLUME tokens that have completed the cooldown period. Skips slashed validators.                  |
-| `restakeRewards(uint16 validatorId)`                | Claim and immediately restake PLUME rewards for a specific validator. Reverts if validator is slashed/inactive.          |
-| **View Functions**                                  |                                                                                 |
-| `amountStaked()`                                    | Get the amount of PLUME staked by the caller.                                   |
-| `amountCooling()`                                   | Get the amount of PLUME in cooling period for the caller (sum across non-slashed validators).                       |
-| `amountWithdrawable()`                              | Get the amount of PLUME that is withdrawable (parked) for the caller.                    |
-| `stakeInfo(address user)`                           | Get staking information (staked, cooling, parked, etc.) for a specific user.    |
-| `totalAmountStaked()`                               | Get the total amount of PLUME staked across the entire system.                  |
-| `totalAmountCooling()`                              | Get the total amount of PLUME currently in cooldown across the system.          |
-| `totalAmountWithdrawable()`                         | Get the total amount of PLUME currently withdrawable across the system.         |
-| `getUserValidatorStake(address user, uint16 validatorId)` | Get the amount staked by a user for a specific validator.                   |
-| `getUserCooldowns(address user)`                    | Get a list of active cooldown entries for a user, filtering out slashed validators. |
+    section Rate Changes
+    Rate: 100/day (10% comm) :active, 2024-01-05, 10d
+    Rate: 150/day (15% comm) :active, 2024-01-15, 10d
+    Rate: 150/day (20% comm) :active, 2024-01-25, 5d
+```
 
-### RewardsFacet Functions
+**Step 2: Segment Processing**
 
-| Function                                                            | Description                                                                     |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `setTreasury(address treasury)`                                     | Set the address of the `PlumeStakingRewardTreasury` contract.                   |
-| `addRewardToken(address token)`                                     | Add a token to the list of recognized reward tokens.                            |
-| `removeRewardToken(address token)`                                  | Remove a token from the list of reward tokens.                                  |
-| `setRewardRates(address[] tokens, uint256[] rates)`                 | Set the reward emission rates (per second) for multiple tokens. Creates checkpoints, handles slashed validators correctly. |
-| `setMaxRewardRate(address token, uint256 newMaxRate)`               | Set the maximum allowed reward rate for a specific token.                       |
-| `claim(address token, uint16 validatorId)`                          | Claim rewards for a specific token from a specific validator. Reverts if validator is inactive.                   |
-| `claim(address token)`                                              | Claim rewards for a specific token from all active, non-slashed validators the user has staked with. |
-| `claimAll()`                                                        | Claim all accumulated rewards for all tokens from all active, non-slashed validators staked with.   |
-| **View Functions**                                                  |                                                                                 |
-| `earned(address user, address token)`                               | Get the total accumulated rewards for a user/token across all their active, non-slashed validator stakes. |
-| `getClaimableReward(address user, address token)`                   | Get the currently claimable reward amount for a user/token across all their active, non-slashed validator stakes. |
-| `getRewardTokens()`                                                 | Get the list of registered reward token addresses.                              |
-| `getMaxRewardRate(address token)`                                   | Get the maximum reward rate for a specific token.                               |
-| `getRewardRate(address token)`                                      | Get the current reward rate for a specific token.                               |
-| `tokenRewardInfo(address token)`                                    | Get detailed reward information (rate, index, etc.) for a specific token.       |
-| `getRewardRateCheckpointCount(address token)`                       | Get the number of global reward rate checkpoints for a token.                   |
-| `getValidatorRewardRateCheckpointCount(uint16 vId, address token)`  | Get the number of validator-specific reward rate checkpoints.                   |
-| `getUserLastCheckpointIndex(address user, uint16 vId, address token)` | Get the index of the last reward checkpoint processed for a user/validator/token. |
-| `getRewardRateCheckpoint(address token, uint256 index)`             | Get details of a specific global reward rate checkpoint.                        |
-| `getValidatorRewardRateCheckpoint(uint16 vId, address token, uint256 index)` | Get details of a specific validator reward rate checkpoint.              |
-| `getTreasury()`                                                     | Get the address of the currently configured reward treasury contract.           |
-| `getPendingRewardForValidator(address user, uint16 vId, address token)` | Get the pending (claimable) reward amount for a user on a specific validator (considers slash status).   |
+For each time segment between checkpoints:
 
-### ValidatorFacet Functions
+```
+Segment Gross Reward = Stake × Rate × Duration
+Segment Commission = Gross Reward × Commission Rate
+Segment Net Reward = Gross Reward - Commission
+```
 
-| Function                                                                     | Description                                                                                        |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `addValidator(...)`                                                          | Add a new validator to the system (see parameters below).                                          |
-| `setValidatorCapacity(uint16 validatorId, uint256 maxCapacity)`              | Set the maximum staking capacity for a validator. Reverts if validator inactive/slashed.                                                  |
-| `setValidatorStatus(uint16 validatorId, bool active)`                        | Activate or deactivate a validator. Cannot activate a slashed validator.                                                                |
-| `setValidatorCommission(uint16 validatorId, uint256 commission)`             | Update the commission rate for a validator. Reverts if validator inactive/slashed.                                                        |
-| `setValidatorAddresses(uint16 vId, ...)`                                     | Update the admin and withdrawal addresses for a validator. Reverts if validator inactive/slashed.                                 |
-| `requestCommissionClaim(uint16 validatorId, address token)`                | Request commission claim (starts timelock). Reverts if validator inactive/slashed. Called by validator admin. |
-| `finalizeCommissionClaim(uint16 validatorId, address token)`               | Finalize commission claim after timelock. Reverts if validator inactive/slashed. Called by validator admin. |
-| `voteToSlashValidator(uint16 maliciousValidatorId, uint256 voteExpiration)` | Cast a vote by an active, non-slashed validator admin to slash another active, non-slashed validator. |
-| `slashValidator(uint16 validatorId)`                                         | Execute the slashing process for a validator if unanimous vote from other active, non-slashed validators is met. Callable by `TIMELOCK_ROLE`. Marks validator slashed, inactive, burns stake & cooled amounts. |
-| `forceSettleValidatorCommission(uint16 validatorId)`                         | Manually triggers settlement of accrued commission for a validator.                                |
-| **View Functions**                                                           |                                                                                                    |
-| `getValidatorInfo(uint16 validatorId)`                                       | Get detailed information about a specific validator (includes `slashed` and `slashedAtTimestamp`).                                               |
-| `getValidatorStats(uint16 validatorId)`                                      | Get essential stats (status, commission, stake, stakers) for a validator.                      |
-| `getUserValidators(address user)`                                            | Get the list of non-slashed validator IDs a user has (or had) an association with.               |
-| `getAccruedCommission(uint16 validatorId, address token)`                    | View the currently accrued (unclaimed) commission for a validator and token (considers slash status).                     |
-| `getValidatorsList()`                                                        | Get a list of all registered validators and their core data.                                     |
-| `getActiveValidatorCount()`                                                  | Get the number of currently active (and not slashed) validators.                                                     |
-| `getSlashVoteCount(uint16 validatorId)`                                      | Gets the current number of active, unexpired slash votes against a validator.                  |
+**Step 3: Mathematical Formula**
 
-### ManagementFacet Functions
+For a user with stake `S` over time period `[t₀, t₁]`:
 
-| Function                                                          | Description                                                                              |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `setMinStakeAmount(uint256 amount)`                               | Set the minimum PLUME amount required for a user to stake.                               |
-| `setCooldownInterval(uint256 interval)`                           | Set the duration (in seconds) of the unstaking cooldown period.                          |
-| `adminWithdraw(address token, uint256 amount, address recipient)` | Admin function to withdraw tokens directly from the *staking contract* (not the treasury). |
-| `setMaxSlashVoteDuration(uint256 duration)`                       | Set the maximum duration (in seconds) a slash vote remains valid.                        |
-| `setMaxAllowedValidatorCommission(uint256 newMaxRate)`            | Set the system-wide maximum allowed commission rate for any validator (max 50%).         |
-| `adminClearValidatorRecord(address user, uint16 slashedValidatorId)`| Admin function to clear a user's stake/cooldown records for a specific *slashed* validator. |
-| `adminBatchClearValidatorRecords(address[] users, uint16 slashedValidatorId)` | Admin function to batch clear records for multiple users for a specific *slashed* validator. |
-| **View Functions**                                                |                                                                                          |
-| `getMinStakeAmount()`                                             | Get the currently configured minimum stake amount.                                       |
-| `getCooldownInterval()`                                           | Get the currently configured cooldown interval duration.                                 |
+```
+Total Net Reward = Σᵢ [Sᵢ × Rᵢ × Δtᵢ × (1 - Cᵢ)]
 
-### AddValidator Parameters
+Where:
+- i = each time segment
+- Sᵢ = stake amount in segment i
+- Rᵢ = reward rate in segment i
+- Δtᵢ = duration of segment i
+- Cᵢ = commission rate in segment i
+```
 
-| Parameter             | Type      | Description                                                                                        |
-| --------------------- | --------- | -------------------------------------------------------------------------------------------------- |
-| `validatorId`         | `uint16`  | Unique identifier for the validator                                                                |
-| `commission`          | `uint256` | Commission rate as a fraction of `PlumeStakingStorage.REWARD_PRECISION` (e.g., 5% = 5e16). Must be <= `maxAllowedValidatorCommission`.        |
-| `l2AdminAddress`      | `address` | Admin address that can manage the validator (l2Address should be a multisig with Plume Foundation) |
-| `l2WithdrawAddress`   | `address` | Address to receive validator commission rewards                                                    |
-| `l1ValidatorAddress`  | `string`  | L1 validator address (informational)                                                               |
-| `l1AccountAddress`    | `string`  | L1 account address (informational)                                                                 |
-| `l1AccountEvmAddress` | `address` | EVM address of account on L1 (informational)                                                       |
-| `maxCapacity`         | `uint256` | Maximum staking capacity of the validator                                                          |
+##### Detailed Calculation Example
 
-**Example:**
+**Setup:**
+- User stakes 1,000 PLUME on January 1st
+- REWARD_TOKEN with 18 decimals
+- All rates use REWARD_PRECISION = 1e18
+
+**Timeline:**
+
+```mermaid
+flowchart LR
+    A[Jan 1<br/>Stake 1000] --> B[Jan 5<br/>Rate: 100/day<br/>Comm: 10%]
+    B --> C[Jan 15<br/>Rate: 150/day<br/>Comm: 15%]
+    C --> D[Jan 25<br/>Comm: 20%<br/>Rate unchanged]
+    D --> E[Jan 30<br/>Claim]
+    
+    style A fill:#e1f5fe
+    style E fill:#c8e6c9
+```
+
+**Checkpoint Creation:**
+
+```javascript
+// Reward Rate Checkpoints
+Checkpoint 0: { 
+    timestamp: Jan 5, 
+    rate: 100e18,     // 100 tokens/day/staked token
+    cumulativeIndex: 0 
+}
+Checkpoint 1: { 
+    timestamp: Jan 15, 
+    rate: 150e18, 
+    cumulativeIndex: 1000e18  // Accumulated from previous segment
+}
+
+// Commission Checkpoints
+Checkpoint 0: { timestamp: Jan 5,  rate: 0.1e18 }   // 10%
+Checkpoint 1: { timestamp: Jan 15, rate: 0.15e18 }  // 15%
+Checkpoint 2: { timestamp: Jan 25, rate: 0.2e18 }   // 20%
+```
+
+**Calculation Process:**
+
+| Segment | Duration | Rate | Stake | Gross Rewards | Commission | Net Rewards |
+|---------|----------|------|-------|---------------|------------|-------------|
+| Jan 1-5 | 4 days | 0 | 1,000 | 0 | 0% | 0 |
+| Jan 5-15 | 10 days | 100/day | 1,000 | 1,000,000 | 10% (100,000) | 900,000 |
+| Jan 15-25 | 10 days | 150/day | 1,000 | 1,500,000 | 15% (225,000) | 1,275,000 |
+| Jan 25-30 | 5 days | 150/day | 1,000 | 750,000 | 20% (150,000) | 600,000 |
+| **Total** | | | | **3,250,000** | **475,000** | **2,775,000** |
+
+##### Implementation Details
+
+**1. Finding Relevant Checkpoints (Binary Search)**
 
 ```solidity
-// Add a validator with 5% commission
-plumeStaking.addValidator(
-    1,                                                      // validatorId
-    5e16,                                                   // commission (5%)
-    0xAdminAddress,                                         // l2AdminAddress
-    0xWithdrawAddress,                                      // l2WithdrawAddress
-    "plumevaloper1zqd0cre4rmk2659h2h4afseemx2amxtqrvmymr",  // l1ValidatorAddress
-    "plume1zqd0cre4rmk2659h2h4afseemx2amxtqpmnxy4",         // l1AccountAddress
-    0x1234,                                                 // l1AccountEvmAddress
-    1000000e18                                              // maxCapacity (1 million PLUME)
-);
+function findCheckpointIndex(checkpoints, timestamp) {
+    uint256 low = 0;
+    uint256 high = checkpoints.length - 1;
+    
+    while (low <= high) {
+        uint256 mid = (low + high) / 2;
+        if (checkpoints[mid].timestamp <= timestamp) {
+            if (mid == high || checkpoints[mid + 1].timestamp > timestamp) {
+                return mid;  // Found the right checkpoint
+            }
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+    return 0;
+}
 ```
 
-## Events
+**2. Time Segment Generation**
 
-### Core Staking Events
-
-| Event                                                                                                                   | Description                                                            |
-| ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `Staked(address user, uint16 validatorId, uint256 amount, uint256 fromCooling, uint256 fromParked, uint256 pendingRewards)` | Emitted when a user stakes PLUME. Includes breakdown of source funds.  |
-| `StakedOnBehalf(address sender, address staker, uint16 validatorId, uint256 amount)`                                    | Emitted when someone stakes on behalf of another user.                 |
-| `Unstaked(address user, uint16 validatorId, uint256 amount)`                                                            | Emitted when a user initiates unstaking (starts cooldown).             |
-| `CooldownStarted(address staker, uint16 validatorId, uint256 amount, uint256 cooldownEnd)`                              | Emitted when an unstake action successfully starts the cooldown timer. |
-| `Withdrawn(address staker, uint256 amount)`                                                                             | Emitted when a user withdraws PLUME that completed cooldown.           |
-| `RewardsRestaked(address staker, uint16 validatorId, uint256 amount)`                                                   | Emitted when PLUME rewards are claimed and immediately restaked.       |
-
-### Reward Events
-
-| Event                                                                                         | Description                                                                      |
-| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `RewardTokenAdded(address token)`                                                             | Emitted when a new token is added to the rewards list (in Staking contract).     |
-| `RewardTokenRemoved(address token)`                                                           | Emitted when a token is removed from the rewards list (in Staking contract).     |
-| `RewardRatesSet(address[] tokens, uint256[] rates)`                                           | Emitted when reward rates are updated.                                           |
-| `MaxRewardRateUpdated(address token, uint256 newMaxRate)`                                     | Emitted when the maximum reward rate is updated for a single token.              |
-| `RewardRateCheckpointCreated(address token, uint16 validatorId, uint256 rate, uint256 timestamp, uint256 index, uint256 cumulativeIndex)`  | Emitted when a validator-specific reward rate checkpoint is created.             |
-| `RewardClaimed(address user, address token, uint256 amount)`                                  | Emitted when a user claims rewards aggregated across all validators.             |
-| `RewardClaimedFromValidator(address user, address token, uint16 validatorId, uint256 amount)` | Emitted when a user claims rewards from a specific validator.                    |
-| `TreasurySet(address treasury)`                                                               | Emitted when the reward treasury contract address is updated.                    |
-
-### Validator Events
-
-| Event                                                                                                                                                                                          | Description                                                                            |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `ValidatorAdded(uint16 vId, uint256 commission, address l2Admin, address l2Withdraw, string l1Val, string l1Acc, address l1AccEvm)`                                                           | Emitted when a validator is added.                                                     |
-| `ValidatorUpdated(uint16 vId, uint256 commission, address l2Admin, address l2Withdraw, string l1Val, string l1Acc, address l1AccEvm)`                                                         | Emitted when a validator's core details are updated.                                   |
-| `ValidatorStatusUpdated(uint16 validatorId, bool active, bool slashed)`                                                                                                                        | Emitted when a validator's active or slashed status changes.                           |
-| `ValidatorCommissionSet(uint16 validatorId, uint256 oldCommission, uint256 newCommission)`                                                                                                     | Emitted when a validator's commission rate is changed via `setValidatorCommission`.    |
-| `ValidatorAddressesSet(uint16 vId, address oldL2Admin, address newL2Admin, address oldL2Withdraw, address newL2Withdraw, string oldL1Val, string newL1Val, string oldL1Acc, string newL1Acc, address oldL1AccEvm, address newL1AccEvm)` | Emitted when a validator's admin or withdraw addresses are changed.                    |
-| `ValidatorCapacityUpdated(uint16 validatorId, uint256 oldCapacity, uint256 newCapacity)`                                                                                                       | Emitted when validator capacity is updated.                                            |
-| `ValidatorCommissionClaimed(uint16 validatorId, address token, uint256 amount)`                                                                                                                | Emitted when validator commission is claimed.                                          |
-| `SlashVoteCast(uint16 targetValidatorId, uint16 voterValidatorId, uint256 voteExpiration)`                                                                                                    | Emitted when a validator admin casts a vote to slash another validator.                |
-| `ValidatorSlashed(uint16 validatorId, address slasher, uint256 penaltyAmount)`                                                                                                                | Emitted when a validator is successfully slashed. `penaltyAmount` is the total stake + cooled amount lost/burned. |
-| `ValidatorCommissionCheckpointCreated(uint16 indexed validatorId, uint256 rate, uint256 timestamp)`                                                                                             | Emitted when a validator commission rate checkpoint is created.                         |
-
-### Administrative Events
-
-| Event                                                                                                                              | Description                                                                            |
-| ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `MinStakeAmountSet(uint256 amount)`                                                                                                | Emitted when the global minimum stake amount is set via `setMinStakeAmount`.           |
-| `CooldownIntervalSet(uint256 interval)`                                                                                            | Emitted when the global cooldown interval is set via `setCooldownInterval`.            |
-| `AdminWithdraw(address token, uint256 amount, address recipient)`                                                                  | Emitted when admin withdraws tokens from the staking contract via `adminWithdraw`.     |
-| `MaxSlashVoteDurationSet(uint256 duration)`                                                                                        | Emitted when the maximum duration for slash votes is set.                              |
-| `MaxAllowedValidatorCommissionSet(uint256 oldMaxRate, uint256 newMaxRate)`                                                         | Emitted when the system-wide maximum allowed validator commission is set.              |
-| `AdminClearedSlashedStake(address indexed user, uint16 indexed slashedValidatorId, uint256 amountCleared)`                        | Emitted when admin clears a user's active stake from a slashed validator.             |
-| `AdminClearedSlashedCooldown(address indexed user, uint16 indexed slashedValidatorId, uint256 amountCleared)`                     | Emitted when admin clears a user's cooled funds from a slashed validator.             |
-
-## Errors
-
-This section lists custom errors defined in `PlumeErrors.sol`.
-
-| Error                                           | Description                                                                       |
-| ----------------------------------------------- | --------------------------------------------------------------------------------- |
-| `InvalidAmount(uint256 amount)`                 | Generic error for an invalid amount provided.                                     |
-| `NoActiveStake()`                               | User has no active stake for the operation requested.                             |
-| `ZeroAddress(string parameter)`                 | A required address parameter was `address(0)`.                                    |
-| `TokenDoesNotExist(address token)`              | The specified token is not recognized or registered.                              |
-| `TransferError()`                               | Generic error during a token transfer.                                            |
-| `CooldownPeriodNotEnded()`                      | Attempt to withdraw or restake before cooldown finished.                          |
-| `StakeAmountTooSmall(uint256 provided, uint256 min)` | Provided stake amount is less than the minimum required.                      |
-| `InsufficientCooldownBalance(uint256 available, uint256 requested)` | Trying to restake more from cooldown than available.           |
-| `NoRewardsToRestake()`                          | Called `restakeRewards` but user has no claimable PLUME rewards.                  |
-| `ValidatorDoesNotExist(uint16 validatorId)`     | The specified validator ID does not exist.                                        |
-| `ValidatorAlreadyExists(uint16 validatorId)`    | Trying to add a validator ID that already exists.                                 |
-| `ValidatorInactive(uint16 validatorId)`         | Operation requires an active validator, but it's inactive.                      |
-| `NotValidatorAdmin(address caller)`             | Caller does not have administrative privileges for the validator.               |
-| `ExceedsValidatorCapacity(uint16 vId, uint256 current, uint256 max, uint256 requested)` | Detailed capacity exceeded error.         |
-| `ValidatorPercentageExceeded()`                 | Staking would exceed the maximum percentage of total stake allowed per validator. |
-| `TokenAlreadyExists()`                          | Trying to add a reward token that already exists.                                 |
-| `ArrayLengthMismatch()`                         | Provided arrays (e.g., tokens and rates) have different lengths.                  |
-| `EmptyArray()`                                  | Provided array cannot be empty for the operation.                                 |
-| `CommissionExceedsMaxAllowed(uint256 requested, uint256 maxAllowed)` | Validator commission exceeds system-wide maximum allowed rate.      |
-| `InvalidMaxCommissionRate(uint256 requested, uint256 limit)` | Attempt to set max allowed commission > 50%.                       |
-| `RewardRateExceedsMax()`                        | Trying to set a reward rate higher than the configured maximum rate.              |
-| `NativeTransferFailed()`                        | Transfer of native PLUME failed.                                                  |
-| `InsufficientFunds(uint256 available, uint256 requested)` | Generic insufficient funds error.                                               |
-| `AdminTransferFailed()`                         | Admin withdrawal operation failed.                                                |
-| `SlashVoteDurationTooLong()`                    | Specified slash vote expiration is too far in the future or duration not set.     |
-| `CannotVoteForSelf()`                           | Validator admin attempted to vote to slash their own validator.                   |
-| `AlreadyVotedToSlash(uint16 target, uint16 voter)` | Voter has already cast an active slash vote for this target.                  |
-| `ValidatorAlreadySlashed(uint16 validatorId)`   | Target validator has already been slashed.                                        |
-| `UnanimityNotReached(uint256 votes, uint256 required)` | Slash quorum (all other active non-slashed validators) not met.             |
-| `SlashVoteExpired(uint16 target, uint16 voter)` | The slash vote being referenced has expired.                                      |
-| `AdminAlreadyAssigned(address admin)`           | The L2 admin address is already assigned to another validator.                    |
-| `TreasuryNotSet()`                              | The reward treasury address has not been configured.                              |
-| `InternalInconsistency(string message)`         | Indicates an unexpected internal state error.                                     |
-| `PendingClaimExists(uint16 validatorId, address token)` | A commission claim is already pending for this validator/token.                |
-| `NoPendingClaim(uint16 validatorId, address token)`   | No pending commission claim found to finalize for this validator/token.          |
-| `ClaimNotReady(uint16 validatorId, address token, uint256 readyTimestamp)` | Commission claim timelock has not yet passed.           |
-| `CooldownTooShortForSlashVote(uint256 newCooldown, uint256 currentMaxSlashVote)` | Cooldown interval must be longer than max slash vote duration. |
-| `SlashVoteDurationTooLongForCooldown(uint256 newMaxSlashVote, uint256 currentCooldown)` | Max slash vote duration must be shorter than cooldown interval. |
-| `InvalidInterval(uint256 interval)`             | Provided interval (e.g., for cooldown or slash vote duration) is invalid (likely 0). |
-| `ActionOnSlashedValidatorError(uint16 validatorId)` | User/Admin action attempted on a validator that has been slashed.                 |
-| `ValidatorNotSlashed(uint16 validatorId)`       | Admin action (like `adminClearValidatorRecord`) attempted on a validator that is not slashed. |
-
-## Constants
-
-| Constant           | Value                                        | Description                             |
-| ------------------ | -------------------------------------------- | --------------------------------------- |
-| `ADMIN_ROLE`       | `keccak256("ADMIN_ROLE")`                    | Role with administrative privileges across the system. Can manage reward tokens, validators, system parameters, and other roles. |
-| `UPGRADER_ROLE`     | `keccak256("UPGRADER_ROLE")`                   | Role with permission to upgrade the contract (diamondCut). |
-| `VALIDATOR_ROLE`   | `keccak256("VALIDATOR_ROLE")`                | Role for managing global validator settings (e.g., adding validators). Specific validator actions are controlled by validator admins. |
-| `REWARD_MANAGER_ROLE`| `keccak256("REWARD_MANAGER_ROLE")`             | Role for managing reward settings and distribution (e.g., setting rates, adding/removing reward tokens). |
-| `TIMELOCK_ROLE`    | `keccak256("TIMELOCK_ROLE")`                 | Role for executing time-locked actions like finalizing slashing or setting critical parameters. |
-
-## Spin and Raffle specific:
-
-### .env file
+```mermaid
+flowchart TD
+    A[Get User's Last Update Time] --> B[Get Current Time]
+    B --> C[Find All Checkpoints Between]
+    C --> D[Merge Reward & Commission Checkpoints]
+    D --> E[Sort Unique Timestamps]
+    E --> F[Create Time Segments]
+    
+    F --> G[Segment 1: T0 → T1]
+    F --> H[Segment 2: T1 → T2]
+    F --> I[Segment N: Tn-1 → Tn]
 ```
-RPC_URL="https://phoenix-rpc.plumenetwork.xyz"
+
+**3. Per-Segment Calculation Flow**
+
+```mermaid
+flowchart LR
+    A[Segment Start] --> B[Get Rate at Start]
+    B --> C[Get Commission at Start]
+    C --> D[Calculate Duration]
+    D --> E[Gross = Stake × Rate × Duration]
+    E --> F[Commission = Gross × CommRate]
+    F --> G[Net = Gross - Commission]
+    G --> H[Add to Total]
+```
+
+**4. Precision Handling**
+
+All calculations use REWARD_PRECISION (1e18) to maintain accuracy:
+
+```solidity
+// Rate stored as tokens per second with 1e18 precision
+uint256 ratePerSecond = 100e18 / 86400;  // 100 tokens/day
+
+// Calculation preserves precision
+uint256 rewardPerToken = duration * ratePerSecond;
+uint256 grossReward = (stake * rewardPerToken) / REWARD_PRECISION;
+```
+
+##### Edge Cases
+
+**1. Validator Slashing**
+- Rewards stop accruing at slashedAtTimestamp
+- Existing unclaimed rewards remain claimable
+- No new rewards after slash time
+
+**2. Mid-Stake Rate Changes**
+- New stakers start earning from their stake timestamp
+- Rate changes don't affect past earnings
+- Checkpoint index tracking prevents double-claiming
+
+**3. Zero Rates**
+- Supported for pausing rewards
+- Checkpoints still created for consistency
+- Previous rewards remain claimable
+
+##### Gas Optimization
+
+**1. Checkpoint Efficiency**
+- Binary search reduces lookup from O(n) to O(log n)
+- Checkpoints only created on rate changes
+- User checkpoint indices tracked to avoid re-processing
+
+**2. Batch Operations**
+- `claimAll()` processes all tokens in one transaction
+- Validator commission settled across all tokens simultaneously
+- Single update for all user rewards per validator
+
+This checkpoint-based system ensures perfect accuracy regardless of when users claim, while maintaining gas efficiency through optimized data structures and algorithms.
+
+#### Slashing Mechanism
+
+Slashing is a two-step process: voting and execution.
+
+```mermaid
+flowchart TD
+    A[Validator Misbehavior] --> B[Active Validators Vote]
+    B --> C{Unanimous?}
+    C -->|No| D[No Action]
+    C -->|Yes| E[TIMELOCK_ROLE Executes]
+    E --> F[Mark Slashed + Inactive]
+    F --> G[Burn Staked Tokens]
+    F --> H[Burn Cooling Tokens]
+    F --> I[Stop Reward Accrual]
+    
+    J[Admin Cleanup] --> K[Clear User Records]
+    
+    style A fill:#fce4ec
+    style E fill:#fff3e0
+    style G fill:#ffcdd2
+    style H fill:#ffcdd2
+```
+
+**Implementation:**
+
+1. **Voting:**
+   - Only active, non-slashed validator admins can vote
+   - Votes expire (configurable max duration)
+   - Requires ALL other active validators to vote YES
+   - Self-voting prohibited
+
+2. **Execution:**
+   - Requires TIMELOCK_ROLE
+   - Checks unanimous vote still active
+   - Irreversible
+
+3. **Effects:**
+   - 100% penalty - all staked and cooling tokens burned
+   - Validator marked slashed, set inactive
+   - Rewards stop at slashedAtTimestamp
+   - Commission forfeited
+   - No user recovery mechanism
+
+4. **Cleanup:**
+   - adminClearValidatorRecord() - single user cleanup
+   - adminBatchClearValidatorRecords() - batch cleanup
+   - Only for slashed validators
+   - Required since users can't recover funds
+
+#### Commission System
+
+Validator commission flow:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant StakingContract
+    participant Validator
+    participant Treasury
+    
+    User->>StakingContract: stake(validatorId)
+    Note over StakingContract: Rewards accrue over time
+    
+    User->>StakingContract: claim()
+    StakingContract->>StakingContract: Calculate gross rewards
+    StakingContract->>StakingContract: Deduct commission
+    StakingContract->>StakingContract: Update validator accrued commission
+    StakingContract->>Treasury: distributeReward(user, netAmount)
+    Treasury->>User: Transfer net rewards
+    
+    Validator->>StakingContract: requestCommissionClaim()
+    Note over StakingContract: 7-day timelock
+    Validator->>StakingContract: finalizeCommissionClaim()
+    StakingContract->>Treasury: distributeReward(validator, commission)
+    Treasury->>Validator: Transfer commission
+```
+
+**Implementation:**
+- Commission stored as rate (scaled by 1e18, max 50%)
+- Changes tracked via checkpoints
+- 7-day timelock on withdrawals (COMMISSION_CLAIM_TIMELOCK)
+- forceSettleValidatorCommission() for manual settlement
+
+**Force Settlement Mechanism:**
+
+```solidity
+function forceSettleValidatorCommission(uint16 validatorId) external
+```
+
+- Permissionless function to trigger commission settlement
+- Iterates all reward tokens and calculates accrued commission
+- Updates validator's commission balance
+- Gas costs borne by caller
+- Useful before commission rate changes or validator updates
+
+### Contract Reference
+
+#### StakingFacet
+
+Core staking operations and user balance management.
+
+##### Write Functions
+
+| Function | Description | Requirements |
+|----------|-------------|--------------|
+| `stake(uint16 validatorId)` | Stake PLUME tokens to a validator | - Payable (msg.value = stake amount)<br>- Validator must be active<br>- Validator not slashed<br>- Amount ≥ minimum stake<br>- Validator has capacity |
+| `stakeOnBehalf(uint16 validatorId, address staker)` | Stake PLUME for another user | Same as stake() |
+| `unstake(uint16 validatorId)` | Unstake all tokens from a validator | - Has stake with validator<br>- Validator not slashed<br>- Starts cooldown period |
+| `unstake(uint16 validatorId, uint256 amount)` | Unstake specific amount | - Has sufficient stake<br>- Validator not slashed<br>- Starts cooldown period |
+| `restake(uint16 validatorId, uint256 amount)` | Move cooling tokens back to staked | - Has cooling tokens<br>- Validator active<br>- Validator not slashed |
+| `withdraw()` | Withdraw tokens after cooldown | - Has completed cooldowns<br>- Automatically skips slashed validators |
+| `restakeRewards(uint16 validatorId)` | Claim and restake PLUME rewards | - Has PLUME rewards<br>- Validator active<br>- Validator not slashed |
+
+##### View Functions
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `amountStaked()` | `uint256` | Total PLUME staked by caller |
+| `amountCooling()` | `uint256` | Total PLUME in cooldown (excludes slashed validators) |
+| `amountWithdrawable()` | `uint256` | PLUME ready to withdraw |
+| `stakeInfo(address user)` | `StakeInfo struct` | Complete staking information for user |
+| `totalAmountStaked()` | `uint256` | System-wide staked PLUME |
+| `totalAmountCooling()` | `uint256` | System-wide cooling PLUME |
+| `totalAmountWithdrawable()` | `uint256` | System-wide withdrawable PLUME |
+| `getUserValidatorStake(address, uint16)` | `uint256` | User's stake with specific validator |
+| `getUserCooldowns(address)` | `CooldownEntry[]` | Active cooldowns (excludes slashed validators) |
+
+#### RewardsFacet
+
+Reward token management and distribution system.
+
+##### Write Functions
+
+| Function | Description | Access Control |
+|----------|-------------|----------------|
+| `setTreasury(address treasury)` | Set reward treasury address | REWARD_MANAGER_ROLE |
+| `addRewardToken(address token)` | Add new reward token | REWARD_MANAGER_ROLE |
+| `removeRewardToken(address token)` | Remove reward token | REWARD_MANAGER_ROLE |
+| `setRewardRates(address[] tokens, uint256[] rates)` | Set emission rates | REWARD_MANAGER_ROLE |
+| `setMaxRewardRate(address token, uint256 rate)` | Set maximum rate limit | REWARD_MANAGER_ROLE |
+| `claim(address token, uint16 validatorId)` | Claim from specific validator | Public |
+| `claim(address token)` | Claim from all validators | Public |
+| `claimAll()` | Claim all tokens from all validators | Public |
+
+##### View Functions
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `earned(address user, address token)` | `uint256` | Total accumulated rewards across validators |
+| `getClaimableReward(address user, address token)` | `uint256` | Currently claimable amount |
+| `getRewardTokens()` | `address[]` | List of reward tokens |
+| `getMaxRewardRate(address token)` | `uint256` | Maximum allowed rate |
+| `getRewardRate(address token)` | `uint256` | Current emission rate |
+| `tokenRewardInfo(address token)` | `RewardInfo struct` | Detailed token information |
+| `getTreasury()` | `address` | Current treasury address |
+| `getPendingRewardForValidator(address, uint16, address)` | `uint256` | Pending rewards for specific validator |
+
+#### ValidatorFacet
+
+Validator lifecycle management and slashing operations.
+
+##### Write Functions
+
+| Function | Description | Access Control |
+|----------|-------------|----------------|
+| `addValidator(...)` | Register new validator | VALIDATOR_ROLE |
+| `setValidatorCapacity(uint16, uint256)` | Update staking capacity | VALIDATOR_ROLE |
+| `setValidatorStatus(uint16, bool)` | Activate/deactivate validator | VALIDATOR_ROLE |
+| `setValidatorCommission(uint16, uint256)` | Update commission rate | Validator Admin |
+| `setValidatorAddresses(uint16, ...)` | Update admin/withdraw addresses | Validator Admin |
+| `requestCommissionClaim(uint16, address)` | Start commission claim timelock | Validator Admin |
+| `finalizeCommissionClaim(uint16, address)` | Complete commission claim | Validator Admin |
+| `voteToSlashValidator(uint16, uint256)` | Vote to slash another validator | Validator Admin |
+| `slashValidator(uint16)` | Execute slashing (requires unanimous vote) | TIMELOCK_ROLE |
+| `forceSettleValidatorCommission(uint16)` | Manually settle accrued commission | Public |
+
+##### View Functions
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `getValidatorInfo(uint16)` | `ValidatorInfo struct` | Complete validator details including slash status |
+| `getValidatorStats(uint16)` | `ValidatorStats struct` | Key metrics for validator |
+| `getUserValidators(address)` | `uint16[]` | Validators user has staked with (excludes slashed) |
+| `getAccruedCommission(uint16, address)` | `uint256` | Unclaimed commission amount |
+| `getValidatorsList()` | `ValidatorData[]` | All validators with core data |
+| `getActiveValidatorCount()` | `uint256` | Number of active, non-slashed validators |
+| `getSlashVoteCount(uint16)` | `uint256` | Current votes to slash validator |
+
+#### ManagementFacet
+
+System parameter configuration and administrative functions.
+
+##### Write Functions
+
+| Function | Description | Access Control |
+|----------|-------------|----------------|
+| `setMinStakeAmount(uint256)` | Set minimum stake requirement | ADMIN_ROLE |
+| `setCooldownInterval(uint256)` | Set unstaking cooldown duration | ADMIN_ROLE |
+| `adminWithdraw(address, uint256, address)` | Emergency fund withdrawal | TIMELOCK_ROLE |
+| `setMaxSlashVoteDuration(uint256)` | Set vote expiration time | ADMIN_ROLE |
+| `setMaxAllowedValidatorCommission(uint256)` | Set system-wide commission cap | ADMIN_ROLE |
+| `adminClearValidatorRecord(address, uint16)` | Clear slashed validator records | ADMIN_ROLE |
+| `adminBatchClearValidatorRecords(address[], uint16)` | Batch clear records | ADMIN_ROLE |
+
+##### View Functions
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `getMinStakeAmount()` | `uint256` | Current minimum stake |
+| `getCooldownInterval()` | `uint256` | Current cooldown duration |
+
+#### AccessControlFacet
+
+OpenZeppelin AccessControl implementation.
+
+##### Initialization
+
+```solidity
+// Must be called after facet deployment
+accessControlFacet.initializeAccessControl()
+```
+
+Grants DEFAULT_ADMIN_ROLE and ADMIN_ROLE to caller, sets up role hierarchy.
+
+### Events Reference
+
+#### Staking Events
+
+| Event | Emitted When | Parameters |
+|-------|--------------|------------|
+| `Staked` | User stakes tokens | `user`, `validatorId`, `amount`, `fromCooling`, `fromParked`, `pendingRewards` |
+| `StakedOnBehalf` | Staking for another user | `sender`, `staker`, `validatorId`, `amount` |
+| `Unstaked` | Unstaking initiated | `user`, `validatorId`, `amount` |
+| `CooldownStarted` | Cooldown period begins | `staker`, `validatorId`, `amount`, `cooldownEnd` |
+| `Withdrawn` | Tokens withdrawn after cooldown | `staker`, `amount` |
+| `RewardsRestaked` | Rewards claimed and restaked | `staker`, `validatorId`, `amount` |
+
+#### Reward Events
+
+| Event | Emitted When | Parameters |
+|-------|--------------|------------|
+| `RewardTokenAdded` | New reward token registered | `token` |
+| `RewardTokenRemoved` | Reward token removed | `token` |
+| `RewardRatesSet` | Emission rates updated | `tokens[]`, `rates[]` |
+| `MaxRewardRateUpdated` | Maximum rate changed | `token`, `newMaxRate` |
+| `RewardRateCheckpointCreated` | Rate checkpoint created | `token`, `validatorId`, `rate`, `timestamp`, `index`, `cumulativeIndex` |
+| `RewardClaimed` | User claims rewards | `user`, `token`, `amount` |
+| `RewardClaimedFromValidator` | Rewards claimed from specific validator | `user`, `token`, `validatorId`, `amount` |
+| `TreasurySet` | Treasury address updated | `treasury` |
+
+#### Validator Events
+
+| Event | Emitted When | Parameters |
+|-------|--------------|------------|
+| `ValidatorAdded` | New validator registered | `validatorId`, `commission`, `l2Admin`, `l2Withdraw`, `l1Val`, `l1Acc`, `l1AccEvm` |
+| `ValidatorUpdated` | Validator details modified | Same as ValidatorAdded |
+| `ValidatorStatusUpdated` | Active/slash status changed | `validatorId`, `active`, `slashed` |
+| `ValidatorCommissionSet` | Commission rate updated | `validatorId`, `oldCommission`, `newCommission` |
+| `ValidatorAddressesSet` | Admin/withdraw addresses changed | All old and new addresses |
+| `ValidatorCapacityUpdated` | Capacity limit changed | `validatorId`, `oldCapacity`, `newCapacity` |
+| `ValidatorCommissionClaimed` | Commission withdrawn | `validatorId`, `token`, `amount` |
+| `SlashVoteCast` | Vote to slash submitted | `targetValidatorId`, `voterValidatorId`, `voteExpiration` |
+| `ValidatorSlashed` | Validator slashed | `validatorId`, `slasher`, `penaltyAmount` |
+| `ValidatorCommissionCheckpointCreated` | Commission checkpoint created | `validatorId`, `rate`, `timestamp` |
+
+#### Administrative Events
+
+| Event | Emitted When | Parameters |
+|-------|--------------|------------|
+| `MinStakeAmountSet` | Minimum stake updated | `amount` |
+| `CooldownIntervalSet` | Cooldown duration updated | `interval` |
+| `AdminWithdraw` | Emergency withdrawal | `token`, `amount`, `recipient` |
+| `MaxSlashVoteDurationSet` | Vote expiration updated | `duration` |
+| `MaxAllowedValidatorCommissionSet` | Commission cap updated | `oldMaxRate`, `newMaxRate` |
+| `AdminClearedSlashedStake` | Slashed stake cleared | `user`, `slashedValidatorId`, `amountCleared` |
+| `AdminClearedSlashedCooldown` | Slashed cooldown cleared | `user`, `slashedValidatorId`, `amountCleared` |
+
+### Errors Reference
+
+#### Critical Errors
+
+| Error | Thrown When |
+|-------|-------------|
+| `ValidatorDoesNotExist(uint16)` | Invalid validator ID |
+| `ValidatorInactive(uint16)` | Validator not active |
+| `ValidatorAlreadySlashed(uint16)` | Validator already slashed |
+| `ActionOnSlashedValidatorError(uint16)` | Operation on slashed validator |
+| `NotValidatorAdmin(address)` | Caller not validator admin |
+| `Unauthorized(address, bytes32)` | Missing required role |
+| `TreasuryNotSet()` | Treasury not configured |
+
+#### Staking Errors
+
+| Error | Thrown When |
+|-------|-------------|
+| `InvalidAmount(uint256)` | Zero or invalid amount |
+| `NoActiveStake()` | No stake to unstake |
+| `StakeAmountTooSmall(uint256, uint256)` | Below minimum stake |
+| `InsufficientFunds(uint256, uint256)` | Insufficient balance |
+| `CooldownPeriodNotEnded()` | Cooldown not complete |
+| `NoRewardsToRestake()` | No rewards available |
+| `ExceedsValidatorCapacity(uint16, uint256, uint256, uint256)` | Over validator capacity |
+| `ValidatorPercentageExceeded()` | Over 33% total stake |
+
+#### Commission/Reward Errors
+
+| Error | Thrown When |
+|-------|-------------|
+| `CommissionExceedsMaxAllowed(uint256, uint256)` | Commission > max allowed |
+| `InvalidMaxCommissionRate(uint256, uint256)` | Max rate > 50% |
+| `PendingClaimExists(uint16, address)` | Claim already pending |
+| `NoPendingClaim(uint16, address)` | No claim to finalize |
+| `ClaimNotReady(uint16, address, uint256)` | Timelock not passed |
+| `TokenDoesNotExist(address)` | Unknown reward token |
+| `RewardRateExceedsMax()` | Rate > max allowed |
+
+#### Slashing Errors
+
+| Error | Thrown When |
+|-------|-------------|
+| `SlashVoteDurationTooLong()` | Vote expiration > max |
+| `CannotVoteForSelf()` | Self-voting attempt |
+| `AlreadyVotedToSlash(uint16, uint16)` | Duplicate vote |
+| `UnanimityNotReached(uint256, uint256)` | Missing votes |
+| `SlashVoteExpired(uint16, uint16)` | Vote expired |
+
+See PlumeErrors.sol for complete list.
+
+### Constants and Roles
+
+#### System Roles
+
+| Role | Purpose | Key Permissions |
+|------|---------|-----------------|
+| `ADMIN_ROLE` | System administration | - Manage all other roles<br>- Set system parameters<br>- Emergency functions<br>- Clear slashed records |
+| `UPGRADER_ROLE` | Contract upgrades | - Execute diamondCut<br>- Upgrade facets |
+| `VALIDATOR_ROLE` | Validator management | - Add validators<br>- Set capacities<br>- Update statuses |
+| `REWARD_MANAGER_ROLE` | Reward configuration | - Set reward rates<br>- Manage tokens<br>- Configure treasury |
+| `TIMELOCK_ROLE` | Time-sensitive operations | - Execute slashing<br>- Set cooldown interval |
+
+#### System Constants
+
+| Constant | Value | Usage |
+|----------|-------|--------|
+| `PLUME_NATIVE` | 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE | Native PLUME token address |
+| `REWARD_PRECISION` | 1e18 | Precision for rate calculations |
+| `COMMISSION_CLAIM_TIMELOCK` | 7 days | Validator commission withdrawal delay |
+| `MAX_COMMISSION` | 50% (0.5e18) | Hard cap on validator commission |
+| `STORAGE_SLOT` | keccak256("plume.storage.PlumeStaking") | Diamond storage location |
+
+---
+
+## Spin and Raffle Contracts
+
+### Environment Setup
+
+`.env` configuration:
+
+```bash
+# Network
+RPC_URL="https://rpc.plume.org"
 PRIVATE_KEY=<DEPLOY_WALLET_PRIVATE_KEY>
 
+# Contract Addresses (for upgrades)
 SPIN_PROXY_ADDRESS=<NEEDED_FOR_UPGRADE>
 RAFFLE_PROXY_ADDRESS=<NEEDED_FOR_UPGRADE>
 
+# Supra Oracle
 SUPRA_ROUTER_ADDRESS=0xE1062AC81e76ebd17b1e283CEed7B9E8B2F749A5
 SUPRA_DEPOSIT_CONTRACT_ADDRESS=0x6DA36159Fe94877fF7cF226DBB164ef7f8919b9b
 SUPRA_GENERATOR_CONTRACT_ADDRESS=0x8cC8bbE991d8B4371551B4e666Aa212f9D5f165e
+
+# Utilities
 DATETIME_ADDRESS=0x06a40Ec10d03998634d89d2e098F079D06A8FA83
-BLOCKSCOUT_URL=https://phoenix-explorer.plumenetwork.xyz/api?
+BLOCKSCOUT_URL=https://explorer.plume.org/api?
 ```
 
-### Build
-```
+### Build Instructions
+
+```bash
 forge clean && forge build --via-ir --build-info
 ```
 
-### Deploy (including the Supra whitelisting and added Role Creation)  
+### Deployment Guide
 
-Run the command below, and then after you'll want to verify the contracts.  The output of the deploy scripts explains the verification command.
+Deploy Spin and Raffle contracts with Supra whitelisting:
 
-```
-source .env && forge script script/DeploySpinRaffleContracts.s.sol --rpc-url https://phoenix-rpc.plumenetwork.xyz --broadcast --via-ir
-```
-
-### Upgrade (whichever you want to upgrade or both)
-
-```
-source .env && forge script script/UpgradeSpinContract.s.sol     --rpc-url https://phoenix-rpc.plumenetwork.xyz     --broadcast     --via-ir
-source .env && forge script script/UpgradeRaffleContract.s.sol     --rpc-url https://phoenix-rpc.plumenetwork.xyz     --broadcast     --via-ir
+```bash
+source .env && forge script script/DeploySpinRaffleContracts.s.sol \
+    --rpc-url https://rpc.plume.org \
+    --broadcast \
+    --via-ir
 ```
 
-### Next steps to launch Spin and Raffle
+Save proxy addresses from deployment output for upgrades.
 
+### Upgrade Process
+
+```bash
+# Spin Contract
+source .env && forge script script/UpgradeSpinContract.s.sol \
+    --rpc-url https://rpc.plume.org \
+    --broadcast \
+    --via-ir
+
+# Raffle Contract
+source .env && forge script script/UpgradeRaffleContract.s.sol \
+    --rpc-url https://rpc.plume.org \
+    --broadcast \
+    --via-ir
 ```
- - Raffle: addPrize() -- set up the prizes
- - Spin: setCampaignStartDate() -- set to start time for weekbased date calculations
- - Spin: setEnabledSpin(true)
+
+### Launch Steps
+
+```solidity
+// 1. Configure Raffle Prizes
+raffle.addPrize(prizeId, prizeDetails);
+
+// 2. Set Campaign Start Date (Spin)
+spin.setCampaignStartDate(startTimestamp);
+
+// 3. Enable Spin
+spin.setEnabledSpin(true);
 ```
+
+---
+
+*This documentation is maintained alongside the smart contracts. For the latest updates, please refer to the repository.*
