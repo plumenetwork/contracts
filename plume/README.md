@@ -106,7 +106,8 @@ Users receive net rewards (gross - commission)
 
 Checkpoint System
 The system uses checkpoints to track historical changes in rates:
-mermaidgraph TD
+```mermaid
+graph TD
     A[Rate Change Event] --> B[Create Checkpoint]
     B --> C[Store: Timestamp, Rate, Cumulative Index]
     C --> D[Use for Historical Calculations]
@@ -115,12 +116,17 @@ mermaidgraph TD
     F --> G[Calculate Rewards per Time Segment]
     G --> H[Apply Commission per Segment]
     H --> I[Sum All Segments]
+```
+
 Checkpoint Structure
-soliditystruct RateCheckpoint {
+```solidity
+struct RateCheckpoint {
     uint256 timestamp;      // When this rate became active
     uint256 rate;          // Rate in tokens per second per staked token
     uint256 cumulativeIndex; // Accumulated reward per token at this point
 }
+```
+
 Reward Calculation Algorithm
 Step 1: Time Segmentation
 When a user claims rewards, the system divides the time period into segments based on rate changes:
@@ -167,7 +173,6 @@ gantt
     title Reward Calculation Example
     dateFormat MM-DD
     axisFormat %m-%d
-    
     section Staking
     User stakes 1000 PLUME    :milestone, 01-01, 0d
     
