@@ -1,4 +1,4 @@
-# PlumeStaking and Spin/Raffle Comprehensive Documentation
+# PlumeStaking and Spin/Raffle Contracts
 
 ## Table of Contents
 
