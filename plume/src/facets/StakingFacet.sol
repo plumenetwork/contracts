@@ -368,7 +368,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Iterate through validators the user might have cooling funds with
         // to process any matured cooldowns and move them to the user's parked balance.
-        // MODIFIED: Iterate backwards to safely remove items
+        // Iterate backwards to safely remove items
         for (uint256 i = userAssociatedValidators.length; i > 0; i--) {
             uint256 currentIndex = i - 1;
             uint16 validatorId_iterator = userAssociatedValidators[currentIndex];
