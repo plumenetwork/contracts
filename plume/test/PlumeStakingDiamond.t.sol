@@ -5055,4 +5055,406 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
     }
 
+    function testRewardsLostOnStakeAfterUnstake() public {
+        console2.log("--- Test: testRewardsLostOnStakeAfterUnstake START ---");
+
+        vm.startPrank(admin);
+
+        // Set up reward tokens
+        address[] memory initialTokens = new address[](2); // MODIFIED: Size is now 2
+        initialTokens[0] = address(pUSD);
+        initialTokens[1] = PLUME_NATIVE; // ADDED: PLUME_NATIVE to tokens array
+
+        uint256[] memory initialRates = new uint256[](2); // MODIFIED: Size is now 2
+        initialRates[0] = 0; // Rate for pUSD
+        initialRates[1] = PLUME_REWARD_RATE; // ADDED: Rate for PLUME_NATIVE (using your existing constant)
+
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(address(pUSD), 1e18);
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, 1e18);
+        RewardsFacet(address(diamondProxy)).setRewardRates(initialTokens, initialRates); // MODIFIED: This call now
+            // includes PLUME_NATIVE and its rate
+
+        vm.stopPrank();
+
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+        address staker = user1;
+        uint256 initialStakeAmount = 100 ether;
+        uint256 secondStakeAmount = 50 ether;
+        address rewardToken = PLUME_NATIVE; // Assuming PLUME_NATIVE is a reward token
+
+        // Ensure user1 has enough PLUME (ETH for native staking)
+        vm.deal(staker, initialStakeAmount + secondStakeAmount + 1 ether); // +1 for gas
+
+        // 1. Initial Stake by User1
+        vm.startPrank(staker);
+        StakingFacet(address(diamondProxy)).stake{ value: initialStakeAmount }(validatorId);
+        uint256 stake1Timestamp = block.timestamp;
+        console2.log(
+            "User1 staked %s at timestamp %s to validator %s", initialStakeAmount, stake1Timestamp, validatorId
+        );
+        vm.stopPrank();
+
+        // 2. Let time pass to accrue rewards
+        uint256 timeToAccrueRewards = 1 days;
+        vm.warp(block.timestamp + timeToAccrueRewards);
+        vm.roll(block.number + 1); // Ensure warp takes effect
+        console2.log("Warped time by %s seconds. Current timestamp: %s", timeToAccrueRewards, block.timestamp);
+
+        // Perform a view call to trigger reward updates if necessary (some systems do this)
+        // This also helps ensure the reward calculation logic has run before we check earned rewards.
+        RewardsFacet(address(diamondProxy)).getClaimableReward(staker, rewardToken);
+
+        // 3. Check earned rewards BEFORE unstaking
+        uint256 rewardsBeforeUnstake = RewardsFacet(address(diamondProxy)).getClaimableReward(staker, rewardToken);
+        assertGt(rewardsBeforeUnstake, 0, "User1 should have accrued some rewards before unstaking.");
+        console2.log("User1 has %s of token %s claimable BEFORE unstake.", rewardsBeforeUnstake, rewardToken);
+
+        // 4. User1 unstakes the full amount
+        vm.startPrank(staker);
+        StakingFacet(address(diamondProxy)).unstake(validatorId, initialStakeAmount);
+        uint256 unstakeTimestamp = block.timestamp;
+        console2.log(
+            "User1 unstaked %s at timestamp %s from validator %s", initialStakeAmount, unstakeTimestamp, validatorId
+        );
+
+        // Check stake info: staked should be 0, cooled should be initialStakeAmount
+        PlumeStakingStorage.StakeInfo memory stakeInfoAfterUnstake =
+            StakingFacet(address(diamondProxy)).stakeInfo(staker);
+        assertEq(stakeInfoAfterUnstake.staked, 0, "Staked amount should be 0 after unstake.");
+        assertEq(
+            stakeInfoAfterUnstake.cooled,
+            initialStakeAmount,
+            "Cooled amount should be initialStakeAmount after unstake."
+        );
+
+        // 5. Check earned rewards AFTER unstaking (but before cooldown ends and before new stake)
+        // Rewards should still be claimable and should be the same as before unstaking.
+        uint256 rewardsAfterUnstake = RewardsFacet(address(diamondProxy)).getClaimableReward(staker, rewardToken);
+        assertEq(
+            rewardsAfterUnstake,
+            rewardsBeforeUnstake,
+            "Claimable rewards should remain the same immediately after unstaking the staked portion."
+        );
+        console2.log(
+            "User1 has %s of token %s claimable AFTER unstake (before new stake).", rewardsAfterUnstake, rewardToken
+        );
+        vm.stopPrank(); // Stop staker's prank
+
+        // 6. User1 stakes a NEW amount with the SAME validator (before cooldown of previous stake ends, and without
+        // claiming)
+        vm.startPrank(staker);
+        StakingFacet(address(diamondProxy)).stake{ value: secondStakeAmount }(validatorId);
+        uint256 stake2Timestamp = block.timestamp;
+        console2.log(
+            "User1 staked a NEW amount of %s at timestamp %s to validator %s",
+            secondStakeAmount,
+            stake2Timestamp,
+            validatorId
+        );
+
+        // Check stake info: staked should be secondStakeAmount, cooled should still be initialStakeAmount
+        PlumeStakingStorage.StakeInfo memory stakeInfoAfterSecondStake =
+            StakingFacet(address(diamondProxy)).stakeInfo(staker);
+        assertEq(
+            stakeInfoAfterSecondStake.staked,
+            secondStakeAmount,
+            "Staked amount should be secondStakeAmount after new stake."
+        );
+        assertEq(
+            stakeInfoAfterSecondStake.cooled,
+            initialStakeAmount,
+            "Cooled amount should remain initialStakeAmount after new stake."
+        );
+
+        // 7. CRITICAL CHECK: Check earned rewards AFTER the second stake
+        // This is where the bug might manifest. The previously accrued rewards (rewardsAfterUnstake) should ideally
+        // still be there.
+        uint256 rewardsAfterSecondStake = RewardsFacet(address(diamondProxy)).getClaimableReward(staker, rewardToken);
+        console2.log("User1 has %s of token %s claimable AFTER second stake.", rewardsAfterSecondStake, rewardToken);
+
+        // The assertion: rewards should not be less than what was accrued before the second stake.
+        // It might be slightly higher if a tiny bit of time passed and new rewards accrued on the second stake,
+        // but it should definitely not be zero or significantly less than rewardsAfterUnstake.
+        assertTrue(
+            rewardsAfterSecondStake >= rewardsAfterUnstake,
+            "Rewards after second stake should not be less than rewards accrued before it."
+        );
+        // A more precise check might be needed if the system *is* expected to auto-claim or reset something,
+        // but based on the bug description, this is the expectation.
+
+        // If the bug is that rewards are completely lost, this will fail:
+        assertGt(
+            rewardsAfterSecondStake,
+            0,
+            "Rewards should still be greater than 0 after second stake if they were non-zero before."
+        );
+        assertEq(
+            rewardsAfterSecondStake,
+            rewardsAfterUnstake,
+            "Rewards after second stake SHOULD BE THE SAME as rewards accrued before it, if no new rewards are calculated from the new stake yet or if the new stake doesn't affect old pending rewards."
+        );
+
+        // 8. Let more time pass to see if rewards accrue correctly on the new stake amount
+        uint256 anotherTimeToAccrue = 1 hours;
+        vm.warp(block.timestamp + anotherTimeToAccrue);
+        vm.roll(block.number + 1);
+        console2.log("Warped time by an additional %s seconds.", anotherTimeToAccrue);
+
+        uint256 finalRewards = RewardsFacet(address(diamondProxy)).getClaimableReward(staker, rewardToken);
+        console2.log("User1 has %s of token %s claimable at the end.", finalRewards, rewardToken);
+        // Rewards should now be at least what they were after the second stake, plus new rewards.
+        assertTrue(
+            finalRewards > rewardsAfterSecondStake,
+            "Final rewards should be greater than rewards after second stake, due to new accrual."
+        );
+
+        vm.stopPrank();
+        console2.log("--- Test: testRewardsLostOnStakeAfterUnstake END ---");
+    }
+
+    function testStakeUnstakeWithdrawMultipleValidators() public {
+        console2.log("--- Test: testStakeUnstakeWithdrawMultipleValidators START ---");
+
+        vm.startPrank(admin); // Assuming 'admin' has VALIDATOR_ROLE
+
+        // --- START: Add 10 validators for this test ---
+        console2.log("Adding 10 validators for testStakeUnstakeWithdrawMultipleValidators...");
+
+        uint16 numValidatorsToAdd = 10;
+        uint256 defaultCommission = 5e16; // 5%
+
+        string memory defaultL1ValidatorAddr = "0xMultiValL1";
+        string memory defaultL1AccountAddr = "0xMultiAccL1";
+        address defaultL1AccountEvmAddr = address(0xAAAA);
+        uint256 defaultMaxCapacity = 1_000_000e18;
+
+        for (uint16 i = 0; i < numValidatorsToAdd; i++) {
+            bool validatorAlreadyExists = false;
+            try ValidatorFacet(address(diamondProxy)).getValidatorInfo(i) {
+                validatorAlreadyExists = true; // If it doesn't revert, validator exists
+            } catch Error(string memory reason) {
+                if (keccak256(bytes(reason)) != keccak256(abi.encodeWithSelector(ValidatorDoesNotExist.selector, i))) {
+                    revert(reason); // Re-throw if it's an unexpected error
+                }
+                validatorAlreadyExists = false;
+            } catch (bytes memory lowLevelData) {
+                validatorAlreadyExists = false;
+            }
+
+            if (!validatorAlreadyExists) {
+                address currentL2Admin;
+                // Use pre-defined admins for validators 0 and 1
+                if (i == 0) {
+                    currentL2Admin = validatorAdmin; // From global setUp
+                } else if (i == 1) {
+                    currentL2Admin = user2; // From global setUp
+                } else {
+                    // Create a NEW unique admin for other validators (2 through 9)
+                    currentL2Admin = makeAddr(string(abi.encodePacked("valAdmin", i)));
+                    vm.deal(currentL2Admin, 1 ether); // Give the new admin some ETH
+                }
+
+                ValidatorFacet(address(diamondProxy)).addValidator(
+                    i,
+                    defaultCommission,
+                    currentL2Admin,
+                    currentL2Admin, // L2 withdraw usually same as admin
+                    string(abi.encodePacked(defaultL1ValidatorAddr, i)),
+                    string(abi.encodePacked(defaultL1AccountAddr, i)),
+                    address(uint160(defaultL1AccountEvmAddr) + i),
+                    defaultMaxCapacity
+                );
+                console2.log("Added validator %s with admin %s", i, currentL2Admin);
+            } else {
+                //console2.log("Validator %s (admin: %s) already exists, skipping.", i,
+                // ValidatorFacet(address(diamondProxy)).getValidatorInfo(i));
+            }
+        }
+
+        console2.log("Finished adding/verifying 10 validators.");
+        // --- END: Add 10 validators ---
+
+        address[] memory initialTokens = new address[](2);
+        initialTokens[0] = address(pUSD);
+        initialTokens[1] = PLUME_NATIVE;
+        uint256[] memory initialRates = new uint256[](2);
+        initialRates[0] = 0; // No PUSD rewards
+        initialRates[1] = PLUME_REWARD_RATE; // %5
+
+        // We should also set a max rate for PLUME_NATIVE here
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, 1e18);
+        RewardsFacet(address(diamondProxy)).setRewardRates(initialTokens, initialRates); // Only sets pUSD rate
+
+        vm.stopPrank();
+
+        // --- Test Configuration ---
+        address staker = user1; // Or any other user set up in your script
+        uint256 stakeAmountPerValidator = 1 ether;
+        uint16 numValidatorsToTest = 10;
+        uint256 totalExpectedStake = stakeAmountPerValidator * numValidatorsToTest;
+        address rewardToken = PLUME_NATIVE; // Assuming PLUME_NATIVE is the native staking/reward token
+
+        // Ensure staker has enough ETH for all stakes + gas
+        vm.deal(staker, totalExpectedStake + (1 ether)); // Extra 1 ETH for gas across multiple transactions
+
+        // --- Validator IDs Setup ---
+        // IMPORTANT: Ensure these validators exist and are active in your forked environment.
+        // Adjust this logic if your validator IDs are not sequential or start from a different base.
+        uint16[] memory validatorIds = new uint16[](numValidatorsToTest);
+        for (uint16 i = 0; i < numValidatorsToTest; i++) {
+            validatorIds[i] = uint16(DEFAULT_VALIDATOR_ID + i); // Example: If DEFAULT_VALIDATOR_ID is 0, uses 0-9
+                // Add a check or log to ensure validator validity if needed for your setup
+                // console2.log("Using validator ID for test: %s", validatorIds[i]);
+                // You might want to check $.validatorExists[validatorIds[i]] and $.validators[validatorIds[i]].active
+                // if these are not guaranteed by your script's setup.
+        }
+        console2.log("Prepared to test with %s validators.", numValidatorsToTest);
+
+        // --- 1. Stake 1 PLUME to each of the 10 different validators ---
+        vm.startPrank(staker);
+        console2.log("Starting stakes for user %s", staker);
+        for (uint16 i = 0; i < numValidatorsToTest; i++) {
+            StakingFacet(address(diamondProxy)).stake{ value: stakeAmountPerValidator }(validatorIds[i]);
+            console2.log(
+                " - Staked %s to validator %s at timestamp %s",
+                stakeAmountPerValidator,
+                validatorIds[i],
+                block.timestamp
+            );
+        }
+        vm.stopPrank();
+        console2.log("Finished staking to %s validators.", numValidatorsToTest);
+
+        // --- 2. Let time pass to accrue rewards ---
+        uint256 timeToAccrueRewards = 1 days; // Arbitrary duration for reward accrual
+        vm.warp(block.timestamp + timeToAccrueRewards);
+        vm.roll(block.number + (timeToAccrueRewards / 12)); // Advance blocks proportionally
+        console2.log(
+            "Warped time by %s seconds for reward accrual. Current timestamp: %s", timeToAccrueRewards, block.timestamp
+        );
+
+        // Sanity check: rewards should have accrued
+        uint256 rewardsBeforeUnstake = RewardsFacet(address(diamondProxy)).getClaimableReward(staker, rewardToken);
+        assertGt(rewardsBeforeUnstake, 0, "User should have accrued some rewards before unstaking.");
+        console2.log(
+            "User %s has %s of token %s claimable BEFORE any unstakes.", staker, rewardsBeforeUnstake, rewardToken
+        );
+
+        // --- 3. Unstake all of them one by one ---
+        vm.startPrank(staker);
+        console2.log("Starting unstakes for user %s", staker);
+        for (uint16 i = 0; i < numValidatorsToTest; i++) {
+            StakingFacet(address(diamondProxy)).unstake(validatorIds[i], stakeAmountPerValidator);
+            console2.log(
+                " - Unstaked %s from validator %s. Cooldown started at %s",
+                stakeAmountPerValidator,
+                validatorIds[i],
+                block.timestamp
+            );
+        }
+        vm.stopPrank();
+        console2.log("Finished unstaking from %s validators.", numValidatorsToTest);
+
+        // Verify user's global stake info after all unstakes
+        PlumeStakingStorage.StakeInfo memory stakeInfoAfterUnstakes =
+            StakingFacet(address(diamondProxy)).stakeInfo(staker);
+        assertEq(stakeInfoAfterUnstakes.staked, 0, "User's total active stake should be 0 after unstaking all.");
+        assertEq(
+            stakeInfoAfterUnstakes.cooled,
+            totalExpectedStake,
+            "User's total cooled amount should be the sum of all unstaked amounts."
+        );
+        console2.log("UserGlobalStakeInfo - user:", staker);
+        console2.log("UserGlobalStakeInfo - staked:", stakeInfoAfterUnstakes.staked);
+        console2.log("UserGlobalStakeInfo - cooled:", stakeInfoAfterUnstakes.cooled);
+        console2.log("UserGlobalStakeInfo - parked:", stakeInfoAfterUnstakes.parked);
+
+        // --- 4. Warp time to ensure all cooldown periods have ended ---
+        uint256 cooldownInterval = ManagementFacet(address(diamondProxy)).getCooldownInterval();
+        uint256 timeToWarpForCooldown = cooldownInterval + (1 hours); // Add a small buffer
+        vm.warp(block.timestamp + timeToWarpForCooldown);
+        vm.roll(block.number + (timeToWarpForCooldown / 12)); // Advance blocks
+        console2.log(
+            "Warped time by cooldown interval + 1 hour (%s seconds). Current timestamp: %s",
+            timeToWarpForCooldown,
+            block.timestamp
+        );
+
+        // --- 5. Try to withdraw ---
+        uint256 balanceBeforeWithdraw = staker.balance;
+        console2.log("Staker ETH balance before withdraw: %s", balanceBeforeWithdraw);
+
+        vm.startPrank(staker);
+        StakingFacet(address(diamondProxy)).withdraw();
+        vm.stopPrank();
+        console2.log("Withdraw call completed for user %s.", staker);
+
+        uint256 balanceAfterWithdraw = staker.balance;
+        console2.log("Staker ETH balance after withdraw: %s", balanceAfterWithdraw);
+
+        // --- Assertions ---
+        // 6. Expected result: User should get 10 PLUME (totalExpectedStake) back.
+        uint256 actualBalanceIncrease = balanceAfterWithdraw - balanceBeforeWithdraw;
+        console2.log(
+            "Actual ETH balance increase from withdraw: %s (expected approx %s before gas)",
+            actualBalanceIncrease,
+            totalExpectedStake
+        );
+
+        // Account for gas costs. The actual increase will be `totalExpectedStake - gasForWithdraw`.
+        // So, actualBalanceIncrease should be slightly less than totalExpectedStake.
+        uint256 gasToleranceForWithdraw = 0.01 ether; // Adjust this based on observed gas for withdraw()
+        assertTrue(
+            actualBalanceIncrease <= totalExpectedStake
+                && actualBalanceIncrease >= totalExpectedStake - gasToleranceForWithdraw,
+            string(
+                abi.encodePacked(
+                    "Balance increase after withdraw is not as expected. Expected approx ",
+                    vm.toString(totalExpectedStake),
+                    " (minus gas), got ",
+                    vm.toString(actualBalanceIncrease)
+                )
+            )
+        );
+
+        // 7. Rewards should still be there.
+        uint256 rewardsAfterWithdraw = RewardsFacet(address(diamondProxy)).getClaimableReward(staker, rewardToken);
+        console2.log(
+            "User %s claimable rewards for token %s AFTER withdraw: %s", staker, rewardToken, rewardsAfterWithdraw
+        );
+
+        assertGt(rewardsAfterWithdraw, 0, "Rewards should still be greater than 0 after withdraw.");
+        // Rewards after withdraw should be very close to rewards before unstake, assuming withdraw() doesn't claim
+        // and no significant time passed during the withdraw tx itself to accrue more.
+        // A small tolerance for dust or minor calculations during view calls in withdraw might be needed.
+        uint256 rewardComparisonTolerance = rewardsBeforeUnstake / 1000; // 0.1% tolerance, or a small fixed wei amount
+        if (rewardComparisonTolerance == 0 && rewardsBeforeUnstake > 0) {
+            rewardComparisonTolerance = 1;
+        } // Avoid division by zero if rewards are tiny but non-zero
+
+        assertApproxEqAbs(
+            rewardsAfterWithdraw,
+            rewardsBeforeUnstake,
+            rewardComparisonTolerance,
+            "Rewards after withdraw should be approximately the same as rewards before unstaking."
+        );
+
+        // Final check on user's stake info: cooled and parked should be 0.
+        PlumeStakingStorage.StakeInfo memory stakeInfoAfterWithdraw =
+            StakingFacet(address(diamondProxy)).stakeInfo(staker);
+        assertEq(stakeInfoAfterWithdraw.staked, 0, "User's total active stake should remain 0.");
+        assertEq(
+            stakeInfoAfterWithdraw.cooled,
+            0,
+            "User's total cooled amount should be 0 after successful processing in withdraw."
+        );
+        assertEq(stakeInfoAfterWithdraw.parked, 0, "User's total parked amount should be 0 after successful withdraw.");
+        console2.log("UserFinalGlobalStakeInfo - user:", staker);
+        console2.log("UserFinalGlobalStakeInfo - staked:", stakeInfoAfterWithdraw.staked);
+        console2.log("UserFinalGlobalStakeInfo - cooled:", stakeInfoAfterWithdraw.cooled);
+        console2.log("UserFinalGlobalStakeInfo - parked:", stakeInfoAfterWithdraw.parked);
+
+        console2.log("--- Test: testStakeUnstakeWithdrawMultipleValidators END ---");
+    }
+
 }

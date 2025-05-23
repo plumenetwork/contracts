@@ -67,7 +67,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
     using Address for address payable;
 
-
     function _checkValidatorSlashedAndRevert(
         uint16 validatorId
     ) internal view {
@@ -150,9 +149,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                     $.userValidatorRewardPerTokenPaid[msg.sender][validatorId][token] =
                         $.validatorRewardPerTokenCumulative[validatorId][token];
                     $.userValidatorRewardPerTokenPaidTimestamp[msg.sender][validatorId][token] = block.timestamp;
-
-                    // 3. Initialize any stored pending rewards for this specific validator/token to zero.
-                    $.userRewards[msg.sender][validatorId][token] = 0;
 
                     // 4. Set user's last processed checkpoint index for this validator/token.
                     if ($.validatorRewardRateCheckpoints[validatorId][token].length > 0) {
@@ -372,13 +368,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Iterate through validators the user might have cooling funds with
         // to process any matured cooldowns and move them to the user's parked balance.
-        for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
-            uint16 validatorId_iterator = userAssociatedValidators[i];
+        // MODIFIED: Iterate backwards to safely remove items
+        for (uint256 i = userAssociatedValidators.length; i > 0; i--) {
+            uint256 currentIndex = i - 1;
+            uint16 validatorId_iterator = userAssociatedValidators[currentIndex];
             PlumeStakingStorage.CooldownEntry storage cooldownEntry =
                 $.userValidatorCooldowns[user][validatorId_iterator];
-
-            // console2.log("SF.withdraw LOOP - index:%s, valId:%s, cd.amount:%s, cd.endTime:%s, block.ts:%s",
-            //     i, validatorId_iterator, cooldownEntry.amount, cooldownEntry.cooldownEndTime, block.timestamp);
 
             if (cooldownEntry.amount == 0) {
                 continue; // No active cooldown with this validator for this user
@@ -389,10 +384,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 // Validator is slashed. Check if cooldown ended BEFORE the slash.
                 uint256 slashTs = $.validators[validatorId_iterator].slashedAtTimestamp;
                 if (cooldownEntry.cooldownEndTime < slashTs && block.timestamp >= cooldownEntry.cooldownEndTime) {
-
                     canRecoverFromThisCooldown = true;
                 }
-
             } else if ($.validatorExists[validatorId_iterator] && !$.validators[validatorId_iterator].slashed) {
                 // Validator is NOT slashed. Check if cooldown matured normally.
                 if (block.timestamp >= cooldownEntry.cooldownEndTime) {
@@ -404,7 +397,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             if (canRecoverFromThisCooldown) {
                 uint256 amountInThisCooldown = cooldownEntry.amount;
                 amountMovedToParkedThisCall += amountInThisCooldown;
-
 
                 // Decrement from user's global sum of cooled funds
                 if (userGlobalStakeInfo.cooled >= amountInThisCooldown) {
@@ -421,6 +413,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                         $.validatorTotalCooling[validatorId_iterator] = 0;
                     }
                 }
+
                 // Note: $.totalCooling is a global sum. If validator was slashed, its contribution was already removed.
                 // If not slashed, we remove it here.
                 if ($.totalCooling >= amountInThisCooldown) {
@@ -437,14 +430,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             }
         }
 
-
         if (amountMovedToParkedThisCall > 0) {
             userGlobalStakeInfo.parked += amountMovedToParkedThisCall;
             // $.totalWithdrawable is already tracking $.stakeInfo[user].parked effectively,
             // plus what withdraw() itself makes available. We add the newly parked amount here.
             // This was previously missing direct addition if funds were moved from cooled to parked within this call.
             $.totalWithdrawable += amountMovedToParkedThisCall;
-
         }
 
         uint256 amountToActuallyWithdraw = userGlobalStakeInfo.parked;
@@ -537,8 +528,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                     $.userValidatorRewardPerTokenPaid[staker][validatorId][token] =
                         $.validatorRewardPerTokenCumulative[validatorId][token];
                     $.userValidatorRewardPerTokenPaidTimestamp[staker][validatorId][token] = block.timestamp;
-                    $.userRewards[staker][validatorId][token] = 0;
 
+                    // 4. Set user's last processed checkpoint index for this validator/token.
                     if ($.validatorRewardRateCheckpoints[validatorId][token].length > 0) {
                         $.userLastCheckpointIndex[staker][validatorId][token] =
                             $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
@@ -579,7 +570,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // --- BEGIN: Process Matured Cooldowns (similar to withdraw() beginning) ---
         PlumeStakingStorage.StakeInfo storage userGlobalStakeInfo = $.stakeInfo[user];
         uint256 amountMovedToParkedThisCall = 0;
-        uint16[] storage userAssociatedValidatorsLoop = $.userValidators[user]; 
+        uint16[] storage userAssociatedValidatorsLoop = $.userValidators[user];
 
         for (uint256 i = 0; i < userAssociatedValidatorsLoop.length; i++) {
             uint16 validatorId_iterator = userAssociatedValidatorsLoop[i];

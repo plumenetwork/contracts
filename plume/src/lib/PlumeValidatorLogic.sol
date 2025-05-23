@@ -104,11 +104,21 @@ library PlumeValidatorLogic {
         }
 
         // Part 2: Manage $.userValidators list (user's list of ANY association with a validator)
-        // This runs if active stake for this validator is zero AND their cooldown amount for this validator is zero.
+        // This runs if active stake for this validator is zero AND their cooldown amount for this validator is zero
+        // AND they have no pending rewards for this validator.
         bool hasActiveStakeForThisVal = $.userValidatorStakes[staker][validatorId].staked > 0;
         bool hasActiveCooldownForThisVal = $.userValidatorCooldowns[staker][validatorId].amount > 0;
+        bool hasPendingRewardsForThisVal = false;
 
-        if (!hasActiveStakeForThisVal && !hasActiveCooldownForThisVal) {
+        address[] memory rewardTokens = $.rewardTokens;
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            if ($.userRewards[staker][validatorId][rewardTokens[i]] > 0) {
+                hasPendingRewardsForThisVal = true;
+                break;
+            }
+        }
+
+        if (!hasActiveStakeForThisVal && !hasActiveCooldownForThisVal && !hasPendingRewardsForThisVal) {
             if ($.userHasStakedWithValidator[staker][validatorId]) {
                 // Check if they are currently in the userValidators list (via this mapping)
                 uint16[] storage userValidators_ = $.userValidators[staker];
