@@ -124,7 +124,9 @@ soliditystruct RateCheckpoint {
 Reward Calculation Algorithm
 Step 1: Time Segmentation
 When a user claims rewards, the system divides the time period into segments based on rate changes:
-mermaidtimeline
+
+```mermaid
+timeline
     title Reward Calculation Timeline
     
     section User Stakes
@@ -141,6 +143,8 @@ mermaidtimeline
     section User Claims
         Jan 30 : User claims rewards
                : Calculate 4 segments
+```
+
 Step 2: Segment-by-Segment Calculation
 For each time segment, calculate:
 
@@ -157,6 +161,7 @@ Token: REWARD_TOKEN with 18 decimals
 Precision: All rates use REWARD_PRECISION = 1e18
 
 Timeline of Events
+
 ```mermaid
 gantt
     title Reward Calculation Example
