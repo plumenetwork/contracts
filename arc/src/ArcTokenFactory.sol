@@ -190,6 +190,8 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         token.setTokenURI(tokenUri);
 
         // Grant all necessary roles to the owner
+        // Grant the DEFAULT_ADMIN_ROLE to the deployer
+        token.grantRole(token.DEFAULT_ADMIN_ROLE(), msg.sender);
         token.grantRole(token.ADMIN_ROLE(), msg.sender);
         token.grantRole(token.MANAGER_ROLE(), msg.sender);
         token.grantRole(token.YIELD_MANAGER_ROLE(), msg.sender);
