@@ -174,6 +174,8 @@ gantt
     section Claim
     User claims rewards       :milestone, 01-30, 0d
 ```
+
+
 Checkpoints Created
 Reward Rate Checkpoints (Validator A, REWARD_TOKEN):
 ```javascript
