@@ -402,7 +402,7 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     }
 
     /**
-     * @dev Allows the contract admin to withdraw unsold ArcTokens after a sale (or if disabled).
+     * @dev Allows the token admin to withdraw unsold ArcTokens after a sale (or if disabled).
      * @param _tokenContract The ArcToken contract address.
      * @param to The address to send the tokens to.
      * @param amount The amount of ArcTokens to withdraw.
@@ -411,7 +411,7 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         address _tokenContract,
         address to,
         uint256 amount
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external onlyTokenAdmin(_tokenContract) {
         if (to == address(0)) {
             revert CannotWithdrawToZeroAddress();
         }
