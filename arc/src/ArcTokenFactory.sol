@@ -9,11 +9,11 @@ import "./restrictions/ITransferRestrictions.sol";
 import "./restrictions/IYieldRestrictions.sol";
 import "./restrictions/WhitelistRestrictions.sol";
 import "./restrictions/YieldBlacklistRestrictions.sol";
+import "./restrictions/RestrictionTypes.sol";
 
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-//import "@openzeppelin/contracts/proxy/ERC1967/ArcTokenProxy.sol";
 
 /**
  * @title ArcTokenFactory
@@ -22,9 +22,6 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
  * @dev Uses ERC1967 proxy pattern for upgradeable tokens. Requires a RestrictionsRouter.
  */
 contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
-
-    // Address of the central RestrictionsRouter (set during initialization)
-    address public restrictionsRouter;
 
     /// @custom:storage-location erc7201:arc.factory.storage
     struct FactoryStorage {
@@ -44,11 +41,6 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
     error RouterNotSet();
     error FailedToCreateRestrictionsModule();
     error FailedToSetRestrictions();
-
-    // -------------- Constants for Module Type IDs --------------
-    // Match the ones defined in ArcToken
-    bytes32 public constant TRANSFER_RESTRICTION_TYPE = keccak256("TRANSFER_RESTRICTION");
-    bytes32 public constant YIELD_RESTRICTION_TYPE = keccak256("YIELD_RESTRICTION");
 
     // Events
     event TokenCreated(
@@ -88,7 +80,6 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         FactoryStorage storage fs = _getFactoryStorage();
         fs.restrictionsRouter = routerAddress; // Store router address
-        restrictionsRouter = routerAddress; // Also set the public variable
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
@@ -191,28 +182,30 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         token.setTokenURI(tokenUri);
 
         // Grant all necessary roles to the owner
+        // Grant the DEFAULT_ADMIN_ROLE to the deployer
+        token.grantRole(token.DEFAULT_ADMIN_ROLE(), msg.sender);
         token.grantRole(token.ADMIN_ROLE(), msg.sender);
         token.grantRole(token.MANAGER_ROLE(), msg.sender);
         token.grantRole(token.YIELD_MANAGER_ROLE(), msg.sender);
         token.grantRole(token.YIELD_DISTRIBUTOR_ROLE(), msg.sender);
         token.grantRole(token.MINTER_ROLE(), msg.sender);
         token.grantRole(token.BURNER_ROLE(), msg.sender);
-        token.grantRole(token.UPGRADER_ROLE(), msg.sender);
+        token.grantRole(token.UPGRADER_ROLE(), address(this));
 
         // --- Create and link Restriction Modules ---
 
         // 1. Whitelist Module (for transfers)
         address whitelistModule = _createWhitelistRestrictionsModule(msg.sender);
-        try token.setRestrictionModule(TRANSFER_RESTRICTION_TYPE, whitelistModule) {
-            emit ModuleLinked(address(proxy), whitelistModule, TRANSFER_RESTRICTION_TYPE);
+        try token.setRestrictionModule(RestrictionTypes.TRANSFER_RESTRICTION_TYPE, whitelistModule) {
+            emit ModuleLinked(address(proxy), whitelistModule, RestrictionTypes.TRANSFER_RESTRICTION_TYPE);
         } catch {
             revert FailedToSetRestrictions();
         }
 
         // 2. Yield Blacklist Module
         address yieldBlacklistModule = _createYieldBlacklistRestrictionsModule(msg.sender);
-        try token.setRestrictionModule(YIELD_RESTRICTION_TYPE, yieldBlacklistModule) {
-            emit ModuleLinked(address(proxy), yieldBlacklistModule, YIELD_RESTRICTION_TYPE);
+        try token.setRestrictionModule(RestrictionTypes.YIELD_RESTRICTION_TYPE, yieldBlacklistModule) {
+            emit ModuleLinked(address(proxy), yieldBlacklistModule, RestrictionTypes.YIELD_RESTRICTION_TYPE);
         } catch {
             revert FailedToSetRestrictions();
         }
@@ -243,6 +236,14 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address token
     ) external view returns (address) {
         return _getFactoryStorage().tokenToImplementation[token];
+    }
+
+    /**
+     * @dev Get the address of the RestrictionsRouter
+     * @return The address of the RestrictionsRouter
+     */
+    function getRestrictionsRouter() external view returns (address) {
+        return _getFactoryStorage().restrictionsRouter;
     }
 
     /**

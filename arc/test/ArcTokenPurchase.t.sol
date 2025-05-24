@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { ArcToken } from "../src/ArcToken.sol";
-import { ArcTokenPurchase } from "../src/ArcTokenPurchase.sol";
-import { MockUSDC } from "../src/mock/MockUSDC.sol";
-import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import { Test } from "forge-std/Test.sol";
-import { console } from "forge-std/console.sol";
+import {ArcToken} from "../src/ArcToken.sol";
+import {ArcTokenFactory} from "../src/ArcTokenFactory.sol";
+import {ArcTokenPurchase} from "../src/ArcTokenPurchase.sol";
+import {MockUSDC} from "../src/mock/MockUSDC.sol";
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {Test} from "forge-std/Test.sol";
+import {console} from "forge-std/console.sol";
 
 // Import necessary restriction contracts and interfaces
-import { RestrictionsRouter } from "../src/restrictions/RestrictionsRouter.sol";
-import { WhitelistRestrictions } from "../src/restrictions/WhitelistRestrictions.sol";
-import { YieldBlacklistRestrictions } from "../src/restrictions/YieldBlacklistRestrictions.sol";
+import {RestrictionsRouter} from "../src/restrictions/RestrictionsRouter.sol";
+import {WhitelistRestrictions} from "../src/restrictions/WhitelistRestrictions.sol";
+import {YieldBlacklistRestrictions} from "../src/restrictions/YieldBlacklistRestrictions.sol";
 
 // Import ERC20 error interface for checking reverts
-import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 
 contract ArcTokenPurchaseTest is Test, IERC20Errors {
-
+    ArcTokenFactory public factory;
+    // token created by factory
     ArcToken public token;
+    // maliciousToken - token not created by factory
+    ArcToken public maliciousToken;
     ArcTokenPurchase public purchase;
     MockUSDC public purchaseToken;
     ERC20Mock public yieldToken; // For ArcToken itself
@@ -31,6 +36,7 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
     address public owner;
     address public alice;
     address public bob;
+    address public charlie;
 
     uint256 public constant INITIAL_SUPPLY = 1000e18;
     uint256 public constant TOKEN_PRICE = 100e6; // Price in USDC (6 decimals)
@@ -38,11 +44,22 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
     uint256 public constant USDC_TO_SPEND_ALICE = 200e6; // Amount of USDC (6 decimals) Alice spends
 
     // Define module type constants matching ArcToken/Factory
-    bytes32 public constant TRANSFER_RESTRICTION_TYPE = keccak256("TRANSFER_RESTRICTION");
-    bytes32 public constant YIELD_RESTRICTION_TYPE = keccak256("YIELD_RESTRICTION");
+    bytes32 public constant TRANSFER_RESTRICTION_TYPE =
+        keccak256("TRANSFER_RESTRICTION");
+    bytes32 public constant YIELD_RESTRICTION_TYPE =
+        keccak256("YIELD_RESTRICTION");
 
-    event PurchaseMade(address indexed buyer, address indexed tokenContract, uint256 amount, uint256 pricePaid);
-    event TokenSaleEnabled(address indexed tokenContract, uint256 numberOfTokens, uint256 tokenPrice);
+    event PurchaseMade(
+        address indexed buyer,
+        address indexed tokenContract,
+        uint256 amount,
+        uint256 pricePaid
+    );
+    event TokenSaleEnabled(
+        address indexed tokenContract,
+        uint256 numberOfTokens,
+        uint256 tokenPrice
+    );
     event StorefrontConfigSet(address indexed tokenContract, string domain);
     event PurchaseTokenUpdated(address indexed newPurchaseToken);
 
@@ -50,6 +67,7 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         owner = address(this);
         alice = makeAddr("alice");
         bob = makeAddr("bob");
+        charlie = makeAddr("charlie");
 
         // Deploy mock tokens (using default constructor due to potential compiler issue)
         purchaseToken = new MockUSDC();
@@ -64,9 +82,13 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         yieldBlacklistModule = new YieldBlacklistRestrictions();
         yieldBlacklistModule.initialize(owner);
 
+        // Deploy factory
+        factory = new ArcTokenFactory();
+        factory.initialize(address(router)); // Initialize factory with router address
+
         // --- Deploy ArcToken ---
-        token = new ArcToken();
-        token.initialize(
+        maliciousToken = new ArcToken();
+        maliciousToken.initialize(
             "Test ArcToken", // name_
             "TAT", // symbol_
             INITIAL_SUPPLY,
@@ -76,13 +98,37 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
             address(router) // router address
         );
 
+        // Deploy token by factory
+        string memory name = "Test ArcToken";
+        string memory symbol = "TAT";
+        string memory tokenUri = "ipfs://test-uri";
+        address initialHolder = owner; // Use admin as initial holder
+
+        // Create token and get its address
+        address tokenAddress = factory.createToken(
+            name,
+            symbol,
+            INITIAL_SUPPLY,
+            address(yieldToken),
+            tokenUri,
+            initialHolder,
+            18
+        );
+        token = ArcToken(tokenAddress);
+
         // --- Link Modules to Token ---
-        token.setRestrictionModule(TRANSFER_RESTRICTION_TYPE, address(whitelistModule));
-        token.setRestrictionModule(YIELD_RESTRICTION_TYPE, address(yieldBlacklistModule));
+        maliciousToken.setRestrictionModule(
+            TRANSFER_RESTRICTION_TYPE,
+            address(whitelistModule)
+        );
+        maliciousToken.setRestrictionModule(
+            YIELD_RESTRICTION_TYPE,
+            address(yieldBlacklistModule)
+        );
 
         // --- Deploy ArcTokenPurchase ---
         purchase = new ArcTokenPurchase();
-        purchase.initialize(address(this)); // Initialize with admin
+        purchase.initialize(address(this), address(factory)); // Initialize with admin and factory
 
         // --- Setup Initial State ---
         // Whitelist relevant addresses in the Whitelist Module
@@ -101,16 +147,19 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         purchase.setPurchaseToken(address(purchaseToken));
 
         // Owner transfers tokens TO the purchase contract
+        maliciousToken.transfer(address(purchase), TOKENS_FOR_SALE);
         token.transfer(address(purchase), TOKENS_FOR_SALE);
 
         // Now enable sale - purchase contract checks its own balance
+        // purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
         purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
     }
 
     // ============ Initialization Tests ============
 
-    function test_Initialization() public {
+    function test_Initialization() public view {
         assertEq(address(purchase.purchaseToken()), address(purchaseToken));
+        assertEq(address(purchase.tokenFactory()), address(factory));
     }
 
     // ============ Sale Management Tests ============
@@ -121,7 +170,9 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
 
         purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
 
-        ArcTokenPurchase.TokenInfo memory info = purchase.getTokenInfo(address(token));
+        ArcTokenPurchase.TokenInfo memory info = purchase.getTokenInfo(
+            address(token)
+        );
         uint256 remainingForSale = info.totalAmountForSale - info.amountSold;
 
         assertTrue(info.isEnabled);
@@ -145,16 +196,29 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         // Expect the correct event parameters (amount is now ArcToken base units)
         vm.startPrank(alice);
         vm.expectEmit(true, true, true, true);
-        emit PurchaseMade(alice, address(token), tokensToBuyAlice, USDC_TO_SPEND_ALICE); // tokensToBuyAlice already has
-            // 18 decimals
+        emit PurchaseMade(
+            alice,
+            address(token),
+            tokensToBuyAlice,
+            USDC_TO_SPEND_ALICE
+        ); // tokensToBuyAlice already has
+        // 18 decimals
 
         // Buy tokens - Alice spends 200 USDC (200e6)
-        purchase.buy(address(token), USDC_TO_SPEND_ALICE);
+        purchase.buy(address(token), USDC_TO_SPEND_ALICE, tokensToBuyAlice);
 
         // Verify Alice's balances
-        assertEq(token.balanceOf(alice), tokensToBuyAlice, "Alice ArcToken balance mismatch");
-        assertEq(purchaseToken.balanceOf(alice), (1_000_000e6 - USDC_TO_SPEND_ALICE), "Alice USDC balance mismatch"); // Initial
-            // mint was 1M USDC
+        assertEq(
+            token.balanceOf(alice),
+            tokensToBuyAlice,
+            "Alice ArcToken balance mismatch"
+        );
+        assertEq(
+            purchaseToken.balanceOf(alice),
+            (1_000_000e6 - USDC_TO_SPEND_ALICE),
+            "Alice USDC balance mismatch"
+        ); // Initial
+        // mint was 1M USDC
         vm.stopPrank();
 
         // --- Buyer2's Purchase ---
@@ -172,26 +236,52 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
 
         vm.startPrank(buyer2);
         vm.expectEmit(true, true, true, true);
-        emit PurchaseMade(buyer2, address(token), tokensToBuyBuyer2, usdcToSpendBuyer2);
+        emit PurchaseMade(
+            buyer2,
+            address(token),
+            tokensToBuyBuyer2,
+            usdcToSpendBuyer2
+        );
 
         // Buyer2 buys 50 ArcTokens by spending 5000 USDC (5000e6)
-        purchase.buy(address(token), usdcToSpendBuyer2);
+        purchase.buy(address(token), usdcToSpendBuyer2, tokensToBuyBuyer2);
 
         // Verify Buyer2's balances
-        assertEq(token.balanceOf(buyer2), tokensToBuyBuyer2, "Buyer2 ArcToken balance mismatch");
-        assertEq(purchaseToken.balanceOf(buyer2), 0, "Buyer2 USDC balance mismatch");
+        assertEq(
+            token.balanceOf(buyer2),
+            tokensToBuyBuyer2,
+            "Buyer2 ArcToken balance mismatch"
+        );
+        assertEq(
+            purchaseToken.balanceOf(buyer2),
+            0,
+            "Buyer2 USDC balance mismatch"
+        );
 
         // --- Verify Final State ---
-        ArcTokenPurchase.TokenInfo memory finalInfo = purchase.getTokenInfo(address(token));
+        ArcTokenPurchase.TokenInfo memory finalInfo = purchase.getTokenInfo(
+            address(token)
+        );
         uint256 totalTokensSold = tokensToBuyAlice + tokensToBuyBuyer2; // 2e18 + 50e18 = 52e18
-        assertEq(finalInfo.amountSold, totalTokensSold, "Final amountSold mismatch");
+        assertEq(
+            finalInfo.amountSold,
+            totalTokensSold,
+            "Final amountSold mismatch"
+        );
 
-        uint256 finalRemaining = finalInfo.totalAmountForSale - finalInfo.amountSold;
-        assertEq(finalRemaining, TOKENS_FOR_SALE - totalTokensSold, "Final remaining mismatch"); // 500e18 - 52e18 =
-            // 448e18
+        uint256 finalRemaining = finalInfo.totalAmountForSale -
+            finalInfo.amountSold;
+        assertEq(
+            finalRemaining,
+            TOKENS_FOR_SALE - totalTokensSold,
+            "Final remaining mismatch"
+        ); // 500e18 - 52e18 =
+        // 448e18
 
         assertEq(
-            token.balanceOf(address(purchase)), TOKENS_FOR_SALE - totalTokensSold, "Contract final ArcToken balance"
+            token.balanceOf(address(purchase)),
+            TOKENS_FOR_SALE - totalTokensSold,
+            "Contract final ArcToken balance"
         );
         assertEq(
             purchaseToken.balanceOf(address(purchase)),
@@ -208,10 +298,19 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         emit StorefrontConfigSet(address(token), "test.arc");
 
         purchase.setStorefrontConfig(
-            address(token), "test.arc", "Test Sale", "Description", "image.url", "#FFFFFF", "#000000", "logo.url", true
+            address(token),
+            "test.arc",
+            "Test Sale",
+            "Description",
+            "image.url",
+            "#FFFFFF",
+            "#000000",
+            "logo.url",
+            true
         );
 
-        ArcTokenPurchase.StorefrontConfig memory config = purchase.getStorefrontConfig(address(token));
+        ArcTokenPurchase.StorefrontConfig memory config = purchase
+            .getStorefrontConfig(address(token));
         assertEq(config.domain, "test.arc");
         assertEq(config.title, "Test Sale");
         assertTrue(config.showPlumeBadge);
@@ -234,7 +333,13 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
     function test_RevertWhen_EnableTokenNonOwner() public {
         vm.prank(bob);
         // Expect the specific error instance with arguments
-        vm.expectRevert(abi.encodeWithSelector(ArcTokenPurchase.NotTokenAdmin.selector, bob, address(token)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ArcTokenPurchase.NotTokenAdmin.selector,
+                bob,
+                address(token)
+            )
+        );
         purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
     }
 
@@ -245,11 +350,19 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         // purchase.disableToken(address(token));
         // For now, let's test by deploying a new token that isn't enabled
         ArcToken newToken = new ArcToken();
-        newToken.initialize("New", "NEW", 0, address(yieldToken), owner, 18, address(router));
+        newToken.initialize(
+            "New",
+            "NEW",
+            0,
+            address(yieldToken),
+            owner,
+            18,
+            address(router)
+        );
 
         vm.prank(alice);
         vm.expectRevert(ArcTokenPurchase.TokenNotEnabled.selector);
-        purchase.buy(address(newToken), USDC_TO_SPEND_ALICE);
+        purchase.buy(address(newToken), USDC_TO_SPEND_ALICE, 0);
     }
 
     function test_RevertWhen_BuyWithoutApproval() public {
@@ -259,39 +372,152 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         // Expect the specific error instance with arguments
         vm.expectRevert(
             abi.encodeWithSelector(
-                IERC20Errors.ERC20InsufficientAllowance.selector, address(purchase), 0, USDC_TO_SPEND_ALICE
+                IERC20Errors.ERC20InsufficientAllowance.selector,
+                address(purchase),
+                0,
+                USDC_TO_SPEND_ALICE
             )
         );
-        purchase.buy(address(token), USDC_TO_SPEND_ALICE);
+        purchase.buy(address(token), USDC_TO_SPEND_ALICE, 0);
     }
 
     function test_RevertWhen_BuyMoreThanAvailable() public {
         purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
 
-        ArcTokenPurchase.TokenInfo memory info = purchase.getTokenInfo(address(token));
+        ArcTokenPurchase.TokenInfo memory info = purchase.getTokenInfo(
+            address(token)
+        );
 
         // Calculate the USDC amount required to buy exactly one more base unit (1) than available
 
         uint256 tokensAvailable = info.totalAmountForSale - info.amountSold;
-        uint256 usdcForAvailableTokens = (tokensAvailable * info.tokenPrice) / 1e18;
+        uint256 usdcForAvailableTokens = (tokensAvailable * info.tokenPrice) /
+            1e18;
         uint256 usdcAmountToCauseRevert = usdcForAvailableTokens + 1; // Try to buy with 1 extra base unit of USDC
 
         vm.startPrank(alice);
         purchaseToken.approve(address(purchase), usdcAmountToCauseRevert); // Approve the amount that should cause
-            // revert
+        // revert
 
         vm.expectRevert(ArcTokenPurchase.NotEnoughTokensForSale.selector);
         // Attempt to buy with the USDC amount calculated to be just over the limit
-        purchase.buy(address(token), usdcAmountToCauseRevert);
+        purchase.buy(address(token), usdcAmountToCauseRevert, 0);
+        vm.stopPrank();
+    }
+
+    function test_RevertWhen_BuyTooLittleReceived() public {
+        purchase.enableToken(address(token), TOKENS_FOR_SALE, TOKEN_PRICE);
+
+        vm.startPrank(alice);
+        purchaseToken.approve(address(purchase), TOKEN_PRICE * 30);
+
+        vm.expectRevert(ArcTokenPurchase.TooLittleReceived.selector);
+        // Give a value far exceeding the normal output amount (30e18) to trigger TooLittleReceived
+        uint256 amountOutExceededMinimum = 1000e18;
+        purchase.buy(
+            address(token),
+            TOKEN_PRICE * 30,
+            amountOutExceededMinimum
+        );
         vm.stopPrank();
     }
 
     function test_RevertWhen_SetStorefrontConfigNonOwner() public {
         vm.prank(bob);
         // Expect the specific error instance with arguments
-        vm.expectRevert(abi.encodeWithSelector(ArcTokenPurchase.NotTokenAdmin.selector, bob, address(token)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ArcTokenPurchase.NotTokenAdmin.selector,
+                bob,
+                address(token)
+            )
+        );
         purchase.setStorefrontConfig(
-            address(token), "test.arc", "Test Sale", "Description", "image.url", "#FFFFFF", "#000000", "logo.url", true
+            address(token),
+            "test.arc",
+            "Test Sale",
+            "Description",
+            "image.url",
+            "#FFFFFF",
+            "#000000",
+            "logo.url",
+            true
+        );
+    }
+
+    function test_RevertWhen_TokenNotCreatedByFactory() public {
+        vm.prank(owner);
+        vm.expectRevert(ArcTokenPurchase.TokenNotCreatedByFactory.selector);
+        purchase.enableToken(
+            address(maliciousToken),
+            TOKENS_FOR_SALE,
+            TOKEN_PRICE
+        );
+    }
+
+    // ============ Withdrawal Unsold ArcTokens Tests ============
+
+    function test_WithdrawUnsoldArcTokens() public {
+        vm.prank(owner);
+        purchase.withdrawUnsoldArcTokens(address(token), bob, TOKENS_FOR_SALE);
+
+        assertEq(token.balanceOf(bob), TOKENS_FOR_SALE);
+    }
+
+    // reverts when not token admin
+    function test_RevertWhen_WithdrawUnsoldArcTokensNotAdmin() public {
+        vm.startPrank(bob);
+        // Expect the specific error instance with arguments
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ArcTokenPurchase.NotTokenAdmin.selector,
+                bob,
+                address(token)
+            )
+        );
+        purchase.withdrawUnsoldArcTokens(address(token), bob, TOKENS_FOR_SALE);
+        vm.stopPrank();
+
+        vm.prank(owner);
+        purchase.withdrawUnsoldArcTokens(
+            address(token),
+            charlie,
+            TOKENS_FOR_SALE
+        );
+
+        assertEq(token.balanceOf(charlie), TOKENS_FOR_SALE);
+    }
+
+    // reverts when to is zero address
+    function test_RevertWhen_WithdrawUnsoldArcTokensCannotWithdrawToZeroAddress()
+        public
+    {
+        vm.prank(owner);
+        vm.expectRevert(ArcTokenPurchase.CannotWithdrawToZeroAddress.selector);
+        purchase.withdrawUnsoldArcTokens(
+            address(token),
+            address(0),
+            TOKENS_FOR_SALE
+        );
+    }
+
+    // reverts when amount is 0
+    function test_RevertWhen_WithdrawUnsoldArcTokensAmountIsZero() public {
+        vm.prank(owner);
+        vm.expectRevert(ArcTokenPurchase.AmountMustBePositive.selector);
+        purchase.withdrawUnsoldArcTokens(address(token), bob, 0);
+    }
+
+    // reverts when amount is greater than contract balance
+    function test_RevertWhen_WithdrawUnsoldArcTokensAmountGreaterThanContractBalance()
+        public
+    {
+        vm.prank(owner);
+        vm.expectRevert(ArcTokenPurchase.InsufficientUnsoldTokens.selector);
+        purchase.withdrawUnsoldArcTokens(
+            address(token),
+            bob,
+            TOKENS_FOR_SALE + 1
         );
     }
 
@@ -303,7 +529,15 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
 
         // Configure storefront
         purchase.setStorefrontConfig(
-            address(token), "test.arc", "Test Sale", "Description", "image.url", "#FFFFFF", "#000000", "logo.url", true
+            address(token),
+            "test.arc",
+            "Test Sale",
+            "Description",
+            "image.url",
+            "#FFFFFF",
+            "#000000",
+            "logo.url",
+            true
         );
 
         // Multiple buyers
@@ -316,21 +550,29 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         purchaseToken.approve(address(purchase), TOKEN_PRICE * 30);
         vm.prank(alice);
         uint256 alicePurchaseAmount = 30 * TOKEN_PRICE; // Buy 30 tokens worth of USDC
-        purchase.buy(address(token), alicePurchaseAmount);
+        purchase.buy(address(token), alicePurchaseAmount, 30e18);
 
         // Second purchase
         uint256 buyer2PurchaseAmount = 50 * TOKEN_PRICE; // Buy 50 tokens worth of USDC
+        uint256 buyer2AmountOutMinimum = (50 * TOKEN_PRICE * 1e18) /
+            TOKEN_PRICE; // 50 tokens
         vm.prank(buyer2);
         purchaseToken.approve(address(purchase), buyer2PurchaseAmount);
         vm.prank(buyer2);
-        purchase.buy(address(token), buyer2PurchaseAmount);
+        purchase.buy(
+            address(token),
+            buyer2PurchaseAmount,
+            buyer2AmountOutMinimum
+        );
 
         // Verify final state
         assertEq(token.balanceOf(alice), 30e18); // Assuming 1 token = 1e18
         assertEq(token.balanceOf(buyer2), 50e18);
-        ArcTokenPurchase.TokenInfo memory finalInfo = purchase.getTokenInfo(address(token));
-        uint256 finalRemaining = finalInfo.totalAmountForSale - finalInfo.amountSold;
+        ArcTokenPurchase.TokenInfo memory finalInfo = purchase.getTokenInfo(
+            address(token)
+        );
+        uint256 finalRemaining = finalInfo.totalAmountForSale -
+            finalInfo.amountSold;
         assertEq(finalRemaining, TOKENS_FOR_SALE - (30e18 + 50e18));
     }
-
 }

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 import "../src/ArcToken.sol";
+import "../src/restrictions/RestrictionTypes.sol";
 import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
 
@@ -73,8 +74,8 @@ contract GasTest is Test {
         );
 
         // --- Link Modules ---
-        token.setRestrictionModule(token.TRANSFER_RESTRICTION_TYPE(), address(whitelistModule));
-        token.setRestrictionModule(token.YIELD_RESTRICTION_TYPE(), address(yieldBlacklistModule));
+        token.setRestrictionModule(RestrictionTypes.TRANSFER_RESTRICTION_TYPE, address(whitelistModule));
+        token.setRestrictionModule(RestrictionTypes.YIELD_RESTRICTION_TYPE, address(yieldBlacklistModule));
 
         // Explicitly grant all necessary roles
         bytes32 MINTER_ROLE = token.MINTER_ROLE();
