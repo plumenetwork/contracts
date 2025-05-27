@@ -604,6 +604,9 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         $.validatorTotalStaked[validatorId] = 0;
         $.validatorTotalCooling[validatorId] = 0;
+        
+        // Fix: Zero out the validator's delegatedAmount when slashed
+        validatorToSlash.delegatedAmount = 0;
 
         delete $.validatorStakers[validatorId];
 
