@@ -144,9 +144,13 @@ library PlumeRewardLogic {
                             getEffectiveCommissionRateAt($, validatorId, currentLastUpdateTime);
                         uint256 grossRewardForValidatorThisSegment =
                             (totalStakedForCalc * rewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
-                        uint256 commissionDeltaForValidator = (
-                            grossRewardForValidatorThisSegment * commissionRateForSegment
-                        ) / PlumeStakingStorage.REWARD_PRECISION;
+
+                        // Fix: Use ceiling division for commission to ensure rounding up
+                        uint256 commissionDeltaForValidator = _ceilDiv(
+                            grossRewardForValidatorThisSegment * commissionRateForSegment,
+                            PlumeStakingStorage.REWARD_PRECISION
+                        );
+
                         if (commissionDeltaForValidator > 0) {
                             $.validatorAccruedCommission[validatorId][token] += commissionDeltaForValidator;
                         }
@@ -187,12 +191,14 @@ library PlumeRewardLogic {
                     uint256 commissionRateForSegment = getEffectiveCommissionRateAt($, validatorId, oldLastUpdateTime);
                     uint256 grossRewardForValidatorThisSegment =
                         (totalStaked * rewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
-                    uint256 commissionDeltaForValidator = (
-                        grossRewardForValidatorThisSegment * commissionRateForSegment
-                    ) / PlumeStakingStorage.REWARD_PRECISION;
+
+                    // Fix: Use ceiling division for commission to ensure rounding up
+                    uint256 commissionDeltaForValidator = _ceilDiv(
+                        grossRewardForValidatorThisSegment * commissionRateForSegment,
+                        PlumeStakingStorage.REWARD_PRECISION
+                    );
 
                     if (commissionDeltaForValidator > 0) {
-                        uint256 previousAccrued = $.validatorAccruedCommission[validatorId][token];
                         $.validatorAccruedCommission[validatorId][token] += commissionDeltaForValidator;
                     }
                 }
@@ -303,6 +309,7 @@ library PlumeRewardLogic {
 
             // The actual RPT delta for the user in this segment.
             // The user "catches up" from rptAtSegmentStart to rptAtSegmentEnd.
+            // Note: This is the same as rptIncreaseInSegment for this specific case
             uint256 rewardPerTokenDeltaForUserInSegment = rptAtSegmentEnd - rptAtSegmentStart;
 
             if (rewardPerTokenDeltaForUserInSegment > 0 && userStakedAmount > 0) {
@@ -311,8 +318,10 @@ library PlumeRewardLogic {
 
                 // Commission rate effective at the START of this segment
                 uint256 effectiveCommissionRate = getEffectiveCommissionRateAt($, validatorId, segmentStartTime);
+
+                // Fix: Use ceiling division for commission to ensure rounding up
                 uint256 commissionForThisSegment =
-                    (grossRewardForSegment * effectiveCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
+                    _ceilDiv(grossRewardForSegment * effectiveCommissionRate, PlumeStakingStorage.REWARD_PRECISION);
 
                 if (grossRewardForSegment >= commissionForThisSegment) {
                     totalUserRewardDelta += (grossRewardForSegment - commissionForThisSegment);
@@ -324,6 +333,19 @@ library PlumeRewardLogic {
             rptTracker = rptAtSegmentEnd; // Update tracker for the next segment's start
         }
         return (totalUserRewardDelta, totalCommissionAmountDelta, effectiveTimeDelta);
+    }
+
+    /**
+     * @notice Helper function for ceiling division to ensure rounding up
+     * @param a Numerator
+     * @param b Denominator
+     * @return result The ceiling of a/b
+     */
+    function _ceilDiv(uint256 a, uint256 b) internal pure returns (uint256 result) {
+        if (b == 0) {
+            return 0;
+        }
+        return (a + b - 1) / b;
     }
 
     /**
@@ -432,6 +454,7 @@ library PlumeRewardLogic {
     /**
      * @notice Gets the effective reward rate for a validator and token at a given timestamp.
      * Looks up the validator-specific reward rate checkpoint. If none, uses global reward rate.
+     * @dev Fixed to return 0 rate if token is no longer a valid reward token
      */
     function getEffectiveRewardRateAt(
         PlumeStakingStorage.Layout storage $,
@@ -439,6 +462,14 @@ library PlumeRewardLogic {
         uint16 validatorId,
         uint256 timestamp
     ) internal view returns (PlumeStakingStorage.RateCheckpoint memory effectiveCheckpoint) {
+        // Fix: Check if token is still a valid reward token
+        if (!$.isRewardToken[token]) {
+            effectiveCheckpoint.rate = 0;
+            effectiveCheckpoint.timestamp = timestamp;
+            effectiveCheckpoint.cumulativeIndex = 0;
+            return effectiveCheckpoint;
+        }
+
         PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorRewardRateCheckpoints[validatorId][token];
         uint256 chkCount = checkpoints.length;
 

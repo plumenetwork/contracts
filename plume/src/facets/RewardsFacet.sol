@@ -486,6 +486,12 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address token
     ) external view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Fix: Check if token exists in current rewardTokens mapping
+        if (!$.isRewardToken[token]) {
+            revert TokenDoesNotExist(token);
+        }
+
         return $.maxRewardRates[token] > 0 ? $.maxRewardRates[token] : MAX_REWARD_RATE;
     }
 
@@ -505,14 +511,23 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @notice Get detailed reward information for a specific token.
      * @param token Address of the token to check.
      * @return rewardRate Current reward rate for the token.
-     * @return lastUpdateTime Timestamp when the reward was last updated.
+     * @return lastUpdateTime Most recent timestamp when any validator's reward was updated for this token.
      */
     function tokenRewardInfo(
         address token
     ) external view returns (uint256 rewardRate, uint256 lastUpdateTime) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         rewardRate = $.rewardRates[token];
-        lastUpdateTime = $.lastUpdateTimes[token];
+
+        // Fix: Return the most recent validator update time for this token
+        uint16[] memory validatorIds = $.validatorIds;
+        lastUpdateTime = 0;
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            uint256 validatorUpdateTime = $.validatorLastUpdateTimes[validatorIds[i]][token];
+            if (validatorUpdateTime > lastUpdateTime) {
+                lastUpdateTime = validatorUpdateTime;
+            }
+        }
     }
 
     function getRewardRateCheckpointCount(

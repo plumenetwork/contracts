@@ -135,6 +135,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // --- Initialize Reward State for New Stake with Validator ---
         if (isNewStakeForValidator) {
+            // Fix: Set the stake start time for new positions
+            $.userValidatorStakeStartTime[msg.sender][validatorId] = block.timestamp;
+
             address[] memory rewardTokens = $.rewardTokens; // Get all system reward tokens
             for (uint256 i = 0; i < rewardTokens.length; i++) {
                 address token = rewardTokens[i];
@@ -363,8 +366,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // userGlobalStakeInfo.parked, userGlobalStakeInfo.cooled);
 
         uint256 amountMovedToParkedThisCall = 0;
-        uint16[] storage userAssociatedValidators = $.userValidators[user];
-        // console2.log("SF.withdraw: user %s, userStakedValidators.length: %s", user, userAssociatedValidators.length);
+
+        // Fix: Make a copy of user validators to avoid iteration issues if removeStakerFromValidator is called
+        uint16[] memory userAssociatedValidators = new uint16[]($.userValidators[user].length);
+        for (uint256 j = 0; j < $.userValidators[user].length; j++) {
+            userAssociatedValidators[j] = $.userValidators[user][j];
+        }
 
         // Iterate through validators the user might have cooling funds with
         // to process any matured cooldowns and move them to the user's parked balance.
@@ -519,6 +526,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Applied to the `staker` address, not msg.sender
         if (isNewStakeForValidator) {
+            // Fix: Set the stake start time for new positions
+            $.userValidatorStakeStartTime[staker][validatorId] = block.timestamp;
+
             address[] memory rewardTokens = $.rewardTokens;
             for (uint256 i = 0; i < rewardTokens.length; i++) {
                 address token = rewardTokens[i];
@@ -641,28 +651,33 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         }
 
         amountRestaked = 0;
-        // The userValidators array might have been modified by removeStakerFromValidator above,
-        // so re-fetch or use a copy if strict iteration order over original set was important.
-        // However, for summing rewards, iterating the current set is fine.
-        uint16[] memory currentUserValidators = $.userValidators[msg.sender];
+        // --- Calculate Pending Native PLUME Rewards ---
+        // Fix: Make a copy of user validators to avoid iteration issues
+        uint16[] memory currentUserValidators = new uint16[]($.userValidators[user].length);
+        for (uint256 j = 0; j < $.userValidators[user].length; j++) {
+            currentUserValidators[j] = $.userValidators[user][j];
+        }
 
         for (uint256 i = 0; i < currentUserValidators.length; i++) {
             uint16 userValidatorIdLoop = currentUserValidators[i];
 
-            uint256 validatorReward = IRewardsGetter(address(this)).getPendingRewardForValidator(
+            // Fix: Get total rewards (stored + delta) not just delta
+            uint256 existingRewards = $.userRewards[msg.sender][userValidatorIdLoop][tokenToRestake];
+            uint256 rewardDelta = IRewardsGetter(address(this)).getPendingRewardForValidator(
                 msg.sender, userValidatorIdLoop, tokenToRestake
             );
+            uint256 totalValidatorReward = existingRewards + rewardDelta;
 
-            if (validatorReward > 0) {
-                amountRestaked += validatorReward;
+            if (totalValidatorReward > 0) {
+                amountRestaked += totalValidatorReward;
                 PlumeRewardLogic.updateRewardsForValidator($, msg.sender, userValidatorIdLoop);
                 $.userRewards[msg.sender][userValidatorIdLoop][tokenToRestake] = 0;
-                if ($.totalClaimableByToken[tokenToRestake] >= validatorReward) {
-                    $.totalClaimableByToken[tokenToRestake] -= validatorReward;
+                if ($.totalClaimableByToken[tokenToRestake] >= totalValidatorReward) {
+                    $.totalClaimableByToken[tokenToRestake] -= totalValidatorReward;
                 } else {
                     $.totalClaimableByToken[tokenToRestake] = 0;
                 }
-                emit RewardClaimedFromValidator(msg.sender, tokenToRestake, userValidatorIdLoop, validatorReward);
+                emit RewardClaimedFromValidator(msg.sender, tokenToRestake, userValidatorIdLoop, totalValidatorReward);
             }
         }
 
