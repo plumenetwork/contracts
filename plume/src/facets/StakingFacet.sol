@@ -77,6 +77,57 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     }
 
     /**
+     * @dev Validates that a validator exists and is active (not slashed)
+     * @param validatorId The validator ID to validate
+     */
+    function _validateValidatorForStaking(uint16 validatorId) internal view {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        _checkValidatorSlashedAndRevert(validatorId);
+        if (!$.validators[validatorId].active) {
+            revert ValidatorInactive(validatorId);
+        }
+    }
+
+    /**
+     * @dev Validates that a stake amount meets minimum requirements
+     * @param amount The amount to validate
+     */
+    function _validateStakeAmount(uint256 amount) internal view {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        if (amount == 0) {
+            revert InvalidAmount(0);
+        }
+        if (amount < $.minStakeAmount) {
+            revert StakeAmountTooSmall(amount, $.minStakeAmount);
+        }
+    }
+
+    /**
+     * @dev Combined validation for staking operations
+     * @param validatorId The validator ID to validate
+     * @param amount The amount to validate
+     */
+    function _validateStaking(uint16 validatorId, uint256 amount) internal view {
+        _validateValidatorForStaking(validatorId);
+        _validateStakeAmount(amount);
+    }
+
+    /**
+     * @dev Validates that a validator exists and is not slashed (for unstaking operations)
+     * @param validatorId The validator ID to validate
+     */
+    function _validateValidatorForUnstaking(uint16 validatorId) internal view {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        _checkValidatorSlashedAndRevert(validatorId);
+    }
+
+    /**
      * @notice Stake PLUME to a specific validator using only wallet funds
      * @param validatorId ID of the validator to stake to
      */
@@ -87,18 +138,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         uint256 stakeAmount = msg.value;
 
-        if (stakeAmount < $.minStakeAmount) {
-            revert StakeAmountTooSmall(stakeAmount, $.minStakeAmount);
-        }
-        if (!$.validatorExists[validatorId]) {
-            revert ValidatorDoesNotExist(validatorId);
-        }
-        _checkValidatorSlashedAndRevert(validatorId);
-        // Check if validator is active and not slashed
-        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
-        if (!validator.active || validator.slashed) {
-            revert ValidatorInactive(validatorId);
-        }
+        // Use consolidated validation
+        _validateStaking(validatorId, stakeAmount);
 
         // Check if this is a new stake for this specific validator
         bool isNewStakeForValidator = $.userValidatorStakes[msg.sender][validatorId].staked == 0;
@@ -188,19 +229,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
 
-        if (!$.validatorExists[validatorId]) {
-            revert ValidatorDoesNotExist(validatorId);
-        }
-        _checkValidatorSlashedAndRevert(validatorId);
-        if (!$.validators[validatorId].active) {
-            revert ValidatorInactive(validatorId);
-        }
-        if (amount == 0) {
-            revert InvalidAmount(0);
-        }
-        if (amount < $.minStakeAmount) {
-            revert StakeAmountTooSmall(amount, $.minStakeAmount);
-        }
+        // Use consolidated validation
+        _validateStaking(validatorId, amount);
 
         PlumeRewardLogic.updateRewardsForValidator($, user, validatorId);
 
@@ -280,10 +310,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function _unstake(uint16 validatorId, uint256 amount) internal returns (uint256 amountToUnstake) {
         PlumeStakingStorage.Layout storage $s = PlumeStakingStorage.layout();
 
-        if (!$s.validatorExists[validatorId]) {
-            revert ValidatorDoesNotExist(validatorId);
-        }
-        _checkValidatorSlashedAndRevert(validatorId);
+        // Validate validator exists and is not slashed (but allow unstaking from inactive validators)
+        _validateValidatorForUnstaking(validatorId);
+        
         if (amount == 0) {
             revert InvalidAmount(amount);
         }
@@ -476,17 +505,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         uint256 stakeAmount = msg.value;
 
-        if (stakeAmount < $.minStakeAmount) {
-            revert StakeAmountTooSmall(stakeAmount, $.minStakeAmount);
-        }
-        if (!$.validatorExists[validatorId]) {
-            revert ValidatorDoesNotExist(validatorId);
-        }
-        // Check if validator is active and not slashed
-        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
-        if (!validator.active || validator.slashed) {
-            revert ValidatorInactive(validatorId);
-        }
+        // Use consolidated validation
+        _validateStaking(validatorId, stakeAmount);
+        
         if (staker == address(0)) {
             revert ZeroRecipientAddress();
         }
@@ -636,13 +657,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // --- END: Process Matured Cooldowns ---
 
         // Verify target validator exists and is active (for restaking rewards)
-        if (!$.validatorExists[validatorId]) {
-            revert ValidatorDoesNotExist(validatorId);
-        }
-        PlumeStakingStorage.ValidatorInfo storage targetValidator = $.validators[validatorId];
-        if (!targetValidator.active || targetValidator.slashed) {
-            revert ValidatorInactive(validatorId);
-        }
+        _validateValidatorForStaking(validatorId);
 
         // Native token is PLUME_NATIVE
         address tokenToRestake = PlumeStakingStorage.PLUME_NATIVE;
@@ -692,14 +707,14 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // userGlobalStakeInfo is already defined
         userGlobalStakeInfo.staked += amountRestaked;
         $.userValidatorStakes[user][validatorId].staked += amountRestaked;
-        targetValidator.delegatedAmount += amountRestaked;
+        $.validators[validatorId].delegatedAmount += amountRestaked;
         $.validatorTotalStaked[validatorId] += amountRestaked;
         $.totalStaked += amountRestaked;
 
         PlumeValidatorLogic.addStakerToValidator($, user, validatorId);
 
-        uint256 newDelegatedAmount = targetValidator.delegatedAmount;
-        uint256 maxCapacity = targetValidator.maxCapacity;
+        uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
+        uint256 maxCapacity = $.validators[validatorId].maxCapacity;
         if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
             revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, amountRestaked);
         }
