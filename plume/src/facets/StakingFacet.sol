@@ -301,10 +301,10 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         uint16 validatorId
     ) external returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        PlumeStakingStorage.StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
+        PlumeStakingStorage.UserValidatorStake storage userStake = $.userValidatorStakes[msg.sender][validatorId];
 
-        if (info.staked > 0) {
-            return _unstake(validatorId, info.staked);
+        if (userStake.staked > 0) {
+            return _unstake(validatorId, userStake.staked);
         }
         revert NoActiveStake();
     }
