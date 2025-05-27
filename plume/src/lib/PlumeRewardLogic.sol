@@ -706,38 +706,6 @@ library PlumeRewardLogic {
     }
 
     /**
-     * @notice Checks if a user has any pending rewards with a validator across all tokens
-     * @dev This function checks both current and potentially historical reward tokens
-     * @param $ The PlumeStaking storage layout.
-     * @param user The user address.
-     * @param validatorId The validator ID.
-     * @return hasPendingRewards True if user has any pending rewards with the validator
-     */
-    function userHasAnyPendingRewards(
-        PlumeStakingStorage.Layout storage $,
-        address user,
-        uint16 validatorId
-    ) internal view returns (bool hasPendingRewards) {
-        // Quick check using the flag first
-        if (!$.userHasPendingRewards[user][validatorId]) {
-            return false;
-        }
-
-        // If flag is true, verify by checking actual balances
-        // This handles edge cases where flag might be stale
-        address[] memory currentRewardTokens = $.rewardTokens;
-        for (uint256 i = 0; i < currentRewardTokens.length; i++) {
-            if ($.userRewards[user][validatorId][currentRewardTokens[i]] > 0) {
-                return true;
-            }
-        }
-
-        // No pending rewards found, but don't modify state in a view function
-        // The flag will be cleared by clearPendingRewardsFlagIfEmpty when needed
-        return false;
-    }
-
-    /**
      * @notice Clears the pending rewards flag for a user-validator pair if no rewards remain
      * @dev Should be called after claiming rewards to maintain flag accuracy
      * @param $ The PlumeStaking storage layout.
