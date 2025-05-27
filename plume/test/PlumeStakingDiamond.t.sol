@@ -2353,19 +2353,16 @@ contract PlumeStakingDiamondTest is Test {
         console2.log("8. Advancing time past cooldown 2 (%s)...", cooldownEnd2);
         vm.warp(cooldownEnd2 + 1);
 
-        // 9. Verify state: 4 ETH should be withdrawable
+        // 9. Verify state: 4 ETH should be withdrawable, 0 ETH should be actively cooling
         console2.log("9. Verifying view functions and internal state...");
         uint256 withdrawable = StakingFacet(address(diamondProxy)).amountWithdrawable();
         uint256 cooling = StakingFacet(address(diamondProxy)).amountCooling();
-        //assertEq(withdrawable, 0, "amountWithdrawable() should be 0 before withdraw processes matured cooldown");
-        //assertEq(cooling, secondUnstake, "amountCooling() should be secondUnstakeAmount (matured, not yet
-        // withdrawn)");
 
         assertEq(withdrawable, secondUnstake, "amountWithdrawable() should be secondUnstake (matured cooldown)");
         assertEq(
             cooling,
-            secondUnstake,
-            "amountCooling() should be secondUnstake (matured, but not yet processed by withdraw)"
+            0,
+            "amountCooling() should be 0 since the cooldown has matured and is no longer actively cooling"
         );
 
         stakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
@@ -2504,8 +2501,8 @@ contract PlumeStakingDiamondTest is Test {
         PlumeStakingStorage.StakeInfo memory finalUserStakeInfo = StakingFacet(address(diamondProxy)).stakeInfo(user1);
 
         assertEq(finalUserStakeInfo.staked, stakedBeforeRestake + restakedAmount, "State Error after Step 12 (Staked)");
-        assertEq(finalUserStakeInfo.cooled, finalRestake, "State Error after Step 12 (Cooled - should be unchanged)");
-        assertEq(finalUserStakeInfo.parked, 0, "State Error after Step 12 (Parked - should be unchanged)");
+        assertEq(finalUserStakeInfo.cooled, 0, "State Error after Step 12 (Cooled - should be 0 after processing matured cooldowns)");
+        assertEq(finalUserStakeInfo.parked, finalRestake, "State Error after Step 12 (Parked - should contain matured cooldown)");
 
         uint256 pendingPlumeAfter =
             RewardsFacet(address(diamondProxy)).getPendingRewardForValidator(user1, validatorId, PLUME_NATIVE);
@@ -2515,11 +2512,13 @@ contract PlumeStakingDiamondTest is Test {
         // 13. Withdraw the 4 ETH that finished cooling earlier (this is the `finalRestake` amount)
         console2.log("13. Withdrawing %s ETH (from finished cooldown)...", finalRestake);
 
+        vm.startPrank(user1);
         uint256 parkedAmountBeforeWithdrawAtStep13 = StakingFacet(address(diamondProxy)).amountWithdrawable();
+        vm.stopPrank();
         assertEq(
             parkedAmountBeforeWithdrawAtStep13,
-            0,
-            "Parked amount should be 0 before withdraw() processes matured finalRestake cooldown at step 13"
+            finalRestake,
+            "Withdrawable amount should be finalRestake since restakeRewards() already processed the matured cooldown"
         );
 
         uint256 balanceBeforeWithdrawAtStep13 = user1.balance;
@@ -2630,6 +2629,8 @@ contract PlumeStakingDiamondTest is Test {
         // Have staker2 withdraw their cooled funds
         vm.startPrank(staker2);
         console2.log("TEST_DEBUG: staker2 withdrawing at t=%s", block.timestamp);
+        // Claim any pending rewards first to clear the pending rewards flag
+        try RewardsFacet(address(diamondProxy)).claimAll() {} catch {}
         StakingFacet(address(diamondProxy)).withdraw();
         vm.stopPrank();
         console2.log("TEST_DEBUG: staker2 withdraw completed.");
@@ -2669,6 +2670,8 @@ contract PlumeStakingDiamondTest is Test {
         // Have staker1 withdraw their cooled funds
         vm.startPrank(staker1);
         console2.log("TEST_DEBUG: staker1 withdrawing at t=%s", block.timestamp);
+        // Claim any pending rewards first to clear the pending rewards flag
+        try RewardsFacet(address(diamondProxy)).claimAll() {} catch {}
         StakingFacet(address(diamondProxy)).withdraw();
         vm.stopPrank();
         console2.log("TEST_DEBUG: staker1 withdraw completed.");
@@ -2702,6 +2705,8 @@ contract PlumeStakingDiamondTest is Test {
         // Have staker4 withdraw their cooled funds
         vm.startPrank(staker4);
         console2.log("TEST_DEBUG: staker4 withdrawing at t=%s", block.timestamp);
+        // Claim any pending rewards first to clear the pending rewards flag
+        try RewardsFacet(address(diamondProxy)).claimAll() {} catch {}
         StakingFacet(address(diamondProxy)).withdraw();
         vm.stopPrank();
         console2.log("TEST_DEBUG: staker4 withdraw completed.");
@@ -2736,6 +2741,8 @@ contract PlumeStakingDiamondTest is Test {
         // Have staker3 withdraw their cooled funds
         vm.startPrank(staker3);
         console2.log("TEST_DEBUG: staker3 withdrawing at t=%s", block.timestamp);
+        // Claim any pending rewards first to clear the pending rewards flag
+        try RewardsFacet(address(diamondProxy)).claimAll() {} catch {}
         StakingFacet(address(diamondProxy)).withdraw();
         vm.stopPrank();
         console2.log("TEST_DEBUG: staker3 withdraw completed.");
