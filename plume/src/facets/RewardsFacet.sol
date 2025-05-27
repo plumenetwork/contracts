@@ -264,6 +264,13 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
                 $.validatorRewardPerTokenCumulative[validatorId][token];
 
+            // Fix: Update totalClaimableByToken when rewards are claimed
+            if ($.totalClaimableByToken[token] >= reward) {
+                $.totalClaimableByToken[token] -= reward;
+            } else {
+                $.totalClaimableByToken[token] = 0;
+            }
+
             // $.validatorAccruedCommission is updated by _settleCommissionForValidatorUpToNow
             // and potentially updateRewardsForValidator if it were to do so.
             // The commissionAmountDelta here is for the user's portion and should not be double-added.
@@ -336,6 +343,13 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
 
         if (totalReward > 0) {
+            // Fix: Update totalClaimableByToken when rewards are claimed
+            if ($.totalClaimableByToken[token] >= totalReward) {
+                $.totalClaimableByToken[token] -= totalReward;
+            } else {
+                $.totalClaimableByToken[token] = 0;
+            }
+
             // Transfer rewards from treasury to user
             _transferRewardFromTreasury(token, totalReward, msg.sender);
 
@@ -391,6 +405,13 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
 
             if (totalReward > 0) {
+                // Fix: Update totalClaimableByToken when rewards are claimed
+                if ($.totalClaimableByToken[token] >= totalReward) {
+                    $.totalClaimableByToken[token] -= totalReward;
+                } else {
+                    $.totalClaimableByToken[token] = 0;
+                }
+
                 // Transfer rewards from treasury to user
                 _transferRewardFromTreasury(token, totalReward, msg.sender);
 
