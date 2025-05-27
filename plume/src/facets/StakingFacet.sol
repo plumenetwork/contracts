@@ -180,34 +180,38 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
     /**
      * @dev Performs all common staking setup and validation for new stakes
-     * @param user The user performing the stake  
+     * @param user The user performing the stake
      * @param validatorId The validator to stake to
      * @param stakeAmount The amount being staked
      * @return isNewStake Whether this is a new stake for this user-validator pair
      */
-    function _performStakeSetup(address user, uint16 validatorId, uint256 stakeAmount) internal returns (bool isNewStake) {
+    function _performStakeSetup(
+        address user,
+        uint16 validatorId,
+        uint256 stakeAmount
+    ) internal returns (bool isNewStake) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        
+
         // Use consolidated validation
         _validateStaking(validatorId, stakeAmount);
-        
+
         // Check if this is a new stake for this specific validator
         isNewStake = $.userValidatorStakes[user][validatorId].staked == 0;
-        
+
         // If user is adding to an existing stake with this validator, settle their current rewards first
         if (!isNewStake) {
             PlumeRewardLogic.updateRewardsForValidator($, user, validatorId);
         }
-        
+
         // Update stake amount
         _updateStakeAmounts(user, validatorId, stakeAmount);
-        
+
         // Validate capacity limits
         _validateCapacityLimits(validatorId, stakeAmount);
-        
+
         // Add user to validator's staker list
         PlumeValidatorLogic.addStakerToValidator($, user, validatorId);
-        
+
         // Initialize reward state for new stakes
         if (isNewStake) {
             _initializeRewardStateForNewStake(user, validatorId);
@@ -221,16 +225,21 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param amount The amount to restake
      * @param fromSource Description of fund source for events
      */
-    function _performRestakeWorkflow(address user, uint16 validatorId, uint256 amount, string memory fromSource) internal {
+    function _performRestakeWorkflow(
+        address user,
+        uint16 validatorId,
+        uint256 amount,
+        string memory fromSource
+    ) internal {
         // Use consolidated validation
         _validateStaking(validatorId, amount);
-        
+
         // Update rewards before any balance changes
         PlumeRewardLogic.updateRewardsForValidator(PlumeStakingStorage.layout(), user, validatorId);
-        
+
         // Update stake amounts
         _updateStakeAmounts(user, validatorId, amount);
-        
+
         // Ensure staker is properly listed for the validator
         PlumeValidatorLogic.addStakerToValidator(PlumeStakingStorage.layout(), user, validatorId);
     }
@@ -239,15 +248,17 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @notice Stake PLUME to a specific validator using only wallet funds
      * @param validatorId ID of the validator to stake to
      */
-    function stake(uint16 validatorId) external payable returns (uint256) {
+    function stake(
+        uint16 validatorId
+    ) external payable returns (uint256) {
         uint256 stakeAmount = msg.value;
-        
+
         // Perform all common staking setup
         bool isNewStake = _performStakeSetup(msg.sender, validatorId, stakeAmount);
-        
+
         // Emit stake event
         emit Staked(msg.sender, validatorId, stakeAmount, 0, 0, stakeAmount);
-        
+
         return stakeAmount;
     }
 
@@ -259,24 +270,24 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function restake(uint16 validatorId, uint256 amount) external nonReentrant {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
-        
+
         // Validate cooldown balance availability
         PlumeStakingStorage.CooldownEntry storage cooldownEntry = $.userValidatorCooldowns[user][validatorId];
         if (cooldownEntry.amount < amount) {
             revert InsufficientCooldownBalance(cooldownEntry.amount, amount);
         }
-        
+
         // Perform common restaking workflow
         _performRestakeWorkflow(user, validatorId, amount, "cooled");
-        
+
         // Handle cooldown balance reduction
         cooldownEntry.amount -= amount;
         _removeCoolingAmounts(user, validatorId, amount);
-        
+
         if (cooldownEntry.amount == 0) {
             delete $.userValidatorCooldowns[user][validatorId];
         }
-        
+
         // Emit events
         emit Staked(user, validatorId, amount, amount, 0, 0);
     }
@@ -286,10 +297,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param validatorId ID of the validator to unstake from
      * @return amount Amount of PLUME unstaked
      */
-    function unstake(uint16 validatorId) external returns (uint256 amount) {
+    function unstake(
+        uint16 validatorId
+    ) external returns (uint256 amount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.StakeInfo storage info = $.userValidatorStakes[msg.sender][validatorId];
-        
+
         if (info.staked > 0) {
             return _unstake(validatorId, info.staked);
         }
@@ -347,20 +360,20 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function withdraw() external {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
-        
+
         // Process matured cooldowns into parked balance
         _processMaturedCooldowns(user);
-        
+
         uint256 amountToWithdraw = $.stakeInfo[user].parked;
         if (amountToWithdraw == 0) {
             revert InvalidAmount(0);
         }
-        
+
         // Remove from parked and transfer
         _removeParkedAmounts(user, amountToWithdraw);
-        
+
         emit Withdrawn(user, amountToWithdraw);
-        
+
         (bool success,) = user.call{ value: amountToWithdraw }("");
         if (!success) {
             revert NativeTransferFailed();
@@ -377,16 +390,16 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         if (staker == address(0)) {
             revert ZeroRecipientAddress();
         }
-        
+
         uint256 stakeAmount = msg.value;
-        
+
         // Perform all common staking setup for the beneficiary
         bool isNewStake = _performStakeSetup(staker, validatorId, stakeAmount);
-        
+
         // Emit events
         emit Staked(staker, validatorId, stakeAmount, 0, 0, stakeAmount);
         emit StakedOnBehalf(msg.sender, staker, validatorId, stakeAmount);
-        
+
         return stakeAmount;
     }
 
@@ -396,7 +409,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param validatorId ID of the validator to stake the rewards to.
      * @return amountRestaked The total amount of pending rewards successfully restaked.
      */
-    function restakeRewards(uint16 validatorId) external nonReentrant returns (uint256 amountRestaked) {
+    function restakeRewards(
+        uint16 validatorId
+    ) external nonReentrant returns (uint256 amountRestaked) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
 
@@ -412,7 +427,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Calculate and claim all pending rewards
         amountRestaked = _calculateAndClaimAllRewards(user, tokenToRestake);
-        
+
         // Validate restake amount
         if (amountRestaked == 0) {
             revert NoRewardsToRestake();
@@ -423,7 +438,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Perform restaking workflow
         _performRestakeWorkflow(user, validatorId, amountRestaked, "rewards");
-        
+
         // Validate capacity after restaking
         _validateCapacityLimits(validatorId, amountRestaked);
 
@@ -738,10 +753,10 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     ) internal returns (uint256 newCooldownEndTime) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.CooldownEntry storage cooldownEntrySlot = $.userValidatorCooldowns[user][validatorId];
-        
+
         uint256 currentCooledAmountInSlot = cooldownEntrySlot.amount;
         uint256 currentCooldownEndTimeInSlot = cooldownEntrySlot.cooldownEndTime;
-        
+
         uint256 finalNewCooledAmountForSlot;
         newCooldownEndTime = block.timestamp + $.cooldownInterval;
 
@@ -759,7 +774,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         cooldownEntrySlot.amount = finalNewCooledAmountForSlot;
         cooldownEntrySlot.cooldownEndTime = newCooldownEndTime;
-        
+
         return newCooldownEndTime;
     }
 
@@ -768,7 +783,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param user The user address
      * @return amountMovedToParked Total amount moved from cooled to parked
      */
-    function _processMaturedCooldowns(address user) internal returns (uint256 amountMovedToParked) {
+    function _processMaturedCooldowns(
+        address user
+    ) internal returns (uint256 amountMovedToParked) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         amountMovedToParked = 0;
 
@@ -787,7 +804,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             }
 
             bool canRecoverFromThisCooldown = _canRecoverFromCooldown(user, validatorId, cooldownEntry);
-            
+
             if (canRecoverFromThisCooldown) {
                 uint256 amountInThisCooldown = cooldownEntry.amount;
                 amountMovedToParked += amountInThisCooldown;
@@ -822,7 +839,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         PlumeStakingStorage.CooldownEntry storage cooldownEntry
     ) internal view returns (bool canRecover) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        
+
         if (!$.validatorExists[validatorId]) {
             return false;
         }
@@ -844,9 +861,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      */
     function _initializeRewardStateForNewStake(address user, uint16 validatorId) internal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        
+
         $.userValidatorStakeStartTime[user][validatorId] = block.timestamp;
-        
+
         address[] memory rewardTokens = $.rewardTokens;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
             address token = rewardTokens[i];
@@ -873,10 +890,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param targetToken The token to calculate rewards for
      * @return totalRewards Total rewards claimed
      */
-    function _calculateAndClaimAllRewards(
-        address user,
-        address targetToken
-    ) internal returns (uint256 totalRewards) {
+    function _calculateAndClaimAllRewards(address user, address targetToken) internal returns (uint256 totalRewards) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         totalRewards = 0;
 
@@ -890,22 +904,21 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             uint16 userValidatorId = currentUserValidators[i];
 
             uint256 existingRewards = $.userRewards[user][userValidatorId][targetToken];
-            uint256 rewardDelta = IRewardsGetter(address(this)).getPendingRewardForValidator(
-                user, userValidatorId, targetToken
-            );
+            uint256 rewardDelta =
+                IRewardsGetter(address(this)).getPendingRewardForValidator(user, userValidatorId, targetToken);
             uint256 totalValidatorReward = existingRewards + rewardDelta;
 
             if (totalValidatorReward > 0) {
                 totalRewards += totalValidatorReward;
                 PlumeRewardLogic.updateRewardsForValidator($, user, userValidatorId);
                 $.userRewards[user][userValidatorId][targetToken] = 0;
-                
+
                 if ($.totalClaimableByToken[targetToken] >= totalValidatorReward) {
                     $.totalClaimableByToken[targetToken] -= totalValidatorReward;
                 } else {
                     $.totalClaimableByToken[targetToken] = 0;
                 }
-                
+
                 emit RewardClaimedFromValidator(user, targetToken, userValidatorId, totalValidatorReward);
             }
         }
@@ -920,7 +933,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      */
     function _handlePostUnstakeCleanup(address user, uint16 validatorId) internal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        
+
         if ($.userValidatorStakes[user][validatorId].staked == 0) {
             PlumeValidatorLogic.removeStakerFromValidator($, user, validatorId);
         }
@@ -931,7 +944,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param user The user address
      * @return count Number of active cooldowns
      */
-    function _countActiveCooldowns(address user) internal view returns (uint256 count) {
+    function _countActiveCooldowns(
+        address user
+    ) internal view returns (uint256 count) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         uint16[] storage userAssociatedValidators = $.userValidators[user];
         count = 0;
@@ -939,9 +954,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
             uint16 validatorId = userAssociatedValidators[i];
             if (
-                $.validatorExists[validatorId] && 
-                !$.validators[validatorId].slashed &&
-                $.userValidatorCooldowns[user][validatorId].amount > 0
+                $.validatorExists[validatorId] && !$.validators[validatorId].slashed
+                    && $.userValidatorCooldowns[user][validatorId].amount > 0
             ) {
                 count++;
             }
@@ -955,7 +969,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param user The user address
      * @return activelyCoolingAmount Total amount in active cooldowns
      */
-    function _calculateActivelyCoolingAmount(address user) internal view returns (uint256 activelyCoolingAmount) {
+    function _calculateActivelyCoolingAmount(
+        address user
+    ) internal view returns (uint256 activelyCoolingAmount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         uint16[] storage userAssociatedValidators = $.userValidators[user];
         activelyCoolingAmount = 0;
@@ -978,10 +994,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param user The user address
      * @return totalWithdrawableAmount Total amount available for withdrawal
      */
-    function _calculateTotalWithdrawableAmount(address user) internal view returns (uint256 totalWithdrawableAmount) {
+    function _calculateTotalWithdrawableAmount(
+        address user
+    ) internal view returns (uint256 totalWithdrawableAmount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         uint16[] storage userAssociatedValidators = $.userValidators[user];
-        
+
         totalWithdrawableAmount = $.stakeInfo[user].parked;
 
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
