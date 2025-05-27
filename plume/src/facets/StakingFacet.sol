@@ -116,6 +116,49 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     }
 
     /**
+     * @dev Validates that validator capacity limits are not exceeded
+     * @param validatorId The validator ID to check
+     * @param stakeAmount The amount being staked (for error reporting)
+     */
+    function _validateValidatorCapacity(uint16 validatorId, uint256 stakeAmount) internal view {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        
+        // Check if exceeding validator capacity
+        uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
+        uint256 maxCapacity = $.validators[validatorId].maxCapacity;
+        if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
+            revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, stakeAmount);
+        }
+    }
+
+    /**
+     * @dev Validates that validator percentage limits are not exceeded
+     * @param validatorId The validator ID to check
+     */
+    function _validateValidatorPercentage(uint16 validatorId) internal view {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        
+        // Check if exceeding validator percentage limit
+        if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
+            uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
+            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
+            if (validatorPercentage > $.maxValidatorPercentage) {
+                revert ValidatorPercentageExceeded();
+            }
+        }
+    }
+
+    /**
+     * @dev Performs both capacity and percentage validation checks
+     * @param validatorId The validator ID to check
+     * @param stakeAmount The amount being staked (for error reporting)
+     */
+    function _validateCapacityLimits(uint16 validatorId, uint256 stakeAmount) internal view {
+        _validateValidatorCapacity(validatorId, stakeAmount);
+        _validateValidatorPercentage(validatorId);
+    }
+
+    /**
      * @dev Validates that a validator exists and is not slashed (for unstaking operations)
      * @param validatorId The validator ID to validate
      */
@@ -156,20 +199,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         $.validatorTotalStaked[validatorId] += stakeAmount;
         $.totalStaked += stakeAmount;
 
-        // Check if exceeding validator capacity
-        uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
-        uint256 maxCapacity = $.validators[validatorId].maxCapacity;
-        if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
-            revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, stakeAmount);
-        }
-
-        // Check if exceeding validator percentage limit
-        if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
-            if (validatorPercentage > $.maxValidatorPercentage) {
-                revert ValidatorPercentageExceeded();
-            }
-        }
+        // Validate capacity limits
+        _validateCapacityLimits(validatorId, stakeAmount);
 
         // Add user to the list of validators they have staked with
         PlumeValidatorLogic.addStakerToValidator($, msg.sender, validatorId);
@@ -527,20 +558,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         $.validatorTotalStaked[validatorId] += stakeAmount;
         $.totalStaked += stakeAmount;
 
-        // Check if exceeding validator capacity
-        uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
-        uint256 maxCapacity = $.validators[validatorId].maxCapacity;
-        if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
-            revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, stakeAmount);
-        }
-
-        // Check if exceeding validator percentage limit
-        if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
-            if (validatorPercentage > $.maxValidatorPercentage) {
-                revert ValidatorPercentageExceeded();
-            }
-        }
+        // Validate capacity limits
+        _validateCapacityLimits(validatorId, stakeAmount);
 
         // Add user to the list of validators they have staked with
         PlumeValidatorLogic.addStakerToValidator($, staker, validatorId);
@@ -713,17 +732,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         PlumeValidatorLogic.addStakerToValidator($, user, validatorId);
 
-        uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
-        uint256 maxCapacity = $.validators[validatorId].maxCapacity;
-        if (maxCapacity > 0 && newDelegatedAmount > maxCapacity) {
-            revert ExceedsValidatorCapacity(validatorId, newDelegatedAmount, maxCapacity, amountRestaked);
-        }
-        if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
-            uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
-            if (validatorPercentage > $.maxValidatorPercentage) {
-                revert ValidatorPercentageExceeded();
-            }
-        }
+        // Validate capacity limits
+        _validateCapacityLimits(validatorId, amountRestaked);
 
         emit Staked(msg.sender, validatorId, amountRestaked, 0, 0, amountRestaked);
         emit RewardsRestaked(msg.sender, validatorId, amountRestaked);
