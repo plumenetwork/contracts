@@ -145,11 +145,10 @@ library PlumeRewardLogic {
                         uint256 grossRewardForValidatorThisSegment =
                             (totalStakedForCalc * rewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
 
-                        // Fix: Use ceiling division for commission to ensure rounding up
-                        uint256 commissionDeltaForValidator = _ceilDiv(
-                            grossRewardForValidatorThisSegment * commissionRateForSegment,
-                            PlumeStakingStorage.REWARD_PRECISION
-                        );
+                        // Fix: Use regular division (floor) for validator's accrued commission
+                        uint256 commissionDeltaForValidator = (
+                            grossRewardForValidatorThisSegment * commissionRateForSegment
+                        ) / PlumeStakingStorage.REWARD_PRECISION;
 
                         if (commissionDeltaForValidator > 0) {
                             $.validatorAccruedCommission[validatorId][token] += commissionDeltaForValidator;
@@ -192,11 +191,10 @@ library PlumeRewardLogic {
                     uint256 grossRewardForValidatorThisSegment =
                         (totalStaked * rewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
 
-                    // Fix: Use ceiling division for commission to ensure rounding up
-                    uint256 commissionDeltaForValidator = _ceilDiv(
-                        grossRewardForValidatorThisSegment * commissionRateForSegment,
-                        PlumeStakingStorage.REWARD_PRECISION
-                    );
+                    // Fix: Use regular division (floor) for validator's accrued commission
+                    uint256 commissionDeltaForValidator = (
+                        grossRewardForValidatorThisSegment * commissionRateForSegment
+                    ) / PlumeStakingStorage.REWARD_PRECISION;
 
                     if (commissionDeltaForValidator > 0) {
                         $.validatorAccruedCommission[validatorId][token] += commissionDeltaForValidator;
@@ -319,7 +317,7 @@ library PlumeRewardLogic {
                 // Commission rate effective at the START of this segment
                 uint256 effectiveCommissionRate = getEffectiveCommissionRateAt($, validatorId, segmentStartTime);
 
-                // Fix: Use ceiling division for commission to ensure rounding up
+                // Fix: Use ceiling division for commission charged to user to ensure rounding up
                 uint256 commissionForThisSegment =
                     _ceilDiv(grossRewardForSegment * effectiveCommissionRate, PlumeStakingStorage.REWARD_PRECISION);
 
@@ -337,6 +335,8 @@ library PlumeRewardLogic {
 
     /**
      * @notice Helper function for ceiling division to ensure rounding up
+     * @dev Used for commission calculations charged to users to ensure sum of user commissions >= validator accrued
+     * commission
      * @param a Numerator
      * @param b Denominator
      * @return result The ceiling of a/b
