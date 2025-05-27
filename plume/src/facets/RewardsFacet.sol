@@ -280,6 +280,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
             emit RewardClaimedFromValidator(user, token, validatorId, reward);
         }
+
+        // Clear pending rewards flag if user has no more rewards with this validator
+        PlumeRewardLogic.clearPendingRewardsFlagIfEmpty($, user, validatorId);
         return reward;
     }
 
@@ -355,6 +358,11 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
             emit RewardClaimed(msg.sender, token, totalReward);
         }
+
+        // Clear pending rewards flags for all validators if user has no more rewards
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            PlumeRewardLogic.clearPendingRewardsFlagIfEmpty($, msg.sender, validatorIds[i]);
+        }
         return totalReward;
     }
 
@@ -418,6 +426,12 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
                 claims[i] = totalReward;
                 emit RewardClaimed(msg.sender, token, totalReward);
             }
+        }
+
+        // Clear pending rewards flags for all validators after claiming all tokens
+        uint16[] memory validatorIds = $.userValidators[msg.sender];
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            PlumeRewardLogic.clearPendingRewardsFlagIfEmpty($, msg.sender, validatorIds[i]);
         }
         return claims;
     }

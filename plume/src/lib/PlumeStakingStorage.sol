@@ -136,6 +136,9 @@ library PlumeStakingStorage {
         uint256 maxAllowedValidatorCommission;
         // Add mapping for pending commission claims: validatorId => token => PendingCommissionClaim
         mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims;
+        /// @notice Maps a (user, validator) pair to indicate if user has ANY pending rewards with that validator
+        /// @dev This flag is set when rewards are added and cleared when ALL rewards are claimed/cleared
+        mapping(address => mapping(uint16 => bool)) userHasPendingRewards;
     }
 
     uint256 constant COMMISSION_CLAIM_TIMELOCK = 7 days;
