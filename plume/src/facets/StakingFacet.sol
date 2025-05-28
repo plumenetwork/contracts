@@ -265,32 +265,94 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
     /**
      * @notice Restake PLUME that is currently in cooldown or parked for a specific validator.
+     * Prioritizes cooldown funds first (from target validator, then other validators), 
+     * then parked funds last. Performs full validation including capacity limits and 
+     * reward state initialization for new stakes.
      * @param validatorId ID of the validator to restake to.
      * @param amount Amount of PLUME to restake.
      */
     function restake(uint16 validatorId, uint256 amount) external nonReentrant {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
-
-        // Validate cooldown balance availability
-        PlumeStakingStorage.CooldownEntry storage cooldownEntry = $.userValidatorCooldowns[user][validatorId];
-        if (cooldownEntry.amount < amount) {
-            revert InsufficientCooldownBalance(cooldownEntry.amount, amount);
+        
+        if (amount == 0) {
+            revert InvalidAmount(0);
         }
 
-        // Perform common restaking workflow
-        _performRestakeWorkflow(user, validatorId, amount, "cooled");
-
-        // Handle cooldown balance reduction
-        cooldownEntry.amount -= amount;
-        _removeCoolingAmounts(user, validatorId, amount);
-
-        if (cooldownEntry.amount == 0) {
-            delete $.userValidatorCooldowns[user][validatorId];
+        // Calculate all available fund sources
+        uint256 availableCooledFromTarget = $.userValidatorCooldowns[user][validatorId].amount;
+        
+        // Calculate total available cooldown funds from other validators
+        uint256 availableCooledFromOthers = 0;
+        uint16[] memory userValidators = $.userValidators[user];
+        for (uint256 i = 0; i < userValidators.length; i++) {
+            uint16 otherValidatorId = userValidators[i];
+            if (otherValidatorId != validatorId) {
+                availableCooledFromOthers += $.userValidatorCooldowns[user][otherValidatorId].amount;
+            }
+        }
+        
+        uint256 availableParked = $.stakeInfo[user].parked;
+        uint256 totalAvailable = availableCooledFromTarget + availableCooledFromOthers + availableParked;
+        
+        if (totalAvailable < amount) {
+            revert InsufficientCooldownBalance(totalAvailable, amount);
         }
 
-        // Emit events
-        emit Staked(user, validatorId, amount, amount, 0, 0);
+        // Use comprehensive staking setup (includes capacity validation and reward initialization)
+        _performStakeSetup(user, validatorId, amount);
+
+        // Handle fund source reduction with proper prioritization
+        uint256 fromCooledTarget = 0;
+        uint256 fromCooledOthers = 0;
+        uint256 fromParked = 0;
+        uint256 remaining = amount;
+        
+        // Priority 1: Use cooldown funds from target validator first
+        if (remaining > 0 && availableCooledFromTarget > 0) {
+            fromCooledTarget = remaining > availableCooledFromTarget ? availableCooledFromTarget : remaining;
+            _removeCoolingAmounts(user, validatorId, fromCooledTarget);
+            
+            // Update cooldown entry
+            $.userValidatorCooldowns[user][validatorId].amount -= fromCooledTarget;
+            if ($.userValidatorCooldowns[user][validatorId].amount == 0) {
+                delete $.userValidatorCooldowns[user][validatorId];
+            }
+            remaining -= fromCooledTarget;
+        }
+        
+        // Priority 2: Use cooldown funds from other validators
+        if (remaining > 0 && availableCooledFromOthers > 0) {
+            for (uint256 i = 0; i < userValidators.length && remaining > 0; i++) {
+                uint16 otherValidatorId = userValidators[i];
+                if (otherValidatorId != validatorId) {
+                    uint256 availableFromThis = $.userValidatorCooldowns[user][otherValidatorId].amount;
+                    if (availableFromThis > 0) {
+                        uint256 toUseFromThis = remaining > availableFromThis ? availableFromThis : remaining;
+                        _removeCoolingAmounts(user, otherValidatorId, toUseFromThis);
+                        
+                        // Update cooldown entry for other validator
+                        $.userValidatorCooldowns[user][otherValidatorId].amount -= toUseFromThis;
+                        if ($.userValidatorCooldowns[user][otherValidatorId].amount == 0) {
+                            delete $.userValidatorCooldowns[user][otherValidatorId];
+                        }
+                        
+                        fromCooledOthers += toUseFromThis;
+                        remaining -= toUseFromThis;
+                    }
+                }
+            }
+        }
+        
+        // Priority 3: Use parked funds last (user might want to keep these for withdrawal)
+        if (remaining > 0 && availableParked > 0) {
+            fromParked = remaining > availableParked ? availableParked : remaining;
+            _removeParkedAmounts(user, fromParked);
+            remaining -= fromParked;
+        }
+
+        // Emit events with detailed fund source breakdown
+        emit Staked(user, validatorId, amount, fromCooledTarget + fromCooledOthers, fromParked, 0);
     }
 
     /**
