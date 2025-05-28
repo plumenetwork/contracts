@@ -15,169 +15,155 @@ library PlumeStakingStorage {
     uint256 public constant REWARD_PRECISION = 1e18;
     // --- END ADDED CONSTANTS ---
 
-    // Rate checkpoint struct to store historical reward rates
-    struct RateCheckpoint {
-        uint256 timestamp; // Timestamp when this rate became active
-        uint256 rate; // Reward rate at this checkpoint
-        uint256 cumulativeIndex; // Accumulated reward per token at this checkpoint
+    // Storage position for the diamond storage
+    bytes32 constant DIAMOND_STORAGE_POSITION = keccak256("plume.staking.storage");
+
+    /**
+     * @notice Represents a user's stake information with a specific validator
+     */
+    struct UserValidatorStake {
+        uint256 staked; // Amount currently staked with this validator
     }
 
-    // New struct for per-user, per-validator cooldown entries
+    /**
+     * @notice Represents a user's global stake information across all validators
+     */
+    struct StakeInfo {
+        uint256 staked; // Total amount staked across all validators
+        uint256 cooled; // Total amount in cooling period across all validators
+        uint256 parked; // Total amount ready for withdrawal
+    }
+
+    /**
+     * @notice Represents a cooldown entry for a user with a specific validator
+     */
     struct CooldownEntry {
-        uint256 amount; // Amount cooling for this user with this validator
-        uint256 cooldownEndTime; // Timestamp when this specific cooldown ends
+        uint256 amount; // Amount in cooldown
+        uint256 cooldownEndTime; // When the cooldown period ends
     }
 
-    // Main storage struct using ERC-7201 namespaced storage pattern
+    /**
+     * @notice Represents a rate checkpoint for reward calculations
+     */
+    struct RateCheckpoint {
+        uint256 timestamp; // When this rate was set
+        uint256 rate; // The reward rate at this timestamp
+        uint256 cumulativeIndex; // Cumulative reward index at this checkpoint
+    }
+
+    /**
+     * @notice Main storage layout for the staking system
+     */
     struct Layout {
-        /// @notice Array of all staker addresses
-        address[] stakers;
-        /// @notice Array of all reward token addresses
-        address[] rewardTokens;
-        /// @notice Maps a token address to a boolean indicating if it's a reward token
-        mapping(address => bool) isRewardToken;
-        /// @notice Maps a token address to its reward rate in tokens per second per staked token
-        mapping(address => uint256) rewardRates;
-        /// @notice Maps a token address to its maximum allowed reward rate
-        mapping(address => uint256) maxRewardRates;
-        /// @notice Maps a token address to the last time its reward was globally updated
-        mapping(address => uint256) lastUpdateTimes;
-        /// @notice Maps a token address to the reward per token accumulated so far
-        mapping(address => uint256) rewardPerTokenCumulative;
-        /// @notice Maps a token address to the total amount claimable for that token
-        mapping(address => uint256) totalClaimableByToken;
-        /// @notice Maps a token address to its history of rate checkpoints
-        mapping(address => RateCheckpoint[]) rewardRateCheckpoints;
-        /// @notice Total $PLUME staked in the contract
-        uint256 totalStaked;
-        /// @notice Total $PLUME in cooling period
-        uint256 totalCooling;
-        /// @notice Total $PLUME that is withdrawable (parked)
-        uint256 totalWithdrawable;
-        /// @notice Minimum staking amount
-        uint256 minStakeAmount;
-        /// @notice Duration of the cooldown period
-        uint256 cooldownInterval;
-        /// @notice Maps an address to its staking info
-        mapping(address => StakeInfo) stakeInfo;
-        /// @notice Maps a (user, token) pair to the reward per token paid to that user for that token
-        mapping(address => mapping(address => uint256)) userRewardPerTokenPaid;
-        /// @notice Maps a (user, token) pair to the reward of that token for that user
-        mapping(address => mapping(address => uint256)) rewards;
-        // Validator related storage
-        /// @notice Information about each validator
-        mapping(uint16 => ValidatorInfo) validators;
-        /// @notice Array of all validator IDs
-        uint16[] validatorIds;
-        /// @notice Mapping to check if a validator exists
-        mapping(uint16 => bool) validatorExists;
-        /// @notice Maps a (user, validator) pair to the user's stake info for that validator
-        mapping(address => mapping(uint16 => StakeInfo)) userValidatorStakes;
-        /// @notice Maps a user to all validators they have staked with
-        mapping(address => uint16[]) userValidators;
-        /// @notice Maps a (user, validator) pair to indicate if user has staked with that validator
-        mapping(address => mapping(uint16 => bool)) userHasStakedWithValidator;
-        /// @notice Maps a validator to all stakers who have staked with it
-        mapping(uint16 => address[]) validatorStakers;
-        /// @notice Maps a (validator, staker) pair to indicate if staker has staked with that validator
-        mapping(uint16 => mapping(address => bool)) isStakerForValidator;
-        /// @notice Maps a (staker, validator) pair to the index of the staker within the validator's staker list
-        mapping(address => mapping(uint16 => uint256)) userIndexInValidatorStakers;
-        /// @notice Maps a validator to its total staked amount
-        mapping(uint16 => uint256) validatorTotalStaked;
-        /// @notice Maps a validator to its total cooling amount (sum of its entries in userValidatorCooldowns)
-        mapping(uint16 => uint256) validatorTotalCooling;
-        /// @notice Maps a validator to its total withdrawable amount
-        mapping(uint16 => uint256) validatorTotalWithdrawable;
-        /// @notice Maps a (user, validator) pair to their specific cooldown details
-        mapping(address => mapping(uint16 => CooldownEntry)) userValidatorCooldowns;
-        /// @notice Maps a (validator, token) pair to the last time rewards were updated
-        mapping(uint16 => mapping(address => uint256)) validatorLastUpdateTimes;
-        /// @notice Maps a (validator, token) pair to the reward per token accumulated
-        mapping(uint16 => mapping(address => uint256)) validatorRewardPerTokenCumulative;
-        /// @notice Maps a (user, validator, token) triple to the reward per token paid
-        mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaid;
-        /// @notice Maps a (user, validator, token) triple to the rewards earned
-        mapping(address => mapping(uint16 => mapping(address => uint256))) userRewards;
-        /// @notice Maps a (validator, token) pair to the commission accumulated
-        mapping(uint16 => mapping(address => uint256)) validatorAccruedCommission;
-        /// @notice Maps a validator ID to its history of commission rate checkpoints
-        mapping(uint16 => RateCheckpoint[]) validatorCommissionCheckpoints;
-        /// @notice Maximum allowed commission for all validators
-        uint256 maxValidatorCommission;
-        /// @notice Maximum percentage of total staked funds any validator can have (in basis points)
-        uint256 maxValidatorPercentage;
-        /// @notice Maps a validator ID and token to its history of rate checkpoints
-        mapping(uint16 => mapping(address => RateCheckpoint[])) validatorRewardRateCheckpoints;
-        /// @notice Maps a (user, validator, token) triple to the index of the last checkpoint that was paid
-        mapping(address => mapping(uint16 => mapping(address => uint256))) userLastCheckpointIndex;
-        /// @notice Maps a (user, validator) pair to the timestamp when the user started staking with this validator
-        mapping(address => mapping(uint16 => uint256)) userValidatorStakeStartTime;
-        /// @notice Maps a (user, validator, token) triple to the timestamp when the user's reward per token was last
-        /// updated
-        mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaidTimestamp;
-        /// @notice Maps a role (bytes32) to an address to check if the address has the role.
-        mapping(bytes32 => mapping(address => bool)) hasRole;
-        bool initialized;
-        /// @notice Flag to indicate if the AccessControlFacet has been initialized
-        bool accessControlFacetInitialized;
-        /// @notice Maps a malicious validator ID to the validator that voted to slash it
-        mapping(uint16 maliciousValidatorId => mapping(uint16 votingValidatorId => uint256 voteExpiration))
-            slashingVotes;
-        /// @notice The maximum length of time for which a validator's vote to slash another validator is valid
-        uint256 maxSlashVoteDurationInSeconds;
-        /// @notice Maps malicious validator ID to the count of active, non-expired votes against it
-        mapping(uint16 => uint256) slashVoteCounts;
-        /// @notice Maps an admin address to its validator ID (if it's a validator admin)
-        mapping(address => uint16) adminToValidatorId;
-        /// @notice Tracks if an admin address is already assigned to *any* validator.
-        mapping(address => bool) isAdminAssigned;
-        /// @notice Maximum allowed commission for any validator
-        uint256 maxAllowedValidatorCommission;
-        // Add mapping for pending commission claims: validatorId => token => PendingCommissionClaim
-        mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims;
+        
+        // === Core Staking State ===
+        uint256 totalStaked; // Total amount staked across all validators
+        uint256 totalCooling; // Total amount in cooling period
+        uint256 totalWithdrawable; // Total amount available for withdrawal
+        
+        // === Reward Token Management ===
+        address[] rewardTokens; // Array of all reward token addresses
+        mapping(address => bool) isRewardToken; // token => whether it's an active reward token
+        mapping(address => uint256) rewardRates; // token => reward rate
+        mapping(address => uint256) maxRewardRates; // token => maximum allowed reward rate
+        mapping(address => uint256) totalClaimableByToken; // token => total claimable amount
+
+        // === User State Mappings ===
+        mapping(address => StakeInfo) stakeInfo; // user => global stake info
+        mapping(address => mapping(uint16 => UserValidatorStake)) userValidatorStakes; // user => validatorId => stake info
+        mapping(address => mapping(uint16 => CooldownEntry)) userValidatorCooldowns; // user => validatorId => cooldown info
+        mapping(address => uint16[]) userValidators; // user => list of validators they've staked with
+        mapping(address => mapping(uint16 => bool)) userHasStakedWithValidator; // user => validatorId => has staked
+        mapping(address => mapping(uint16 => uint256)) userValidatorStakeStartTime; // user => validatorId => stake start time
+
+        // === Validator State ===
+        mapping(uint16 => ValidatorInfo) validators; // validatorId => validator info
+        uint16[] validatorIds; // Array of all validator IDs
+        mapping(uint16 => bool) validatorExists; // validatorId => exists
+        mapping(uint16 => uint256) validatorTotalStaked; // validatorId => total staked amount
+        mapping(uint16 => uint256) validatorTotalCooling; // validatorId => total cooling amount
+        mapping(uint16 => address[]) validatorStakers; // validatorId => list of stakers
+        mapping(uint16 => mapping(address => bool)) isStakerForValidator; // validatorId => user => is staker
+        mapping(address => mapping(uint16 => uint256)) userIndexInValidatorStakers; // user => validatorId => index in stakers array 
+
+        // === Reward System ===
+        mapping(uint16 => mapping(address => uint256)) validatorAccruedCommission; // validatorId => token => commission amount
+        mapping(uint16 => mapping(address => uint256)) validatorRewardPerTokenCumulative; // validatorId => token => cumulative reward per token
+        mapping(uint16 => mapping(address => uint256)) validatorLastUpdateTimes; // validatorId => token => last update time
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userRewards; // user => validatorId => token => reward amount
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaid; // user => validatorId => token => last paid rate
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userLastCheckpointIndex; // user => validatorId => token => checkpoint index
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaidTimestamp; // user => validatorId => token => timestamp
+        mapping(address => mapping(uint16 => bool)) userHasPendingRewards; // user => validatorId => has pending rewards
+
+        // === Reward Rate Checkpoints ===
+        mapping(address => RateCheckpoint[]) rewardRateCheckpoints; // token => rate checkpoints
+        mapping(uint16 => mapping(address => RateCheckpoint[])) validatorRewardRateCheckpoints; // validatorId => token => rate checkpoints
+        mapping(uint16 => RateCheckpoint[]) validatorCommissionCheckpoints; // validatorId => commission checkpoints
+
+        // === Configuration ===
+        uint256 minStakeAmount; // Minimum staking amount
+        uint256 cooldownInterval; // Duration of the cooldown period in seconds
+        uint256 maxValidatorPercentage; // Maximum percentage of total stake a validator can have (in basis points)
+        uint256 maxAllowedValidatorCommission; // Maximum allowed commission for any validator
+
+        // === Access Control ===
+        mapping(bytes32 => mapping(address => bool)) hasRole; // role => address => has role
+        bool initialized; // Whether the contract has been initialized
+        bool accessControlFacetInitialized; // Whether the AccessControlFacet has been initialized
+
+        // === Validator Management ===
+        mapping(uint16 => mapping(uint16 => uint256)) slashingVotes; // maliciousValidatorId => votingValidatorId => vote expiration
+        uint256 maxSlashVoteDurationInSeconds; // Maximum duration for slash votes
+        mapping(uint16 => uint256) slashVoteCounts; // validatorId => active vote count
+        mapping(address => uint16) adminToValidatorId; // admin address => validatorId
+        mapping(address => bool) isAdminAssigned; // admin address => is assigned to a validator
+
+        // === Commission Claims ===
+        mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims; // validatorId => token => pending claim
+            
+        // === Flags ===
+        mapping(address => bool) hasPendingRewards; // user => whether they have pending rewards to claim
     }
 
-    uint256 constant COMMISSION_CLAIM_TIMELOCK = 7 days;
-
-    // Validator info struct to store validator details
+    /**
+     * @notice Information about a validator
+     */
     struct ValidatorInfo {
         uint16 validatorId; // Validator ID
-        uint256 commission; // Commission rate (BASE = 1e18, so 5% = 5e16)
+        bool active; // Whether the validator is currently active
+        bool slashed; // Whether the validator has been slashed
+        uint256 slashedAtTimestamp; // When the validator was slashed (0 if not slashed)
+        uint256 maxCapacity; // Maximum amount that can be staked with this validator (0 = unlimited)
         uint256 delegatedAmount; // Total amount delegated to this validator
+        uint256 commission; // Commission rate (using REWARD_PRECISION as base)
         address l2AdminAddress; // Admin address (multisig)
         address l2WithdrawAddress; // Address for validator rewards
         string l1ValidatorAddress; // L1 validator address (for reference)
         string l1AccountAddress; // L1 account address (for reference)
         address l1AccountEvmAddress; // EVM address of account on L1 (for reference)
-        bool active; // Whether the validator is active
-        bool slashed; // Whether the validator has been slashed
-        uint256 maxCapacity; // Maximum amount of PLUME that can be staked with this validator
-        uint256 slashedAtTimestamp; // Timestamp when the validator was slashed
     }
 
-    struct StakeInfo {
-        uint256 staked; // Amount staked
-        uint256 cooled; // Amount in cooldown (sum of active userValidatorCooldowns for this user)
-        uint256 parked; // Amount that can be withdrawn
-        uint256 lastUpdateTimestamp; // Timestamp of last rewards update
-    }
-
+    /**
+     * @notice Pending commission claim information
+     */
     struct PendingCommissionClaim {
-        uint256 amount;
-        uint256 requestTimestamp;
-        address token;
-        address recipient;
+        uint256 amount; // Amount to be claimed
+        uint256 requestTimestamp; // When the claim was requested
+        address token; // Token being claimed
+        address recipient; // Address to receive the claim
     }
 
     // Constants
-    bytes32 public constant STORAGE_SLOT = keccak256("plume.storage.PlumeStaking");
+    uint256 constant COMMISSION_CLAIM_TIMELOCK = 7 days;
 
-    // Function to get storage
-    function layout() internal pure returns (Layout storage s) {
-        bytes32 slot = STORAGE_SLOT;
+    /**
+     * @notice Returns the storage layout
+     */
+    function layout() internal pure returns (Layout storage l) {
+        bytes32 position = DIAMOND_STORAGE_POSITION;
         assembly {
-            s.slot := slot
+            l.slot := position
         }
     }
 

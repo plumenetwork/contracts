@@ -112,7 +112,7 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     /**
      * @notice Allows admin to withdraw ERC20 or native PLUME tokens from the contract balance
      * @dev Primarily for recovering accidentally sent tokens or managing excess reward funds.
-     * Requires ADMIN_ROLE.
+     * Requires TIMELOCK_ROLE.
      * @param token Address of the token to withdraw (use PLUME address for native token)
      * @param amount Amount to withdraw
      * @param recipient Address to send the withdrawn tokens to

@@ -108,15 +108,9 @@ library PlumeValidatorLogic {
         // AND they have no pending rewards for this validator.
         bool hasActiveStakeForThisVal = $.userValidatorStakes[staker][validatorId].staked > 0;
         bool hasActiveCooldownForThisVal = $.userValidatorCooldowns[staker][validatorId].amount > 0;
-        bool hasPendingRewardsForThisVal = false;
 
-        address[] memory rewardTokens = $.rewardTokens;
-        for (uint256 i = 0; i < rewardTokens.length; i++) {
-            if ($.userRewards[staker][validatorId][rewardTokens[i]] > 0) {
-                hasPendingRewardsForThisVal = true;
-                break;
-            }
-        }
+        // Fix: Use the pending rewards flag which handles both current and removed tokens
+        bool hasPendingRewardsForThisVal = $.userHasPendingRewards[staker][validatorId];
 
         if (!hasActiveStakeForThisVal && !hasActiveCooldownForThisVal && !hasPendingRewardsForThisVal) {
             if ($.userHasStakedWithValidator[staker][validatorId]) {

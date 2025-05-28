@@ -87,6 +87,8 @@ library PlumeRewardLogic {
             if (userRewardDelta > 0) {
                 $.userRewards[user][validatorId][token] += userRewardDelta;
                 $.totalClaimableByToken[token] += userRewardDelta;
+                // Set flag indicating user has pending rewards with this validator
+                $.userHasPendingRewards[user][validatorId] = true;
             }
 
             $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
@@ -144,9 +146,12 @@ library PlumeRewardLogic {
                             getEffectiveCommissionRateAt($, validatorId, currentLastUpdateTime);
                         uint256 grossRewardForValidatorThisSegment =
                             (totalStakedForCalc * rewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
+
+                        // Fix: Use regular division (floor) for validator's accrued commission
                         uint256 commissionDeltaForValidator = (
                             grossRewardForValidatorThisSegment * commissionRateForSegment
                         ) / PlumeStakingStorage.REWARD_PRECISION;
+
                         if (commissionDeltaForValidator > 0) {
                             $.validatorAccruedCommission[validatorId][token] += commissionDeltaForValidator;
                         }
@@ -187,12 +192,13 @@ library PlumeRewardLogic {
                     uint256 commissionRateForSegment = getEffectiveCommissionRateAt($, validatorId, oldLastUpdateTime);
                     uint256 grossRewardForValidatorThisSegment =
                         (totalStaked * rewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
+
+                    // Fix: Use regular division (floor) for validator's accrued commission
                     uint256 commissionDeltaForValidator = (
                         grossRewardForValidatorThisSegment * commissionRateForSegment
                     ) / PlumeStakingStorage.REWARD_PRECISION;
 
                     if (commissionDeltaForValidator > 0) {
-                        uint256 previousAccrued = $.validatorAccruedCommission[validatorId][token];
                         $.validatorAccruedCommission[validatorId][token] += commissionDeltaForValidator;
                     }
                 }
@@ -303,6 +309,7 @@ library PlumeRewardLogic {
 
             // The actual RPT delta for the user in this segment.
             // The user "catches up" from rptAtSegmentStart to rptAtSegmentEnd.
+            // Note: This is the same as rptIncreaseInSegment for this specific case
             uint256 rewardPerTokenDeltaForUserInSegment = rptAtSegmentEnd - rptAtSegmentStart;
 
             if (rewardPerTokenDeltaForUserInSegment > 0 && userStakedAmount > 0) {
@@ -311,8 +318,10 @@ library PlumeRewardLogic {
 
                 // Commission rate effective at the START of this segment
                 uint256 effectiveCommissionRate = getEffectiveCommissionRateAt($, validatorId, segmentStartTime);
+
+                // Fix: Use ceiling division for commission charged to user to ensure rounding up
                 uint256 commissionForThisSegment =
-                    (grossRewardForSegment * effectiveCommissionRate) / PlumeStakingStorage.REWARD_PRECISION;
+                    _ceilDiv(grossRewardForSegment * effectiveCommissionRate, PlumeStakingStorage.REWARD_PRECISION);
 
                 if (grossRewardForSegment >= commissionForThisSegment) {
                     totalUserRewardDelta += (grossRewardForSegment - commissionForThisSegment);
@@ -324,6 +333,21 @@ library PlumeRewardLogic {
             rptTracker = rptAtSegmentEnd; // Update tracker for the next segment's start
         }
         return (totalUserRewardDelta, totalCommissionAmountDelta, effectiveTimeDelta);
+    }
+
+    /**
+     * @notice Helper function for ceiling division to ensure rounding up
+     * @dev Used for commission calculations charged to users to ensure sum of user commissions >= validator accrued
+     * commission
+     * @param a Numerator
+     * @param b Denominator
+     * @return result The ceiling of a/b
+     */
+    function _ceilDiv(uint256 a, uint256 b) internal pure returns (uint256 result) {
+        if (b == 0) {
+            return 0;
+        }
+        return (a + b - 1) / b;
     }
 
     /**
@@ -432,6 +456,7 @@ library PlumeRewardLogic {
     /**
      * @notice Gets the effective reward rate for a validator and token at a given timestamp.
      * Looks up the validator-specific reward rate checkpoint. If none, uses global reward rate.
+     * @dev Returns the reward rate that was active at the given timestamp, regardless of current token status
      */
     function getEffectiveRewardRateAt(
         PlumeStakingStorage.Layout storage $,
@@ -439,6 +464,9 @@ library PlumeRewardLogic {
         uint16 validatorId,
         uint256 timestamp
     ) internal view returns (PlumeStakingStorage.RateCheckpoint memory effectiveCheckpoint) {
+        // For historical reward calculations, we should use the rate that was active at that time
+        // regardless of whether the token is currently valid or the validator is currently slashed
+
         PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorRewardRateCheckpoints[validatorId][token];
         uint256 chkCount = checkpoints.length;
 
@@ -670,6 +698,34 @@ library PlumeRewardLogic {
             // Calling updateRewardPerTokenForValidator will now also handle accruing commission.
             updateRewardPerTokenForValidator($, token, validatorId);
         }
+    }
+
+    /**
+     * @notice Clears the pending rewards flag for a user-validator pair if no rewards remain
+     * @dev Should be called after claiming rewards to maintain flag accuracy
+     * @param $ The PlumeStaking storage layout.
+     * @param user The user address.
+     * @param validatorId The validator ID.
+     */
+    function clearPendingRewardsFlagIfEmpty(
+        PlumeStakingStorage.Layout storage $,
+        address user,
+        uint16 validatorId
+    ) internal {
+        if (!$.userHasPendingRewards[user][validatorId]) {
+            return; // Already cleared
+        }
+
+        // Check if user still has any pending rewards
+        address[] memory currentRewardTokens = $.rewardTokens;
+        for (uint256 i = 0; i < currentRewardTokens.length; i++) {
+            if ($.userRewards[user][validatorId][currentRewardTokens[i]] > 0) {
+                return; // Still has pending rewards, don't clear flag
+            }
+        }
+
+        // No pending rewards found - clear the flag
+        $.userHasPendingRewards[user][validatorId] = false;
     }
 
 }
