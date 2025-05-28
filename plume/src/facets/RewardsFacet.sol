@@ -473,7 +473,19 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         for (uint256 i = 0; i < validatorIds.length; i++) {
             uint16 validatorId = validatorIds[i];
 
-            // Skip inactive validators
+            // For slashed validators, process stored rewards directly
+            if ($.validators[validatorId].slashed) {
+                uint256 storedReward = $.userRewards[user][validatorId][token];
+                if (storedReward > 0) {
+                    // Update state to mark rewards as claimed
+                    _updateUserRewardState(user, validatorId, token, storedReward);
+                    totalReward += storedReward;
+                    emit RewardClaimedFromValidator(user, token, validatorId, storedReward);
+                }
+                continue;
+            }
+
+            // Skip inactive (but not slashed) validators
             if (!$.validators[validatorId].active) {
                 continue;
             }

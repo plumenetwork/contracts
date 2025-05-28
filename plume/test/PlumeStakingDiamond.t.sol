@@ -216,7 +216,7 @@ contract PlumeStakingDiamondTest is Test {
         rewardsSigs_Manual[21] = bytes4(keccak256(bytes("getRewardRate(address)")));
 
         // Validator Facet Selectors
-        bytes4[] memory validatorSigs_Manual = new bytes4[](17); // Size updated to 17
+        bytes4[] memory validatorSigs_Manual = new bytes4[](18); // Size updated to 18
         validatorSigs_Manual[0] =
             bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
@@ -236,6 +236,7 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[14] = bytes4(keccak256(bytes("slashValidator(uint16)")));
         validatorSigs_Manual[15] = bytes4(keccak256(bytes("forceSettleValidatorCommission(uint16)")));
         validatorSigs_Manual[16] = bytes4(keccak256(bytes("getSlashVoteCount(uint16)"))); // <<< NEW SELECTOR
+        validatorSigs_Manual[17] = bytes4(keccak256(bytes("cleanupExpiredVotes(uint16)"))); // <<< NEW CLEANUP FUNCTION
 
         // Management Facet Selectors
         bytes4[] memory managementSigs_Manual = new bytes4[](9); // Size updated
@@ -4441,6 +4442,795 @@ contract PlumeStakingDiamondTest is Test {
         vm.stopPrank();
 
         console2.log("--- Test: testValidatorSlashingWorkflow END ---");
+    }
+
+    function testVoteExpirationLogicVulnerabilityFix() public {
+        console2.log("\n--- Test: testVoteExpirationLogicVulnerabilityFix START ---");
+
+        // Setup: Add additional validators for voting
+        uint16 maliciousValidatorId = 10;
+        uint16 voter1ValidatorId = 11;
+        uint16 voter2ValidatorId = 12;
+        uint16 voter3ValidatorId = 13;
+
+        address maliciousAdmin = makeAddr("maliciousAdmin");
+        address voter1Admin = makeAddr("voter1Admin");
+        address voter2Admin = makeAddr("voter2Admin");
+        address voter3Admin = makeAddr("voter3Admin");
+
+        vm.deal(maliciousAdmin, 1 ether);
+        vm.deal(voter1Admin, 1 ether);
+        vm.deal(voter2Admin, 1 ether);
+        vm.deal(voter3Admin, 1 ether);
+
+        vm.startPrank(admin);
+        
+        // Set slash vote duration
+        uint256 slashVoteDuration = 2 days;
+        ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(slashVoteDuration);
+
+        // Add validators
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            maliciousValidatorId, 5e16, maliciousAdmin, maliciousAdmin, "mal", "mal", address(0xbad), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voter1ValidatorId, 5e16, voter1Admin, voter1Admin, "v1", "v1", address(0x1), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voter2ValidatorId, 5e16, voter2Admin, voter2Admin, "v2", "v2", address(0x2), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voter3ValidatorId, 5e16, voter3Admin, voter3Admin, "v3", "v3", address(0x3), 1000 ether
+        );
+        vm.stopPrank();
+
+        console2.log("Setup complete: Added malicious validator %s and 3 voter validators", maliciousValidatorId);
+
+        // Phase 1: Cast votes with different expiration times
+        uint256 currentTime = block.timestamp;
+        uint256 shortExpiration = currentTime + 1 hours;   // Will expire soon
+        uint256 mediumExpiration = currentTime + 1 days;   // Will expire later
+        uint256 longExpiration = currentTime + 2 days;     // Won't expire in test
+
+        // Voter 1 casts vote with short expiration
+        vm.prank(voter1Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(maliciousValidatorId, shortExpiration);
+        console2.log("Voter 1 cast vote with short expiration: %s", shortExpiration);
+
+        // Voter 2 casts vote with medium expiration  
+        vm.prank(voter2Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(maliciousValidatorId, mediumExpiration);
+        console2.log("Voter 2 cast vote with medium expiration: %s", mediumExpiration);
+
+        // Voter 3 casts vote with long expiration
+        vm.prank(voter3Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(maliciousValidatorId, longExpiration);
+        console2.log("Voter 3 cast vote with long expiration: %s", longExpiration);
+
+        // Verify all votes are counted initially
+        uint256 voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(maliciousValidatorId);
+        assertEq(voteCount, 3, "Should have 3 valid votes initially");
+        console2.log("Initial vote count: %s", voteCount);
+
+        // Phase 2: Advance time to expire the first vote
+        vm.warp(shortExpiration + 1);
+        console2.log("Advanced time past short expiration to: %s", block.timestamp);
+
+        // Check vote count - should now show only 2 valid votes (view function filters expired)
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(maliciousValidatorId);
+        assertEq(voteCount, 2, "Should have 2 valid votes after first expiration");
+        console2.log("Vote count after first expiration: %s", voteCount);
+
+        // Manually cleanup expired votes
+        uint256 cleanedVoteCount = ValidatorFacet(address(diamondProxy)).cleanupExpiredVotes(maliciousValidatorId);
+        assertEq(cleanedVoteCount, 2, "Cleanup should return 2 valid votes");
+        console2.log("Vote count after manual cleanup: %s", cleanedVoteCount);
+
+        // Phase 3: Try to slash - should fail due to insufficient votes
+        // We need 5 votes (unanimity from other active validators: 0, 1, 11, 12, 13)
+        // But only 2 are valid now
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(UnanimityNotReached.selector, 2, 5));
+        ValidatorFacet(address(diamondProxy)).slashValidator(maliciousValidatorId);
+        vm.stopPrank();
+        console2.log("Slash attempt correctly failed with insufficient valid votes");
+
+        // Phase 4: Advance time to expire the second vote
+        vm.warp(mediumExpiration + 1);
+        console2.log("Advanced time past medium expiration to: %s", block.timestamp);
+
+        // Check vote count - should now show only 1 valid vote
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(maliciousValidatorId);
+        assertEq(voteCount, 1, "Should have 1 valid vote after second expiration");
+        console2.log("Vote count after second expiration: %s", voteCount);
+
+        // Phase 5: Try to slash again - should still fail
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(UnanimityNotReached.selector, 1, 5));
+        ValidatorFacet(address(diamondProxy)).slashValidator(maliciousValidatorId);
+        vm.stopPrank();
+        console2.log("Slash attempt correctly failed with only 1 valid vote");
+
+        // Phase 6: Cast new votes to reach unanimity
+        // Need votes from all 5 other validators (0, 1, 11, 12, 13)
+        // Voter 1 and 2 cast new votes (their old ones expired)
+        uint256 newExpiration = block.timestamp + 1 days;
+        
+        vm.prank(voter1Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(maliciousValidatorId, newExpiration);
+        console2.log("Voter 1 cast new vote");
+
+        vm.prank(voter2Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(maliciousValidatorId, newExpiration);
+        console2.log("Voter 2 cast new vote");
+
+        // Need votes from validators 0 and 1 as well
+        vm.prank(validatorAdmin); // Admin for validator 0
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(maliciousValidatorId, newExpiration);
+        console2.log("Validator 0 admin cast vote");
+
+        vm.prank(user2); // Admin for validator 1 (from setUp)
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(maliciousValidatorId, newExpiration);
+        console2.log("Validator 1 admin cast vote");
+
+        // Now we should have 5 valid votes (11, 12, 13, 0, 1)
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(maliciousValidatorId);
+        assertEq(voteCount, 5, "Should have 5 valid votes after new votes");
+        console2.log("Vote count after new votes: %s", voteCount);
+
+        // Phase 7: Slash should now succeed
+        vm.startPrank(admin);
+        vm.expectEmit(true, false, false, true, address(diamondProxy));
+        emit ValidatorSlashed(maliciousValidatorId, admin, 0); // 0 stake since no one staked with malicious validator
+        ValidatorFacet(address(diamondProxy)).slashValidator(maliciousValidatorId);
+        vm.stopPrank();
+        console2.log("Slash succeeded with sufficient valid votes");
+
+        // Verify validator is slashed
+        (PlumeStakingStorage.ValidatorInfo memory info,,) = 
+            ValidatorFacet(address(diamondProxy)).getValidatorInfo(maliciousValidatorId);
+        assertTrue(info.slashed, "Validator should be slashed");
+        assertFalse(info.active, "Validator should be inactive");
+        console2.log("Validator %s successfully slashed", maliciousValidatorId);
+
+        // Phase 8: Verify vote cleanup after slashing
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(maliciousValidatorId);
+        assertEq(voteCount, 0, "Vote count should be 0 after slashing");
+        console2.log("Vote count after slashing: %s", voteCount);
+
+        console2.log("--- Test: testVoteExpirationLogicVulnerabilityFix END ---");
+    }
+
+    function testVoteExpirationEdgeCases() public {
+        console2.log("\n--- Test: testVoteExpirationEdgeCases START ---");
+
+        // Setup validators
+        uint16 targetValidatorId = 20;
+        uint16 voterValidatorId = 21;
+        
+        address targetAdmin = makeAddr("targetAdmin");
+        address voterAdmin = makeAddr("voterAdmin");
+        
+        vm.deal(targetAdmin, 1 ether);
+        vm.deal(voterAdmin, 1 ether);
+
+        vm.startPrank(admin);
+        ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(1 days);
+        
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            targetValidatorId, 5e16, targetAdmin, targetAdmin, "target", "target", address(0x20), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voterValidatorId, 5e16, voterAdmin, voterAdmin, "voter", "voter", address(0x21), 1000 ether
+        );
+        vm.stopPrank();
+
+        // Test Case 1: Vote exactly at expiration time
+        uint256 exactExpirationTime = block.timestamp + 1 hours;
+        
+        vm.prank(voterAdmin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, exactExpirationTime);
+        
+        // At exact expiration time, vote should still be valid
+        vm.warp(exactExpirationTime);
+        uint256 voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId);
+        assertEq(voteCount, 1, "Vote should be valid at exact expiration time");
+        console2.log("Vote valid at exact expiration time: %s", voteCount);
+
+        // One second after expiration, vote should be invalid
+        vm.warp(exactExpirationTime + 1);
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId);
+        assertEq(voteCount, 0, "Vote should be invalid after expiration time");
+        console2.log("Vote invalid after expiration time: %s", voteCount);
+
+        // Test Case 2: Multiple votes from same validator (should replace)
+        vm.warp(block.timestamp + 1 hours); // Move time forward
+        uint256 newExpirationTime = block.timestamp + 2 hours;
+        
+        vm.prank(voterAdmin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, newExpirationTime);
+        
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId);
+        assertEq(voteCount, 1, "Should have 1 vote after replacement");
+        console2.log("Vote count after replacement: %s", voteCount);
+
+        // Test Case 3: Cleanup with no expired votes
+        uint256 cleanedCount = ValidatorFacet(address(diamondProxy)).cleanupExpiredVotes(targetValidatorId);
+        assertEq(cleanedCount, 1, "Cleanup should return 1 when no votes expired");
+        console2.log("Cleanup with no expired votes: %s", cleanedCount);
+
+        // Test Case 4: Cleanup with all votes expired
+        vm.warp(newExpirationTime + 1);
+        cleanedCount = ValidatorFacet(address(diamondProxy)).cleanupExpiredVotes(targetValidatorId);
+        assertEq(cleanedCount, 0, "Cleanup should return 0 when all votes expired");
+        console2.log("Cleanup with all votes expired: %s", cleanedCount);
+
+        console2.log("--- Test: testVoteExpirationEdgeCases END ---");
+    }
+
+    function testSlashingWithStakersAndRewards() public {
+        console2.log("\n--- Test: testSlashingWithStakersAndRewards START ---");
+
+        // Setup validators for slashing scenario
+        uint16 targetValidatorId = 30;
+        uint16 voter1ValidatorId = 31;
+        uint16 voter2ValidatorId = 32;
+        uint16 voter3ValidatorId = 33;
+        uint16 voter4ValidatorId = 34;
+        uint16 voter5ValidatorId = 35;
+
+        address targetAdmin = makeAddr("targetAdmin");
+        address voter1Admin = makeAddr("voter1Admin");
+        address voter2Admin = makeAddr("voter2Admin");
+        address voter3Admin = makeAddr("voter3Admin");
+        address voter4Admin = makeAddr("voter4Admin");
+        address voter5Admin = makeAddr("voter5Admin");
+
+        vm.deal(targetAdmin, 1 ether);
+        vm.deal(voter1Admin, 1 ether);
+        vm.deal(voter2Admin, 1 ether);
+        vm.deal(voter3Admin, 1 ether);
+        vm.deal(voter4Admin, 1 ether);
+        vm.deal(voter5Admin, 1 ether);
+
+        vm.startPrank(admin);
+        ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(6 days); // Must be less than cooldown interval (7 days)
+
+        // Add target validator and 5 voter validators
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            targetValidatorId, 10e16, targetAdmin, targetAdmin, "target", "target", address(0x30), 10000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voter1ValidatorId, 5e16, voter1Admin, voter1Admin, "voter1", "voter1", address(0x31), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voter2ValidatorId, 5e16, voter2Admin, voter2Admin, "voter2", "voter2", address(0x32), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voter3ValidatorId, 5e16, voter3Admin, voter3Admin, "voter3", "voter3", address(0x33), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voter4ValidatorId, 5e16, voter4Admin, voter4Admin, "voter4", "voter4", address(0x34), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voter5ValidatorId, 5e16, voter5Admin, voter5Admin, "voter5", "voter5", address(0x35), 1000 ether
+        );
+
+        // Setup rewards
+        address[] memory tokens = new address[](1);
+        tokens[0] = PLUME_NATIVE;
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = 1e15; // 0.001 PLUME per second
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, 1e18);
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        vm.deal(address(treasury), 10000 ether); // Increased to cover all rewards
+        vm.stopPrank();
+
+        // Users stake with target validator
+        address staker1 = makeAddr("staker1");
+        address staker2 = makeAddr("staker2");
+        address staker3 = makeAddr("staker3");
+        vm.deal(staker1, 100 ether);
+        vm.deal(staker2, 100 ether);
+        vm.deal(staker3, 100 ether);
+
+        uint256 stake1Amount = 50 ether;
+        uint256 stake2Amount = 30 ether;
+        uint256 stake3Amount = 20 ether;
+        uint256 totalStakedWithTarget = stake1Amount + stake2Amount + stake3Amount;
+
+        vm.prank(staker1);
+        StakingFacet(address(diamondProxy)).stake{value: stake1Amount}(targetValidatorId);
+        
+        vm.prank(staker2);
+        StakingFacet(address(diamondProxy)).stake{value: stake2Amount}(targetValidatorId);
+        
+        vm.prank(staker3);
+        StakingFacet(address(diamondProxy)).stake{value: stake3Amount}(targetValidatorId);
+
+        console2.log("Stakers deposited total %s ETH with target validator", totalStakedWithTarget);
+
+        // Some stakers also have cooldowns
+        vm.prank(staker1);
+        StakingFacet(address(diamondProxy)).unstake(targetValidatorId, 10 ether);
+        
+        vm.prank(staker2);
+        StakingFacet(address(diamondProxy)).unstake(targetValidatorId, 5 ether);
+
+        console2.log("Some stakers initiated cooldowns");
+
+        // Let time pass to accrue rewards
+        vm.warp(block.timestamp + 1 days);
+        console2.log("Time advanced for reward accrual");
+
+        // Check rewards before slashing
+        uint256 staker1RewardsBefore = RewardsFacet(address(diamondProxy)).getClaimableReward(staker1, PLUME_NATIVE);
+        uint256 staker2RewardsBefore = RewardsFacet(address(diamondProxy)).getClaimableReward(staker2, PLUME_NATIVE);
+        uint256 staker3RewardsBefore = RewardsFacet(address(diamondProxy)).getClaimableReward(staker3, PLUME_NATIVE);
+        uint256 validatorCommissionBefore = ValidatorFacet(address(diamondProxy)).getAccruedCommission(targetValidatorId, PLUME_NATIVE);
+
+        console2.log("Rewards before slashing - Staker1: %s, Staker2: %s, Staker3: %s", staker1RewardsBefore, staker2RewardsBefore, staker3RewardsBefore);
+        console2.log("Validator commission before slashing: %s", validatorCommissionBefore);
+
+        // Force update rewards for all stakers before slashing to ensure they're properly calculated and stored
+        vm.startPrank(staker1);
+        RewardsFacet(address(diamondProxy)).earned(staker1, PLUME_NATIVE);
+        vm.stopPrank();
+        
+        vm.startPrank(staker2);
+        RewardsFacet(address(diamondProxy)).earned(staker2, PLUME_NATIVE);
+        vm.stopPrank();
+        
+        vm.startPrank(staker3);
+        RewardsFacet(address(diamondProxy)).earned(staker3, PLUME_NATIVE);
+        vm.stopPrank();
+
+        // Cast votes from all other validators (including existing ones from setUp)
+        uint256 voteExpiration = block.timestamp + 1 days;
+        
+        vm.prank(voter1Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(voter2Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(voter3Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(voter4Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(voter5Admin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+
+        // Also need votes from existing validators (0 and 1)
+        vm.prank(validatorAdmin); // Admin for validator 0
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(user2); // Admin for validator 1
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+
+        console2.log("All validators cast votes to slash target validator");
+
+        // Record state before slashing
+        uint256 totalStakedBefore = StakingFacet(address(diamondProxy)).totalAmountStaked();
+        PlumeStakingStorage.StakeInfo memory staker1InfoBefore = StakingFacet(address(diamondProxy)).stakeInfo(staker1);
+        PlumeStakingStorage.StakeInfo memory staker2InfoBefore = StakingFacet(address(diamondProxy)).stakeInfo(staker2);
+        PlumeStakingStorage.StakeInfo memory staker3InfoBefore = StakingFacet(address(diamondProxy)).stakeInfo(staker3);
+
+        // Execute slash
+        vm.startPrank(admin);
+        vm.expectEmit(true, false, false, true, address(diamondProxy));
+        emit ValidatorSlashed(targetValidatorId, admin, totalStakedWithTarget);
+        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId);
+        vm.stopPrank();
+
+        console2.log("Target validator slashed successfully");
+
+        // Verify validator state after slashing
+        (PlumeStakingStorage.ValidatorInfo memory slashedInfo,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(targetValidatorId);
+        assertTrue(slashedInfo.slashed, "Validator should be marked as slashed");
+        assertFalse(slashedInfo.active, "Validator should be inactive");
+
+        // Verify global state changes
+        uint256 totalStakedAfter = StakingFacet(address(diamondProxy)).totalAmountStaked();
+        // After slashing, the global total should be reduced by the amount that was staked with the slashed validator
+        // Since slashing zeros out the validator's total, the global total should decrease accordingly
+        assertEq(totalStakedAfter, 0, "Global total staked should be 0 after slashing (all stake was with slashed validator)");
+
+        // Verify staker states are unchanged (they still have their stake records)
+        PlumeStakingStorage.StakeInfo memory staker1InfoAfter = StakingFacet(address(diamondProxy)).stakeInfo(staker1);
+        PlumeStakingStorage.StakeInfo memory staker2InfoAfter = StakingFacet(address(diamondProxy)).stakeInfo(staker2);
+        PlumeStakingStorage.StakeInfo memory staker3InfoAfter = StakingFacet(address(diamondProxy)).stakeInfo(staker3);
+
+        // Staker info should be unchanged initially (cleanup happens via admin functions)
+        assertEq(staker1InfoAfter.staked, staker1InfoBefore.staked, "Staker1 staked amount should be unchanged initially");
+        assertEq(staker2InfoAfter.staked, staker2InfoBefore.staked, "Staker2 staked amount should be unchanged initially");
+        assertEq(staker3InfoAfter.staked, staker3InfoBefore.staked, "Staker3 staked amount should be unchanged initially");
+
+        // Verify rewards are still claimable (slashing doesn't affect accrued rewards)
+        uint256 staker1RewardsAfter = RewardsFacet(address(diamondProxy)).getClaimableReward(staker1, PLUME_NATIVE);
+        uint256 staker2RewardsAfter = RewardsFacet(address(diamondProxy)).getClaimableReward(staker2, PLUME_NATIVE);
+        uint256 staker3RewardsAfter = RewardsFacet(address(diamondProxy)).getClaimableReward(staker3, PLUME_NATIVE);
+
+        assertEq(staker1RewardsAfter, staker1RewardsBefore, "Staker1 rewards should be preserved");
+        assertEq(staker2RewardsAfter, staker2RewardsBefore, "Staker2 rewards should be preserved");
+        assertEq(staker3RewardsAfter, staker3RewardsBefore, "Staker3 rewards should be preserved");
+
+        // Verify stakers can still claim their rewards
+        vm.prank(staker1);
+        uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(PLUME_NATIVE);
+        assertEq(claimedAmount, staker1RewardsBefore, "Staker1 should be able to claim rewards");
+
+        // Verify interactions with slashed validator are blocked
+        vm.prank(staker1);
+        vm.expectRevert(abi.encodeWithSelector(ActionOnSlashedValidatorError.selector, targetValidatorId));
+        StakingFacet(address(diamondProxy)).stake{value: 1 ether}(targetValidatorId);
+
+        vm.prank(targetAdmin);
+        vm.expectRevert(abi.encodeWithSelector(ValidatorInactive.selector, targetValidatorId));
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(targetValidatorId, 15e16);
+
+        console2.log("--- Test: testSlashingWithStakersAndRewards END ---");
+    }
+
+    function testSlashingEdgeCases() public {
+        console2.log("\n--- Test: testSlashingEdgeCases START ---");
+
+        // Test Case 1: Try to slash already slashed validator
+        uint16 targetValidatorId = 40;
+        uint16 voterValidatorId = 41;
+        
+        address targetAdmin = makeAddr("targetAdmin40");
+        address voterAdmin = makeAddr("voterAdmin41");
+        
+        vm.deal(targetAdmin, 1 ether);
+        vm.deal(voterAdmin, 1 ether);
+
+        vm.startPrank(admin);
+        ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(1 days);
+        
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            targetValidatorId, 5e16, targetAdmin, targetAdmin, "target40", "target40", address(0x40), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            voterValidatorId, 5e16, voterAdmin, voterAdmin, "voter41", "voter41", address(0x41), 1000 ether
+        );
+        vm.stopPrank();
+
+        // First, successfully slash the validator
+        uint256 voteExpiration = block.timestamp + 1 hours;
+        
+        // Get all active validators to vote
+        vm.prank(voterAdmin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(validatorAdmin); // validator 0
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(user2); // validator 1
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId);
+        vm.stopPrank();
+
+        console2.log("Validator %s successfully slashed", targetValidatorId);
+
+        // Test Case 1a: Try to vote against already slashed validator
+        vm.prank(voterAdmin);
+        vm.expectRevert(abi.encodeWithSelector(ValidatorAlreadySlashed.selector, targetValidatorId));
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, block.timestamp + 1 hours);
+
+        // Test Case 1b: Try to slash already slashed validator
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(ValidatorAlreadySlashed.selector, targetValidatorId));
+        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId);
+        vm.stopPrank();
+
+        console2.log("Correctly prevented double slashing");
+
+        // Test Case 2: Vote expiration edge cases
+        uint16 targetValidatorId2 = 42;
+        address targetAdmin2 = makeAddr("targetAdmin42");
+        vm.deal(targetAdmin2, 1 ether);
+
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            targetValidatorId2, 5e16, targetAdmin2, targetAdmin2, "target42", "target42", address(0x42), 1000 ether
+        );
+        vm.stopPrank();
+
+        // Test Case 2a: Vote with expiration in the past
+        vm.prank(voterAdmin);
+        vm.expectRevert(abi.encodeWithSelector(SlashVoteDurationTooLong.selector));
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp - 1);
+
+        // Test Case 2b: Vote with expiration too far in future
+        uint256 maxDuration = 1 days; // From setMaxSlashVoteDuration above
+        vm.prank(voterAdmin);
+        vm.expectRevert(abi.encodeWithSelector(SlashVoteDurationTooLong.selector));
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp + maxDuration + 1);
+
+        // Test Case 2c: Vote with exactly max duration (should work)
+        vm.prank(voterAdmin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp + maxDuration);
+        console2.log("Vote with max duration accepted");
+
+        // Test Case 3: Self-voting prevention
+        vm.prank(targetAdmin2);
+        vm.expectRevert(abi.encodeWithSelector(CannotVoteForSelf.selector));
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp + 1 hours);
+
+        console2.log("Self-voting correctly prevented");
+
+        // Test Case 4: Double voting prevention
+        vm.prank(voterAdmin);
+        vm.expectRevert(abi.encodeWithSelector(AlreadyVotedToSlash.selector, targetValidatorId2, voterValidatorId));
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp + 2 hours);
+
+        console2.log("Double voting correctly prevented");
+
+        // Test Case 5: Vote replacement after expiration
+        vm.warp(block.timestamp + maxDuration + 1); // Move past the vote expiration
+        
+        // Now the same validator should be able to vote again
+        vm.prank(voterAdmin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp + 1 hours);
+        console2.log("Vote replacement after expiration successful");
+
+        // Test Case 6: Inactive validator cannot vote
+        uint16 inactiveValidatorId = 43;
+        address inactiveAdmin = makeAddr("inactiveAdmin43");
+        vm.deal(inactiveAdmin, 1 ether);
+
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            inactiveValidatorId, 5e16, inactiveAdmin, inactiveAdmin, "inactive43", "inactive43", address(0x43), 1000 ether
+        );
+        
+        // Make validator inactive
+        ValidatorFacet(address(diamondProxy)).setValidatorStatus(inactiveValidatorId, false);
+        vm.stopPrank();
+
+        vm.prank(inactiveAdmin);
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, inactiveAdmin));
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp + 1 hours);
+
+        console2.log("Inactive validator correctly prevented from voting");
+
+        // Test Case 7: Non-validator admin cannot vote
+        address randomUser = makeAddr("randomUser");
+        vm.deal(randomUser, 1 ether);
+
+        vm.prank(randomUser);
+        vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, randomUser));
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp + 1 hours);
+
+        console2.log("Non-validator admin correctly prevented from voting");
+
+        // Test Case 8: Vote count accuracy with mixed expired/valid votes
+        uint256 voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId2);
+        assertEq(voteCount, 1, "Should have 1 valid vote after cleanup");
+
+        // Add more votes with different expirations
+        vm.prank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp + 30 minutes);
+        
+        vm.prank(user2);
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, block.timestamp + 2 hours);
+
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId2);
+        assertEq(voteCount, 3, "Should have 3 valid votes");
+
+        // Advance time to expire some votes
+        vm.warp(block.timestamp + 45 minutes);
+        
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId2);
+        assertEq(voteCount, 2, "Should have 2 valid votes after partial expiration");
+
+        console2.log("Vote count accuracy verified with mixed expirations");
+
+        console2.log("--- Test: testSlashingEdgeCases END ---");
+    }
+
+    function testSlashingUnanimityRequirements() public {
+        console2.log("\n--- Test: testSlashingUnanimityRequirements START ---");
+
+        // Create a controlled environment with exactly known validators
+        uint16 targetValidatorId = 50;
+        uint16[] memory voterValidatorIds = new uint16[](4);
+        voterValidatorIds[0] = 51;
+        voterValidatorIds[1] = 52;
+        voterValidatorIds[2] = 53;
+        voterValidatorIds[3] = 54;
+
+        address targetAdmin = makeAddr("targetAdmin50");
+        address[] memory voterAdmins = new address[](4);
+        voterAdmins[0] = makeAddr("voterAdmin51");
+        voterAdmins[1] = makeAddr("voterAdmin52");
+        voterAdmins[2] = makeAddr("voterAdmin53");
+        voterAdmins[3] = makeAddr("voterAdmin54");
+
+        vm.deal(targetAdmin, 1 ether);
+        for (uint i = 0; i < 4; i++) {
+            vm.deal(voterAdmins[i], 1 ether);
+        }
+
+        vm.startPrank(admin);
+        ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(2 days);
+
+        // Add target validator
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            targetValidatorId, 8e16, targetAdmin, targetAdmin, "target50", "target50", address(0x50), 5000 ether
+        );
+
+        // Add 4 voter validators
+        for (uint i = 0; i < 4; i++) {
+            ValidatorFacet(address(diamondProxy)).addValidator(
+                voterValidatorIds[i], 5e16, voterAdmins[i], voterAdmins[i], 
+                string(abi.encodePacked("voter", vm.toString(voterValidatorIds[i]))), 
+                string(abi.encodePacked("voter", vm.toString(voterValidatorIds[i]))), 
+                address(uint160(0x51 + i)), 1000 ether
+            );
+        }
+        vm.stopPrank();
+
+        console2.log("Setup: Target validator %s and 4 voter validators", targetValidatorId);
+
+        // Test Case 1: Insufficient votes (need unanimity from all other active validators)
+        // Total active validators: 0, 1 (from setUp), 50 (target), 51, 52, 53, 54 = 7 validators
+        // To slash validator 50, need votes from: 0, 1, 51, 52, 53, 54 = 6 votes
+
+        uint256 voteExpiration = block.timestamp + 1 days;
+
+        // Cast only 3 votes (insufficient)
+        vm.prank(voterAdmins[0]); // validator 51
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(voterAdmins[1]); // validator 52
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(voterAdmins[2]); // validator 53
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+
+        uint256 voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId);
+        assertEq(voteCount, 3, "Should have 3 votes");
+
+        // Try to slash with insufficient votes
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(UnanimityNotReached.selector, 3, 6));
+        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId);
+        vm.stopPrank();
+
+        console2.log("Correctly rejected slash with 3/6 votes");
+
+        // Test Case 2: Add more votes but still insufficient
+        vm.prank(voterAdmins[3]); // validator 54
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId);
+        assertEq(voteCount, 4, "Should have 4 votes");
+
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(UnanimityNotReached.selector, 4, 6));
+        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId);
+        vm.stopPrank();
+
+        console2.log("Correctly rejected slash with 4/6 votes");
+
+        // Test Case 3: Add votes from existing validators to reach unanimity
+        vm.prank(validatorAdmin); // validator 0
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+        
+        vm.prank(user2); // validator 1
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId, voteExpiration);
+
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId);
+        assertEq(voteCount, 6, "Should have 6 votes (unanimity)");
+
+        // Now slash should succeed
+        vm.startPrank(admin);
+        vm.expectEmit(true, false, false, true, address(diamondProxy));
+        emit ValidatorSlashed(targetValidatorId, admin, 0); // 0 because no one staked with this validator
+        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId);
+        vm.stopPrank();
+
+        console2.log("Successfully slashed with unanimous votes (6/6)");
+
+        // Test Case 4: Verify vote cleanup after slashing
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId);
+        assertEq(voteCount, 0, "Vote count should be 0 after slashing");
+
+        // Test Case 5: Test unanimity with inactive validators
+        uint16 targetValidatorId2 = 55;
+        uint16 inactiveValidatorId = 56;
+        
+        address targetAdmin2 = makeAddr("targetAdmin55");
+        address inactiveAdmin = makeAddr("inactiveAdmin56");
+        
+        vm.deal(targetAdmin2, 1 ether);
+        vm.deal(inactiveAdmin, 1 ether);
+
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            targetValidatorId2, 5e16, targetAdmin2, targetAdmin2, "target55", "target55", address(0x55), 1000 ether
+        );
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            inactiveValidatorId, 5e16, inactiveAdmin, inactiveAdmin, "inactive56", "inactive56", address(0x56), 1000 ether
+        );
+        
+        // Make one validator inactive
+        ValidatorFacet(address(diamondProxy)).setValidatorStatus(inactiveValidatorId, false);
+        vm.stopPrank();
+
+        console2.log("Added target validator %s and inactive validator %s", targetValidatorId2, inactiveValidatorId);
+
+        // Now we have: 0, 1, 51, 52, 53, 54 (active), 55 (target), 56 (inactive)
+        // To slash 55, need votes from: 0, 1, 51, 52, 53, 54 = 6 votes (inactive validator doesn't count)
+
+        voteExpiration = block.timestamp + 1 days;
+
+        // Cast votes from all active validators
+        vm.prank(validatorAdmin); // validator 0
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, voteExpiration);
+        
+        vm.prank(user2); // validator 1
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, voteExpiration);
+        
+        for (uint i = 0; i < 4; i++) {
+            vm.prank(voterAdmins[i]);
+            ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId2, voteExpiration);
+        }
+
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId2);
+        assertEq(voteCount, 6, "Should have 6 votes (inactive validator doesn't count)");
+
+        // Slash should succeed
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId2);
+        vm.stopPrank();
+
+        console2.log("Successfully slashed with unanimity excluding inactive validator");
+
+        // Test Case 6: Edge case with only one other active validator
+        uint16 targetValidatorId3 = 57;
+        address targetAdmin3 = makeAddr("targetAdmin57");
+        vm.deal(targetAdmin3, 1 ether);
+
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            targetValidatorId3, 5e16, targetAdmin3, targetAdmin3, "target57", "target57", address(0x57), 1000 ether
+        );
+        
+        // Deactivate all other validators except one
+        ValidatorFacet(address(diamondProxy)).setValidatorStatus(0, false);
+        ValidatorFacet(address(diamondProxy)).setValidatorStatus(1, false);
+        for (uint i = 0; i < 4; i++) {
+            ValidatorFacet(address(diamondProxy)).setValidatorStatus(voterValidatorIds[i], false);
+        }
+        ValidatorFacet(address(diamondProxy)).setValidatorStatus(inactiveValidatorId, true); // Reactivate one
+        vm.stopPrank();
+
+        console2.log("Setup edge case: only validator %s active besides target %s", inactiveValidatorId, targetValidatorId3);
+
+        // Now only validators 56 and 57 are active. To slash 57, need vote from 56.
+        voteExpiration = block.timestamp + 1 days;
+        
+        vm.prank(inactiveAdmin); // Now active again
+        ValidatorFacet(address(diamondProxy)).voteToSlashValidator(targetValidatorId3, voteExpiration);
+
+        voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId3);
+        assertEq(voteCount, 1, "Should have 1 vote");
+
+        // Slash should succeed with just 1 vote (unanimity of 1)
+        vm.startPrank(admin);
+        ValidatorFacet(address(diamondProxy)).slashValidator(targetValidatorId3);
+        vm.stopPrank();
+
+        console2.log("Successfully slashed with single vote unanimity");
+
+        console2.log("--- Test: testSlashingUnanimityRequirements END ---");
     }
 
     // --- END NEW ADMIN SLASH CLEANUP FUNCTION ---

@@ -456,7 +456,7 @@ library PlumeRewardLogic {
     /**
      * @notice Gets the effective reward rate for a validator and token at a given timestamp.
      * Looks up the validator-specific reward rate checkpoint. If none, uses global reward rate.
-     * @dev Fixed to return 0 rate if token is no longer a valid reward token
+     * @dev Returns the reward rate that was active at the given timestamp, regardless of current token status
      */
     function getEffectiveRewardRateAt(
         PlumeStakingStorage.Layout storage $,
@@ -464,13 +464,8 @@ library PlumeRewardLogic {
         uint16 validatorId,
         uint256 timestamp
     ) internal view returns (PlumeStakingStorage.RateCheckpoint memory effectiveCheckpoint) {
-        // Fix: Check if token is still a valid reward token
-        if (!$.isRewardToken[token]) {
-            effectiveCheckpoint.rate = 0;
-            effectiveCheckpoint.timestamp = timestamp;
-            effectiveCheckpoint.cumulativeIndex = 0;
-            return effectiveCheckpoint;
-        }
+        // For historical reward calculations, we should use the rate that was active at that time
+        // regardless of whether the token is currently valid or the validator is currently slashed
 
         PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorRewardRateCheckpoints[validatorId][token];
         uint256 chkCount = checkpoints.length;
