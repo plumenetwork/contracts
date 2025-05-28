@@ -795,10 +795,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         amountMovedToParked = 0;
 
         // Make a copy to avoid iteration issues when removeStakerFromValidator is called
-        uint16[] memory userAssociatedValidators = new uint16[]($.userValidators[user].length);
-        for (uint256 j = 0; j < $.userValidators[user].length; j++) {
-            userAssociatedValidators[j] = $.userValidators[user][j];
-        }
+        uint16[] memory userAssociatedValidators = $.userValidators[user];
 
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
             uint16 validatorId = userAssociatedValidators[i];
@@ -900,10 +897,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         totalRewards = 0;
 
         // Make a copy to avoid iteration issues
-        uint16[] memory currentUserValidators = new uint16[]($.userValidators[user].length);
-        for (uint256 j = 0; j < $.userValidators[user].length; j++) {
-            currentUserValidators[j] = $.userValidators[user][j];
-        }
+        uint16[] memory currentUserValidators = $.userValidators[user];
 
         for (uint256 i = 0; i < currentUserValidators.length; i++) {
             uint16 userValidatorId = currentUserValidators[i];
