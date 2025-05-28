@@ -13,6 +13,7 @@ import {
     NativeTransferFailed,
     NoActiveStake,
     NoRewardsToRestake,
+    NotActive,
     NoWithdrawableBalanceToRestake,
     StakeAmountTooSmall,
     TokenDoesNotExist,
@@ -412,6 +413,10 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function restakeRewards(
         uint16 validatorId
     ) external nonReentrant returns (uint256 amountRestaked) {
+        
+        // Restake rewards is not active yet
+        revert NotActive();
+
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
 
