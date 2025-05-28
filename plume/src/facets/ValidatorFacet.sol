@@ -13,6 +13,7 @@ import {
     NativeTransferFailed,
     NoPendingClaim,
     NotValidatorAdmin,
+    NotActive,
     PendingClaimExists,
     SlashConditionsNotMet,
     SlashVoteDurationTooLong,
@@ -528,6 +529,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @param voteExpiration Timestamp when this vote expires
      */
     function voteToSlashValidator(uint16 maliciousValidatorId, uint256 voteExpiration) external nonReentrant {
+
+        // voteToSlashValidator is not active yet
+        revert NotActive();
+
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address voterAdmin = msg.sender;
         uint16 voterValidatorId = $.adminToValidatorId[voterAdmin];
@@ -588,6 +593,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function slashValidator(
         uint16 validatorId
     ) external nonReentrant onlyRole(PlumeRoles.TIMELOCK_ROLE) {
+
+        // voteToSlashValidator is not active yet
+        revert NotActive();
+
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if (!$.validatorExists[validatorId]) {

@@ -9,6 +9,7 @@ import {
     InvalidAmount,
     InvalidRewardRateCheckpoint,
     NativeTransferFailed,
+    NotActive,
     RewardRateExceedsMax,
     TokenAlreadyExists,
     TokenDoesNotExist,
@@ -250,6 +251,10 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     // --- Claim Functions ---
 
     function claim(address token, uint16 validatorId) external nonReentrant returns (uint256) {
+
+        // Claim rewards is not active yet
+        revert NotActive();
+
         // Validate inputs
         _validateTokenForClaim(token, msg.sender);
         _validateValidatorForClaim(validatorId);
@@ -272,6 +277,10 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function claim(
         address token
     ) external nonReentrant returns (uint256) {
+
+        // Claim rewards is not active yet
+        revert NotActive();
+
         // Validate token
         _validateTokenForClaim(token, msg.sender);
 
@@ -293,6 +302,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     function claimAll() external nonReentrant returns (uint256[] memory) {
+        // Claim rewards is not active yet
+        revert NotActive();
+
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address[] memory tokens = $.rewardTokens;
         uint256[] memory claims = new uint256[](tokens.length);

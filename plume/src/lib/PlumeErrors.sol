@@ -311,3 +311,9 @@ error ActionOnSlashedValidatorError(uint16 validatorId);
  * @param validatorId The ID of the validator that is not slashed.
  */
 error ValidatorNotSlashed(uint16 validatorId);
+
+
+/**
+ * @notice Thrown when a function is not active.
+ */
+error NotActive();
