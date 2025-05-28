@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 import "./ArcToken.sol";
+import "./ArcTokenFactory.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -43,6 +44,8 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     struct PurchaseStorage {
         // The token used for purchasing ArcTokens (e.g., USDC)
         IERC20 purchaseToken;
+        // The factory that created the tokens
+        address tokenFactory;
         // Mappings
         mapping(address => TokenInfo) tokenInfo;
         mapping(address => StorefrontConfig) storefrontConfigs;
@@ -64,10 +67,12 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     event TokenSaleEnabled(address indexed tokenContract, uint256 numberOfTokens, uint256 tokenPrice);
     event StorefrontConfigSet(address indexed tokenContract, string domain);
     event PurchaseTokenUpdated(address indexed newPurchaseToken);
+    event TokenFactoryUpdated(address indexed newFactory);
 
     // -------------- Custom Errors --------------
     error PurchaseTokenNotSet();
     error PurchaseAmountTooLow();
+    error TooLittleReceived();
     error NotEnoughTokensForSale();
     error ContractBalanceInsufficient();
     error PurchaseTransferFailed();
@@ -87,19 +92,25 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     error PurchaseTokenWithdrawalFailed();
     error TokenNotEnabled(); // Replaces "Token is not enabled for purchase"
     error ZeroAmount(); // Added for consistency if needed
+    error TokenFactoryNotSet();
+    error TokenNotCreatedByFactory();
 
     /**
      * @dev Initializes the contract and sets up admin role
      * @param admin Address to be granted admin role
+     * @param factory Address of the ArcTokenFactory
      */
-    function initialize(
-        address admin
-    ) public initializer {
+    function initialize(address admin, address factory) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
+
+        if (factory == address(0)) {
+            revert TokenFactoryNotSet();
+        }
+        _getPurchaseStorage().tokenFactory = factory;
     }
 
     /**
@@ -135,7 +146,20 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         }
 
         PurchaseStorage storage ps = _getPurchaseStorage();
-        if (ArcToken(_tokenContract).balanceOf(address(this)) < _numberOfTokens) {
+        if (ps.tokenFactory == address(0)) {
+            revert TokenFactoryNotSet();
+        }
+
+        // Verify token was created by the factory
+        address implementation = ArcTokenFactory(ps.tokenFactory)
+            .getTokenImplementation(_tokenContract);
+        if (implementation == address(0)) {
+            revert TokenNotCreatedByFactory();
+        }
+
+        if (
+            ArcToken(_tokenContract).balanceOf(address(this)) < _numberOfTokens
+        ) {
             revert ContractMissingRequiredTokens();
         }
 
@@ -146,12 +170,31 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     }
 
     /**
+     * @dev Set token factory address
+     * @param factoryAddress Address of the ArcTokenFactory
+     */
+    function setTokenFactory(
+        address factoryAddress
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (factoryAddress == address(0)) {
+            revert TokenFactoryNotSet();
+        }
+        _getPurchaseStorage().tokenFactory = factoryAddress;
+        emit TokenFactoryUpdated(factoryAddress);
+    }
+
+    /**
      * @dev Purchase tokens using the purchase token.
      *      Requires the buyer to have approved this contract to spend their purchaseToken.
      * @param _tokenContract Address of the ArcToken to purchase
      * @param _purchaseAmount Amount of purchase tokens to spend
+     * @param _amountOutMinimum Minimum amount of tokens to receive (in base units)
      */
-    function buy(address _tokenContract, uint256 _purchaseAmount) external nonReentrant {
+    function buy(
+        address _tokenContract,
+        uint256 _purchaseAmount,
+        uint256 _amountOutMinimum
+    ) external nonReentrant {
         PurchaseStorage storage ps = _getPurchaseStorage();
         TokenInfo storage info = ps.tokenInfo[_tokenContract];
 
@@ -178,6 +221,11 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         uint256 arcTokensBaseUnitsToBuy = (_purchaseAmount * scalingFactor) / info.tokenPrice;
         if (arcTokensBaseUnitsToBuy == 0) {
             revert PurchaseAmountTooLow();
+        }
+
+        // Check if the calculated amount meets the minimum output requirement
+        if (arcTokensBaseUnitsToBuy < _amountOutMinimum) {
+            revert TooLittleReceived();
         }
 
         uint256 remainingForSale = info.totalAmountForSale - info.amountSold; // Remaining in base units
@@ -328,6 +376,13 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     }
 
     /**
+     * @dev Returns the token factory address
+     */
+    function tokenFactory() external view returns (address) {
+        return _getPurchaseStorage().tokenFactory;
+    }
+
+    /**
      * @dev Withdraw purchase tokens to a specified address
      * @param to Address to send tokens to
      * @param amount Amount of tokens to withdraw
@@ -347,7 +402,7 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     }
 
     /**
-     * @dev Allows the contract admin to withdraw unsold ArcTokens after a sale (or if disabled).
+     * @dev Allows the token admin to withdraw unsold ArcTokens after a sale (or if disabled).
      * @param _tokenContract The ArcToken contract address.
      * @param to The address to send the tokens to.
      * @param amount The amount of ArcTokens to withdraw.
@@ -356,7 +411,7 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         address _tokenContract,
         address to,
         uint256 amount
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external onlyTokenAdmin(_tokenContract) {
         if (to == address(0)) {
             revert CannotWithdrawToZeroAddress();
         }
