@@ -199,15 +199,13 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Check if this is a new stake for this specific validator
         isNewStake = $.userValidatorStakes[user][validatorId].staked == 0;
-
-        // If user is adding to an existing stake with this validator, settle their current rewards first
+        
         if (!isNewStake) {
+            // If user is adding to an existing stake with this validator, settle their current rewards first
             PlumeRewardLogic.updateRewardsForValidator($, user, validatorId);
-        }
-
-        // Initialize reward state for new stakes BEFORE updating stake amounts
-        // This ensures that commission calculations use the old totalStaked amount (before this user's stake)
-        if (isNewStake) {
+        } else {
+            // Initialize reward state for new stakes BEFORE updating stake amounts
+            // This ensures that commission calculations use the old totalStaked amount (before this user's stake)
             _initializeRewardStateForNewStake(user, validatorId);
         }
 
