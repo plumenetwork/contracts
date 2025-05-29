@@ -367,7 +367,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Clean up validator relationships for validators where cooling became 0
         for (uint256 i = 0; i < checkCount; i++) {
-            _cleanupValidatorRelationshipIfNeeded(user, validatorsToCheck[i]);
+            PlumeValidatorLogic.removeStakerFromValidator($, user, validatorsToCheck[i]);
         }
 
         // Emit events with proper fund source breakdown
@@ -1135,19 +1135,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 PlumeValidatorLogic.removeStakerFromValidator($, user, validatorId);
             }
         }
-    }
-
-    /**
-     * @dev Cleans up validator relationship if needed
-     * @param user The user address
-     * @param validatorId The validator ID
-     */
-    function _cleanupValidatorRelationshipIfNeeded(address user, uint16 validatorId) internal {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-
-        // removeStakerFromValidator already checks for active stake, cooldown, and pending rewards
-        // Only call it if we know the conditions might be met (cooling amount is 0)
-        PlumeValidatorLogic.removeStakerFromValidator($, user, validatorId);
     }
 
 }
