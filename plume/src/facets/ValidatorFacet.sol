@@ -415,6 +415,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         _validateValidatorExists(validatorId)
         _validateIsToken(token)
     {
+
+        // requestCommissionClaim is not active yet
+        revert NotActive();
+
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
