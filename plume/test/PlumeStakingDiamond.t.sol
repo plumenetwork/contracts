@@ -6826,5 +6826,268 @@ function testCommissionCalculationOrderFix_RewardRateChangeDuringStaking() publi
     console2.log("Reward rate change during staking test passed");
 }
 
+function testRestakeValidatorRelationshipCleanup() public {
+    console2.log("--- Test: Restake Validator Relationship Cleanup ---");
+    
+    uint16 validatorA = 0;
+    uint16 validatorB = 1;
+    address token = address(pUSD);
+    uint256 stakeAmount1 = 500 ether;
+    uint256 stakeAmount2 = 300 ether;
+    uint256 unstakeAmount1 = 200 ether;
+    uint256 unstakeAmount2 = 300 ether; // Full amount
+    uint256 restakeAmount = 200 ether; // Exactly the cooling amount from validatorA
+    
+    // Setup rewards
+    vm.prank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, 1e18);
+    vm.startPrank(admin);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = 1e18;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 10000 ether);
+    vm.stopPrank();
+    
+    // User stakes with both validators
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: stakeAmount1}(validatorA);
+    StakingFacet(address(diamondProxy)).stake{value: stakeAmount2}(validatorB);
+    
+    // Advance time to accrue some rewards
+    vm.warp(block.timestamp + 100);
+    
+    // User unstakes partially from validatorA and fully from validatorB
+    StakingFacet(address(diamondProxy)).unstake(validatorA, unstakeAmount1);
+    StakingFacet(address(diamondProxy)).unstake(validatorB, unstakeAmount2);
+    
+    // Advance past cooldown period
+    vm.warp(block.timestamp + 7 days + 1);
+    
+    // Verify initial state
+    uint16[] memory initialValidators = ValidatorFacet(address(diamondProxy)).getUserValidators(user1);
+    console2.log("Initial validator count:", initialValidators.length);
+    assertEq(initialValidators.length, 2, "User should be associated with 2 validators initially");
+    
+    // Check cooling amounts
+    StakingFacet.CooldownView[] memory cooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+    console2.log("Cooldown entries:", cooldowns.length);
+    console2.log("ValidatorA cooling amount:", cooldowns[0].amount);
+    console2.log("ValidatorB cooling amount:", cooldowns[1].amount);
+    
+    // Restake amount exactly equal to validatorA's cooling amount
+    // This should use funds from validatorA first, making its cooling amount 0
+    StakingFacet(address(diamondProxy)).restake(validatorB, restakeAmount);
+    vm.stopPrank();
+    
+    // Check validator relationships after restake
+    uint16[] memory finalValidators = ValidatorFacet(address(diamondProxy)).getUserValidators(user1);
+    console2.log("Final validator count:", finalValidators.length);
+    
+    // User should still be associated with both validators because:
+    // - ValidatorA: has remaining active stake (500-200=300 ETH)
+    // - ValidatorB: has new active stake from restake + possibly pending rewards
+    assertEq(finalValidators.length, 2, "User should still be associated with both validators");
+    
+    // Verify cooling amounts
+    StakingFacet.CooldownView[] memory finalCooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+    console2.log("Final cooldown entries:", finalCooldowns.length);
+    
+    // ValidatorA should have 0 cooling amount now
+    bool foundValidatorACooldown = false;
+    for (uint256 i = 0; i < finalCooldowns.length; i++) {
+        if (finalCooldowns[i].validatorId == validatorA) {
+            foundValidatorACooldown = true;
+            break;
+        }
+    }
+    assertFalse(foundValidatorACooldown, "ValidatorA should have no cooling amount left");
+    
+    console2.log("--- Test: Restake Validator Relationship Cleanup PASSED (Part 1) ---");
+}
+
+function testRestakeValidatorRelationshipCleanup_CompleteCleanup() public {
+    console2.log("--- Test: Restake Validator Relationship Cleanup - Complete Cleanup ---");
+    
+    uint16 validatorA = 0;
+    uint16 validatorB = 1;
+    uint256 stakeAmount = 200 ether;
+    uint256 restakeAmount = 200 ether;
+    
+    // User stakes with validatorA, then unstakes fully
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: stakeAmount}(validatorA);
+    StakingFacet(address(diamondProxy)).unstake(validatorA, stakeAmount); // Full unstake
+    
+    // Advance past cooldown period
+    vm.warp(block.timestamp + 7 days + 1);
+    
+    // Verify initial state - user should be associated with validatorA
+    uint16[] memory initialValidators = ValidatorFacet(address(diamondProxy)).getUserValidators(user1);
+    assertEq(initialValidators.length, 1, "User should be associated with 1 validator initially");
+    assertEq(initialValidators[0], validatorA, "User should be associated with validatorA");
+    
+    // Restake all cooling funds to validatorB
+    // This should completely remove relationship with validatorA
+    StakingFacet(address(diamondProxy)).restake(validatorB, restakeAmount);
+    vm.stopPrank();
+    
+    // Check validator relationships after restake
+    uint16[] memory finalValidators = ValidatorFacet(address(diamondProxy)).getUserValidators(user1);
+    console2.log("Final validator count:", finalValidators.length);
+    
+    // User should now only be associated with validatorB
+    assertEq(finalValidators.length, 1, "User should be associated with 1 validator after cleanup");
+    assertEq(finalValidators[0], validatorB, "User should only be associated with validatorB");
+    
+    // Verify validatorA relationship is completely cleaned up
+    uint256 activeStakeA = StakingFacet(address(diamondProxy)).getUserValidatorStake(user1, validatorA);
+    assertEq(activeStakeA, 0, "User should have no active stake with validatorA");
+    
+    // Check that validatorA is not in cooldowns
+    StakingFacet.CooldownView[] memory cooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+    for (uint256 i = 0; i < cooldowns.length; i++) {
+        assertTrue(cooldowns[i].validatorId != validatorA, "ValidatorA should not be in cooldowns");
+    }
+    
+    console2.log("--- Test: Restake Validator Relationship Cleanup - Complete Cleanup PASSED ---");
+}
+
+function testRestakeValidatorRelationshipCleanup_WithPendingRewards() public {
+    console2.log("--- Test: Restake Validator Relationship Cleanup - With Pending Rewards ---");
+    
+    uint16 validatorA = 0;
+    uint16 validatorB = 1;
+    address token = address(pUSD);
+    uint256 stakeAmount = 200 ether;
+    uint256 restakeAmount = 200 ether;
+    
+    // Setup rewards
+    vm.prank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, 1e18);
+    vm.startPrank(admin);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = 1e18;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 10000 ether);
+    vm.stopPrank();
+    
+    // User stakes with validatorA
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: stakeAmount}(validatorA);
+    
+    // Advance time to accrue rewards
+    vm.warp(block.timestamp + 100);
+    
+    // Unstake fully but rewards should still be pending
+    StakingFacet(address(diamondProxy)).unstake(validatorA, stakeAmount);
+    
+    // Advance past cooldown period
+    vm.warp(block.timestamp + 7 days + 1);
+    
+    // Check that user has pending rewards with validatorA
+    uint256 pendingRewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    console2.log("Pending rewards:", pendingRewards);
+    assertGt(pendingRewards, 0, "User should have pending rewards");
+    
+    // Restake to validatorB - this should NOT clean up validatorA relationship
+    // because user still has pending rewards
+    StakingFacet(address(diamondProxy)).restake(validatorB, restakeAmount);
+    vm.stopPrank();
+    
+    // Check validator relationships - should still include validatorA due to pending rewards
+    uint16[] memory finalValidators = ValidatorFacet(address(diamondProxy)).getUserValidators(user1);
+    assertEq(finalValidators.length, 2, "User should still be associated with both validators due to pending rewards");
+    
+    // Verify validatorA is still in the list
+    bool foundValidatorA = false;
+    for (uint256 i = 0; i < finalValidators.length; i++) {
+        if (finalValidators[i] == validatorA) {
+            foundValidatorA = true;
+            break;
+        }
+    }
+    assertTrue(foundValidatorA, "ValidatorA should still be in user's validator list due to pending rewards");
+    
+    console2.log("--- Test: Restake Validator Relationship Cleanup - With Pending Rewards PASSED ---");
+}
+
+function testRestakeValidatorRelationshipCleanup_PartialUse() public {
+    console2.log("--- Test: Restake Validator Relationship Cleanup - Partial Use ---");
+    
+    uint16 validatorA = 0;
+    uint16 validatorB = 1;
+    uint256 stakeAmount = 300 ether;
+    uint256 partialRestakeAmount = 150 ether; // Only half of cooling amount
+    
+    // User stakes and then unstakes fully from validatorA
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: stakeAmount}(validatorA);
+    StakingFacet(address(diamondProxy)).unstake(validatorA, stakeAmount);
+    
+    // Advance time but NOT past cooldown period - keep funds in active cooldown
+    vm.warp(block.timestamp + 3 days); // Still cooling, not matured yet
+    
+    // Restake only partial amount - should NOT clean up validatorA relationship
+    StakingFacet(address(diamondProxy)).restake(validatorB, partialRestakeAmount);
+    vm.stopPrank();
+    
+    // Check validator relationships - should still include validatorA due to remaining cooling
+    uint16[] memory finalValidators = ValidatorFacet(address(diamondProxy)).getUserValidators(user1);
+    assertEq(finalValidators.length, 2, "User should still be associated with both validators due to remaining cooling");
+    
+    // Verify validatorA still has cooling amount
+    StakingFacet.CooldownView[] memory cooldowns = StakingFacet(address(diamondProxy)).getUserCooldowns(user1);
+    bool foundValidatorACooldown = false;
+    for (uint256 i = 0; i < cooldowns.length; i++) {
+        if (cooldowns[i].validatorId == validatorA) {
+            foundValidatorACooldown = true;
+            assertEq(cooldowns[i].amount, stakeAmount - partialRestakeAmount, "ValidatorA should have remaining cooling amount");
+            break;
+        }
+    }
+    assertTrue(foundValidatorACooldown, "ValidatorA should still have cooling amount");
+    
+    console2.log("--- Test: Restake Validator Relationship Cleanup - Partial Use PASSED ---");
+}
+
+
+function testRestakeValidatorRelationshipCleanup_MaturedCooldownUsesParked() public {
+    console2.log("--- Test: Restake Uses Parked Funds When Cooldown Matured ---");
+    
+    uint16 validatorA = 0;
+    uint16 validatorB = 1;
+    uint256 stakeAmount = 300 ether;
+    uint256 partialRestakeAmount = 150 ether;
+    
+    // User stakes and unstakes from validatorA
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: stakeAmount}(validatorA);
+    StakingFacet(address(diamondProxy)).unstake(validatorA, stakeAmount);
+    
+    // Advance past cooldown period - funds become parked
+    vm.warp(block.timestamp + 7 days + 1);
+    
+    // Restake partial amount - should use parked funds, not cooling
+    StakingFacet(address(diamondProxy)).restake(validatorB, partialRestakeAmount);
+    vm.stopPrank();
+    
+    // User should NOT be associated with validatorA anymore since:
+    // - No active stake with validatorA  
+    // - No cooling amount with validatorA (moved to parked)
+    // - No pending rewards (none in this test)
+    uint16[] memory finalValidators = ValidatorFacet(address(diamondProxy)).getUserValidators(user1);
+    assertEq(finalValidators.length, 1, "User should only be associated with validatorB");
+    assertEq(finalValidators[0], validatorB, "User should only be associated with validatorB");
+    
+    // Check parked balance still has remaining funds
+    uint256 parkedBalance = StakingFacet(address(diamondProxy)).stakeInfo(user1).parked;
+    assertEq(parkedBalance, stakeAmount - partialRestakeAmount, "Remaining funds should be in parked balance");
+    
+    console2.log("--- Test: Restake Uses Parked Funds When Cooldown Matured PASSED ---");
+}
 
 }

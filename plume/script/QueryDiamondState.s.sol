@@ -165,7 +165,7 @@ contract QueryDiamondState is Script {
             console2.log("  - cooled:", info.cooled);
             console2.log("  - parked:", info.parked);
             //console2.log("  - cooldownEnd:", info.cooldownEnd);
-            console2.log("  - lastUpdateTimestamp:", info.lastUpdateTimestamp);
+            //console2.log("  - lastUpdateTimestamp:", info.lastUpdateTimestamp);
         } catch Error(string memory reason) {
             if (keccak256(bytes(reason)) == PROXY_ERROR_HASH) {
                 console2.log("stakeInfo(SAMPLE_USER) FAILED: Proxy__ImplementationIsNotContract()");
