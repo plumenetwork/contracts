@@ -205,7 +205,13 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             PlumeRewardLogic.updateRewardsForValidator($, user, validatorId);
         }
 
-        // Update stake amount
+        // Initialize reward state for new stakes BEFORE updating stake amounts
+        // This ensures that commission calculations use the old totalStaked amount (before this user's stake)
+        if (isNewStake) {
+            _initializeRewardStateForNewStake(user, validatorId);
+        }
+
+        // Update stake amount AFTER reward state initialization
         _updateStakeAmounts(user, validatorId, stakeAmount);
 
         // Validate capacity limits
@@ -213,11 +219,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Add user to validator's staker list
         PlumeValidatorLogic.addStakerToValidator($, user, validatorId);
-
-        // Initialize reward state for new stakes
-        if (isNewStake) {
-            _initializeRewardStateForNewStake(user, validatorId);
-        }
     }
 
     /**
