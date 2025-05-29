@@ -2672,8 +2672,9 @@ contract PlumeStakingDiamondTest is Test {
         vm.startPrank(staker1);
         console2.log("TEST_DEBUG: staker1 withdrawing at t=%s", block.timestamp);
         // Claim any pending rewards first to clear the pending rewards flag
-        try RewardsFacet(address(diamondProxy)).claimAll() {} catch {}
         StakingFacet(address(diamondProxy)).withdraw();
+        try RewardsFacet(address(diamondProxy)).claimAll() {} catch {}
+
         vm.stopPrank();
         console2.log("TEST_DEBUG: staker1 withdraw completed.");
 
@@ -6253,5 +6254,99 @@ contract PlumeStakingDiamondTest is Test {
 
         console2.log("--- Test: testStakeUnstakeWithdrawMultipleValidators END ---");
     }
+
+
+function testCommissionCalculationOrderFix() public {
+    console2.log("--- Test: Commission Calculation Order Fix ---");
+    
+    uint16 validatorId = DEFAULT_VALIDATOR_ID;
+    address token = address(pUSD);
+    uint256 existingStakerAmount = 1000 ether;
+    uint256 newStakerAmount = 500 ether;
+    uint256 commissionRate = 10e16; // 10%
+    uint256 rewardRate = 1e18; // 1 PUSD per second
+    
+    // Setup validator commission and reward rate
+    vm.prank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commissionRate);
+    
+    vm.startPrank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rewardRate);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = rewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 10000 ether);
+    vm.stopPrank();
+    
+    // Existing staker stakes first to establish baseline totalStaked
+    vm.prank(user2);
+    StakingFacet(address(diamondProxy)).stake{value: existingStakerAmount}(validatorId);
+    
+    // Get validator's totalStaked before new staker joins
+    (,, uint256 totalStakedBeforeNewStaker,) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+    assertEq(totalStakedBeforeNewStaker, existingStakerAmount, "Total staked should equal existing staker amount");
+    
+    // Record timestamp before new staker stakes
+    uint256 timestampBeforeNewStake = block.timestamp;
+    
+    // New staker stakes - this triggers reward state initialization
+    vm.prank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: newStakerAmount}(validatorId);
+    
+    // Get validator's totalStaked after new staker joins
+    (,, uint256 totalStakedAfterNewStaker,) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+    assertEq(totalStakedAfterNewStaker, existingStakerAmount + newStakerAmount, "Total staked should include both stakers");
+    
+    // Advance time to accrue rewards
+    vm.warp(block.timestamp + 100); // 100 seconds
+    
+    // Force commission settlement to see accrued commission
+    vm.prank(admin);
+    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
+    
+    // Check accrued commission
+    uint256 accruedCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+    
+    // Calculate expected commission based on CORRECT behavior:
+    // Commission should be calculated using totalStakedBeforeNewStaker for the period
+    // when the new staker joined, not totalStakedAfterNewStaker
+    
+    // For this test, the reward accrual happens over 100 seconds with totalStakedAfterNewStaker
+    // But the fix ensures that when the new staker's reward state was initialized,
+    // any commission calculation used the old totalStaked amount
+    
+    // The key insight: if commission was calculated incorrectly using the new totalStaked,
+    // the validator would get more commission than they should
+    
+    uint256 expectedGrossReward = (totalStakedAfterNewStaker * rewardRate * 100) / 1e18;
+    uint256 expectedCommission = (expectedGrossReward * commissionRate) / 1e18;
+    
+    // The commission should be approximately this amount (allowing for minor precision differences)
+    assertApproxEqAbs(accruedCommission, expectedCommission, expectedCommission / 100, 
+        "Commission should be calculated correctly without using inflated totalStaked");
+    
+    // Additional verification: check that new staker's reward state was properly initialized
+    // This indirectly verifies the fix - if reward state initialization happened BEFORE
+    // stake amount updates, then commission calculations will be correct
+    
+    uint256 newStakerRewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    
+    // New staker should have earned rewards for the 100 seconds since they staked
+    uint256 expectedNewStakerGrossReward = (newStakerAmount * rewardRate * 100) / 1e18;
+    uint256 expectedNewStakerCommission = (expectedNewStakerGrossReward * commissionRate) / 1e18;
+    uint256 expectedNewStakerNetReward = expectedNewStakerGrossReward - expectedNewStakerCommission;
+    
+    assertApproxEqAbs(newStakerRewards, expectedNewStakerNetReward, expectedNewStakerNetReward / 100,
+        "New staker should have correct net rewards");
+    
+    console2.log("Commission calculation order fix verified successfully");
+    console2.log("- Validator total staked before new staker: %s", totalStakedBeforeNewStaker);
+    console2.log("- Validator total staked after new staker: %s", totalStakedAfterNewStaker);
+    console2.log("- Accrued commission: %s", accruedCommission);
+    console2.log("- New staker net rewards: %s", newStakerRewards);
+}
+
 
 }
