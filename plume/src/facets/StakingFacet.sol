@@ -299,6 +299,10 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Use comprehensive staking setup (includes capacity validation and reward initialization)
         _performStakeSetup(user, validatorId, amount);
 
+        // Track validators that might need relationship cleanup
+        uint16[] memory validatorsToCheck = new uint16[]($.userValidators[user].length);
+        uint256 checkCount = 0;
+
         // Prioritize fund usage and update specific validator cooldowns
         uint256 fromCooled = 0;
         uint256 fromParked = 0;
@@ -318,6 +322,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 
                 // Use unified cooling removal function
                 _removeCoolingAmounts(user, validatorId, fromTarget);
+                
+                // Target validator doesn't need cleanup since it's getting new stake
             }
         }
         
@@ -337,6 +343,12 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                     
                     // Use unified cooling removal function
                     _removeCoolingAmounts(user, otherValidatorId, fromOther);
+                    
+                    // Track this validator for potential cleanup if cooling amount became 0
+                    if ($.userValidatorCooldowns[user][otherValidatorId].amount == 0) {
+                        validatorsToCheck[checkCount] = otherValidatorId;
+                        checkCount++;
+                    }
                 }
             }
         }
@@ -351,6 +363,11 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Safety check
         if (remaining != 0) {
             revert InternalInconsistency("Restake fund allocation failed - remaining amount not zero");
+        }
+
+        // Clean up validator relationships for validators where cooling became 0
+        for (uint256 i = 0; i < checkCount; i++) {
+            _cleanupValidatorRelationshipIfNeeded(user, validatorsToCheck[i]);
         }
 
         // Emit events with proper fund source breakdown
@@ -1118,6 +1135,19 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 PlumeValidatorLogic.removeStakerFromValidator($, user, validatorId);
             }
         }
+    }
+
+    /**
+     * @dev Cleans up validator relationship if needed
+     * @param user The user address
+     * @param validatorId The validator ID
+     */
+    function _cleanupValidatorRelationshipIfNeeded(address user, uint16 validatorId) internal {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // removeStakerFromValidator already checks for active stake, cooldown, and pending rewards
+        // Only call it if we know the conditions might be met (cooling amount is 0)
+        PlumeValidatorLogic.removeStakerFromValidator($, user, validatorId);
     }
 
 }
