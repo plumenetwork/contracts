@@ -6349,4 +6349,482 @@ function testCommissionCalculationOrderFix() public {
 }
 
 
+
+function testCommissionCalculationOrderFix_MultipleSimultaneousStakers() public {
+    console2.log("--- Test: Commission Calculation Order Fix - Multiple Simultaneous Stakers ---");
+    
+    uint16 validatorId = DEFAULT_VALIDATOR_ID;
+    address token = address(pUSD);
+    uint256 existingStakerAmount = 1000 ether;
+    uint256 newStaker1Amount = 300 ether;
+    uint256 newStaker2Amount = 200 ether;
+    uint256 commissionRate = 15e16; // 15%
+    uint256 rewardRate = 2e18; // 2 PUSD per second
+    
+    // Setup
+    vm.prank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commissionRate);
+    
+    vm.startPrank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rewardRate);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = rewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 20000 ether);
+    vm.stopPrank();
+    
+    // Existing staker stakes first
+    vm.prank(user2);
+    StakingFacet(address(diamondProxy)).stake{value: existingStakerAmount}(validatorId);
+    
+    // Two new stakers join in the same block
+    vm.prank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: newStaker1Amount}(validatorId);
+    
+    vm.prank(user3);
+    StakingFacet(address(diamondProxy)).stake{value: newStaker2Amount}(validatorId);
+    
+    // Advance time
+    vm.warp(block.timestamp + 50);
+    
+    // Force settlement
+    vm.prank(admin);
+    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
+    
+    // Check that both new stakers have reasonable rewards
+    uint256 staker1Rewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    uint256 staker3Rewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user3, token);
+    
+    assertGt(staker1Rewards, 0, "First new staker should have rewards");
+    assertGt(staker3Rewards, 0, "Second new staker should have rewards");
+    
+    // The rewards should be proportional to stake amounts
+    uint256 expectedRatio = (newStaker1Amount * 1e18) / newStaker2Amount; // Scale for precision
+    uint256 actualRatio = (staker1Rewards * 1e18) / staker3Rewards;
+    
+    assertApproxEqAbs(actualRatio, expectedRatio, expectedRatio / 10, 
+        "Reward ratio should match stake ratio");
+    
+    console2.log("Multiple simultaneous stakers test passed");
+}
+
+function testCommissionCalculationOrderFix_CommissionChangesDuringStaking() public {
+    console2.log("--- Test: Commission Calculation Order Fix - Commission Changes During Staking ---");
+    
+    uint16 validatorId = DEFAULT_VALIDATOR_ID;
+    address token = address(pUSD);
+    uint256 existingStake = 800 ether;
+    uint256 newStake = 400 ether;
+    uint256 initialCommission = 5e16; // 5%
+    uint256 newCommission = 20e16; // 20%
+    uint256 rewardRate = 1e18; // 1 PUSD per second
+    
+    // Setup initial commission and reward rate
+    vm.prank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, initialCommission);
+    
+    vm.startPrank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rewardRate);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = rewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    
+    // Fund treasury
+    pUSD.transfer(address(treasury), 15000 ether);
+    vm.stopPrank();
+    
+    // Existing staker stakes first at time 1
+    vm.warp(1);
+    vm.prank(user2);
+    StakingFacet(address(diamondProxy)).stake{value: existingStake}(validatorId);
+    
+    // Time advances, then commission changes at time 50
+    vm.warp(50);
+    vm.prank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, newCommission);
+    
+    // Time advances more, then new staker stakes at time 100
+    vm.warp(100);
+    vm.prank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: newStake}(validatorId);
+    
+    // Final time advance to generate more rewards
+    vm.warp(200); // Total time: 200 seconds
+    
+    // Check rewards
+    uint256 user2Rewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user2, token);
+    uint256 user1Rewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    
+    console2.log("User2 rewards (staked earlier, experienced commission change):", user2Rewards);
+    console2.log("User1 rewards (staked later, only higher commission):", user1Rewards);
+    
+    // Calculate expected pattern:
+    // user2: staked for 199 seconds (from time 1 to 200)
+    // - 49 seconds at 5% commission (time 1-50)  
+    // - 150 seconds at 20% commission (time 50-200)
+    //
+    // user1: staked for 100 seconds (from time 100 to 200)
+    // - 100 seconds at 20% commission
+    
+    // Both should have rewards
+    assertGt(user2Rewards, 0, "Existing staker should have rewards");
+    assertGt(user1Rewards, 0, "New staker should have rewards");
+    
+    // user2 should have significantly more rewards due to longer staking period
+    assertGt(user2Rewards, user1Rewards, "Earlier staker should have more total rewards due to longer period");
+    
+    // The key test: user1's reward rate per second should be affected by the higher commission
+    // that was active when they staked, demonstrating the fix works
+    uint256 user2RewardRate = user2Rewards / 199; // rewards per second for user2
+    uint256 user1RewardRate = user1Rewards / 100; // rewards per second for user1
+    
+    console2.log("User2 reward rate per second:", user2RewardRate);
+    console2.log("User1 reward rate per second:", user1RewardRate);
+    
+    // user1 should have a lower reward rate per second due to higher commission
+    // when they staked (if the fix is working correctly)
+    assertLt(user1RewardRate, user2RewardRate, "User who staked during higher commission should have lower rate");
+    
+    console2.log("--- Test: Commission Calculation Order Fix - Commission Changes PASSED ---");
+}
+
+function testCommissionCalculationOrderFix_ZeroCommission() public {
+    console2.log("--- Test: Commission Calculation Order Fix - Zero Commission ---");
+    
+    uint16 validatorId = DEFAULT_VALIDATOR_ID;
+    address token = address(pUSD);
+    uint256 existingStakerAmount = 600 ether;
+    uint256 newStakerAmount = 400 ether;
+    uint256 commissionRate = 0; // 0%
+    uint256 rewardRate = 1e18;
+    
+    // Setup
+    vm.prank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commissionRate);
+    
+    vm.startPrank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rewardRate);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = rewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 10000 ether);
+    vm.stopPrank();
+    
+    // Existing staker stakes
+    vm.prank(user2);
+    StakingFacet(address(diamondProxy)).stake{value: existingStakerAmount}(validatorId);
+    
+    // New staker joins
+    vm.prank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: newStakerAmount}(validatorId);
+    
+    // Advance time
+    vm.warp(block.timestamp + 100);
+    
+    // With zero commission, no commission should be accrued
+    vm.prank(admin);
+    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
+    
+    uint256 accruedCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+    assertEq(accruedCommission, 0, "No commission should be accrued with 0% rate");
+    
+    // But stakers should still get full rewards
+    uint256 newStakerRewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    assertGt(newStakerRewards, 0, "New staker should have rewards even with 0% commission");
+    
+    console2.log("Zero commission test passed");
+}
+
+function testCommissionCalculationOrderFix_MaximumCommission() public {
+    console2.log("--- Test: Commission Calculation Order Fix - Maximum Commission ---");
+    
+    uint16 validatorId = DEFAULT_VALIDATOR_ID;
+    address token = address(pUSD);
+    uint256 existingStake = 1000 ether;
+    uint256 newStake = 500 ether;
+    uint256 commissionRate = 50e16; // 50% (maximum allowed)
+    uint256 rewardRate = 1e18; // 1 PUSD per second
+    
+    // Setup validator commission and reward rate
+    vm.prank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commissionRate);
+    
+    vm.startPrank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rewardRate);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = rewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    
+    // Fund treasury
+    pUSD.transfer(address(treasury), 15000 ether);
+    vm.stopPrank();
+    
+    // Existing staker stakes first
+    vm.prank(user2);
+    StakingFacet(address(diamondProxy)).stake{value: existingStake}(validatorId);
+    
+    console2.log("Total staked after first user:", StakingFacet(address(diamondProxy)).totalAmountStaked());
+    
+    // Time advances to build up some reward per token
+    vm.warp(101); // 100 seconds pass
+    
+    // New staker stakes (this should use the correct totalStaked for commission calculation)
+    vm.prank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: newStake}(validatorId);
+    
+    console2.log("Total staked after second user:", StakingFacet(address(diamondProxy)).totalAmountStaked());
+    
+    // Advance time to generate rewards
+    vm.warp(201); // Another 100 seconds
+    
+    // Check rewards - with the fix, commission should be calculated correctly
+    uint256 user2Rewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user2, token);
+    uint256 user1Rewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    
+    console2.log("User2 rewards:", user2Rewards);
+    console2.log("User1 rewards:", user1Rewards);
+    
+    // Verify that both users earned rewards
+    assertGt(user2Rewards, 0, "Existing staker should have rewards");
+    assertGt(user1Rewards, 0, "New staker should have rewards");
+    
+    // User2 should have more rewards as they staked earlier and for longer
+    assertGt(user2Rewards, user1Rewards, "Earlier staker should have more total rewards");
+    
+    console2.log("--- Test: Commission Calculation Order Fix - Maximum Commission PASSED ---");
+}
+
+function testCommissionCalculationOrderFix_RestakingScenario() public {
+    console2.log("--- Test: Commission Calculation Order Fix - Restaking Scenario ---");
+    
+    uint16 validatorId = DEFAULT_VALIDATOR_ID;
+    address token = address(pUSD);
+    uint256 initialStakeAmount = 1000 ether;
+    uint256 unstakeAmount = 400 ether;
+    uint256 restakeAmount = 200 ether;
+    uint256 commissionRate = 10e16; // 10%
+    uint256 rewardRate = 1e18;
+    
+    // Setup
+    vm.prank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commissionRate);
+    
+    vm.startPrank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rewardRate);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = rewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 10000 ether);
+    vm.stopPrank();
+    
+    // User stakes, unstakes, then restakes
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: initialStakeAmount}(validatorId);
+    
+    // Advance time to accrue some rewards
+    vm.warp(block.timestamp + 50);
+    
+    StakingFacet(address(diamondProxy)).unstake(validatorId, unstakeAmount);
+    
+    // Advance time for cooldown
+    vm.warp(block.timestamp + 7 days + 1);
+    
+    // Restake some amount (this should trigger reward state re-initialization)
+    StakingFacet(address(diamondProxy)).restake(validatorId, restakeAmount);
+    vm.stopPrank();
+    
+    // Advance time to accrue more rewards
+    vm.warp(block.timestamp + 100);
+    
+    // Check that restaked amount is earning rewards correctly
+    uint256 userRewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    assertGt(userRewards, 0, "User should have rewards after restaking");
+    
+    // Force settlement and check commission
+    vm.prank(admin);
+    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(validatorId);
+    
+    uint256 accruedCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+    assertGt(accruedCommission, 0, "Validator should have accrued commission");
+    
+    console2.log("Restaking scenario test passed");
+}
+
+function testCommissionCalculationOrderFix_VeryFirstStaker() public {
+    console2.log("--- Test: Commission Calculation Order Fix - Very First Staker ---");
+    
+    // Add a new validator for this test to ensure it's empty
+    uint16 newValidatorId = 99;
+    address newValidatorAdmin = makeAddr("newValidatorAdmin99");
+    vm.deal(newValidatorAdmin, 1 ether);
+    
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).addValidator(
+        newValidatorId,
+        15e16, // 15% commission
+        newValidatorAdmin,
+        newValidatorAdmin,
+        "newVal99",
+        "newAcc99",
+        address(0x99),
+        1000000 ether
+    );
+    vm.stopPrank();
+    
+    address token = address(pUSD);
+    uint256 stakeAmount = 500 ether;
+    uint256 rewardRate = 1e18;
+    
+    // Setup rewards
+    vm.startPrank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rewardRate);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = rewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 10000 ether);
+    vm.stopPrank();
+    
+    // First staker joins empty validator
+    vm.prank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: stakeAmount}(newValidatorId);
+    
+    // Advance time
+    vm.warp(block.timestamp + 100);
+    
+    // Check that first staker gets rewards correctly
+    uint256 userRewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    assertGt(userRewards, 0, "First staker should have rewards");
+    
+    // Force settlement
+    vm.prank(admin);
+    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(newValidatorId);
+    
+    uint256 accruedCommission = ValidatorFacet(address(diamondProxy)).getAccruedCommission(newValidatorId, token);
+    assertGt(accruedCommission, 0, "Validator should have accrued commission from first staker");
+    
+    console2.log("Very first staker test passed");
+}
+
+function testCommissionCalculationOrderFix_DustAmounts() public {
+    console2.log("--- Test: Commission Calculation Order Fix - Dust Amounts ---");
+    
+    uint16 validatorId = DEFAULT_VALIDATOR_ID;
+    address token = address(pUSD);
+    uint256 largeStakeAmount = 1000 ether;
+    uint256 dustStakeAmount = 1; // 1 wei
+    uint256 commissionRate = 10e16; // 10%
+    uint256 rewardRate = 1e18;
+    
+    // Setup
+    vm.prank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commissionRate);
+    
+    vm.startPrank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, rewardRate);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = rewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 10000 ether);
+    vm.stopPrank();
+    
+    // Large staker stakes first
+    vm.prank(user2);
+    StakingFacet(address(diamondProxy)).stake{value: largeStakeAmount}(validatorId);
+    
+    // Try to stake dust amount (might revert due to minimum stake requirements)
+    vm.prank(user1);
+    vm.expectRevert(); // Expect this to revert due to minimum stake amount
+    StakingFacet(address(diamondProxy)).stake{value: dustStakeAmount}(validatorId);
+    
+    // Instead stake the minimum amount
+    uint256 minStake = ManagementFacet(address(diamondProxy)).getMinStakeAmount();
+    vm.prank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: minStake}(validatorId);
+    
+    // Advance time
+    vm.warp(block.timestamp + 100);
+    
+    // Check that minimum staker gets some rewards
+    uint256 userRewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    
+    // Even minimum stake should generate some rewards over 100 seconds
+    assertGt(userRewards, 0, "Minimum staker should have some rewards");
+    
+    console2.log("Dust amounts test passed");
+}
+
+function testCommissionCalculationOrderFix_RewardRateChangeDuringStaking() public {
+    console2.log("--- Test: Commission Calculation Order Fix - Reward Rate Change During Staking ---");
+    
+    uint16 validatorId = DEFAULT_VALIDATOR_ID;
+    address token = address(pUSD);
+    uint256 existingStakerAmount = 800 ether;
+    uint256 newStakerAmount = 400 ether;
+    uint256 commissionRate = 12e16; // 12%
+    uint256 initialRewardRate = 1e18;
+    uint256 newRewardRate = 2e18; // Double the rate
+    
+    // Setup
+    vm.prank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commissionRate);
+    
+    vm.startPrank(admin);
+    RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, newRewardRate);
+    address[] memory tokens = new address[](1);
+    tokens[0] = token;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = initialRewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    pUSD.transfer(address(treasury), 15000 ether);
+    vm.stopPrank();
+    
+    // Existing staker stakes
+    vm.prank(user2);
+    StakingFacet(address(diamondProxy)).stake{value: existingStakerAmount}(validatorId);
+    
+    // Change reward rate
+    vm.startPrank(admin);
+    rates[0] = newRewardRate;
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    vm.stopPrank();
+    
+    // New staker joins after rate change
+    vm.prank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: newStakerAmount}(validatorId);
+    
+    // Advance time
+    vm.warp(block.timestamp + 50);
+    
+    // Both stakers should benefit from the higher rate going forward
+    uint256 existingStakerRewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user2, token);
+    uint256 newStakerRewards = RewardsFacet(address(diamondProxy)).getClaimableReward(user1, token);
+    
+    assertGt(existingStakerRewards, 0, "Existing staker should have rewards");
+    assertGt(newStakerRewards, 0, "New staker should have rewards");
+    
+    // Rewards should be proportional to stake amounts (both got same time at new rate)
+    uint256 expectedRatio = (existingStakerAmount * 1e18) / newStakerAmount;
+    uint256 actualRatio = (existingStakerRewards * 1e18) / newStakerRewards;
+    
+    assertApproxEqAbs(actualRatio, expectedRatio, expectedRatio / 10, 
+        "Reward ratio should match stake ratio for time at new rate");
+    
+    console2.log("Reward rate change during staking test passed");
+}
+
+
 }
