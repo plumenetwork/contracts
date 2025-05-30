@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 /*
  * @title PlumeErrors
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Common errors used across Plume contracts
  */
 

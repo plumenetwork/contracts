@@ -24,11 +24,47 @@ import {
 } from "./lib/PlumeErrors.sol";
 import { PlumeReceived, RewardDistributed, RewardTokenAdded } from "./lib/PlumeEvents.sol";
 
+
+/*
+ * ╔═══════════════════════════════════════════════════════════════════════════════╗
+ * ║                                                                               ║
+ * ║                          ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦                                ║
+ * ║                                                                               ║
+ * ║                   I N  L O V I N G   M E M O R Y   O F                        ║
+ * ║                                                                               ║
+ * ║                      ╭─────────────────────────────╮                          ║
+ * ║                      │                             │                          ║
+ * ║                      │        E U G E N E          │                          ║
+ * ║                      │          S H E N            │                          ║
+ * ║                      │                             │                          ║
+ * ║                      ╰─────────────────────────────╯                          ║
+ * ║                                                                               ║
+ * ║                              ◆ ◇ ◆ ◇ ◆ ◇ ◆                                    ║
+ * ║                                                                               ║
+ * ║        ┌───────────────────────────────────────────────────────────┐          ║
+ * ║        │                                                           │          ║
+ * ║        │  "Every second spent developing this contract is          │          ║
+ * ║        │               dedicated to Eugene Shen"                   │          ║
+ * ║        │                                                           │          ║
+ * ║        └───────────────────────────────────────────────────────────┘          ║
+ * ║                                                                               ║
+ * ║                      ∞ Forever in our hearts and code ∞                       ║
+ * ║                                                                               ║
+ * ║                          ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦                                ║
+ * ║                                                                               ║
+ * ╚═══════════════════════════════════════════════════════════════════════════════╝
+ */
+
+
 /**
  * @title PlumeStakingRewardTreasury
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Contract responsible for holding and distributing reward tokens for the PlumeStaking system
  * @dev This contract is upgradeable using UUPS pattern and uses AccessControl for authorization
  */
+
+
+
 contract PlumeStakingRewardTreasury is
     IPlumeStakingRewardTreasury,
     Initializable,

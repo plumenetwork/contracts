@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 /**
  * @title PlumeRoles
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Defines role constants used for access control in the PlumeStaking Diamond.
  */
 library PlumeRoles {

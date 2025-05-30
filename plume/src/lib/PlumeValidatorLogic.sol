@@ -5,6 +5,7 @@ import { PlumeStakingStorage } from "./PlumeStakingStorage.sol";
 
 /**
  * @title PlumeValidatorLogic
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Internal library containing shared logic for validator management and checks.
  */
 library PlumeValidatorLogic {

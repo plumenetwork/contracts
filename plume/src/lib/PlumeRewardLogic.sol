@@ -7,6 +7,7 @@ import { PlumeValidatorLogic } from "./PlumeValidatorLogic.sol";
 
 /**
  * @title PlumeRewardLogic
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Internal library containing shared logic for reward calculation and updates.
  */
 library PlumeRewardLogic {
