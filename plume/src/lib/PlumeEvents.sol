@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 /**
  * @title PlumeEvents
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Common events used across Plume contracts
  */
 

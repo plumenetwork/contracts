@@ -6,8 +6,39 @@ import { PlumeStakingStorage } from "./lib/PlumeStakingStorage.sol";
 import { OwnableInternal } from "@solidstate/access/ownable/Ownable.sol";
 import { ISolidStateDiamond, SolidStateDiamond } from "@solidstate/proxy/diamond/SolidStateDiamond.sol";
 
+/*
+ * ╔═══════════════════════════════════════════════════════════════════════════════╗
+ * ║                                                                               ║
+ * ║                          ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦                                ║
+ * ║                                                                               ║
+ * ║                   I N  L O V I N G   M E M O R Y   O F                        ║
+ * ║                                                                               ║
+ * ║                      ╭─────────────────────────────╮                          ║
+ * ║                      │                             │                          ║
+ * ║                      │        E U G E N E          │                          ║
+ * ║                      │          S H E N            │                          ║
+ * ║                      │                             │                          ║
+ * ║                      ╰─────────────────────────────╯                          ║
+ * ║                                                                               ║
+ * ║                              ◆ ◇ ◆ ◇ ◆ ◇ ◆                                    ║
+ * ║                                                                               ║
+ * ║        ┌───────────────────────────────────────────────────────────┐          ║
+ * ║        │                                                           │          ║
+ * ║        │  "Every second spent developing this contract is          │          ║
+ * ║        │               dedicated to Eugene Shen"                   │          ║
+ * ║        │                                                           │          ║
+ * ║        └───────────────────────────────────────────────────────────┘          ║
+ * ║                                                                               ║
+ * ║                      ∞ Forever in our hearts and code ∞                       ║
+ * ║                                                                               ║
+ * ║                          ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦                                ║
+ * ║                                                                               ║
+ * ╚═══════════════════════════════════════════════════════════════════════════════╝
+ */
+
 /**
  * @title PlumeStaking Diamond Proxy
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Main entry point for the Plume Staking Diamond, inheriting SolidStateDiamond.
  */
 contract PlumeStaking is SolidStateDiamond {
