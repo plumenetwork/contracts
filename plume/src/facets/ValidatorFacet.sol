@@ -414,9 +414,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         _validateIsToken(token)
     {
 
-        // requestCommissionClaim is not active yet
-        revert NotActive();
-
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
@@ -532,9 +529,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      */
     function voteToSlashValidator(uint16 maliciousValidatorId, uint256 voteExpiration) external nonReentrant {
 
-        // voteToSlashValidator is not active yet
-        revert NotActive();
-
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address voterAdmin = msg.sender;
         uint16 voterValidatorId = $.adminToValidatorId[voterAdmin];
@@ -596,8 +590,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint16 validatorId
     ) external nonReentrant onlyRole(PlumeRoles.TIMELOCK_ROLE) {
 
-        // voteToSlashValidator is not active yet
-        revert NotActive();
 
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
