@@ -35,6 +35,7 @@ import {
 import { IPlumeStakingRewardTreasury } from "../interfaces/IPlumeStakingRewardTreasury.sol";
 import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
+import { PlumeValidatorLogic } from "../lib/PlumeValidatorLogic.sol";
 
 import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
@@ -253,9 +254,6 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     function claim(address token, uint16 validatorId) external nonReentrant returns (uint256) {
 
-        // Claim rewards is not active yet
-        revert NotActive();
-
         // Validate inputs
         _validateTokenForClaim(token, msg.sender);
         _validateValidatorForClaim(validatorId);
@@ -279,9 +277,6 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         address token
     ) external nonReentrant returns (uint256) {
 
-        // Claim rewards is not active yet
-        revert NotActive();
-
         // Validate token
         _validateTokenForClaim(token, msg.sender);
 
@@ -299,12 +294,13 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint16[] memory validatorIds = $.userValidators[msg.sender];
         _clearPendingRewardFlags(msg.sender, validatorIds);
 
+        // Clean up validator relationships for validators with no remaining involvement
+        PlumeValidatorLogic.removeStakerFromAllValidators($, msg.sender);
+
         return totalReward;
     }
 
     function claimAll() external nonReentrant returns (uint256[] memory) {
-        // Claim rewards is not active yet
-        revert NotActive();
 
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address[] memory tokens = $.rewardTokens;
@@ -328,6 +324,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         // Clear pending flags for all validators after claiming all tokens
         uint16[] memory validatorIds = $.userValidators[msg.sender];
         _clearPendingRewardFlags(msg.sender, validatorIds);
+
+        // Clean up validator relationships for validators with no remaining involvement
+        PlumeValidatorLogic.removeStakerFromAllValidators($, msg.sender);
 
         return claims;
     }
