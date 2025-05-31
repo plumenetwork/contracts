@@ -140,26 +140,4 @@ library PlumeValidatorLogic {
         }
     }
 
-    /**
-     * @notice Removes a staker from all validators where they have no remaining involvement
-     * @dev This checks all validators the user has ever staked with and cleans up relationships
-     *      where they have no active stake, cooldown, or pending rewards
-     * @param $ The PlumeStaking storage layout.
-     * @param staker The address of the staker.
-     */
-    function removeStakerFromAllValidators(
-        PlumeStakingStorage.Layout storage $,
-        address staker
-    ) internal {
-        // Make a copy to avoid iteration issues when removeStakerFromValidator is called
-        uint16[] memory userAssociatedValidators = $.userValidators[staker];
-
-        for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
-            uint16 validatorId = userAssociatedValidators[i];
-            if ($.userValidatorStakes[staker][validatorId].staked == 0) {
-                removeStakerFromValidator($, staker, validatorId);
-            }
-        }
-    }
-
 }

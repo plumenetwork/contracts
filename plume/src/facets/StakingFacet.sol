@@ -497,6 +497,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function restakeRewards(
         uint16 validatorId
     ) external nonReentrant returns (uint256 amountRestaked) {
+        
+        // Restake rewards is not active yet
+        revert NotActive();
 
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
@@ -1122,7 +1125,16 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      */
     function _cleanupValidatorRelationships(address user) internal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        PlumeValidatorLogic.removeStakerFromAllValidators($, user);
+        
+        // Make a copy to avoid iteration issues when removeStakerFromValidator is called
+        uint16[] memory userAssociatedValidators = $.userValidators[user];
+
+        for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
+            uint16 validatorId = userAssociatedValidators[i];
+            if ($.userValidatorStakes[user][validatorId].staked == 0) {
+                PlumeValidatorLogic.removeStakerFromValidator($, user, validatorId);
+            }
+        }
     }
 
 }
