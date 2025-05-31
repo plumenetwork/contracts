@@ -52,6 +52,7 @@ using PlumeRewardLogic for PlumeStakingStorage.Layout;
 
 /**
  * @title RewardsFacet
+ * @author Eugene Y. Q. Shen, Alp Guneysel
  * @notice Facet handling reward token management, rate setting, reward calculation, and claiming.
  */
 contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
