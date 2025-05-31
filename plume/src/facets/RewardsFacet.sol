@@ -37,8 +37,6 @@ import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { PlumeValidatorLogic } from "../lib/PlumeValidatorLogic.sol";
 
-import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
-import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
 
 import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -254,6 +252,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     function claim(address token, uint16 validatorId) external nonReentrant returns (uint256) {
 
+        // claim is not active yet
+        revert NotActive();
+
         // Validate inputs
         _validateTokenForClaim(token, msg.sender);
         _validateValidatorForClaim(validatorId);
@@ -276,6 +277,10 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function claim(
         address token
     ) external nonReentrant returns (uint256) {
+
+
+        // claim is not active yet
+        revert NotActive();
 
         // Validate token
         _validateTokenForClaim(token, msg.sender);
@@ -301,6 +306,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     function claimAll() external nonReentrant returns (uint256[] memory) {
+
+        // claimAll is not active yet
+        revert NotActive();
 
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address[] memory tokens = $.rewardTokens;
