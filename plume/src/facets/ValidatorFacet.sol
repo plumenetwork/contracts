@@ -170,8 +170,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (commission > $.maxAllowedValidatorCommission) {
             revert CommissionExceedsMaxAllowed(commission, $.maxAllowedValidatorCommission);
         }
-        // The old check `if (commission > REWARD_PRECISION)` is now redundant
-        // because maxAllowedValidatorCommission is guaranteed to be <= REWARD_PRECISION / 2.
 
         // Check if admin address is already assigned using the dedicated mapping
         if ($.isAdminAssigned[l2AdminAddress]) {
@@ -879,7 +877,11 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return count;
     }
 
-    // --- NEW VIEW FUNCTION FOR SLASH VOTES ---
+    /**
+     * @notice Get the number of valid (non-expired) votes for a validator
+     * @param validatorId The ID of the validator
+     * @return validVoteCount The number of valid (non-expired) votes
+     */
     function getSlashVoteCount(
         uint16 validatorId
     ) external view returns (uint256) {
@@ -908,6 +910,5 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         
         return validVoteCount;
     }
-    // --- END NEW VIEW FUNCTION ---
 
 }
