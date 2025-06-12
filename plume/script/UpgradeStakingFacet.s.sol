@@ -22,8 +22,8 @@ contract UpgradeStakingFacet is Script {
 
     // using stdJson for string; // Not needed
 
-    address internal constant DIAMOND_PROXY_ADDRESS = 0xCF8B97260F77c11d58542644c5fD1D5F93FdA57d;
-    address internal constant STAKING_ADDRESS = 0x956C9CF41F2965a590213DAeB829CDC97F06894E;
+    address internal constant DIAMOND_PROXY_ADDRESS = 0x30c791E4654EdAc575FA1700eD8633CB2FEDE871;
+    address internal constant STAKING_ADDRESS = 0x452c2EB61952a06Ee2BFB06449649F7118191431;
 
     function setUp() public {
         if (DIAMOND_PROXY_ADDRESS == address(0)) {
@@ -52,6 +52,37 @@ contract UpgradeStakingFacet is Script {
         console2.log("Preparing diamond cut for StakingFacet...");
         IERC2535DiamondCutInternal.FacetCut[] memory cut = new IERC2535DiamondCutInternal.FacetCut[](1);
 
+
+
+        // Staking Facet Selectors
+        bytes4[] memory stakingSigs = new bytes4[](17);
+        stakingSigs[0] = StakingFacet.stake.selector;
+        stakingSigs[1] = StakingFacet.restake.selector;
+        stakingSigs[2] = bytes4(keccak256(bytes("unstake(uint16)")));
+        stakingSigs[3] = bytes4(keccak256(bytes("unstake(uint16,uint256)")));
+        stakingSigs[4] = StakingFacet.withdraw.selector;
+        stakingSigs[5] = StakingFacet.stakeOnBehalf.selector;
+        stakingSigs[6] = StakingFacet.restakeRewards.selector;
+        stakingSigs[7] = StakingFacet.stakeInfo.selector;
+        stakingSigs[8] = StakingFacet.amountStaked.selector;
+        stakingSigs[9] = StakingFacet.amountCooling.selector;
+        stakingSigs[10] = StakingFacet.amountWithdrawable.selector;
+        stakingSigs[11] = StakingFacet.getUserCooldowns.selector;
+        stakingSigs[12] = StakingFacet.getUserValidatorStake.selector;
+        stakingSigs[13] = StakingFacet.totalAmountStaked.selector;
+        stakingSigs[14] = StakingFacet.totalAmountCooling.selector;
+        stakingSigs[15] = StakingFacet.totalAmountWithdrawable.selector;
+        stakingSigs[16] = StakingFacet.totalAmountClaimable.selector;
+        cut[0] = IERC2535DiamondCutInternal.FacetCut({
+            target: address(newStakingFacet),
+            action: IERC2535DiamondCutInternal.FacetCutAction.REPLACE,
+            selectors: stakingSigs
+        });
+
+
+// ----
+
+/*
         // Staking Facet Selectors - Use REPLACE
         bytes4[] memory stakingSigs = new bytes4[](17);
         stakingSigs[0] = StakingFacet.stake.selector;
@@ -77,7 +108,7 @@ contract UpgradeStakingFacet is Script {
             action: IERC2535DiamondCutInternal.FacetCutAction.REPLACE,
             selectors: stakingSigs
         });
-
+*/
         console2.log("Diamond cut prepared for StakingFacet REPLACE action.");
 
         // --- 3. Execute Diamond Cut ---
