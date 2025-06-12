@@ -124,6 +124,10 @@ library PlumeStakingStorage {
             
         // === Flags ===
         mapping(address => bool) hasPendingRewards; // user => whether they have pending rewards to claim
+        
+        // === Token Lifecycle Tracking ===
+        mapping(address => uint256) tokenAdditionTimestamps; // token => when it was added
+        mapping(address => uint256) tokenRemovalTimestamps; // token => when it was removed
     }
 
     /**

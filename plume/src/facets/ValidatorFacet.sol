@@ -255,8 +255,39 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert ValidatorAlreadySlashed(validatorId);
         }
 
-        validator.active = newActiveStatus;
-        // $.validators[validatorId].slashed should remain false unless explicitly slashed
+        bool currentStatus = validator.active;
+        
+        // If status is actually changing
+        if (currentStatus != newActiveStatus) {
+            address[] memory rewardTokens = $.rewardTokens;
+            
+            // If going INACTIVE: settle validator commission and record timestamp
+            if (!newActiveStatus && currentStatus) {
+                // Settle commission for validator using current rates
+                PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
+                
+                // Record when the validator became inactive (reuse slashedAtTimestamp field)
+                // This allows existing reward logic to cap rewards at this timestamp
+                validator.slashedAtTimestamp = block.timestamp;
+                
+                // NOTE: User rewards will be settled naturally when users interact
+                // (stake, unstake, claim, etc.) due to the timestamp cap in reward logic
+            }
+            
+            // Update the status
+            validator.active = newActiveStatus;
+            
+            // If going ACTIVE: reset timestamps and clear the timestamp cap
+            if (newActiveStatus && !currentStatus) {
+                for (uint256 i = 0; i < rewardTokens.length; i++) {
+                    $.validatorLastUpdateTimes[validatorId][rewardTokens[i]] = block.timestamp;
+                }
+                // Clear the timestamp since validator is active again (unless actually slashed)
+                if (!validator.slashed) {
+                    validator.slashedAtTimestamp = 0;
+                }
+            }
+        }
 
         emit ValidatorStatusUpdated(validatorId, newActiveStatus, validator.slashed);
     }
@@ -413,13 +444,15 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         _validateValidatorExists(validatorId)
         _validateIsToken(token)
     {
-
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
         if (!validator.active || validator.slashed) {
             revert ValidatorInactive(validatorId);
         }
+
+        // Settle commission up to now to ensure accurate amount
+        PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
 
         uint256 amount = $.validatorAccruedCommission[validatorId][token];
         if (amount == 0) {
@@ -453,15 +486,23 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
-        if (!validator.active || validator.slashed) {
-            revert ValidatorInactive(validatorId);
-        }
-
         PlumeStakingStorage.PendingCommissionClaim storage claim = $.pendingCommissionClaims[validatorId][token];
 
         if (claim.amount == 0) {
             revert NoPendingClaim(validatorId, token);
         }
+        
+        // FIXED: Allow claiming commission that was requested BEFORE slashing
+        // If validator is slashed, only allow claims requested before the slash timestamp
+        if (validator.slashed && claim.requestTimestamp >= validator.slashedAtTimestamp) {
+            revert ValidatorInactive(validatorId);
+        }
+        
+        // For non-slashed validators, require active status
+        if (!validator.slashed && !validator.active) {
+            revert ValidatorInactive(validatorId);
+        }
+
         uint256 readyTimestamp = claim.requestTimestamp + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK;
         if (block.timestamp < readyTimestamp) {
             revert ClaimNotReady(validatorId, token, readyTimestamp);
@@ -603,105 +644,51 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert ValidatorAlreadySlashed(validatorId);
         }
 
-        // Clean up expired votes and get accurate count
-        uint256 validVotesAgainst = _cleanupExpiredVotes(validatorId);
-
-        // Count other active non-slashed validators
-        uint256 otherActiveNonSlashedValidators = 0;
-        for (uint256 i = 0; i < $.validatorIds.length; i++) {
-            uint16 currentValId = $.validatorIds[i];
-            if (currentValId == validatorId) {
-                continue;
-            }
-            if ($.validators[currentValId].active && !$.validators[currentValId].slashed) {
-                otherActiveNonSlashedValidators++;
-            }
-        }
-
-        // Check if we have enough valid votes for unanimity
-        if (otherActiveNonSlashedValidators == 0) {
-            if ($.validatorIds.length > 1) {
-                revert UnanimityNotReached(
-                    validVotesAgainst, otherActiveNonSlashedValidators > 0 ? otherActiveNonSlashedValidators : 1
-                );
-            }
-        } else if (validVotesAgainst < otherActiveNonSlashedValidators) {
-            revert UnanimityNotReached(validVotesAgainst, otherActiveNonSlashedValidators);
-        }
-
-        // Clear all votes for this validator
-        for (uint256 i = 0; i < $.validatorIds.length; i++) {
-            uint16 voterValidatorId = $.validatorIds[i];
-            if (voterValidatorId != validatorId) {
-                delete $.slashingVotes[validatorId][voterValidatorId];
-            }
-        }
-        $.slashVoteCounts[validatorId] = 0;
-
-        // CRITICAL: Preserve user rewards before clearing validator state
-        // Calculate and store all user rewards up to the slash timestamp
-        address[] memory stakersToPreserve = $.validatorStakers[validatorId];
-        address[] memory rewardTokens = $.rewardTokens;
+        // Clean up expired votes first to get accurate count
+        uint256 activeVoteCount = _cleanupExpiredVotes(validatorId);
+        uint16[] memory validatorIds = $.validatorIds;
         
-        for (uint256 i = 0; i < stakersToPreserve.length; i++) {
-            address staker = stakersToPreserve[i];
-            uint256 userStakedAmount = $.userValidatorStakes[staker][validatorId].staked;
-            
-            if (userStakedAmount > 0) {
-                // Calculate and store rewards for each token
-                for (uint256 j = 0; j < rewardTokens.length; j++) {
-                    address token = rewardTokens[j];
-                    
-                    // Update the validator's reward state up to the slash timestamp
-                    PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
-                    
-                    // Calculate the user's pending rewards
-                    (uint256 userRewardDelta,,) = 
-                        PlumeRewardLogic.calculateRewardsWithCheckpoints($, staker, validatorId, token, userStakedAmount);
-                    
-                    // Store the total rewards (existing + newly calculated)
-                    if (userRewardDelta > 0) {
-                        $.userRewards[staker][validatorId][token] += userRewardDelta;
-                        $.totalClaimableByToken[token] += userRewardDelta;
-                        $.userHasPendingRewards[staker][validatorId] = true;
-                    }
-                    
-                    // Update user's tracking to prevent double-counting
-                    $.userValidatorRewardPerTokenPaid[staker][validatorId][token] = 
-                        $.validatorRewardPerTokenCumulative[validatorId][token];
-                    $.userValidatorRewardPerTokenPaidTimestamp[staker][validatorId][token] = block.timestamp;
-                }
+        // Count only active validators excluding the one being slashed (only they can vote)
+        uint256 totalEligibleValidators = 0;
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            if (validatorIds[i] != validatorId && $.validators[validatorIds[i]].active && !$.validators[validatorIds[i]].slashed) {
+                totalEligibleValidators++;
             }
         }
 
+        // ALL eligible validators must vote for slashing (unanimous consensus)
+        if (activeVoteCount < totalEligibleValidators) {
+            revert UnanimityNotReached(activeVoteCount, totalEligibleValidators);
+        }
+
+        // Record amounts being lost for the event BEFORE any state changes
+        uint256 stakeLost = $.validatorTotalStaked[validatorId];
+        uint256 cooledLost = $.validatorTotalCooling[validatorId];
+
+        // Mark validator as slashed FIRST
         validatorToSlash.active = false;
         validatorToSlash.slashed = true;
         validatorToSlash.slashedAtTimestamp = block.timestamp;
 
-        uint256 stakeLost = $.validatorTotalStaked[validatorId];
-        uint256 cooledLost = $.validatorTotalCooling[validatorId];
+        // Update global accounting - reduce totals by the amounts being lost
+        $.totalStaked -= stakeLost;
+        $.totalCooling -= cooledLost;
 
-        $.totalStaked = $.totalStaked >= stakeLost ? $.totalStaked - stakeLost : 0;
-        $.totalCooling = $.totalCooling >= cooledLost ? $.totalCooling - cooledLost : 0;
-
+        // IMPORTANT: Zero out validator totals - slashed funds are lost/burned
+        // Users cannot recover their stakes from slashed validators (security requirement)
         $.validatorTotalStaked[validatorId] = 0;
         $.validatorTotalCooling[validatorId] = 0;
-
-        // Fix: Zero out the validator's delegatedAmount when slashed
+        
+        // Also zero the delegatedAmount in the validator struct
         validatorToSlash.delegatedAmount = 0;
-
+        
+        // Clear the stakers array - slashed validator should show 0 stakers
         delete $.validatorStakers[validatorId];
 
-        for (uint256 j = 0; j < rewardTokens.length; j++) {
-            address token = rewardTokens[j];
-            if ($.pendingCommissionClaims[validatorId][token].amount > 0) {
-                delete $.pendingCommissionClaims[validatorId][token];
-            }
-        }
-
-        if ($.adminToValidatorId[validatorToSlash.l2AdminAddress] == validatorId) {
-            delete $.adminToValidatorId[validatorToSlash.l2AdminAddress];
-            $.isAdminAssigned[validatorToSlash.l2AdminAddress] = false;
+        // Clear voting records for the slashed validator
+        $.slashVoteCounts[validatorId] = 0;
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            $.slashingVotes[validatorId][validatorIds[i]] = 0;
         }
 
         emit ValidatorSlashed(validatorId, msg.sender, stakeLost + cooledLost);
@@ -712,6 +699,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @notice Manually triggers the settlement of accrued commission for a specific validator.
      * @dev This updates the validator's cumulative reward per token indices (for all reward tokens)
      *      and their accrued commission storage. It uses the validator's current commission rate for settlement.
+     *      Can be called for any validator (active, inactive, or slashed) to force settlement.
      * @param validatorId The ID of the validator.
      */
     function forceSettleValidatorCommission(

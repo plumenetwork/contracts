@@ -107,6 +107,26 @@ contract PlumeStakingDiamondTest is Test {
     uint256 public constant DEFAULT_COMMISSION = 5e16; // 5% commission
     address public constant DEFAULT_VALIDATOR_ADMIN = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
 
+    address[] internal validatorAdminAddresses = [
+        0x5E696f3E4bb7910a030d985b08D458DAa548587D,
+        0xF0189c1698734c74521Ca010b83a82daB69051b5,
+        0x592FCaeAbD04942E25190cA5318909f0715daaB4,
+        0xe520f20C551017aB80980179E4B8725646625124,
+        0x8043387d0EE7Fee12D251caB821eaad648A61570,
+        0x56FE509FA512c37A932c64a49898e5E3baecE404,
+        0x37dd08E36b8Fe2675CE1d15FD5D711256E5faD8c,
+        0xb4Cc54b72E8D60E865a9743C4D88A090ec7A9e5B,
+        0x7Bf729aF5e8b46899fBC31C15Ca9b295904dc9Dd,
+        0x7F52402B5b188638dD0e264EA78b3f3FC00FdE82,
+        0xB6d23d7e78d8912304152028875290e2F6E960D0,
+        0xC18c6479c9ef80432A4e3E91512b68ce584B044b,
+        0x9271D8c839d3F347b7215B5495783138E48F9FB2,
+        0xb2D92c04A2487389f984cD9B271EB498B6D4eab6,
+        0x2875A33D4Ae4304F6ea451Ca04A3304B7CA4c495
+    ];
+
+
+
     function setUp() public {
         console2.log("Starting Diamond test setup (Correct Path)");
 
@@ -7088,6 +7108,369 @@ function testRestakeValidatorRelationshipCleanup_MaturedCooldownUsesParked() pub
     assertEq(parkedBalance, stakeAmount - partialRestakeAmount, "Remaining funds should be in parked balance");
     
     console2.log("--- Test: Restake Uses Parked Funds When Cooldown Matured PASSED ---");
+}
+
+
+
+function testValidatorStatusChanges_InactiveRewardPrevention() public {
+    // Configure reward rates: disable PUSD and enable PLUME_NATIVE
+    vm.startPrank(admin);
+    address[] memory tokens = new address[](2);
+    tokens[0] = address(pUSD);
+    tokens[1] = PLUME_NATIVE;
+    uint256[] memory rates = new uint256[](2);
+    rates[0] = 0; // Disable PUSD rewards
+    rates[1] = 1_584_404_391; // 5% annual rate for PLUME_NATIVE
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    vm.stopPrank();
+    
+    // Setup: Stake with validator 1
+    vm.deal(user1, 2 ether);
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: 1 ether}(1);
+    vm.stopPrank();
+    
+    // Wait some time for rewards to accrue
+    vm.warp(block.timestamp + 1 days);
+    
+    // Get initial reward
+    uint256 rewardBefore = RewardsFacet(address(diamondProxy)).earned(user1, PLUME_NATIVE);
+    assertGt(rewardBefore, 0, "Should have earned some rewards");
+    
+    // Admin sets validator to inactive
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).setValidatorStatus(1, false);
+    vm.stopPrank();
+    
+    // Wait more time - rewards should NOT increase during inactive period
+    vm.warp(block.timestamp + 1 days);
+    
+    uint256 rewardAfterInactive = RewardsFacet(address(diamondProxy)).earned(user1, PLUME_NATIVE);
+    assertEq(rewardAfterInactive, rewardBefore, "Rewards should not increase while validator inactive");
+    
+    // Reactivate validator
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).setValidatorStatus(1, true);
+    vm.stopPrank();
+    
+    // Wait more time - rewards should start accruing again from reactivation point
+    vm.warp(block.timestamp + 1 days);
+    
+    uint256 rewardAfterReactive = RewardsFacet(address(diamondProxy)).earned(user1, PLUME_NATIVE);
+    assertGt(rewardAfterReactive, rewardAfterInactive, "Rewards should accrue again after reactivation");
+}
+function testRequestCommissionClaim_SettlesCommissionFirst() public {
+
+
+    // **ADD THIS SETUP - Same as the working test**
+    vm.startPrank(admin);
+    address[] memory tokens = new address[](1);
+    tokens[0] = PLUME_NATIVE;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = 1_584_404_391; // 5% annual rate (like other tests)
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    vm.stopPrank();
+
+
+    // Setup: Stake to generate commission
+    vm.deal(user1, 2 ether);
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: 1 ether}(1);
+    vm.stopPrank();
+    
+    // Wait for commission to accrue
+    vm.warp(block.timestamp + 30 days);
+    
+    // Get validator admin
+    (PlumeStakingStorage.ValidatorInfo memory info,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(1);
+    address validatorAdmin = info.l2AdminAddress;
+    
+    // Check commission before and after manual settlement
+    uint256 commissionBeforeManual = ValidatorFacet(address(diamondProxy)).getAccruedCommission(1, PLUME_NATIVE);
+    
+    // Force settle manually first
+    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(1);
+    uint256 commissionAfterManual = ValidatorFacet(address(diamondProxy)).getAccruedCommission(1, PLUME_NATIVE);
+    
+    assertGt(commissionAfterManual, commissionBeforeManual, "Manual settlement should increase commission");
+    
+    // Now test that requestCommissionClaim also settles
+    vm.warp(block.timestamp + 30 days);
+    
+    // Request commission claim - should settle first
+    vm.startPrank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).requestCommissionClaim(1, PLUME_NATIVE);
+    vm.stopPrank();
+    
+    // Commission should be updated and locked
+    uint256 commissionAfterRequest = ValidatorFacet(address(diamondProxy)).getAccruedCommission(1, PLUME_NATIVE);
+    assertEq(commissionAfterRequest, 0, "Commission should be zeroed after request");
+}
+
+function testForceSettleValidatorCommission_WorksOnAnyStatus() public {
+
+    // Add this to testForceSettleValidatorCommission_WorksOnAnyStatus()
+vm.startPrank(admin);
+
+ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(1 days);
+
+
+address[] memory tokens = new address[](1);
+tokens[0] = PLUME_NATIVE;
+uint256[] memory rates = new uint256[](1);
+rates[0] = 1_584_404_391; // 5% annual rate (like other tests)
+RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+vm.stopPrank();
+
+    // Setup: Stake to generate commission
+    vm.deal(user1, 2 ether);
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: 1 ether}(1);
+    vm.stopPrank();
+    
+    vm.warp(block.timestamp + 30 days);
+    
+    // Test 1: Works on active validator
+    uint256 commissionBefore = ValidatorFacet(address(diamondProxy)).getAccruedCommission(1, PLUME_NATIVE);
+    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(1);
+    uint256 commissionAfterActive = ValidatorFacet(address(diamondProxy)).getAccruedCommission(1, PLUME_NATIVE);
+    assertGt(commissionAfterActive, commissionBefore, "Should settle on active validator");
+    
+    // Test 2: Works on inactive validator
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).setValidatorStatus(1, false);
+    vm.stopPrank();
+    
+    vm.warp(block.timestamp + 30 days);
+    
+    // Should still work (no revert)
+    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(1);
+    
+
+// **ADD THIS SECTION HERE** - Reactivate validator 1 before slashing test
+vm.startPrank(admin);
+ValidatorFacet(address(diamondProxy)).setValidatorStatus(1, true); // Reactivate
+vm.stopPrank();
+
+
+// **ADD THIS: Validator 0 also needs to vote**
+vm.startPrank(validatorAdmin); // ✅ CORRECT ADMIN for validator 0
+ValidatorFacet(address(diamondProxy)).voteToSlashValidator(1, block.timestamp + 1000);
+vm.stopPrank();
+
+
+    // Test 3: Should work on slashed validator too
+    // Create another validator to vote for slashing
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).addValidator(
+        2, 5 * 10**15, validatorAdminAddresses[1], validatorAdminAddresses[1],
+        "val2", "acc2", validatorAdminAddresses[1], 0
+    );
+    vm.stopPrank();
+    
+    // Vote to slash validator 1
+    vm.startPrank(validatorAdminAddresses[1]);
+    ValidatorFacet(address(diamondProxy)).voteToSlashValidator(1, block.timestamp + 1000);
+//    ValidatorFacet(address(diamondProxy)).voteToSlashValidator(1, block.timestamp + 1 hours);
+    vm.stopPrank();
+    
+    // Slash validator 1
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).slashValidator(1);
+    vm.stopPrank();
+    
+    // Should still work on slashed validator (no revert)
+    ValidatorFacet(address(diamondProxy)).forceSettleValidatorCommission(1);
+}
+
+
+function testSlashValidator_NoGasLimitIssues() public {
+    // Setup: Create many stakers to test gas efficiency
+    uint256 numStakers = 50; // Would previously cause gas issues
+    
+    for (uint256 i = 0; i < numStakers; i++) {
+        address staker = address(uint160(0x1000 + i));
+        vm.deal(staker, 1 ether);
+        vm.startPrank(staker);
+        StakingFacet(address(diamondProxy)).stake{value: 1 ether}(1);
+        vm.stopPrank();
+    }
+    
+    // Wait for rewards to accrue
+    vm.warp(block.timestamp + 30 days);
+    
+    // Add another validator to vote for slashing
+    vm.startPrank(admin);
+
+
+
+ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(1 days);
+
+    ValidatorFacet(address(diamondProxy)).addValidator(
+        2, 5 * 10**15, validatorAdminAddresses[1], validatorAdminAddresses[1],
+        "val2", "acc2", validatorAdminAddresses[1], 0
+    );
+    vm.stopPrank();
+    
+
+    // Vote to slash
+    vm.startPrank(validatorAdmin);
+    ValidatorFacet(address(diamondProxy)).voteToSlashValidator(1, block.timestamp + 1000 );
+    vm.stopPrank();
+
+
+    // Vote to slash
+    vm.startPrank(validatorAdminAddresses[1]);
+    ValidatorFacet(address(diamondProxy)).voteToSlashValidator(1, block.timestamp + 1000 );
+    vm.stopPrank();
+    
+    // Record gas before slashing
+    uint256 gasBefore = gasleft();
+    
+    // Slash validator - should not hit gas limits despite many stakers
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).slashValidator(1);
+    vm.stopPrank();
+    
+
+
+    uint256 gasUsed = gasBefore - gasleft();
+    
+    // Should use reasonable gas (not proportional to number of stakers)
+    assertLt(gasUsed, 1_000_000, "Slashing should be gas efficient regardless of staker count");
+    
+    // Verify validator is slashed
+    (PlumeStakingStorage.ValidatorInfo memory info,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(1);
+    assertTrue(info.slashed, "Validator should be slashed");
+    assertFalse(info.active, "Validator should be inactive");
+}
+
+
+
+function testSlashValidator_LazySettlement_UsersCanClaim() public {
+
+    // **ADD THIS SETUP - Same as the working test**
+    vm.startPrank(admin);
+    ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(1 days);
+    address[] memory tokens = new address[](1);
+    tokens[0] = PLUME_NATIVE;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = 1_584_404_391; // 5% annual rate (like other tests)
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    vm.stopPrank();
+
+    // Setup: User stakes
+    vm.deal(user1, 2 ether);
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: 1 ether}(1);
+    vm.stopPrank();
+    
+    // Wait for rewards to accrue
+    vm.warp(block.timestamp + 30 days);
+    
+    // Check rewards before slashing
+    uint256 rewardsBeforeSlash = RewardsFacet(address(diamondProxy)).earned(user1, PLUME_NATIVE);
+    assertGt(rewardsBeforeSlash, 0, "Should have earned rewards before slash");
+    
+    // Add another validator and slash validator 1
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).addValidator(
+        2, 5 * 10**15, validatorAdminAddresses[1], validatorAdminAddresses[1],
+        "val2", "acc2", validatorAdminAddresses[1], 0
+    );
+    vm.stopPrank();
+    
+    vm.startPrank(validatorAdminAddresses[1]);
+    ValidatorFacet(address(diamondProxy)).voteToSlashValidator(1, block.timestamp + 1 hours);
+    vm.stopPrank();
+    
+
+// **ADD THIS: Validator 0 also needs to vote**
+vm.startPrank(validatorAdmin); // Validator 0's admin is the general admin
+ValidatorFacet(address(diamondProxy)).voteToSlashValidator(1, block.timestamp + 1 hours);
+vm.stopPrank();
+
+
+    uint256 slashTimestamp = block.timestamp;
+    
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).slashValidator(1);
+    vm.stopPrank();
+    
+    // Wait more time after slashing
+    vm.warp(block.timestamp + 30 days);
+    
+    // User should be able to claim rewards earned up to slash timestamp
+    uint256 rewardsAfterSlash = RewardsFacet(address(diamondProxy)).earned(user1, PLUME_NATIVE);
+    
+    // Rewards should be preserved (lazy settlement calculates up to slash time)
+    assertGt(rewardsAfterSlash, 0, "Should still have claimable rewards after slash");
+    
+    // User should be able to claim without reverting
+    vm.startPrank(user1);
+    uint256 claimedAmount = RewardsFacet(address(diamondProxy)).claim(PLUME_NATIVE);
+    vm.stopPrank();
+    
+    assertGt(claimedAmount, 0, "Should successfully claim rewards from slashed validator");
+    
+    // After claiming, rewards should be zero
+    uint256 rewardsAfterClaim = RewardsFacet(address(diamondProxy)).earned(user1, PLUME_NATIVE);
+    assertEq(rewardsAfterClaim, 0, "Should have no rewards left after claiming");
+}
+
+
+
+
+function testValidatorStatusChanges_TimestampResetPreventsRetroactiveAccrual() public {
+
+    // **ADD THIS SETUP - Same as the working test**
+    vm.startPrank(admin);
+    ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(1 days);
+    address[] memory tokens = new address[](1);
+    tokens[0] = PLUME_NATIVE;
+    uint256[] memory rates = new uint256[](1);
+    rates[0] = 1_584_404_391; // 5% annual rate (like other tests)
+    RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+    vm.stopPrank();
+
+
+    // Setup: Stake with validator
+    vm.deal(user1, 2 ether);
+    vm.startPrank(user1);
+    StakingFacet(address(diamondProxy)).stake{value: 1 ether}(1);
+    vm.stopPrank();
+    
+    // Wait and get initial rewards
+    vm.warp(block.timestamp + 1 days);
+    uint256 rewardsBefore = RewardsFacet(address(diamondProxy)).earned(user1, PLUME_NATIVE);
+    
+    // Set validator inactive
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).setValidatorStatus(1, false);
+    vm.stopPrank();
+    
+    // Wait during inactive period (no rewards should accrue)
+    uint256 inactiveStart = block.timestamp;
+    vm.warp(block.timestamp + 10 days); // Long inactive period
+    
+    // Reactivate validator
+    vm.startPrank(admin);
+    ValidatorFacet(address(diamondProxy)).setValidatorStatus(1, true);
+    vm.stopPrank();
+    
+    // Immediately check rewards - should not include inactive period
+    uint256 rewardsAfterReactivation = RewardsFacet(address(diamondProxy)).earned(user1, PLUME_NATIVE);
+    
+    // Should be same as before (no accrual during inactive period)
+    assertEq(rewardsAfterReactivation, rewardsBefore, 
+        "No rewards should accrue during inactive period due to timestamp reset");
+    
+    // Wait after reactivation - now rewards should accrue normally
+    vm.warp(block.timestamp + 1 days);
+    uint256 rewardsAfterActive = RewardsFacet(address(diamondProxy)).earned(user1, PLUME_NATIVE);
+    
+    assertGt(rewardsAfterActive, rewardsAfterReactivation, 
+        "Rewards should accrue normally after reactivation");
 }
 
 }
