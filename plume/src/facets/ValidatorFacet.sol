@@ -525,7 +525,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @notice Clean up expired votes for a validator and return the current valid vote count
      * @dev This function removes expired votes and updates the vote count accordingly
      * @param validatorId The validator to clean up votes for
-     * @return validVoteCount The number of valid (non-expired) votes remaining
+     * @return newActiveVoteCount The number of valid (non-expired) votes remaining
      */
     function _cleanupExpiredVotes(uint16 validatorId) internal returns (uint256 newActiveVoteCount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
