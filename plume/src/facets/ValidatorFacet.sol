@@ -753,6 +753,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         info = $.validators[validatorId];
         totalStaked = $.validatorTotalStaked[validatorId];
         stakersCount = $.validatorStakers[validatorId].length;
+
+        // Fix: Ensure the returned struct has the correct delegated amount.
+        info.delegatedAmount = totalStaked;
+
         return (info, totalStaked, stakersCount);
     }
 
