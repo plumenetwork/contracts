@@ -890,7 +890,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
             uint16 validatorId = userAssociatedValidators[i];
-            PlumeStakingStorage.CooldownEntry storage cooldownEntry = $.userValidatorCooldowns[user][validatorId];
+            PlumeStakingStorage.CooldownEntry memory cooldownEntry = $.userValidatorCooldowns[user][validatorId];
 
             if (cooldownEntry.amount == 0) {
                 continue;
@@ -929,7 +929,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function _canRecoverFromCooldown(
         address user,
         uint16 validatorId,
-        PlumeStakingStorage.CooldownEntry storage cooldownEntry
+        PlumeStakingStorage.CooldownEntry memory cooldownEntry
     ) internal view returns (bool canRecover) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
