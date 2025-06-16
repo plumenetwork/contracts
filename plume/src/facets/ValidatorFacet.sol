@@ -480,46 +480,51 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return amount;
     }
 
+
     /**
      * @notice Clean up expired votes for a validator and return the current valid vote count
      * @dev This function removes expired votes and updates the vote count accordingly
      * @param validatorId The validator to clean up votes for
-     * @return validVoteCount The number of valid (non-expired) votes remaining
+     * @return newActiveVoteCount The number of valid (non-expired) votes remaining
      */
-    function _cleanupExpiredVotes(uint16 validatorId) internal returns (uint256 validVoteCount) {
+    function _cleanupExpiredVotes(uint16 validatorId) internal returns (uint256 newActiveVoteCount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        
-        validVoteCount = 0;
-        uint256 currentTime = block.timestamp;
-        
-        // Iterate through all validators to check their votes against this validator
-        for (uint256 i = 0; i < $.validatorIds.length; i++) {
-            uint16 voterValidatorId = $.validatorIds[i];
-            
-            // Skip if checking against self
+
+        uint256 voteCount = $.slashVoteCounts[validatorId];
+        if (voteCount == 0) {
+            return 0; // No votes to clean up
+        }
+
+        uint16[] memory allValidatorIds = $.validatorIds;
+        uint256 newActiveVoteCount = 0;
+
+        for (uint256 i = 0; i < allValidatorIds.length; i++) {
+            uint16 voterValidatorId = allValidatorIds[i];
             if (voterValidatorId == validatorId) {
                 continue;
             }
-            
-            // Check if this validator has voted and if the vote is still valid
+
             uint256 voteExpiration = $.slashingVotes[validatorId][voterValidatorId];
-            
-            if (voteExpiration > 0) {
-                if (voteExpiration >= currentTime) {
-                    // Vote is still valid
-                    validVoteCount++;
+            if (voteExpiration > 0) { // A vote from this validator exists.
+                PlumeStakingStorage.ValidatorInfo storage voterValidator = $.validators[voterValidatorId];
+                bool voterIsEligible = voterValidator.active && !voterValidator.slashed;
+                bool voteHasExpired = block.timestamp >= voteExpiration;
+
+                if (voterIsEligible && !voteHasExpired) {
+                    // Vote is valid and active.
+                    newActiveVoteCount++;
                 } else {
-                    // Vote has expired, clean it up
+                    // Vote is invalid (voter ineligible or vote expired). Clean it up.
                     delete $.slashingVotes[validatorId][voterValidatorId];
                 }
             }
         }
-        
-        // Update the stored vote count to reflect only valid votes
-        $.slashVoteCounts[validatorId] = validVoteCount;
-        
-        return validVoteCount;
+
+        // Update the vote count to reflect only the currently valid, active votes.
+        $.slashVoteCounts[validatorId] = newActiveVoteCount;
+        return newActiveVoteCount;
     }
+
 
     /**
      * @notice Vote to slash a malicious validator
