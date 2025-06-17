@@ -206,16 +206,18 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         for (uint256 i = 0; i < $.validatorIds.length; i++) {
             uint16 validatorId = $.validatorIds[i];
             
-            // Final update to current time, then clear future checkpoints
+            // Final update to current time to settle all rewards up to this point
             PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
             
-            // Clear validator checkpoints to prevent rate lookups after removal
-            delete $.validatorRewardRateCheckpoints[validatorId][token];
+            // DO NOT delete validator checkpoints. This historical data is needed
+            // for users to accurately claim their final rewards for the token.
+            // delete $.validatorRewardRateCheckpoints[validatorId][token];
         }
         
-        // Set rate to 0 and clear global checkpoints
+        // Set rate to 0 to prevent future accrual.
         $.rewardRates[token] = 0;
-        delete $.rewardRateCheckpoints[token];
+        // DO NOT delete global checkpoints. Historical data is needed for claims.
+        // delete $.rewardRateCheckpoints[token];
 
         // Update the array
         $.rewardTokens[tokenIndex] = $.rewardTokens[$.rewardTokens.length - 1];
