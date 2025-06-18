@@ -7803,7 +7803,45 @@ function testValidatorStatusChanges_TimestampResetPreventsRetroactiveAccrual() p
         vm.expectRevert(abi.encodeWithSelector(TokenDoesNotExist.selector, invalidToken));
         ManagementFacet(address(diamondProxy)).pruneRewardRateCheckpoints(DEFAULT_VALIDATOR_ID, invalidToken, 1);
     }
+    function test_SetMaxAllowedCommission_EnforcesOnExistingValidators() public {
+        // Facet references
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+        ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
 
+        // Setup: Add two validators. One with a commission ABOVE the new max, one below.
+        // The initial max is 50e16 (50%) from setUp.
+        uint16 validator_high_commission_id = 1;
+
+        uint16 validator_low_commission_id = 2;
+        vm.prank(admin);
+        validatorFacet.addValidator(
+            validator_low_commission_id,
+            15e16, // 15% commission, which is < 20%
+            makeAddr("v2_admin"),
+            makeAddr("v2_withdraw"),
+            "l1val2",
+            "l1acc2",
+            address(0),
+            0
+        );
+
+        // Action: Set the new max allowed commission to 20%
+        uint256 newMaxCommission = 4e16; // 20%
+        vm.startPrank(admin);
+
+ 
+        managementFacet.setMaxAllowedValidatorCommission(newMaxCommission);
+        vm.stopPrank();
+
+        // Assertions
+        // Validator 1's commission should be CAPPED at the new max.
+        (PlumeStakingStorage.ValidatorInfo memory info1,,) = validatorFacet.getValidatorInfo(validator_high_commission_id);
+        assertEq(info1.commission, newMaxCommission, "High commission validator should be lowered to new max");
+
+        // Validator 2's commission should remain UNCHANGED.
+        (PlumeStakingStorage.ValidatorInfo memory info2,,) = validatorFacet.getValidatorInfo(validator_low_commission_id);
+        assertEq(info2.commission, 4e16, "Low commission validator should be unchanged");
+    }
     function toArray(address item) internal pure returns (address[] memory) {
         address[] memory arr = new address[](1);
         arr[0] = item;

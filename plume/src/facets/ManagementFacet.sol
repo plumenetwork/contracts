@@ -32,11 +32,13 @@ import {
     MaxSlashVoteDurationSet,
     MinStakeAmountSet,
     RewardRateCheckpointsPruned,
-    StakeInfoUpdated
+    StakeInfoUpdated,
+    ValidatorCommissionSet
 } from "../lib/PlumeEvents.sol";
 
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { PlumeValidatorLogic } from "../lib/PlumeValidatorLogic.sol";
+import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
 
 import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
@@ -223,6 +225,28 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         $.maxAllowedValidatorCommission = newMaxRate;
 
         emit MaxAllowedValidatorCommissionSet(oldMaxRate, newMaxRate);
+
+        // Enforce the new max commission on all existing validators
+        uint16[] memory validatorIds = $.validatorIds;
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            uint16 validatorId = validatorIds[i];
+            PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+            if (validator.commission > newMaxRate) {
+                uint256 oldCommission = validator.commission;
+
+                // Settle commissions accrued with the old rate up to this point.
+                PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
+
+                // Update the validator's commission rate to the new max rate.
+                validator.commission = newMaxRate;
+
+                // Create a checkpoint for the new commission rate.
+                PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newMaxRate);
+
+                emit ValidatorCommissionSet(validatorId, oldCommission, newMaxRate);
+            }
+        }
     }
 
     /**
