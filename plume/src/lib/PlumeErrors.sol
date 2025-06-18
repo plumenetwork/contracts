@@ -297,6 +297,11 @@ error CooldownTooShortForSlashVote(uint256 newCooldownInterval, uint256 currentM
 /// @param currentCooldownInterval The current cooldown interval.
 error SlashVoteDurationTooLongForCooldown(uint256 newMaxSlashVoteDuration, uint256 currentCooldownInterval);
 
+/// @notice Thrown when slash vote duration is not shorter than the commission claim timelock.
+/// @param slashVoteDuration The proposed slash vote duration.
+/// @param commissionTimelock The current commission claim timelock.
+error SlashVoteDurationExceedsCommissionTimelock(uint256 slashVoteDuration, uint256 commissionTimelock);
+
 /// @notice Thrown when an invalid interval is provided (e.g. zero)
 /// @param interval The invalid interval.
 error InvalidInterval(uint256 interval);

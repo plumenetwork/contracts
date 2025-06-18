@@ -11,6 +11,7 @@ import {
     InvalidInterval,
     InvalidMaxCommissionRate,
     SlashVoteDurationTooLongForCooldown,
+    SlashVoteDurationExceedsCommissionTimelock,
     Unauthorized,
     ValidatorDoesNotExist,
     ValidatorNotSlashed,
@@ -187,6 +188,12 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if ($.cooldownInterval != 0 && duration >= $.cooldownInterval) {
             revert SlashVoteDurationTooLongForCooldown(duration, $.cooldownInterval);
         }
+
+        // NEW CHECK: Ensure slash duration is shorter than commission claim timelock
+        if (duration >= PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK) {
+            revert SlashVoteDurationExceedsCommissionTimelock(duration, PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK);
+        }
+
         $.maxSlashVoteDurationInSeconds = duration;
         emit MaxSlashVoteDurationSet(duration);
     }
