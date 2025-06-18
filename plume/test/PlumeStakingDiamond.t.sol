@@ -105,6 +105,9 @@ contract PlumeStakingDiamondTest is Test {
     uint16 public constant DEFAULT_VALIDATOR_ID = 0;
     uint256 public constant DEFAULT_COMMISSION = 5e16; // 5% commission
     address public constant DEFAULT_VALIDATOR_ADMIN = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
+    uint256 public constant MAX_SLASH_VOTE_DURATION = 1 days;
+    uint256 public constant MAX_ALLOWED_COMMISSION = 50e16; // 50%
+
 
     address[] internal validatorAdminAddresses = [
         0x5E696f3E4bb7910a030d985b08D458DAa548587D,
@@ -323,7 +326,13 @@ contract PlumeStakingDiamondTest is Test {
 
         // 5. Initialize (AFTER the cut)
         // Plume-specific initialization
-        diamondProxy.initializePlume(address(0), MIN_STAKE, INITIAL_COOLDOWN);
+            diamondProxy.initializePlume(
+                address(0),
+                MIN_STAKE,
+                INITIAL_COOLDOWN,
+                MAX_SLASH_VOTE_DURATION,
+                MAX_ALLOWED_COMMISSION
+            );
         assertEq(diamondProxy.isInitialized(), true, "Diamond should be initialized");
 
         // AccessControl initialization

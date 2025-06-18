@@ -205,7 +205,13 @@ contract DeployPlumeStaking is Script {
 
         // --- 5. Initialize Diamond and Facets ---
         address deployer = msg.sender;
-        diamondProxy.initializePlume(deployer, INITIAL_MIN_STAKE_AMOUNT, INITIAL_COOLDOWN_INTERVAL);
+        diamondProxy.initializePlume(
+            deployer,
+            INITIAL_MIN_STAKE_AMOUNT,
+            INITIAL_COOLDOWN_INTERVAL,
+            INITIAL_MAX_SLASH_VOTE_DURATION,
+            INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION
+        );
         console2.log("PlumeStaking initialized.");
 
         AccessControlFacet(address(diamondProxy)).initializeAccessControl();
@@ -223,28 +229,10 @@ contract DeployPlumeStaking is Script {
         RewardsFacet(address(diamondProxy)).setTreasury(EXISTING_TREASURY_ADDRESS);
         console2.log("Treasury address set to:", EXISTING_TREASURY_ADDRESS);
 
-        // --- 8. Configure ManagementFacet Settings ---
-        ManagementFacet(address(diamondProxy)).setMaxAllowedValidatorCommission(
-            INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION
-        );
-        console2.log(
-            "Max allowed validator commission set to: %s (%s%)",
-            INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION,
-            INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION / (10 ** 16)
-        );
-        ManagementFacet(address(diamondProxy)).setMaxSlashVoteDuration(INITIAL_MAX_SLASH_VOTE_DURATION);
-        console2.log("Max slash vote duration set to: %s seconds", INITIAL_MAX_SLASH_VOTE_DURATION);
-
         // --- 9. Configure PLUME_NATIVE Rewards ---
         address plumeNativeToken = PlumeStakingStorage.PLUME_NATIVE;
         RewardsFacet(address(diamondProxy)).addRewardToken(plumeNativeToken);
         console2.log("PLUME_NATIVE added as reward token.");
-
-        // Check if treasury is configured for PLUME_NATIVE (external step, cannot do from script directly if it
-        // requires treasury admin)
-        // For now, assume treasury will accept it or is already configured.
-        // IPlumeStakingRewardTreasury(EXISTING_TREASURY_ADDRESS).addRewardToken(plumeNativeToken); // This would fail
-        // if deployer is not treasury admin
 
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(plumeNativeToken, PLUME_MAX_REWARD_RATE);
         console2.log("Max reward rate for PLUME_NATIVE set to: %s", PLUME_MAX_REWARD_RATE);

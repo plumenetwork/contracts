@@ -193,7 +193,13 @@ contract PlumeStakingStressTest is Test {
         console2.log("Diamond cut applied.");
 
         // 5. Initialize
-        diamondProxy.initializePlume(address(0), MIN_STAKE, INITIAL_COOLDOWN);
+        diamondProxy.initializePlume(
+            address(0),
+            MIN_STAKE,
+            INITIAL_COOLDOWN,
+            1 days,  // maxSlashVoteDuration
+            50e16    // maxAllowedValidatorCommission (50%)
+        );
         AccessControlFacet(address(diamondProxy)).initializeAccessControl();
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.ADMIN_ROLE, admin);
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
