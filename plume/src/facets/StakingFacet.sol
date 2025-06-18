@@ -713,21 +713,33 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function _removeCoolingAmounts(address user, uint16 validatorId, uint256 amount) internal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
-        // Update user's global cooling amounts
+        bool isSlashed = $.validators[validatorId].slashed;
+
+        // Update user's global cooling amounts - this always happens
         if ($.stakeInfo[user].cooled >= amount) {
             $.stakeInfo[user].cooled -= amount;
         } else {
             $.stakeInfo[user].cooled = 0;
         }
 
-        // Update global total cooling
-        if ($.totalCooling >= amount) {
-            $.totalCooling -= amount;
-        } else {
-            $.totalCooling = 0;
+        // Only update global and validator totals if the validator was NOT slashed
+        // because these totals were already decremented during the slash event.
+        if (!isSlashed) {
+            // Update global total cooling
+            if ($.totalCooling >= amount) {
+                $.totalCooling -= amount;
+            } else {
+                $.totalCooling = 0;
+            }
+            // Update validator total cooling
+            if ($.validatorTotalCooling[validatorId] >= amount) {
+                $.validatorTotalCooling[validatorId] -= amount;
+            } else {
+                $.validatorTotalCooling[validatorId] = 0;
+            }
         }
 
-        // Update validator-specific cooling amounts
+        // Update user's specific cooldown entry for the validator - this always happens
         PlumeStakingStorage.CooldownEntry storage entry = $.userValidatorCooldowns[user][validatorId];
         if (entry.amount >= amount) {
             entry.amount -= amount;
@@ -737,13 +749,6 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         } else {
             entry.amount = 0;
             entry.cooldownEndTime = 0;
-        }
-
-        // Update validator total cooling
-        if ($.validatorTotalCooling[validatorId] >= amount) {
-            $.validatorTotalCooling[validatorId] -= amount;
-        } else {
-            $.validatorTotalCooling[validatorId] = 0;
         }
     }
 
