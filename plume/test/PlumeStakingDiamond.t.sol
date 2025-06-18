@@ -259,7 +259,7 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[18] = bytes4(keccak256(bytes("getValidatorCommissionCheckpoints(uint16)"))); // <<< NEW getValidatorCommissionCheckpoints FUNCTION
 
         // Management Facet Selectors
-        bytes4[] memory managementSigs_Manual = new bytes4[](9); // Size updated
+        bytes4[] memory managementSigs_Manual = new bytes4[](11); // Size updated
         managementSigs_Manual[0] = bytes4(keccak256(bytes("setMinStakeAmount(uint256)")));
         managementSigs_Manual[1] = bytes4(keccak256(bytes("setCooldownInterval(uint256)")));
         managementSigs_Manual[2] = bytes4(keccak256(bytes("adminWithdraw(address,uint256,address)")));
@@ -271,6 +271,10 @@ contract PlumeStakingDiamondTest is Test {
             // shifted
         managementSigs_Manual[7] = bytes4(keccak256(bytes("adminClearValidatorRecord(address,uint16)"))); // New
         managementSigs_Manual[8] = bytes4(keccak256(bytes("adminBatchClearValidatorRecords(address[],uint16)"))); // New
+        managementSigs_Manual[9] = bytes4(keccak256(bytes("pruneCommissionCheckpoints(uint16,uint256)"))); // New
+        managementSigs_Manual[10] = bytes4(keccak256(bytes("pruneRewardRateCheckpoints(uint16,address,uint256)"))); // New
+
+
 
         console2.log("Manual selectors initialized");
 
@@ -366,7 +370,7 @@ contract PlumeStakingDiamondTest is Test {
             address(0x1234),
             1_000_000e18
         );
-
+        
         // Add validator 1
         ValidatorFacet(address(diamondProxy)).addValidator(
             1,
@@ -7640,4 +7644,168 @@ function testValidatorStatusChanges_TimestampResetPreventsRetroactiveAccrual() p
         console2.log("Reward rate checkpoint overwrite verified.");
         console2.log("--- Test: testPreventDuplicateTimestampCheckpoints END ---");
     }
+
+    // --- Test pruneCommissionCheckpoints ---
+
+    function test_PruneCommissionCheckpoints_Prune() public {
+        // Setup: add validator and create checkpoints
+        (PlumeStakingStorage.ValidatorInfo memory info,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(DEFAULT_VALIDATOR_ID);
+        address validatorAdmin = info.l2AdminAddress;
+
+        vm.prank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, 1 * 1e16); // 1%
+        vm.warp(block.timestamp + 1 days);
+        
+        vm.prank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, 2 * 1e16); // 2%
+        
+        vm.warp(block.timestamp + 2 days);
+        vm.prank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, 3 * 1e16); // 3%
+        
+        vm.warp(block.timestamp + 3 days);
+        vm.prank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, 4 * 1e16); // 4%
+
+        // There should be 4 checkpoints now
+        PlumeStakingStorage.RateCheckpoint[] memory checkpointsBefore = ValidatorFacet(address(diamondProxy)).getValidatorCommissionCheckpoints(DEFAULT_VALIDATOR_ID);
+        assertEq(checkpointsBefore.length, 4);
+        assertEq(checkpointsBefore[0].rate, 1 * 1e16);
+        assertEq(checkpointsBefore[3].rate, 4 * 1e16);
+
+        // Action: Prune the 2 oldest checkpoints
+        vm.expectEmit(true, true, true, true);
+        emit CommissionCheckpointsPruned(DEFAULT_VALIDATOR_ID, 2);
+        vm.prank(admin);
+        ManagementFacet(address(diamondProxy)).pruneCommissionCheckpoints(DEFAULT_VALIDATOR_ID, 2);
+
+        // Assertions
+        PlumeStakingStorage.RateCheckpoint[] memory checkpointsAfter = ValidatorFacet(address(diamondProxy)).getValidatorCommissionCheckpoints(DEFAULT_VALIDATOR_ID);
+        assertEq(checkpointsAfter.length, 2, "Should have 2 checkpoints after pruning");
+        
+        // The remaining checkpoints should be the newest ones
+        assertEq(checkpointsAfter[0].rate, 3 * 1e16, "First remaining checkpoint should have rate of 3%");
+        assertEq(checkpointsAfter[1].rate, 4 * 1e16, "Second remaining checkpoint should have rate of 4%");
+    }
+
+    function test_PruneCommissionCheckpoints_RevertIf_PruneAll() public {
+        (PlumeStakingStorage.ValidatorInfo memory info,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(DEFAULT_VALIDATOR_ID);
+        address validatorAdmin = info.l2AdminAddress;
+        vm.prank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, 1 * 1e16);
+
+        PlumeStakingStorage.RateCheckpoint[] memory checkpoints = ValidatorFacet(address(diamondProxy)).getValidatorCommissionCheckpoints(DEFAULT_VALIDATOR_ID);
+        uint256 count = checkpoints.length;
+        
+        vm.prank(admin);
+        vm.expectRevert(CannotPruneAllCheckpoints.selector);
+        ManagementFacet(address(diamondProxy)).pruneCommissionCheckpoints(DEFAULT_VALIDATOR_ID, count);
+    }
+    
+    function test_PruneCommissionCheckpoints_RevertIf_NotAdmin() public {
+        (PlumeStakingStorage.ValidatorInfo memory info,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(DEFAULT_VALIDATOR_ID);
+        address validatorAdmin = info.l2AdminAddress;
+        vm.prank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, 1 * 1e16);
+
+        vm.prank(user2);
+        vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user2, PlumeRoles.ADMIN_ROLE));
+        ManagementFacet(address(diamondProxy)).pruneCommissionCheckpoints(DEFAULT_VALIDATOR_ID, 1);
+    }
+    
+    function test_PruneCommissionCheckpoints_RevertIf_ZeroCount() public {
+        (PlumeStakingStorage.ValidatorInfo memory info,,) = ValidatorFacet(address(diamondProxy)).getValidatorInfo(DEFAULT_VALIDATOR_ID);
+        address validatorAdmin = info.l2AdminAddress;
+        vm.prank(validatorAdmin);
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(DEFAULT_VALIDATOR_ID, 1 * 1e16);
+        
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(InvalidAmount.selector, 0));
+        ManagementFacet(address(diamondProxy)).pruneCommissionCheckpoints(DEFAULT_VALIDATOR_ID, 0);
+    }
+
+    // --- Test pruneRewardRateCheckpoints ---
+
+    function test_PruneRewardRateCheckpoints() public {
+        address rewardToken = address(pUSD);
+        
+        
+        // Create checkpoints
+        vm.prank(admin);
+        RewardsFacet(address(diamondProxy)).setRewardRates(toArray(rewardToken), toArray(1e17));
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(admin);
+        RewardsFacet(address(diamondProxy)).setRewardRates(toArray(rewardToken), toArray(2e17));
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(admin);
+        RewardsFacet(address(diamondProxy)).setRewardRates(toArray(rewardToken), toArray(3e17));
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(admin);
+        RewardsFacet(address(diamondProxy)).setRewardRates(toArray(rewardToken), toArray(4e17));
+        
+        uint256 checkpointsBeforeCount = RewardsFacet(address(diamondProxy)).getValidatorRewardRateCheckpointCount(DEFAULT_VALIDATOR_ID, rewardToken);
+        assertEq(checkpointsBeforeCount, 4, "Should have 4 reward rate checkpoints");
+
+        (, uint256 rate1,) = RewardsFacet(address(diamondProxy)).getValidatorRewardRateCheckpoint(DEFAULT_VALIDATOR_ID, rewardToken, 0);
+        assertEq(rate1, 1e17);
+
+        // Action: Prune the 2 oldest
+        vm.expectEmit(true, true, true, true);
+        emit RewardRateCheckpointsPruned(DEFAULT_VALIDATOR_ID, rewardToken, 2);
+        vm.prank(admin);
+        ManagementFacet(address(diamondProxy)).pruneRewardRateCheckpoints(DEFAULT_VALIDATOR_ID, rewardToken, 2);
+
+        // Assertions
+        uint256 checkpointsAfterCount = RewardsFacet(address(diamondProxy)).getValidatorRewardRateCheckpointCount(DEFAULT_VALIDATOR_ID, rewardToken);
+        assertEq(checkpointsAfterCount, 2, "Should have 2 checkpoints after pruning");
+
+        (, uint256 rate3,) = RewardsFacet(address(diamondProxy)).getValidatorRewardRateCheckpoint(DEFAULT_VALIDATOR_ID, rewardToken, 0);
+        assertEq(rate3, 3e17, "First remaining checkpoint rate should be 3e17");
+        (, uint256 rate4,) = RewardsFacet(address(diamondProxy)).getValidatorRewardRateCheckpoint(DEFAULT_VALIDATOR_ID, rewardToken, 1);
+        assertEq(rate4, 4e17, "Second remaining checkpoint rate should be 4e17");
+    }
+
+    function test_PruneRewardRateCheckpoints_RevertIf_PruneAll() public {
+        address rewardToken = address(pUSD);
+        vm.prank(admin);
+        RewardsFacet(address(diamondProxy)).setRewardRates(toArray(rewardToken), toArray(1e17));
+
+        uint256 count = RewardsFacet(address(diamondProxy)).getValidatorRewardRateCheckpointCount(DEFAULT_VALIDATOR_ID, rewardToken);
+
+        vm.prank(admin);
+        vm.expectRevert(CannotPruneAllCheckpoints.selector);
+        ManagementFacet(address(diamondProxy)).pruneRewardRateCheckpoints(DEFAULT_VALIDATOR_ID, rewardToken, count);
+    }
+
+    function test_PruneRewardRateCheckpoints_RevertIf_NotAdmin() public {
+        address rewardToken = address(pUSD);
+        vm.prank(admin);
+        RewardsFacet(address(diamondProxy)).setRewardRates(toArray(rewardToken), toArray(1e17));
+
+        vm.prank(user2);
+        vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user2, PlumeRoles.ADMIN_ROLE));
+        ManagementFacet(address(diamondProxy)).pruneRewardRateCheckpoints(DEFAULT_VALIDATOR_ID, rewardToken, 1);
+    }
+
+    function test_PruneRewardRateCheckpoints_RevertIf_InvalidToken() public {
+        address invalidToken = makeAddr("invalidToken");
+
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(TokenDoesNotExist.selector, invalidToken));
+        ManagementFacet(address(diamondProxy)).pruneRewardRateCheckpoints(DEFAULT_VALIDATOR_ID, invalidToken, 1);
+    }
+
+    function toArray(address item) internal pure returns (address[] memory) {
+        address[] memory arr = new address[](1);
+        arr[0] = item;
+        return arr;
+    }
+
+    function toArray(uint256 item) internal pure returns (uint256[] memory) {
+        uint256[] memory arr = new uint256[](1);
+        arr[0] = item;
+        return arr;
+    }
+
+
 }

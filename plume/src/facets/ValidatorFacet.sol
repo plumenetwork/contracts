@@ -327,24 +327,20 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         uint256 oldCommission = validator.commission;
 
-        // If the commission rate is actually changing, settle commissions with the old rate first.
-        if (oldCommission != newCommission) {
-            // Settle commissions accrued with the old rate up to this point.
-            PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
-
-            // Now update the validator's commission rate to the new rate.
-            validator.commission = newCommission;
-
-            // Create a checkpoint for the new commission rate.
-            // This records the new rate effective from this block.timestamp.
-            PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
-        } else {
-            // If commission is not changing, no need to settle or create new checkpoint.
-            // We can just ensure the validator's current commission is what's intended if it was somehow out of sync,
-            // though this path implies no change is requested.
-            // If validator.commission was already newCommission, this is a no-op.
-            validator.commission = newCommission;
+        // If the commission rate is the same, there's nothing to do.
+        if (oldCommission == newCommission) {
+            return;
         }
+
+        // Settle commissions accrued with the old rate up to this point.
+        PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
+
+        // Now update the validator's commission rate to the new rate.
+        validator.commission = newCommission;
+
+        // Create a checkpoint for the new commission rate.
+        // This records the new rate effective from this block.timestamp.
+        PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
 
         emit ValidatorCommissionSet(validatorId, oldCommission, newCommission);
     }

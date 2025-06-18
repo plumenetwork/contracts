@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import { InternalInconsistency } from "./PlumeErrors.sol";
+import { InternalInconsistency, MaxCommissionCheckpointsExceeded } from "./PlumeErrors.sol";
 import { RewardRateCheckpointCreated, ValidatorCommissionCheckpointCreated } from "./PlumeEvents.sol";
 import { PlumeStakingStorage } from "./PlumeStakingStorage.sol";
 import { PlumeValidatorLogic } from "./PlumeValidatorLogic.sol";
@@ -776,6 +776,10 @@ library PlumeRewardLogic {
             // Overwrite the last checkpoint if it's from the same block
             checkpoints[len - 1] = checkpoint;
         } else {
+            // Enforce maximum checkpoint limit before adding a new one.
+            if ($.maxCommissionCheckpoints > 0 && len >= $.maxCommissionCheckpoints) {
+                revert MaxCommissionCheckpointsExceeded(validatorId, $.maxCommissionCheckpoints);
+            }
             // Otherwise, add a new one
             checkpoints.push(checkpoint);
         }

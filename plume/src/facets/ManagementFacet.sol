@@ -10,6 +10,9 @@ import {
     InvalidIndexRange,
     InvalidInterval,
     InvalidMaxCommissionRate,
+    CannotPruneAllCheckpoints,
+    TokenDoesNotExist,
+    MaxCommissionCheckpointsExceeded,
     SlashVoteDurationTooLongForCooldown,
     SlashVoteDurationExceedsCommissionTimelock,
     Unauthorized,
@@ -23,9 +26,12 @@ import {
     AdminStakeCorrection,
     AdminWithdraw,
     CooldownIntervalSet,
+    CommissionCheckpointsPruned,
     MaxAllowedValidatorCommissionSet,
+    MaxCommissionCheckpointsSet,
     MaxSlashVoteDurationSet,
     MinStakeAmountSet,
+    RewardRateCheckpointsPruned,
     StakeInfoUpdated
 } from "../lib/PlumeEvents.sol";
 
@@ -217,6 +223,105 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         $.maxAllowedValidatorCommission = newMaxRate;
 
         emit MaxAllowedValidatorCommissionSet(oldMaxRate, newMaxRate);
+    }
+
+    /**
+     * @notice Sets the maximum number of commission checkpoints a single validator can have.
+     * @dev Protects against gas-exhaustion griefing attacks. Requires ADMIN_ROLE.
+     * @param newLimit The new maximum number of checkpoints.
+     */
+    function setMaxCommissionCheckpoints(uint16 newLimit) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        if (newLimit < 10) { // Enforce a minimum reasonable limit
+            revert InvalidAmount(newLimit);
+        }
+        PlumeStakingStorage.layout().maxCommissionCheckpoints = newLimit;
+        emit MaxCommissionCheckpointsSet(newLimit);
+    }
+
+    // --- Checkpoint Pruning Functions ---
+
+    /**
+     * @notice Admin function to prune old commission checkpoints for a validator.
+     * @dev DANGEROUS: This operation is gas-intensive and can break reward calculations if checkpoints
+     *      are removed that are still needed by users who have not claimed rewards recently.
+     *      The administrator is responsible for ensuring this is called safely.
+     *      Removes the `count` oldest checkpoints. Requires ADMIN_ROLE.
+     * @param validatorId The ID of the validator whose checkpoints will be pruned.
+     * @param count The number of old checkpoints to remove.
+     */
+    function pruneCommissionCheckpoints(uint16 validatorId, uint256 count) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        if (count == 0) {
+            revert InvalidAmount(count);
+        }
+
+        PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorCommissionCheckpoints[validatorId];
+        uint256 len = checkpoints.length;
+
+        if (count >= len) {
+            // Cannot remove all checkpoints. At least one must remain to define the current rate.
+            revert CannotPruneAllCheckpoints();
+        }
+
+        // This is a gas-intensive operation. It shifts all elements to the left.
+        for (uint256 i = 0; i < len - count; i++) {
+            checkpoints[i] = checkpoints[i + count];
+        }
+
+        // Pop the now-duplicate elements from the end.
+        for (uint256 i = 0; i < count; i++) {
+            checkpoints.pop();
+        }
+
+        emit CommissionCheckpointsPruned(validatorId, count);
+    }
+
+    /**
+     * @notice Admin function to prune old reward rate checkpoints for a validator and token.
+     * @dev DANGEROUS: Similar to pruneCommissionCheckpoints, this is gas-intensive and can break
+     *      reward calculations. Use with extreme caution. Requires ADMIN_ROLE.
+     * @param validatorId The ID of the validator.
+     * @param token The address of the reward token.
+     * @param count The number of old checkpoints to remove.
+     */
+    function pruneRewardRateCheckpoints(
+        uint16 validatorId,
+        address token,
+        uint256 count
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        // Allow pruning for both active and removed reward tokens, as both may have legacy checkpoints.
+        if (!$.isRewardToken[token] && $.tokenAdditionTimestamps[token] == 0) {
+            revert TokenDoesNotExist(token);
+        }
+        if (count == 0) {
+            revert InvalidAmount(count);
+        }
+
+        PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorRewardRateCheckpoints[validatorId][token];
+        uint256 len = checkpoints.length;
+
+        if (count >= len) {
+            revert CannotPruneAllCheckpoints();
+        }
+
+        for (uint256 i = 0; i < len - count; i++) {
+            checkpoints[i] = checkpoints[i + count];
+        }
+
+        for (uint256 i = 0; i < count; i++) {
+            checkpoints.pop();
+        }
+
+        emit RewardRateCheckpointsPruned(validatorId, token, count);
     }
 
     // --- NEW ADMIN SLASH CLEANUP FUNCTION ---

@@ -305,6 +305,10 @@ event ValidatorAddressesSet(
 // --- Administrative Events ---
 event MaxAllowedValidatorCommissionSet(uint256 oldMaxRate, uint256 newMaxRate);
 
+/// @notice Emitted when the maximum number of commission checkpoints per validator is set.
+/// @param newLimit The new maximum limit.
+event MaxCommissionCheckpointsSet(uint256 newLimit);
+
 // --- Commission Claim Timelock Events ---
 event CommissionClaimRequested(
     uint16 indexed validatorId,
@@ -329,6 +333,17 @@ event CommissionClaimFinalized(
  * @param timestamp The timestamp of this checkpoint.
  */
 event ValidatorCommissionCheckpointCreated(uint16 indexed validatorId, uint256 rate, uint256 timestamp);
+
+/// @notice Emitted when an admin prunes old commission checkpoints for a validator.
+/// @param validatorId The ID of the validator.
+/// @param count The number of checkpoints that were removed.
+event CommissionCheckpointsPruned(uint16 indexed validatorId, uint256 count);
+
+/// @notice Emitted when an admin prunes old reward rate checkpoints for a validator and token.
+/// @param validatorId The ID of the validator.
+/// @param token The reward token.
+/// @param count The number of checkpoints that were removed.
+event RewardRateCheckpointsPruned(uint16 indexed validatorId, address indexed token, uint256 count);
 
 // --- NEW SLASH CLEANUP EVENTS ---
 /**

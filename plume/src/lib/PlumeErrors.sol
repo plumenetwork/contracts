@@ -302,6 +302,14 @@ error SlashVoteDurationTooLongForCooldown(uint256 newMaxSlashVoteDuration, uint2
 /// @param commissionTimelock The current commission claim timelock.
 error SlashVoteDurationExceedsCommissionTimelock(uint256 slashVoteDuration, uint256 commissionTimelock);
 
+/// @notice Thrown when a validator tries to create more commission checkpoints than the allowed limit.
+/// @param validatorId The ID of the validator.
+/// @param max The maximum number of checkpoints allowed.
+error MaxCommissionCheckpointsExceeded(uint16 validatorId, uint256 max);
+
+/// @notice Thrown when attempting to prune all checkpoints from a validator's history, which is not allowed.
+error CannotPruneAllCheckpoints();
+
 /// @notice Thrown when an invalid interval is provided (e.g. zero)
 /// @param interval The invalid interval.
 error InvalidInterval(uint256 interval);

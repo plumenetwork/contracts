@@ -67,6 +67,7 @@ contract PlumeStaking is SolidStateDiamond {
 
         $.minStakeAmount = minStake;
         $.cooldownInterval = cooldown;
+        $.maxCommissionCheckpoints = 500; // Set a sensible default limit
         $.initialized = true;
     }
 

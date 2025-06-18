@@ -106,6 +106,7 @@ library PlumeStakingStorage {
         uint256 cooldownInterval; // Duration of the cooldown period in seconds
         uint256 maxValidatorPercentage; // Maximum percentage of total stake a validator can have (in basis points)
         uint256 maxAllowedValidatorCommission; // Maximum allowed commission for any validator
+        uint16 maxCommissionCheckpoints; // Max commission checkpoints per validator
 
         // === Access Control ===
         mapping(bytes32 => mapping(address => bool)) hasRole; // role => address => has role
