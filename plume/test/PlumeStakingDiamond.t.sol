@@ -235,7 +235,7 @@ contract PlumeStakingDiamondTest is Test {
         rewardsSigs_Manual[21] = bytes4(keccak256(bytes("getRewardRate(address)")));
 
         // Validator Facet Selectors
-        bytes4[] memory validatorSigs_Manual = new bytes4[](18); // Size updated to 18
+        bytes4[] memory validatorSigs_Manual = new bytes4[](19); // Size updated to 19
         validatorSigs_Manual[0] =
             bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
@@ -256,6 +256,7 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[15] = bytes4(keccak256(bytes("forceSettleValidatorCommission(uint16)")));
         validatorSigs_Manual[16] = bytes4(keccak256(bytes("getSlashVoteCount(uint16)"))); // <<< NEW SELECTOR
         validatorSigs_Manual[17] = bytes4(keccak256(bytes("cleanupExpiredVotes(uint16)"))); // <<< NEW CLEANUP FUNCTION
+        validatorSigs_Manual[18] = bytes4(keccak256(bytes("getValidatorCommissionCheckpoints(uint16)"))); // <<< NEW getValidatorCommissionCheckpoints FUNCTION
 
         // Management Facet Selectors
         bytes4[] memory managementSigs_Manual = new bytes4[](9); // Size updated
@@ -7576,4 +7577,67 @@ function testValidatorStatusChanges_TimestampResetPreventsRetroactiveAccrual() p
         "Rewards should accrue normally after reactivation");
 }
 
+
+    function testPreventDuplicateTimestampCheckpoints() public {
+        console2.log("\n--- Test: testPreventDuplicateTimestampCheckpoints START ---");
+
+        // --- Setup: Add a second validator so its admin is not the contract owner ---
+        uint16 validatorId = 1;
+        address validator1Admin = makeAddr("validator1Admin_dup_test");
+        vm.deal(validator1Admin, 1e18);
+
+
+
+        // --- Test Commission Checkpoints ---
+        console2.log("Testing commission checkpoint overwrites...");
+        vm.startPrank(user2);
+
+        // Set commission to 10%
+        uint256 commission1 = 10 * 1e16; // 10%
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commission1);
+
+        // In the same transaction simulation (same block/timestamp), set it again
+        uint256 commission2 = 20 * 1e16; // 20%
+        ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commission2);
+
+        vm.stopPrank();
+
+        // Verify that only one checkpoint exists and it has the final value
+        PlumeStakingStorage.RateCheckpoint[] memory commissionCheckpoints = ValidatorFacet(address(diamondProxy)).getValidatorCommissionCheckpoints(validatorId);
+        
+        assertEq(commissionCheckpoints.length, 1, "Commission Checkpoints: Should only be 1 checkpoint after overwrite");
+        assertEq(commissionCheckpoints[0].rate, commission2, "Commission Checkpoints: Rate should be the final value");
+
+        console2.log("Commission checkpoint overwrite verified.");
+
+        // --- Test Reward Rate Checkpoints ---
+        console2.log("Testing reward rate checkpoint overwrites...");
+        vm.startPrank(admin);
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = PLUME_NATIVE;
+
+        // Set reward rate to 100. This creates a checkpoint for our new validator (and others).
+        uint256[] memory rates1 = new uint256[](1);
+        rates1[0] = 100;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates1);
+
+        // Check the state after the first call
+        uint256 countAfterFirstCall = RewardsFacet(address(diamondProxy)).getValidatorRewardRateCheckpointCount(validatorId, PLUME_NATIVE);
+
+        // In the same transaction simulation, set the rate again
+        uint256[] memory rates2 = new uint256[](1);
+        rates2[0] = 200;
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates2);
+
+        vm.stopPrank();
+
+        // Verify that the checkpoint was overwritten
+        uint256 countAfterSecondCall = RewardsFacet(address(diamondProxy)).getValidatorRewardRateCheckpointCount(validatorId, PLUME_NATIVE);
+        assertEq(countAfterFirstCall, countAfterSecondCall, "Reward Rate Checkpoints: Checkpoint count should not increase");
+
+
+        console2.log("Reward rate checkpoint overwrite verified.");
+        console2.log("--- Test: testPreventDuplicateTimestampCheckpoints END ---");
+    }
 }

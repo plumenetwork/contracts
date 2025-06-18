@@ -960,4 +960,20 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return validVoteCount;
     }
 
+    /**
+     * @notice Returns the list of commission checkpoints for a validator.
+     * @dev Primarily for testing and off-chain tooling.
+     * @param validatorId The ID of the validator.
+     * @return An array of RateCheckpoint structs.
+     */
+    function getValidatorCommissionCheckpoints(
+        uint16 validatorId
+    ) external view returns (PlumeStakingStorage.RateCheckpoint[] memory) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        return $.validatorCommissionCheckpoints[validatorId];
+    }
+
 }

@@ -720,21 +720,30 @@ library PlumeRewardLogic {
         uint16 validatorId,
         uint256 rate
     ) internal {
-        uint256 len_before = 0;
-        len_before = $.validatorRewardRateCheckpoints[validatorId][token].length;
-
         updateRewardPerTokenForValidator($, token, validatorId); // Settle up to now with old rate
         uint256 currentCumulativeIndex = $.validatorRewardPerTokenCumulative[validatorId][token];
+
+        PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorRewardRateCheckpoints[validatorId][token];
+        uint256 len = checkpoints.length;
 
         PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({
             timestamp: block.timestamp, // New rate effective from now
             rate: rate, // The new rate
             cumulativeIndex: currentCumulativeIndex // Cumulative index *before* this new rate applies
-         });
-        $.validatorRewardRateCheckpoints[validatorId][token].push(checkpoint);
-        uint256 len_after = $.validatorRewardRateCheckpoints[validatorId][token].length;
+        });
 
-        uint256 checkpointIndex = len_after - 1;
+        uint256 checkpointIndex;
+
+        if (len > 0 && checkpoints[len - 1].timestamp == block.timestamp) {
+            // Overwrite the last checkpoint if it's from the same block
+            checkpoints[len - 1] = checkpoint;
+            checkpointIndex = len - 1;
+        } else {
+            // Otherwise, add a new one
+            checkpoints.push(checkpoint);
+            checkpointIndex = len;
+        }
+
         emit RewardRateCheckpointCreated(
             token, validatorId, rate, block.timestamp, checkpointIndex, currentCumulativeIndex
         );
@@ -752,20 +761,25 @@ library PlumeRewardLogic {
         uint16 validatorId,
         uint256 commissionRate
     ) internal {
-        // In setValidatorCommission, _settleCommissionForValidatorUpToNow is called *before* this,
-        // using the *old* commission rate.
-        // This function then records the *new* commission rate, effective from block.timestamp.
-        // The cumulativeIndex for commission checkpoints is not as critical as for reward rates
-        // if commission is always applied to the gross reward of a segment.
+        // This function records the *new* commission rate, effective from block.timestamp.
+        // It overwrites any previous checkpoint from the same block to prevent duplicates.
+        PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorCommissionCheckpoints[validatorId];
+        uint256 len = checkpoints.length;
 
         PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({
             timestamp: block.timestamp,
             rate: commissionRate,
-            cumulativeIndex: 0 // Or perhaps $.validatorAccruedCommission[validatorId][ANY_TOKEN_AS_PROXY]?
-                // Let's stick to 0 as it's primarily rate + timestamp.
-         });
+            cumulativeIndex: 0 // Not used for commission
+        });
 
-        $.validatorCommissionCheckpoints[validatorId].push(checkpoint);
+        if (len > 0 && checkpoints[len - 1].timestamp == block.timestamp) {
+            // Overwrite the last checkpoint if it's from the same block
+            checkpoints[len - 1] = checkpoint;
+        } else {
+            // Otherwise, add a new one
+            checkpoints.push(checkpoint);
+        }
+
         emit ValidatorCommissionCheckpointCreated(validatorId, commissionRate, block.timestamp);
     }
 
