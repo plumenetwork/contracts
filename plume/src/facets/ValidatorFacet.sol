@@ -269,6 +269,11 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
                 // Record when the validator became inactive (reuse slashedAtTimestamp field)
                 // This allows existing reward logic to cap rewards at this timestamp
                 validator.slashedAtTimestamp = block.timestamp;
+
+                // Create a zero-rate checkpoint for all reward tokens to signal inactivity start
+                for (uint256 i = 0; i < rewardTokens.length; i++) {
+                    PlumeRewardLogic.createRewardRateCheckpoint($, rewardTokens[i], validatorId, 0);
+                }
                 
                 // NOTE: User rewards will be settled naturally when users interact
                 // (stake, unstake, claim, etc.) due to the timestamp cap in reward logic
@@ -279,8 +284,12 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             
             // If going ACTIVE: reset timestamps and clear the timestamp cap
             if (newActiveStatus && !currentStatus) {
+                // Create a new checkpoint to restore the reward rate, signaling activity resumes
                 for (uint256 i = 0; i < rewardTokens.length; i++) {
-                    $.validatorLastUpdateTimes[validatorId][rewardTokens[i]] = block.timestamp;
+                    address token = rewardTokens[i];
+                    $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
+                    uint256 currentGlobalRate = $.rewardRates[token];
+                    PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, currentGlobalRate);
                 }
                 // Clear the timestamp since validator is active again (unless actually slashed)
                 if (!validator.slashed) {
@@ -623,6 +632,15 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         $.slashVoteCounts[maliciousValidatorId]++;
 
         emit SlashVoteCast(maliciousValidatorId, voterValidatorId, voteExpiration);
+
+        // --- AUTO-SLASH TRIGGER ---
+        // After casting the vote, check if the unanimity threshold has been met.
+        uint256 activeVoteCount = $.slashVoteCounts[maliciousValidatorId];
+        uint256 totalEligibleValidators = _countEligibleValidators(maliciousValidatorId);
+
+        if (activeVoteCount >= totalEligibleValidators && totalEligibleValidators > 0) {
+            _performSlash(maliciousValidatorId, msg.sender);
+        }
     }
 
     /**
@@ -633,8 +651,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function slashValidator(
         uint16 validatorId
     ) external nonReentrant onlyRole(PlumeRoles.TIMELOCK_ROLE) {
-
-
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if (!$.validatorExists[validatorId]) {
@@ -649,53 +665,14 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Clean up expired votes first to get accurate count
         uint256 activeVoteCount = _cleanupExpiredVotes(validatorId);
-        uint16[] memory validatorIds = $.validatorIds;
-        
-        // Count only active validators excluding the one being slashed (only they can vote)
-        uint256 totalEligibleValidators = 0;
-        for (uint256 i = 0; i < validatorIds.length; i++) {
-            if (validatorIds[i] != validatorId && $.validators[validatorIds[i]].active && !$.validators[validatorIds[i]].slashed) {
-                totalEligibleValidators++;
-            }
-        }
+        uint256 totalEligibleValidators = _countEligibleValidators(validatorId);
 
         // ALL eligible validators must vote for slashing (unanimous consensus)
         if (activeVoteCount < totalEligibleValidators) {
             revert UnanimityNotReached(activeVoteCount, totalEligibleValidators);
         }
 
-        // Record amounts being lost for the event BEFORE any state changes
-        uint256 stakeLost = $.validatorTotalStaked[validatorId];
-        uint256 cooledLost = $.validatorTotalCooling[validatorId];
-
-        // Mark validator as slashed FIRST
-        validatorToSlash.active = false;
-        validatorToSlash.slashed = true;
-        validatorToSlash.slashedAtTimestamp = block.timestamp;
-
-        // Update global accounting - reduce totals by the amounts being lost
-        $.totalStaked -= stakeLost;
-        $.totalCooling -= cooledLost;
-
-        // IMPORTANT: Zero out validator totals - slashed funds are lost/burned
-        // Users cannot recover their stakes from slashed validators (security requirement)
-        $.validatorTotalStaked[validatorId] = 0;
-        $.validatorTotalCooling[validatorId] = 0;
-        
-        // Also zero the delegatedAmount in the validator struct
-        validatorToSlash.delegatedAmount = 0;
-        
-        // Clear the stakers array - slashed validator should show 0 stakers
-        delete $.validatorStakers[validatorId];
-
-        // Clear voting records for the slashed validator
-        $.slashVoteCounts[validatorId] = 0;
-        for (uint256 i = 0; i < validatorIds.length; i++) {
-            $.slashingVotes[validatorId][validatorIds[i]] = 0;
-        }
-
-        emit ValidatorSlashed(validatorId, msg.sender, stakeLost + cooledLost);
-        emit ValidatorStatusUpdated(validatorId, false, true);
+        _performSlash(validatorId, msg.sender);
     }
 
     /**
@@ -734,6 +711,98 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return _cleanupExpiredVotes(validatorId);
     }
 
+    // --- Private Helper Functions ---
+
+    /**
+     * @notice Internal logic to perform the slash action on a validator.
+     * @dev Separated to prevent code duplication between auto-slash and manual slash.
+     * @param validatorId The ID of the validator to slash.
+     * @param slasher The address that triggered the slash action.
+     */
+    function _performSlash(uint16 validatorId, address slasher) internal {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        PlumeStakingStorage.ValidatorInfo storage validatorToSlash = $.validators[validatorId];
+
+        // This check is important to prevent re-entrancy or double-slashing
+        if (validatorToSlash.slashed) {
+            return;
+        }
+
+        // Record amounts being lost for the event BEFORE any state changes
+        uint256 stakeLost = $.validatorTotalStaked[validatorId];
+        uint256 cooledLost = $.validatorTotalCooling[validatorId];
+
+        // Mark validator as slashed FIRST
+        validatorToSlash.active = false;
+        validatorToSlash.slashed = true;
+        validatorToSlash.slashedAtTimestamp = block.timestamp;
+
+        // Update global accounting - reduce totals by the amounts being lost
+        $.totalStaked -= stakeLost;
+        $.totalCooling -= cooledLost;
+
+        // IMPORTANT: Zero out validator totals - slashed funds are lost/burned
+        $.validatorTotalStaked[validatorId] = 0;
+        $.validatorTotalCooling[validatorId] = 0;
+        validatorToSlash.delegatedAmount = 0;
+
+        // Clear the stakers array - slashed validator should show 0 stakers
+        delete $.validatorStakers[validatorId];
+
+        // Clear voting records for the slashed validator
+        $.slashVoteCounts[validatorId] = 0;
+        uint16[] memory validatorIds = $.validatorIds;
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            delete $.slashingVotes[validatorId][validatorIds[i]];
+        }
+
+        emit ValidatorSlashed(validatorId, slasher, stakeLost + cooledLost);
+        emit ValidatorStatusUpdated(validatorId, false, true);
+    }
+
+    /**
+     * @notice Internal helper to count the number of validators eligible to vote on a slash.
+     * @dev An eligible validator is active, not slashed, and not the one being voted on.
+     * @param validatorToExclude The ID of the validator being voted on (to exclude from the count).
+     * @return The number of eligible voting validators.
+     */
+    function _countEligibleValidators(uint16 validatorToExclude) internal view returns (uint256) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        uint256 totalActive = _countActiveValidators();
+
+        // If the validator being voted on is part of the active set, then the number
+        // of eligible voters is one less than the total.
+        PlumeStakingStorage.ValidatorInfo storage excludedInfo = $.validators[validatorToExclude];
+        if (excludedInfo.active && !excludedInfo.slashed) {
+            // Ensure we don't underflow if totalActive is somehow 0, though this is unlikely.
+            if (totalActive > 0) {
+                return totalActive - 1;
+            }
+        }
+
+        // If the excluded validator was not active anyway, then the total number of active
+        // validators is the correct count of eligible voters.
+        return totalActive;
+    }
+
+    /**
+     * @notice Internal helper to count the total number of active, non-slashed validators.
+     * @dev The single source of truth for counting active validators.
+     * @return The total number of active and non-slashed validators.
+     */
+    function _countActiveValidators() internal view returns (uint256) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        uint16[] memory ids = $.validatorIds;
+        uint256 count = 0;
+        for (uint256 i = 0; i < ids.length; i++) {
+            PlumeStakingStorage.ValidatorInfo storage info = $.validators[ids[i]];
+            if (info.active && !info.slashed) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     // --- View Functions ---
 
     /**
@@ -754,7 +823,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         totalStaked = $.validatorTotalStaked[validatorId];
         stakersCount = $.validatorStakers[validatorId].length;
 
-        // Fix: Ensure the returned struct has the correct delegated amount.
+        // Ensure the returned struct has the correct delegated amount.
         info.delegatedAmount = totalStaked;
 
         return (info, totalStaked, stakersCount);
@@ -851,17 +920,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     /**
      * @notice Returns the number of currently active validators.
+     * @dev An active validator is one that is marked as active and has not been slashed.
      */
     function getActiveValidatorCount() external view returns (uint256 count) {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        uint16[] memory ids = $.validatorIds;
-        count = 0;
-        for (uint256 i = 0; i < ids.length; i++) {
-            if ($.validators[ids[i]].active) {
-                count++;
-            }
-        }
-        return count;
+        return _countActiveValidators();
     }
 
     /**

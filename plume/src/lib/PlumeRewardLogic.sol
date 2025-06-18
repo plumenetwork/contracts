@@ -247,7 +247,7 @@ library PlumeRewardLogic {
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
         uint256 effectiveEndTime = block.timestamp;
         
-        // Check token removal timestamp first
+        // Check token removal timestamp
         uint256 tokenRemovalTime = $.tokenRemovalTimestamps[token];
         if (tokenRemovalTime > 0 && tokenRemovalTime < effectiveEndTime) {
             effectiveEndTime = tokenRemovalTime;
@@ -401,36 +401,16 @@ library PlumeRewardLogic {
             if (effectiveEndTime > validatorLastUpdateTime) {
                 uint256 timeSinceLastUpdate = effectiveEndTime - validatorLastUpdateTime;
                 
-                // For inactive validators, don't calculate any additional cumulative rewards
-                // This mirrors the logic in updateRewardPerTokenForValidator
-                if (!validator.active) {
-                    // Inactive validator: no additional rewards should be calculated
-                    // The cumulative stays at its current value
-                } else if (validator.slashed) {
-                    // Slashed validator: calculate rewards up to slash timestamp if user has stake
-                    if (userStakedAmount > 0) {
-                        PlumeStakingStorage.RateCheckpoint memory effectiveRewardRateChk =
-                            getEffectiveRewardRateAt($, token, validatorId, effectiveEndTime);
-                        uint256 effectiveRewardRate = effectiveRewardRateChk.rate;
-                        
-                        if (effectiveRewardRate > 0) {
-                            uint256 rewardPerTokenIncrease = timeSinceLastUpdate * effectiveRewardRate;
-                            currentCumulativeRewardPerToken += rewardPerTokenIncrease;
-                        }
-                    }
-                } else {
-                    // Active validator: calculate rewards normally
-                    uint256 totalStaked = $.validatorTotalStaked[validatorId];
+                // For a slashed validator, we always calculate potential rewards up to the slash timestamp
+                // if the user had stake, regardless of the 'active' flag.
+                if (userStakedAmount > 0) {
+                    PlumeStakingStorage.RateCheckpoint memory effectiveRewardRateChk =
+                        getEffectiveRewardRateAt($, token, validatorId, effectiveEndTime);
+                    uint256 effectiveRewardRate = effectiveRewardRateChk.rate;
                     
-                    if (totalStaked > 0) {
-                        PlumeStakingStorage.RateCheckpoint memory effectiveRewardRateChk =
-                            getEffectiveRewardRateAt($, token, validatorId, effectiveEndTime);
-                        uint256 effectiveRewardRate = effectiveRewardRateChk.rate;
-                        
-                        if (effectiveRewardRate > 0) {
-                            uint256 rewardPerTokenIncrease = timeSinceLastUpdate * effectiveRewardRate;
-                            currentCumulativeRewardPerToken += rewardPerTokenIncrease;
-                        }
+                    if (effectiveRewardRate > 0) {
+                        uint256 rewardPerTokenIncrease = timeSinceLastUpdate * effectiveRewardRate;
+                        currentCumulativeRewardPerToken += rewardPerTokenIncrease;
                     }
                 }
             }
@@ -906,12 +886,9 @@ library PlumeRewardLogic {
         if (effectiveEndTime > validatorLastUpdateTime) {
             uint256 timeSinceLastUpdate = effectiveEndTime - validatorLastUpdateTime;
             
-            // For inactive validators, don't calculate any additional cumulative rewards
-            // This mirrors the logic in updateRewardPerTokenForValidator
-            if (!validator.active) {
-                // Inactive validator: no additional rewards should be calculated
-                // The cumulative stays at its current value
-            } else if (validator.slashed) {
+            // Fix: Reorder logic to check for slashed state FIRST.
+            // A slashed validator is also inactive, so the slashed check must come first.
+            if (validator.slashed) {
                 // Slashed validator: calculate rewards up to slash timestamp if user has stake
                 if (userStakedAmount > 0) {
                     PlumeStakingStorage.RateCheckpoint memory effectiveRewardRateChk =
@@ -923,6 +900,9 @@ library PlumeRewardLogic {
                         currentCumulativeRewardPerToken += rewardPerTokenIncrease;
                     }
                 }
+            } else if (!validator.active) {
+                // Inactive (but not slashed) validator: no additional rewards should be calculated
+                // The cumulative stays at its current value
             } else {
                 // Active validator: calculate rewards normally
                 uint256 totalStaked = $.validatorTotalStaked[validatorId];
