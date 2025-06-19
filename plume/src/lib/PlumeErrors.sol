@@ -110,6 +110,10 @@ error ValidatorPercentageExceeded();
  */
 error TooManyStakers();
 
+/// @notice Thrown when a percentage value is invalid (e.g., > 100%).
+/// @param percentage The invalid percentage provided (in basis points).
+error InvalidPercentage(uint256 percentage);
+
 // Reward errors
 /*
  * @notice Thrown when trying to add a token that already exists in the reward token list

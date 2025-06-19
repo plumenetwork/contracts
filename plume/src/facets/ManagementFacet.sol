@@ -10,6 +10,7 @@ import {
     InvalidIndexRange,
     InvalidInterval,
     InvalidMaxCommissionRate,
+    InvalidPercentage,
     CannotPruneAllCheckpoints,
     TokenDoesNotExist,
     MaxCommissionCheckpointsExceeded,
@@ -33,7 +34,8 @@ import {
     MinStakeAmountSet,
     RewardRateCheckpointsPruned,
     StakeInfoUpdated,
-    ValidatorCommissionSet
+    ValidatorCommissionSet,
+    MaxValidatorPercentageUpdated
 } from "../lib/PlumeEvents.sol";
 
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
@@ -260,6 +262,25 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
         PlumeStakingStorage.layout().maxCommissionCheckpoints = newLimit;
         emit MaxCommissionCheckpointsSet(newLimit);
+    }
+
+    /**
+     * @notice Sets the maximum percentage of total stake a single validator can hold.
+     * @dev A value of 0 disables the check. Requires ADMIN_ROLE.
+     * @param newPercentage The new percentage in basis points (e.g., 2000 for 20%).
+     */
+    function setMaxValidatorPercentage(uint256 newPercentage) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // A percentage must not exceed 100% (10,000 basis points).
+        if (newPercentage > 10_000) {
+            revert InvalidPercentage(newPercentage);
+        }
+
+        uint256 oldPercentage = $.maxValidatorPercentage;
+        $.maxValidatorPercentage = newPercentage;
+
+        emit MaxValidatorPercentageUpdated(oldPercentage, newPercentage);
     }
 
     // --- Checkpoint Pruning Functions ---

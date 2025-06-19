@@ -109,7 +109,7 @@ contract DeployPlumeStaking is Script {
         );
 
         // Management Facet Selectors
-        bytes4[] memory managementSigs = new bytes4[](9);
+        bytes4[] memory managementSigs = new bytes4[](12);
         managementSigs[0] = ManagementFacet.setMinStakeAmount.selector;
         managementSigs[1] = ManagementFacet.setCooldownInterval.selector;
         managementSigs[2] = ManagementFacet.adminWithdraw.selector;
@@ -119,6 +119,9 @@ contract DeployPlumeStaking is Script {
         managementSigs[6] = ManagementFacet.setMaxAllowedValidatorCommission.selector;
         managementSigs[7] = ManagementFacet.adminClearValidatorRecord.selector;
         managementSigs[8] = ManagementFacet.adminBatchClearValidatorRecords.selector;
+        managementSigs[9] = ManagementFacet.pruneCommissionCheckpoints.selector;
+        managementSigs[10] = ManagementFacet.pruneRewardRateCheckpoints.selector;
+        managementSigs[11] = ManagementFacet.setMaxValidatorPercentage.selector;
         cut[1] = IERC2535DiamondCutInternal.FacetCut(
             address(managementFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, managementSigs
         );
@@ -147,7 +150,7 @@ contract DeployPlumeStaking is Script {
         );
 
         // Validator Facet Selectors
-        bytes4[] memory validatorSigs = new bytes4[](18);
+        bytes4[] memory validatorSigs = new bytes4[](19);
         validatorSigs[0] = ValidatorFacet.addValidator.selector;
         validatorSigs[1] = ValidatorFacet.setValidatorCapacity.selector;
         validatorSigs[2] = ValidatorFacet.setValidatorCommission.selector;
