@@ -16,7 +16,7 @@ const deploy: DeployFunction = async (hre) => {
     const { address } = getDeploymentAddressAndAbi(lzNetworkName, 'EndpointV2')
 
     const plumeERC20Address = '0x4C1746A800D224393fE2470C70A35717eD4eA5F1' // Plume ERC20 Address on Ethereum
-    const bridgeAddress = '0x0000000000000000000000000000000000000000' // TODO: get bridge address
+    const bridgeAddress = '0x35381f63091926750F43b2A7401B083263aDEF83' // ERC20Bridge Address for Plume token on Ethereum
 
     await deploy(contractName, {
         from: signer.address,
