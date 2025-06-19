@@ -166,6 +166,7 @@ contract DeployPlumeStaking is Script {
         validatorSigs[15] = ValidatorFacet.forceSettleValidatorCommission.selector;
         validatorSigs[16] = ValidatorFacet.getSlashVoteCount.selector;
         validatorSigs[17] = ValidatorFacet.cleanupExpiredVotes.selector;
+        validatorSigs[18] = ValidatorFacet.acceptAdmin.selector;
         cut[3] = IERC2535DiamondCutInternal.FacetCut(
             address(validatorFacet), IERC2535DiamondCutInternal.FacetCutAction.ADD, validatorSigs
         );

@@ -12,6 +12,8 @@ import {
     InvalidUpdateType,
     NativeTransferFailed,
     NoPendingClaim,
+    NoPendingAdmin,
+    NotPendingAdmin,
     NotValidatorAdmin,
     NotActive,
     PendingClaimExists,
@@ -30,6 +32,7 @@ import {
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
+    AdminProposed,
     CommissionClaimFinalized,
     CommissionClaimRequested,
     SlashVoteCast,
@@ -380,18 +383,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Update L2 Admin Address if provided and different
         if (newL2AdminAddress != address(0) && newL2AdminAddress != validator.l2AdminAddress) {
-            // Check if the new admin address is already assigned
-            if ($.isAdminAssigned[newL2AdminAddress]) {
-                revert AdminAlreadyAssigned(newL2AdminAddress);
-            }
-            address currentAdminAddress = validator.l2AdminAddress;
-            validator.l2AdminAddress = newL2AdminAddress;
-            // Update admin to ID mapping
-            delete $.adminToValidatorId[currentAdminAddress];
-            $.adminToValidatorId[newL2AdminAddress] = validatorId;
-            // Update the dedicated assignment mapping
-            $.isAdminAssigned[currentAdminAddress] = false;
-            $.isAdminAssigned[newL2AdminAddress] = true;
+            // This now becomes a proposal, not a direct change.
+            // The check for whether the new admin is already assigned moves to acceptAdmin.
+            $.pendingAdmins[validatorId] = newL2AdminAddress;
+            emit AdminProposed(validatorId, newL2AdminAddress);
         }
 
         // Update L2 Withdraw Address if provided and different
@@ -420,10 +415,12 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
 
         // Emit the correct event with old and new values
+        // Note: The newL2AdminAddress in this event will reflect the *current* admin,
+        // as the change is now pending and not yet effective.
         emit ValidatorAddressesSet(
             validatorId,
             oldL2AdminAddress,
-            validator.l2AdminAddress,
+            validator.l2AdminAddress, // This remains the old admin until accepted
             oldL2WithdrawAddress,
             validator.l2WithdrawAddress,
             oldL1ValidatorAddress,
@@ -432,6 +429,62 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             validator.l1AccountAddress,
             oldL1AccountEvmAddress,
             validator.l1AccountEvmAddress
+        );
+    }
+
+    /**
+     * @notice Allows a proposed new admin to accept the admin role for a validator.
+     * @dev Completes the two-step admin transfer process initiated by `setValidatorAddresses`.
+     * @param validatorId The ID of the validator for which to accept the admin role.
+     */
+    function acceptAdmin(uint16 validatorId) external nonReentrant _validateValidatorExists(validatorId) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        address newAdmin = msg.sender;
+
+        // Check 1: There must be a pending admin for this validator.
+        address pendingAdmin = $.pendingAdmins[validatorId];
+        if (pendingAdmin == address(0)) {
+            revert NoPendingAdmin(validatorId);
+        }
+
+        // Check 2: The caller must be the designated pending admin.
+        if (newAdmin != pendingAdmin) {
+            revert NotPendingAdmin(newAdmin, validatorId);
+        }
+
+        // Check 3: The new admin cannot already be assigned to another validator.
+        if ($.isAdminAssigned[newAdmin]) {
+            revert AdminAlreadyAssigned(newAdmin);
+        }
+
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        address oldAdmin = validator.l2AdminAddress;
+
+        // Finalize the change
+        validator.l2AdminAddress = newAdmin;
+
+        // Update admin tracking mappings
+        delete $.adminToValidatorId[oldAdmin];
+        $.adminToValidatorId[newAdmin] = validatorId;
+        $.isAdminAssigned[oldAdmin] = false;
+        $.isAdminAssigned[newAdmin] = true;
+
+        // Clear the pending admin
+        delete $.pendingAdmins[validatorId];
+
+        // Emit the final event showing the successful change
+        emit ValidatorAddressesSet(
+            validatorId,
+            oldAdmin,
+            newAdmin,
+            validator.l2WithdrawAddress, // Unchanged
+            validator.l2WithdrawAddress, // Unchanged
+            validator.l1ValidatorAddress, // Unchanged
+            validator.l1ValidatorAddress, // Unchanged
+            validator.l1AccountAddress, // Unchanged
+            validator.l1AccountAddress, // Unchanged
+            validator.l1AccountEvmAddress, // Unchanged
+            validator.l1AccountEvmAddress // Unchanged
         );
     }
 

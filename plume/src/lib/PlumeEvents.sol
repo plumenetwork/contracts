@@ -302,6 +302,11 @@ event ValidatorAddressesSet(
     address newL1AccountEvm
 );
 
+/// @notice Emitted when a new admin is proposed for a validator, starting the two-step ownership transfer.
+/// @param validatorId The ID of the validator.
+/// @param proposedAdmin The address of the proposed new admin.
+event AdminProposed(uint16 indexed validatorId, address indexed proposedAdmin);
+
 // --- Administrative Events ---
 event MaxAllowedValidatorCommissionSet(uint256 oldMaxRate, uint256 newMaxRate);
 

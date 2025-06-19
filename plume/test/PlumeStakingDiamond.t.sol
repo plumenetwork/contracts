@@ -238,7 +238,7 @@ contract PlumeStakingDiamondTest is Test {
         rewardsSigs_Manual[21] = bytes4(keccak256(bytes("getRewardRate(address)")));
 
         // Validator Facet Selectors
-        bytes4[] memory validatorSigs_Manual = new bytes4[](19); // Size updated to 19
+        bytes4[] memory validatorSigs_Manual = new bytes4[](20); // Size updated to 19
         validatorSigs_Manual[0] =
             bytes4(keccak256(bytes("addValidator(uint16,uint256,address,address,string,string,address,uint256)")));
         validatorSigs_Manual[1] = bytes4(keccak256(bytes("setValidatorCapacity(uint16,uint256)")));
@@ -260,6 +260,10 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[16] = bytes4(keccak256(bytes("getSlashVoteCount(uint16)"))); // <<< NEW SELECTOR
         validatorSigs_Manual[17] = bytes4(keccak256(bytes("cleanupExpiredVotes(uint16)"))); // <<< NEW CLEANUP FUNCTION
         validatorSigs_Manual[18] = bytes4(keccak256(bytes("getValidatorCommissionCheckpoints(uint16)"))); // <<< NEW getValidatorCommissionCheckpoints FUNCTION
+        validatorSigs_Manual[19] = bytes4(keccak256(bytes("acceptAdmin(uint16)"))); // <<< NEW acceptAdmin FUNCTION
+
+
+
 
         // Management Facet Selectors
         bytes4[] memory managementSigs_Manual = new bytes4[](11); // Size updated
@@ -1481,52 +1485,6 @@ contract PlumeStakingDiamondTest is Test {
         uint256 commissionToSet = abi.decode(data, (uint256)); // Assumes data contains only commission
         ValidatorFacet(address(diamondProxy)).setValidatorCommission(validatorId, commissionToSet);
         vm.stopPrank();
-    }
-
-    function testUpdateValidator_L2Admin() public {
-        uint16 validatorId = DEFAULT_VALIDATOR_ID;
-        address newAdmin = makeAddr("newAdminForVal0");
-        bytes memory data = abi.encode(newAdmin);
-        uint8 fieldCode = 1; // Correct field code for L2 Admin is 1
-
-        // Get current state BEFORE update
-        (PlumeStakingStorage.ValidatorInfo memory infoBefore,,) =
-            ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
-
-        // Correct event check
-        vm.expectEmit(true, true, true, true, address(diamondProxy)); // <<< Adjusted indexing flags
-
-        // --- ADD NEW EVENT ---
-        emit ValidatorAddressesSet(
-            validatorId,
-            infoBefore.l2AdminAddress, // old l2Admin
-            newAdmin, // new l2Admin
-            infoBefore.l2WithdrawAddress, // old l2Withdraw (unchanged)
-            infoBefore.l2WithdrawAddress, // new l2Withdraw (unchanged)
-            infoBefore.l1ValidatorAddress, // old l1Validator (unchanged)
-            infoBefore.l1ValidatorAddress, // new l1Validator (unchanged)
-            infoBefore.l1AccountAddress, // old l1Account (unchanged)
-            infoBefore.l1AccountAddress, // new l1Account (unchanged)
-            infoBefore.l1AccountEvmAddress, // old l1AccountEvm (unchanged)
-            infoBefore.l1AccountEvmAddress // new l1AccountEvm (unchanged)
-        );
-
-        // Call as the CURRENT VALIDATOR ADMIN
-        vm.startPrank(validatorAdmin);
-
-        ValidatorFacet(address(diamondProxy)).setValidatorAddresses(
-            validatorId,
-            newAdmin, // new l2Admin
-            infoBefore.l2WithdrawAddress, // keep old l2Withdraw
-            infoBefore.l1ValidatorAddress, // keep old l1Validator
-            infoBefore.l1AccountAddress, // keep old l1Account
-            infoBefore.l1AccountEvmAddress // keep old l1AccountEvm
-        );
-        vm.stopPrank();
-
-        (PlumeStakingStorage.ValidatorInfo memory infoAfter,,) =
-            ValidatorFacet(address(diamondProxy)).getValidatorInfo(validatorId);
-        assertEq(infoAfter.l2AdminAddress, newAdmin, "L2 Admin not updated");
     }
 
     function testUpdateValidator_L2Admin_NotOwner() public {
@@ -7854,5 +7812,141 @@ function testValidatorStatusChanges_TimestampResetPreventsRetroactiveAccrual() p
         return arr;
     }
 
+    // --- Tests for Propose-Accept Admin Transfer ---
+
+    /**
+     * @notice Tests the successful, happy-path flow of proposing and accepting a new admin.
+     */
+    function test_ProposeAndAcceptAdmin_Success() public {
+        // Facet references
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+
+
+        // Propose new admin
+        address newAdmin = vm.addr(0xDEED);
+        vm.label(newAdmin, "newAdmin");
+
+        vm.startPrank(user2);
+
+        validatorFacet.setValidatorAddresses(1, newAdmin, address(0), "", "", address(0));
+        vm.stopPrank();
+
+        // Verify state after proposal: admin should NOT have changed yet
+        (PlumeStakingStorage.ValidatorInfo memory info,,) = validatorFacet.getValidatorInfo(1);
+        assertEq(info.l2AdminAddress, user2, "Admin should not have changed after proposal");
+
+        // New admin accepts the role
+        vm.startPrank(newAdmin);
+        // The ValidatorAddressesSet event is emitted upon successful acceptance
+        validatorFacet.acceptAdmin(1);
+        vm.stopPrank();
+
+        // Verify final state: admin should now be the new address
+        (info,,) = validatorFacet.getValidatorInfo(1);
+        assertEq(info.l2AdminAddress, newAdmin, "Admin should now be newAdmin");
+
+        // --- Verify admin assignment flags ---
+        // 1. The old admin should now be free to be assigned to a new validator
+        vm.prank(admin);
+        validatorFacet.addValidator(2, 10e16, user2, makeAddr("v2_withdraw"), "l1val2", "l1acc2", address(0x222), 0);
+
+        // 2. The new admin is now assigned and cannot be assigned to another validator
+        vm.prank(admin);
+        //vm.expectRevert(AdminAlreadyAssigned.selector);
+        vm.expectRevert(abi.encodeWithSelector(AdminAlreadyAssigned.selector, newAdmin));
+
+        validatorFacet.addValidator(3, 10e16, newAdmin, makeAddr("v3_withdraw"), "l1val3", "l1acc3", address(0x333), 0);
+    }
+
+    /**
+     * @notice Tests that acceptAdmin reverts if called by an address that is not the pending admin.
+     */
+    function test_Revert_AcceptAdmin_WhenNotPendingAdmin() public {
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+
+        // Propose new admin
+        address newAdmin = vm.addr(0xDEED);
+        vm.startPrank(user2);
+        validatorFacet.setValidatorAddresses(1, newAdmin, address(0), "", "", address(0));
+        vm.stopPrank();
+
+        // A malicious actor tries to accept
+        address maliciousActor = vm.addr(0xBAD);
+        vm.startPrank(maliciousActor);
+        vm.expectRevert(abi.encodeWithSelector(NotPendingAdmin.selector, maliciousActor, 1));
+        validatorFacet.acceptAdmin(1);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Tests that acceptAdmin reverts if called for a validator with no pending admin proposal.
+     */
+    function test_Revert_AcceptAdmin_WhenNoPendingAdmin() public {
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+        address admin1 = makeAddr("Alice");
+  //      vm.prank(admin);
+//        validatorFacet.addValidator(1, 10e16, admin1, vm.addr(0xCAFE), "l1val1", "l1acc1", address(0x111), 0);
+
+        // Some user tries to accept without any proposal having been made
+        address someUser = vm.addr(0x4B1D);
+        vm.startPrank(someUser);
+        vm.expectRevert(abi.encodeWithSelector(NoPendingAdmin.selector, 1));
+        validatorFacet.acceptAdmin(1);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Tests that acceptAdmin reverts if the proposed admin is already an admin of another validator.
+     */
+    function test_Revert_AcceptAdmin_WhenAdminAlreadyAssigned() public {
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+
+        // Setup: Add two validators with two different admins
+        address admin1 = makeAddr("Alice");
+
+        address admin2 = makeAddr("Bob");
+        vm.prank(admin);
+        validatorFacet.addValidator(2, 10e16, admin2, vm.addr(0xFACE), "l1val2", "l1acc2", address(0x222), 0);
+
+        // Admin1 proposes admin2 for validator 1
+        vm.startPrank(user2);
+        validatorFacet.setValidatorAddresses(1, admin2, address(0), "", "", address(0));
+        vm.stopPrank();
+
+        // Admin2 tries to accept, but they are already assigned to validator 2
+        vm.startPrank(admin2);
+        vm.expectRevert(abi.encodeWithSelector(AdminAlreadyAssigned.selector, admin2));
+        validatorFacet.acceptAdmin(1);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice This test specifically confirms that the "squatting" attack is prevented.
+     */
+    function test_FrontRunningAttack_IsPrevented() public {
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+
+
+
+        // Mallory sees off-chain that `newUser` will be an admin for a new validator.
+        // She tries to "squat" on the address by proposing them as an admin for *her* validator.
+        address newUser = makeAddr("newUser");
+        vm.label(newUser, "newUser");
+
+        vm.startPrank(user2);
+        validatorFacet.setValidatorAddresses(1, newUser, address(0), "", "", address(0));
+        vm.stopPrank();
+
+        // Now, the legitimate admin tries to add the new validator with `newUser` as the admin.
+        // BEFORE the fix, this would fail because `isAdminAssigned` would be set on proposal.
+        // AFTER the fix, this should SUCCEED because proposing does not set `isAdminAssigned`.
+        address newUserWithdraw =  makeAddr("newUserWithdraw");
+        vm.prank(admin);
+        validatorFacet.addValidator(2, 15e16, newUser, newUserWithdraw, "l1val_new", "l1acc_new", makeAddr("0xGOODBEEF"), 0);
+
+        // Verify the new validator was added successfully, proving the fix works.
+        (PlumeStakingStorage.ValidatorInfo memory info,,) = validatorFacet.getValidatorInfo(2);
+        assertEq(info.l2AdminAddress, newUser, "New validator should have been created successfully");
+    }
 
 }

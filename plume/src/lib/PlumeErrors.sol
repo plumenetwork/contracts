@@ -302,6 +302,15 @@ error SlashVoteDurationTooLongForCooldown(uint256 newMaxSlashVoteDuration, uint2
 /// @param commissionTimelock The current commission claim timelock.
 error SlashVoteDurationExceedsCommissionTimelock(uint256 slashVoteDuration, uint256 commissionTimelock);
 
+/// @notice Thrown when an address that is not the pending admin tries to accept admin role.
+/// @param caller The address of the unauthorized caller.
+/// @param validatorId The ID of the validator.
+error NotPendingAdmin(address caller, uint16 validatorId);
+
+/// @notice Thrown when trying to accept admin role for a validator with no pending admin.
+/// @param validatorId The ID of the validator.
+error NoPendingAdmin(uint16 validatorId);
+
 /// @notice Thrown when a validator tries to create more commission checkpoints than the allowed limit.
 /// @param validatorId The ID of the validator.
 /// @param max The maximum number of checkpoints allowed.

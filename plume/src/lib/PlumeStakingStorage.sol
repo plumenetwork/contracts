@@ -119,6 +119,7 @@ library PlumeStakingStorage {
         mapping(uint16 => uint256) slashVoteCounts; // validatorId => active vote count
         mapping(address => uint16) adminToValidatorId; // admin address => validatorId
         mapping(address => bool) isAdminAssigned; // admin address => is assigned to a validator
+        mapping(uint16 => address) pendingAdmins; // validatorId => pending admin address for ownership transfer
 
         // === Commission Claims ===
         mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims; // validatorId => token => pending claim
