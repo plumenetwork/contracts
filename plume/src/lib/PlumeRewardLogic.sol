@@ -68,39 +68,64 @@ library PlumeRewardLogic {
         address[] memory rewardTokens = $.rewardTokens;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
             address token = rewardTokens[i];
-            uint256 validatorLastGlobalUpdateTimestampAtLoopStart = $.validatorLastUpdateTimes[validatorId][token];
+            updateRewardsForValidatorAndToken($, user, validatorId, token);
+        }
+    }
 
-            updateRewardPerTokenForValidator($, token, validatorId);
-            PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
-            uint256 validatorCommission = validator.commission;
-            uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
+     /**
+     * @notice Updates rewards for a specific user, validator, and token by settling pending rewards into storage.
+     * @dev This is the granular settlement function. It updates the user's stored rewards and the global
+     *      totalClaimableByToken.
+     * @param $ The PlumeStaking storage layout.
+     * @param user The address of the user whose rewards are being updated.
+     * @param validatorId The ID of the validator.
+     * @param token The address of the reward token.
+     */
+    function updateRewardsForValidatorAndToken(
+        PlumeStakingStorage.Layout storage $,
+        address user,
+        uint16 validatorId,
+        address token
+    ) internal {
+        // NOTE: The call to updateRewardPerTokenForValidator was removed from here. It is correctly and
+        // conditionally called inside calculateRewardsWithCheckpoints.
 
-            if (userStakedAmount == 0) {
-                continue;
+        uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
+
+        if (userStakedAmount == 0) {
+            // If user has no stake, there's nothing to calculate. We still need to update the user's "paid" pointers
+            // to the latest global state to prevent incorrect future calculations.
+            // First, ensure the validator's state is up-to-date.
+            if (!$.validators[validatorId].slashed) {
+                updateRewardPerTokenForValidator($, token, validatorId);
             }
-
-            if ($.userValidatorStakeStartTime[user][validatorId] == 0) {
-                $.userValidatorStakeStartTime[user][validatorId] = block.timestamp;
-            }
-
-            (uint256 userRewardDelta, uint256 commissionAmountDelta, uint256 effectiveTimeDelta) =
-                calculateRewardsWithCheckpoints($, user, validatorId, token, userStakedAmount);
-
-            if (userRewardDelta > 0) {
-                $.userRewards[user][validatorId][token] += userRewardDelta;
-                $.totalClaimableByToken[token] += userRewardDelta;
-                // Set flag indicating user has pending rewards with this validator
-                $.userHasPendingRewards[user][validatorId] = true;
-            }
-
             $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
                 $.validatorRewardPerTokenCumulative[validatorId][token];
             $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token] = block.timestamp;
+            return;
+        }
 
-            if ($.validatorRewardRateCheckpoints[validatorId][token].length > 0) {
-                $.userLastCheckpointIndex[user][validatorId][token] =
-                    $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
-            }
+        if ($.userValidatorStakeStartTime[user][validatorId] == 0) {
+            $.userValidatorStakeStartTime[user][validatorId] = block.timestamp;
+        }
+
+        (uint256 userRewardDelta,,) =
+            calculateRewardsWithCheckpoints($, user, validatorId, token, userStakedAmount);
+
+        if (userRewardDelta > 0) {
+            $.userRewards[user][validatorId][token] += userRewardDelta;
+            $.totalClaimableByToken[token] += userRewardDelta;
+            $.userHasPendingRewards[user][validatorId] = true;
+        }
+
+        // Update paid pointers AFTER calculating delta to correctly checkpoint the user's state.
+        $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
+            $.validatorRewardPerTokenCumulative[validatorId][token];
+        $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token] = block.timestamp;
+
+        if ($.validatorRewardRateCheckpoints[validatorId][token].length > 0) {
+            $.userLastCheckpointIndex[user][validatorId][token] =
+                $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
         }
     }
 
@@ -132,14 +157,14 @@ library PlumeRewardLogic {
         if (validator.slashed) {
             uint256 slashTs = validator.slashedAtTimestamp;
             uint256 currentLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
-            
+
             // Defensive check: slashed validators should have zero totalStaked
             uint256 totalStaked = $.validatorTotalStaked[validatorId];
             if (totalStaked > 0) {
                 // This should never happen if slashing logic is correct
                 revert InternalInconsistency("Slashed validator has non-zero totalStaked");
             }
-            
+
             // For slashed validators, ensure timestamp is never updated beyond slash timestamp
             // This preserves the reward state for user calculations
             if (currentLastUpdateTime < slashTs) {
@@ -208,7 +233,11 @@ library PlumeRewardLogic {
         address token,
         uint256 userStakedAmount,
         uint256 currentCumulativeRewardPerToken
-    ) internal view returns (uint256 totalUserRewardDelta, uint256 totalCommissionAmountDelta, uint256 effectiveTimeDelta) {
+    )
+        internal
+        view
+        returns (uint256 totalUserRewardDelta, uint256 totalCommissionAmountDelta, uint256 effectiveTimeDelta)
+    {
         uint256 lastUserPaidCumulativeRewardPerToken = $.userValidatorRewardPerTokenPaid[user][validatorId][token];
         uint256 lastUserRewardUpdateTime = $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token];
 
@@ -216,7 +245,7 @@ library PlumeRewardLogic {
             // Handle lazy user initialization for token addition
             uint256 tokenAdditionTime = $.tokenAdditionTimestamps[token];
             uint256 userStakeStartTime = $.userValidatorStakeStartTime[user][validatorId];
-            
+
             if (tokenAdditionTime > 0 && tokenAdditionTime > userStakeStartTime) {
                 // User was staking before token was added - start from token addition
                 lastUserRewardUpdateTime = tokenAdditionTime;
@@ -224,35 +253,35 @@ library PlumeRewardLogic {
                 // Token existed when user started staking - use stake start time
                 lastUserRewardUpdateTime = userStakeStartTime;
             }
-            
+
             if (lastUserRewardUpdateTime == 0 && $.userValidatorStakes[user][validatorId].staked > 0) {
                 // Fixed fallback: don't use block.timestamp if it's after slash timestamp
                 uint256 fallbackTime = block.timestamp;
-                
+
                 // If validator is slashed, cap fallback time at slash timestamp
                 PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
                 if (validator.slashedAtTimestamp > 0 && validator.slashedAtTimestamp < fallbackTime) {
                     fallbackTime = validator.slashedAtTimestamp;
                 }
-                
+
                 lastUserRewardUpdateTime = fallbackTime;
             }
         }
 
-        // CRITICAL FIX: For recently reactivated validators, don't calculate rewards 
+        // CRITICAL FIX: For recently reactivated validators, don't calculate rewards
         // from before the reactivation time to prevent retroactive accrual
         uint256 validatorLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
 
         // CRITICAL FIX: For slashed/inactive validators, cap the calculation period at the timestamp
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
         uint256 effectiveEndTime = block.timestamp;
-        
+
         // Check token removal timestamp
         uint256 tokenRemovalTime = $.tokenRemovalTimestamps[token];
         if (tokenRemovalTime > 0 && tokenRemovalTime < effectiveEndTime) {
             effectiveEndTime = tokenRemovalTime;
         }
-        
+
         // Then check validator slash/inactive timestamp
         if (validator.slashedAtTimestamp > 0) {
             if (validator.slashedAtTimestamp < effectiveEndTime) {
@@ -354,7 +383,7 @@ library PlumeRewardLogic {
         return (totalUserRewardDelta, totalCommissionAmountDelta, effectiveTimeDelta);
     }
 
-    /**
+     /**
      * @notice Calculates the reward delta for a user, applying commission rates from checkpoints.
      * @dev This function iterates through time segments defined by reward and commission rate changes.
      * @param $ The PlumeStaking storage layout.
@@ -373,41 +402,34 @@ library PlumeRewardLogic {
         address token,
         uint256 userStakedAmount
     ) internal returns (uint256 totalUserRewardDelta, uint256 totalCommissionAmountDelta, uint256 effectiveTimeDelta) {
-        // For active validators, update normally
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
-        
+
         if (!validator.slashed) {
-            // Normal case: update and use the updated cumulative
+            // Normal case: update and use the updated cumulative.
             updateRewardPerTokenForValidator($, token, validatorId);
             uint256 finalCumulativeRewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
             return _calculateRewardsCore($, user, validatorId, token, userStakedAmount, finalCumulativeRewardPerToken);
         } else {
-            // Slashed validator case: calculate what cumulative should be up to slash timestamp
-            // Don't call updateRewardPerTokenForValidator as it returns early for slashed validators
+            // Slashed validator case: calculate what cumulative should be up to the slash timestamp.
+            // We DO NOT call updateRewardPerTokenForValidator here because its logic is incorrect for slashed validators.
             uint256 currentCumulativeRewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
-            
-            // Calculate effective end time (should be slash timestamp)
             uint256 effectiveEndTime = validator.slashedAtTimestamp;
-            
-            // Check token removal timestamp
+
             uint256 tokenRemovalTime = $.tokenRemovalTimestamps[token];
             if (tokenRemovalTime > 0 && tokenRemovalTime < effectiveEndTime) {
                 effectiveEndTime = tokenRemovalTime;
             }
 
-            // Calculate theoretical cumulative up to slash timestamp
             uint256 validatorLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
-            
+
             if (effectiveEndTime > validatorLastUpdateTime) {
                 uint256 timeSinceLastUpdate = effectiveEndTime - validatorLastUpdateTime;
-                
-                // For a slashed validator, we always calculate potential rewards up to the slash timestamp
-                // if the user had stake, regardless of the 'active' flag.
+
                 if (userStakedAmount > 0) {
                     PlumeStakingStorage.RateCheckpoint memory effectiveRewardRateChk =
-                        getEffectiveRewardRateAt($, token, validatorId, effectiveEndTime);
+                        getEffectiveRewardRateAt($, token, validatorId, validatorLastUpdateTime); // Use rate at start of segment
                     uint256 effectiveRewardRate = effectiveRewardRateChk.rate;
-                    
+
                     if (effectiveRewardRate > 0) {
                         uint256 rewardPerTokenIncrease = timeSinceLastUpdate * effectiveRewardRate;
                         currentCumulativeRewardPerToken += rewardPerTokenIncrease;
@@ -565,7 +587,7 @@ library PlumeRewardLogic {
                 if (idx + 1 < chkCount && checkpoints[idx + 1].timestamp <= timestamp) {
                     // This means a later checkpoint (idx+1) is also <= timestamp.
                     // The binary search should ideally give the *latest* one.
-                    // Let's re-verify findRewardRateCheckpointIndexAtOrBefore.
+                    // Let's reverify findRewardRateCheckpointIndexAtOrBefore.
                     // For now, assume `idx` is the correct one.
                 }
                 return checkpoints[idx];
@@ -730,7 +752,7 @@ library PlumeRewardLogic {
             timestamp: block.timestamp, // New rate effective from now
             rate: rate, // The new rate
             cumulativeIndex: currentCumulativeIndex // Cumulative index *before* this new rate applies
-        });
+         });
 
         uint256 checkpointIndex;
 
@@ -770,7 +792,7 @@ library PlumeRewardLogic {
             timestamp: block.timestamp,
             rate: commissionRate,
             cumulativeIndex: 0 // Not used for commission
-        });
+         });
 
         if (len > 0 && checkpoints[len - 1].timestamp == block.timestamp) {
             // Overwrite the last checkpoint if it's from the same block
@@ -833,21 +855,22 @@ library PlumeRewardLogic {
         // be conservative and only clear if we can verify no rewards from any source
         uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
         uint256 userStakeStartTime = $.userValidatorStakeStartTime[user][validatorId];
-        
+
         if (userStakeStartTime > 0) {
             // User has staking history - check if they might have rewards from removed tokens
             // by verifying with the comprehensive earned calculation for PLUME_NATIVE
             // (most common removed token case)
             address plumeNative = PlumeStakingStorage.PLUME_NATIVE;
-            
+
             // Check stored rewards for PLUME_NATIVE (might be removed)
             if ($.userRewards[user][validatorId][plumeNative] > 0) {
                 return; // Still has PLUME_NATIVE rewards
             }
-            
+
             // If user still has active stake, check for any calculable rewards
             if (userStakedAmount > 0) {
-                (uint256 pendingPlumeRewards,,) = calculateRewardsWithCheckpointsView($, user, validatorId, plumeNative, userStakedAmount);
+                (uint256 pendingPlumeRewards,,) =
+                    calculateRewardsWithCheckpointsView($, user, validatorId, plumeNative, userStakedAmount);
                 if (pendingPlumeRewards > 0) {
                     return; // Still has calculable rewards
                 }
@@ -876,21 +899,25 @@ library PlumeRewardLogic {
         uint16 validatorId,
         address token,
         uint256 userStakedAmount
-    ) internal view returns (uint256 totalUserRewardDelta, uint256 totalCommissionAmountDelta, uint256 effectiveTimeDelta) {
+    )
+        internal
+        view
+        returns (uint256 totalUserRewardDelta, uint256 totalCommissionAmountDelta, uint256 effectiveTimeDelta)
+    {
         // Don't call updateRewardPerTokenForValidator - this is view-only
         // Calculate what the cumulative would be if updated
         uint256 currentCumulativeRewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
-        
+
         // Calculate effective end time considering all constraints
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
         uint256 effectiveEndTime = block.timestamp;
-        
+
         // Check token removal timestamp
         uint256 tokenRemovalTime = $.tokenRemovalTimestamps[token];
         if (tokenRemovalTime > 0 && tokenRemovalTime < effectiveEndTime) {
             effectiveEndTime = tokenRemovalTime;
         }
-        
+
         // Check validator slash/inactive timestamp
         if (validator.slashedAtTimestamp > 0) {
             if (validator.slashedAtTimestamp < effectiveEndTime) {
@@ -900,10 +927,10 @@ library PlumeRewardLogic {
 
         // Calculate theoretical current cumulative (what it would be if updated)
         uint256 validatorLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
-        
+
         if (effectiveEndTime > validatorLastUpdateTime) {
             uint256 timeSinceLastUpdate = effectiveEndTime - validatorLastUpdateTime;
-            
+
             // Fix: Reorder logic to check for slashed state FIRST.
             // A slashed validator is also inactive, so the slashed check must come first.
             if (validator.slashed) {
@@ -912,7 +939,7 @@ library PlumeRewardLogic {
                     PlumeStakingStorage.RateCheckpoint memory effectiveRewardRateChk =
                         getEffectiveRewardRateAt($, token, validatorId, effectiveEndTime);
                     uint256 effectiveRewardRate = effectiveRewardRateChk.rate;
-                    
+
                     if (effectiveRewardRate > 0) {
                         uint256 rewardPerTokenIncrease = timeSinceLastUpdate * effectiveRewardRate;
                         currentCumulativeRewardPerToken += rewardPerTokenIncrease;
@@ -924,12 +951,12 @@ library PlumeRewardLogic {
             } else {
                 // Active validator: calculate rewards normally
                 uint256 totalStaked = $.validatorTotalStaked[validatorId];
-                
+
                 if (totalStaked > 0) {
                     PlumeStakingStorage.RateCheckpoint memory effectiveRewardRateChk =
                         getEffectiveRewardRateAt($, token, validatorId, effectiveEndTime);
                     uint256 effectiveRewardRate = effectiveRewardRateChk.rate;
-                    
+
                     if (effectiveRewardRate > 0) {
                         uint256 rewardPerTokenIncrease = timeSinceLastUpdate * effectiveRewardRate;
                         currentCumulativeRewardPerToken += rewardPerTokenIncrease;
@@ -942,3 +969,4 @@ library PlumeRewardLogic {
     }
 
 }
+

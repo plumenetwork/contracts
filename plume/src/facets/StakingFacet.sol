@@ -14,8 +14,8 @@ import {
     NativeTransferFailed,
     NoActiveStake,
     NoRewardsToRestake,
-    NotActive,
     NoWithdrawableBalanceToRestake,
+    NotActive,
     StakeAmountTooSmall,
     TokenDoesNotExist,
     TooManyStakers,
@@ -199,7 +199,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Check if this is a new stake for this specific validator
         isNewStake = $.userValidatorStakes[user][validatorId].staked == 0;
-        
+
         if (!isNewStake) {
             // If user is adding to an existing stake with this validator, settle their current rewards first
             PlumeRewardLogic.updateRewardsForValidator($, user, validatorId);
@@ -273,7 +273,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
     function restake(uint16 validatorId, uint256 amount) external nonReentrant {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
-        
+
         if (amount == 0) {
             revert InvalidAmount(0);
         }
@@ -282,7 +282,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         uint256 coolingAmount = $.stakeInfo[user].cooled;
         uint256 parkedAmount = $.stakeInfo[user].parked;
         uint256 totalAvailable = coolingAmount + parkedAmount;
-        
+
         if (totalAvailable < amount) {
             revert InsufficientCooledAndParkedBalance(totalAvailable, amount);
         }
@@ -290,7 +290,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Process matured cooldowns to make funds available for withdrawal
         _processMaturedCooldowns(user);
 
-        // Use comprehensive staking setup (includes validator validation, capacity validation and reward initialization)
+        // Use comprehensive staking setup (includes validator validation, capacity validation and reward
+        // initialization)
         _performStakeSetup(user, validatorId, amount);
 
         // Track validators that might need relationship cleanup
@@ -305,7 +306,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Priority 1: Use cooling amounts from validators
         // First try the target validator, then other validators
         uint16[] memory userAssociatedValidators = $.userValidators[user];
-        
+
         // Try target validator first
         if (remaining > 0) {
             PlumeStakingStorage.CooldownEntry storage targetEntry = $.userValidatorCooldowns[user][validatorId];
@@ -313,31 +314,35 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 uint256 fromTarget = remaining > targetEntry.amount ? targetEntry.amount : remaining;
                 fromCooled += fromTarget;
                 remaining -= fromTarget;
-                
+
                 // Use unified cooling removal function
                 _removeCoolingAmounts(user, validatorId, fromTarget);
-                
+
                 // Target validator doesn't need cleanup since it's getting new stake
             }
         }
-        
+
         // Then try other validators if needed
         if (remaining > 0) {
             for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
-                if (remaining == 0) break;
-                
+                if (remaining == 0) {
+                    break;
+                }
+
                 uint16 otherValidatorId = userAssociatedValidators[i];
-                if (otherValidatorId == validatorId) continue; // Skip target validator (already processed)
-                
+                if (otherValidatorId == validatorId) {
+                    continue;
+                } // Skip target validator (already processed)
+
                 PlumeStakingStorage.CooldownEntry storage otherEntry = $.userValidatorCooldowns[user][otherValidatorId];
                 if (otherEntry.amount > 0) {
                     uint256 fromOther = remaining > otherEntry.amount ? otherEntry.amount : remaining;
                     fromCooled += fromOther;
                     remaining -= fromOther;
-                    
+
                     // Use unified cooling removal function
                     _removeCoolingAmounts(user, otherValidatorId, fromOther);
-                    
+
                     // Track this validator for potential cleanup if cooling amount became 0
                     if ($.userValidatorCooldowns[user][otherValidatorId].amount == 0) {
                         validatorsToCheck[checkCount] = otherValidatorId;
@@ -354,7 +359,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             if (remaining > currentParkedAmount) {
                 revert InternalInconsistency("Insufficient parked funds for restake allocation");
             }
-            
+
             fromParked = remaining;
             remaining = 0;
             _removeParkedAmounts(user, fromParked);
@@ -518,7 +523,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Use proper stake setup instead of restake workflow - this handles:
         // 1. New stake reward state initialization
-        // 2. Existing stake reward settlement  
+        // 2. Existing stake reward settlement
         // 3. Capacity validation
         // 4. Validator relationship management
         bool isNewStake = _performStakeSetup(user, validatorId, amountRestaked);
@@ -997,7 +1002,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         // Make a copy to avoid iteration issues
         uint16[] memory currentUserValidators = $.userValidators[user];
-        
+
         // Track validators that might need cleanup after claiming
         uint16[] memory validatorsToCheck = new uint16[](currentUserValidators.length);
         uint256 checkCount = 0;
@@ -1022,10 +1027,10 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
                 }
 
                 emit RewardClaimedFromValidator(user, targetToken, userValidatorId, totalValidatorReward);
-                
+
                 // Clear pending rewards flag for this validator and track for cleanup
                 PlumeRewardLogic.clearPendingRewardsFlagIfEmpty($, user, userValidatorId);
-                
+
                 // Track this validator for potential relationship cleanup
                 validatorsToCheck[checkCount] = userValidatorId;
                 checkCount++;
@@ -1139,7 +1144,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @dev Cleans up validator relationships for validators where user has no remaining involvement
      * @param user The user address
      */
-    function _cleanupValidatorRelationships(address user) internal {
+    function _cleanupValidatorRelationships(
+        address user
+    ) internal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeValidatorLogic.removeStakerFromAllValidators($, user);
     }

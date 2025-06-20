@@ -194,7 +194,7 @@ contract PlumeStakingDiamondTest is Test {
         accessControlSigs_Manual[6] = bytes4(keccak256(bytes("setRoleAdmin(bytes32,bytes32)")));
 
         // Staking Facet Selectors
-        bytes4[] memory stakingSigs_Manual = new bytes4[](14);
+        bytes4[] memory stakingSigs_Manual = new bytes4[](15);
         stakingSigs_Manual[0] = bytes4(keccak256(bytes("stake(uint16)")));
         stakingSigs_Manual[1] = bytes4(keccak256(bytes("restake(uint16,uint256)")));
         stakingSigs_Manual[2] = bytes4(keccak256(bytes("unstake(uint16)")));
@@ -209,6 +209,7 @@ contract PlumeStakingDiamondTest is Test {
         stakingSigs_Manual[11] = bytes4(keccak256(bytes("getUserValidatorStake(address,uint16)")));
         stakingSigs_Manual[12] = bytes4(keccak256(bytes("restakeRewards(uint16)")));
         stakingSigs_Manual[13] = bytes4(keccak256(bytes("totalAmountStaked()")));
+        stakingSigs_Manual[14] = bytes4(keccak256(bytes("totalAmountClaimable(address)")));
 
         // Rewards Facet Selectors
         bytes4[] memory rewardsSigs_Manual = new bytes4[](22);
@@ -7987,4 +7988,165 @@ contract PlumeStakingDiamondTest is Test {
         assertEq(info.l2AdminAddress, newUser, "New validator should have been created successfully");
     }
 
+
+ /// @notice This test validates the bug fix for OS-PLM-SUG-00.
+    /// It ensures that `totalClaimableByToken` is correctly updated
+    /// when a claim includes both previously stored and newly calculated rewards.
+    function test_TotalClaimableStateUpdateOnClaim() public {
+        StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+        RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+        MockPUSD rwdToken;
+        uint16 VALIDATOR_ID = 1;
+
+
+        address staker1 = makeAddr("staker1");
+        address staker2 = makeAddr("staker2");
+
+
+        // Create and fund users
+        vm.deal(staker1, 1000 ether);
+        vm.deal(staker2, 1000 ether);
+
+        vm.startPrank(admin);
+          // Deploy mock reward token
+        rwdToken = new MockPUSD();
+     // Add and configure reward token
+
+        rwdToken.transfer(address(treasury), 10e24);
+
+
+
+        rewardsFacet.addRewardToken(address(rwdToken));
+        treasury.addRewardToken(address(rwdToken));
+
+        // Set reward rate for easy math: 1 RWD per 1 PLUME staked per second.
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(rwdToken);
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = 1e14; 
+        rewardsFacet.setMaxRewardRate(address(rwdToken), 1e19);
+
+        rewardsFacet.setRewardRates(tokens, rates);
+    // --- ACTION 1: Staker1 stakes 100 PLUME ---
+vm.stopPrank();
+    vm.prank(staker1);
+    stakingFacet.stake{value: 100e18}(1); // Stake 100 PLUME to validator 1
+
+    // --- Fast-forward time to accrue rewards ---
+    vm.warp(block.timestamp + 100); // 100 seconds pass
+
+    // --- ACTION 2: Staker1 stakes a little more. THIS is the key step. ---
+    // This action calls `updateRewardsForValidator`, which settles the first reward chunk.
+    // This is where `totalClaimableByToken` is first incremented.
+    vm.prank(staker1);
+    stakingFacet.stake{value: 1e18}(1); // Stake 1 more PLUME
+
+    // --- ASSERTION 1: Check that the first reward chunk is now in `totalClaimableByToken` ---
+    // Calculation: 100 PLUME * 1e14 rate * 100 seconds = 1e24
+    uint256 expectedFirstRewardChunk = 92e16;
+    uint256 totalClaimableAfterFirstSettle = stakingFacet.totalAmountClaimable(address(rwdToken));
+    assertApproxEqAbs(totalClaimableAfterFirstSettle, expectedFirstRewardChunk, 1e18, "Total claimable should reflect the first settled reward chunk");
+
+    // --- Fast-forward time AGAIN to accrue more rewards ---
+    vm.warp(block.timestamp + 50); // 50 more seconds pass
+
+    // --- ACTION 3: Staker1 claims all rewards for the token ---
+    // This is where the bug was. The `claim` function calculates the *second* chunk of rewards.
+    // With our fix, it correctly adds this new chunk to `totalClaimableByToken` before subtracting the full claimed amount.
+    vm.prank(staker1);
+    uint256 claimedAmount = rewardsFacet.claim(address(rwdToken));
+
+    // --- ASSERTION 2: Validate the total claimed amount ---
+    // Second reward chunk was on a stake of 101 PLUME for 50 seconds.
+    // Calculation: 101 PLUME * 1e14 rate * 50 seconds = 5.05e21
+    uint256 expectedSecondRewardChunk = (101e18 * 1e14 * 50) / 1e18;
+    uint256 totalExpectedRewards = expectedFirstRewardChunk + expectedSecondRewardChunk;
+    assertApproxEqAbs(claimedAmount, totalExpectedRewards, 1e18, "Claimed amount should equal the sum of both reward chunks");
+
+    // --- ASSERTION 3: Check final state of totalClaimableByToken ---
+    // After the claim, the treasury has paid out, so the accounting variable should be zero.
+    // The buggy code would have underflowed here without a safety check. Our test proves it ends correctly at zero.
+    uint256 finalTotalClaimable = stakingFacet.totalAmountClaimable(address(rwdToken));
+    assertEq(finalTotalClaimable, 0, "Total claimable should be zero after a full claim");
+        
+    }
+
+
+
+    function test_TotalClaimableStateConsistencyOnClaim() public {
+                StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+        RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+        MockPUSD rwdToken;
+                address staker1 = makeAddr("staker1");
+        address staker2 = makeAddr("staker2");
+
+
+        // Create and fund users
+        vm.deal(staker1, 1000 ether);
+        vm.deal(staker2, 1000 ether);
+        // --- 1. Setup ---
+        // Assumes `rwdToken` is a valid mock ERC20 token available in the test setup.
+        vm.startPrank(admin);  
+        rwdToken = new MockPUSD();
+        treasury.addRewardToken(address(rwdToken));
+        rwdToken.transfer(address(treasury), 10e24);
+
+        rewardsFacet.addRewardToken(address(rwdToken));
+        rewardsFacet.setMaxRewardRate(address(rwdToken), 1e19); // 10 tokens/sec
+        rewardsFacet.setRewardRates(
+            _addrArr(address(rwdToken)),
+            _uintArr(1e18) // 1 token/sec
+        );
+vm.stopPrank();
+        // --- 2. Stake ---
+        // Assumes `staker1` is a valid address available in the test setup.
+        uint256 stakeAmount = 100e18;
+        vm.prank(staker1);
+        stakingFacet.stake{value: stakeAmount}(1);
+
+        // --- 3. Accrue Rewards ---
+        vm.warp(block.timestamp + 100); // Accrue 100 seconds of rewards
+
+        // --- 4. Pre-Claim Checks ---
+        // `totalAmountClaimable` should be 0 because rewards are pending but not yet settled into the global state.
+        uint256 totalClaimableBefore = stakingFacet.totalAmountClaimable(address(rwdToken));
+        assertEq(totalClaimableBefore, 0, "Total claimable should be 0 before settlement");
+
+        // The `earned` view function should correctly calculate the pending rewards.
+        // Assumes `validator1Commission` is available in the test setup (e.g., 8e16 for 8%).
+        uint256 expectedGrossReward = 100 * 100 * 1e18; // 100s * 1 token/sec
+        uint256 expectedCommission = (expectedGrossReward * 8e16) / 1e18;
+        uint256 expectedNetReward = expectedGrossReward - expectedCommission;
+
+        uint256 earnedAmount = rewardsFacet.earned(staker1, address(rwdToken));
+        assertApproxEqAbs(earnedAmount, expectedNetReward, 1e12, "Earned amount should be correct before claim");
+
+        // --- 5. Claim ---
+        // This triggers the fix: `updateRewardsForValidatorAndToken` runs, settling the rewards to storage
+        // (incrementing `totalClaimableByToken`), and then `_finalizeRewardClaim` runs immediately after,
+        // decrementing it as the funds are transferred.
+        vm.prank(staker1);
+        rewardsFacet.claim(address(rwdToken), 1);
+
+        // --- 6. Post-Claim Checks ---
+        // The total claimable amount should now be 0, as the settled amount was claimed in the same transaction.
+        uint256 totalClaimableAfter = stakingFacet.totalAmountClaimable(address(rwdToken));
+        assertApproxEqAbs(totalClaimableAfter, 0, 1e12, "Total claimable should be 0 after claim");
+
+        // Final sanity check: staker received the correct amount of reward tokens.
+        assertApproxEqAbs(rwdToken.balanceOf(staker1), expectedNetReward, 1e12, "Staker should receive correct reward amount");
+    }
+// Helper functions for creating single-element arrays for function calls
+function _addrArr(address a) internal pure returns (address[] memory) {
+    address[] memory arr = new address[](1);
+    arr[0] = a;
+    return arr;
+}
+
+function _uintArr(uint256 a) internal pure returns (uint256[] memory) {
+    uint256[] memory arr = new uint256[](1);
+    arr[0] = a;
+    return arr;
+}
 }

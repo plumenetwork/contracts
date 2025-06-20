@@ -55,27 +55,26 @@ library PlumeStakingStorage {
      * @notice Main storage layout for the staking system
      */
     struct Layout {
-        
         // === Core Staking State ===
         uint256 totalStaked; // Total amount staked across all validators
         uint256 totalCooling; // Total amount in cooling period
         uint256 totalWithdrawable; // Total amount available for withdrawal
-        
         // === Reward Token Management ===
         address[] rewardTokens; // Array of all reward token addresses
         mapping(address => bool) isRewardToken; // token => whether it's an active reward token
         mapping(address => uint256) rewardRates; // token => reward rate
         mapping(address => uint256) maxRewardRates; // token => maximum allowed reward rate
         mapping(address => uint256) totalClaimableByToken; // token => total claimable amount
-
         // === User State Mappings ===
         mapping(address => StakeInfo) stakeInfo; // user => global stake info
-        mapping(address => mapping(uint16 => UserValidatorStake)) userValidatorStakes; // user => validatorId => stake info
-        mapping(address => mapping(uint16 => CooldownEntry)) userValidatorCooldowns; // user => validatorId => cooldown info
+        mapping(address => mapping(uint16 => UserValidatorStake)) userValidatorStakes; // user => validatorId => stake
+            // info
+        mapping(address => mapping(uint16 => CooldownEntry)) userValidatorCooldowns; // user => validatorId => cooldown
+            // info
         mapping(address => uint16[]) userValidators; // user => list of validators they've staked with
         mapping(address => mapping(uint16 => bool)) userHasStakedWithValidator; // user => validatorId => has staked
-        mapping(address => mapping(uint16 => uint256)) userValidatorStakeStartTime; // user => validatorId => stake start time
-
+        mapping(address => mapping(uint16 => uint256)) userValidatorStakeStartTime; // user => validatorId => stake
+            // start time
         // === Validator State ===
         mapping(uint16 => ValidatorInfo) validators; // validatorId => validator info
         uint16[] validatorIds; // Array of all validator IDs
@@ -84,49 +83,52 @@ library PlumeStakingStorage {
         mapping(uint16 => uint256) validatorTotalCooling; // validatorId => total cooling amount
         mapping(uint16 => address[]) validatorStakers; // validatorId => list of stakers
         mapping(uint16 => mapping(address => bool)) isStakerForValidator; // validatorId => user => is staker
-        mapping(address => mapping(uint16 => uint256)) userIndexInValidatorStakers; // user => validatorId => index in stakers array 
-
+        mapping(address => mapping(uint16 => uint256)) userIndexInValidatorStakers; // user => validatorId => index in
+            // stakers array
         // === Reward System ===
-        mapping(uint16 => mapping(address => uint256)) validatorAccruedCommission; // validatorId => token => commission amount
-        mapping(uint16 => mapping(address => uint256)) validatorRewardPerTokenCumulative; // validatorId => token => cumulative reward per token
-        mapping(uint16 => mapping(address => uint256)) validatorLastUpdateTimes; // validatorId => token => last update time
-        mapping(address => mapping(uint16 => mapping(address => uint256))) userRewards; // user => validatorId => token => reward amount
-        mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaid; // user => validatorId => token => last paid rate
-        mapping(address => mapping(uint16 => mapping(address => uint256))) userLastCheckpointIndex; // user => validatorId => token => checkpoint index
-        mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaidTimestamp; // user => validatorId => token => timestamp
+        mapping(uint16 => mapping(address => uint256)) validatorAccruedCommission; // validatorId => token => commission
+            // amount
+        mapping(uint16 => mapping(address => uint256)) validatorRewardPerTokenCumulative; // validatorId => token =>
+            // cumulative reward per token
+        mapping(uint16 => mapping(address => uint256)) validatorLastUpdateTimes; // validatorId => token => last update
+            // time
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userRewards; // user => validatorId => token
+            // => reward amount
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaid; // user =>
+            // validatorId => token => last paid rate
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userLastCheckpointIndex; // user =>
+            // validatorId => token => checkpoint index
+        mapping(address => mapping(uint16 => mapping(address => uint256))) userValidatorRewardPerTokenPaidTimestamp; // user
+            // => validatorId => token => timestamp
         mapping(address => mapping(uint16 => bool)) userHasPendingRewards; // user => validatorId => has pending rewards
-
         // === Reward Rate Checkpoints ===
         mapping(address => RateCheckpoint[]) rewardRateCheckpoints; // token => rate checkpoints
-        mapping(uint16 => mapping(address => RateCheckpoint[])) validatorRewardRateCheckpoints; // validatorId => token => rate checkpoints
+        mapping(uint16 => mapping(address => RateCheckpoint[])) validatorRewardRateCheckpoints; // validatorId => token
+            // => rate checkpoints
         mapping(uint16 => RateCheckpoint[]) validatorCommissionCheckpoints; // validatorId => commission checkpoints
-
         // === Configuration ===
         uint256 minStakeAmount; // Minimum staking amount
         uint256 cooldownInterval; // Duration of the cooldown period in seconds
         uint256 maxValidatorPercentage; // Maximum percentage of total stake a validator can have (in basis points)
         uint256 maxAllowedValidatorCommission; // Maximum allowed commission for any validator
         uint16 maxCommissionCheckpoints; // Max commission checkpoints per validator
-
         // === Access Control ===
         mapping(bytes32 => mapping(address => bool)) hasRole; // role => address => has role
         bool initialized; // Whether the contract has been initialized
         bool accessControlFacetInitialized; // Whether the AccessControlFacet has been initialized
-
         // === Validator Management ===
-        mapping(uint16 => mapping(uint16 => uint256)) slashingVotes; // maliciousValidatorId => votingValidatorId => vote expiration
+        mapping(uint16 => mapping(uint16 => uint256)) slashingVotes; // maliciousValidatorId => votingValidatorId =>
+            // vote expiration
         uint256 maxSlashVoteDurationInSeconds; // Maximum duration for slash votes
         mapping(uint16 => uint256) slashVoteCounts; // validatorId => active vote count
         mapping(address => uint16) adminToValidatorId; // admin address => validatorId
         mapping(address => bool) isAdminAssigned; // admin address => is assigned to a validator
         mapping(uint16 => address) pendingAdmins; // validatorId => pending admin address for ownership transfer
-
         // === Commission Claims ===
-        mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims; // validatorId => token => pending claim
-            
+        mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims; // validatorId => token
+            // => pending claim
         // === Flags ===
         mapping(address => bool) hasPendingRewards; // user => whether they have pending rewards to claim
-        
         // === Token Lifecycle Tracking ===
         mapping(address => uint256) tokenAdditionTimestamps; // token => when it was added
         mapping(address => uint256) tokenRemovalTimestamps; // token => when it was removed

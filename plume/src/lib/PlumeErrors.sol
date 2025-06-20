@@ -339,7 +339,6 @@ error ActionOnSlashedValidatorError(uint16 validatorId);
  */
 error ValidatorNotSlashed(uint16 validatorId);
 
-
 /**
  * @notice Thrown when a function is not active.
  */

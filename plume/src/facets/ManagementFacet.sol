@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import {
     AdminTransferFailed,
+    CannotPruneAllCheckpoints,
     CooldownTooShortForSlashVote,
     EmptyArray,
     InsufficientFunds,
@@ -11,11 +12,10 @@ import {
     InvalidInterval,
     InvalidMaxCommissionRate,
     InvalidPercentage,
-    CannotPruneAllCheckpoints,
-    TokenDoesNotExist,
     MaxCommissionCheckpointsExceeded,
-    SlashVoteDurationTooLongForCooldown,
     SlashVoteDurationExceedsCommissionTimelock,
+    SlashVoteDurationTooLongForCooldown,
+    TokenDoesNotExist,
     Unauthorized,
     ValidatorDoesNotExist,
     ValidatorNotSlashed,
@@ -26,21 +26,21 @@ import {
     AdminClearedSlashedStake,
     AdminStakeCorrection,
     AdminWithdraw,
-    CooldownIntervalSet,
     CommissionCheckpointsPruned,
+    CooldownIntervalSet,
     MaxAllowedValidatorCommissionSet,
     MaxCommissionCheckpointsSet,
     MaxSlashVoteDurationSet,
+    MaxValidatorPercentageUpdated,
     MinStakeAmountSet,
     RewardRateCheckpointsPruned,
     StakeInfoUpdated,
-    ValidatorCommissionSet,
-    MaxValidatorPercentageUpdated
+    ValidatorCommissionSet
 } from "../lib/PlumeEvents.sol";
 
+import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
 import { PlumeStakingStorage } from "../lib/PlumeStakingStorage.sol";
 import { PlumeValidatorLogic } from "../lib/PlumeValidatorLogic.sol";
-import { PlumeRewardLogic } from "../lib/PlumeRewardLogic.sol";
 
 import { OwnableStorage } from "@solidstate/access/ownable/OwnableStorage.sol";
 import { DiamondBaseStorage } from "@solidstate/proxy/diamond/base/DiamondBaseStorage.sol";
@@ -256,8 +256,11 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @dev Protects against gas-exhaustion griefing attacks. Requires ADMIN_ROLE.
      * @param newLimit The new maximum number of checkpoints.
      */
-    function setMaxCommissionCheckpoints(uint16 newLimit) external onlyRole(PlumeRoles.ADMIN_ROLE) {
-        if (newLimit < 10) { // Enforce a minimum reasonable limit
+    function setMaxCommissionCheckpoints(
+        uint16 newLimit
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        if (newLimit < 10) {
+            // Enforce a minimum reasonable limit
             revert InvalidAmount(newLimit);
         }
         PlumeStakingStorage.layout().maxCommissionCheckpoints = newLimit;
@@ -269,7 +272,9 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @dev A value of 0 disables the check. Requires ADMIN_ROLE.
      * @param newPercentage The new percentage in basis points (e.g., 2000 for 20%).
      */
-    function setMaxValidatorPercentage(uint256 newPercentage) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+    function setMaxValidatorPercentage(
+        uint256 newPercentage
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         // A percentage must not exceed 100% (10,000 basis points).
