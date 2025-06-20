@@ -147,10 +147,7 @@ library PlumeValidatorLogic {
      * @param $ The PlumeStaking storage layout.
      * @param staker The address of the staker.
      */
-    function removeStakerFromAllValidators(
-        PlumeStakingStorage.Layout storage $,
-        address staker
-    ) internal {
+    function removeStakerFromAllValidators(PlumeStakingStorage.Layout storage $, address staker) internal {
         // Make a copy to avoid iteration issues when removeStakerFromValidator is called
         uint16[] memory userAssociatedValidators = $.userValidators[staker];
 
