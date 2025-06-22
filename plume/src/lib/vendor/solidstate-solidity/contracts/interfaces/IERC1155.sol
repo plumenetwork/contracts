@@ -23,7 +23,7 @@ interface IERC1155 is IERC1155Internal, IERC165 {
 
     /**
      * @notice query the balances of given tokens held by given addresses
-     * @param accounts addresss to query
+     * @param accounts address to query
      * @param ids tokens to query
      * @return token balances
      */
