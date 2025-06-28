@@ -50,7 +50,7 @@ contract DeployPlumeStaking is Script {
     uint256 internal constant INITIAL_COOLDOWN_INTERVAL = 30 seconds;
     uint256 internal constant INITIAL_MAX_SLASH_VOTE_DURATION = 10 seconds;
     uint256 internal constant INITIAL_MAX_ALLOWED_VALIDATOR_COMMISSION = 25 * 10 ** 16; // 25%
-    uint256 internal constant VALIDATOR_COMMISSION = 0.5 * 10 ** 16; // 0.5% 
+    uint256 internal constant VALIDATOR_COMMISSION = 0.5 * 10 ** 16; // 0.5%
     uint256 internal constant VALIDATOR_MAX_CAPACITY = 0 ether;
 
     // PLUME (Native) reward rate: 5.5% yearly approx 1744038559107051 per second per 1e18 staked
@@ -235,9 +235,9 @@ contract DeployPlumeStaking is Script {
 
         // --- 9. Configure PLUME_NATIVE Rewards ---
         address plumeNativeToken = PlumeStakingStorage.PLUME_NATIVE;
-        RewardsFacet(address(diamondProxy)).addRewardToken(plumeNativeToken);
+        RewardsFacet(address(diamondProxy)).addRewardToken(plumeNativeToken, PLUME_REWARD_RATE_PER_SECOND, PLUME_MAX_REWARD_RATE);
         console2.log("PLUME_NATIVE added as reward token.");
-
+/*
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(plumeNativeToken, PLUME_MAX_REWARD_RATE);
         console2.log("Max reward rate for PLUME_NATIVE set to: %s", PLUME_MAX_REWARD_RATE);
 
@@ -246,6 +246,8 @@ contract DeployPlumeStaking is Script {
         uint256[] memory plumeRates = new uint256[](1);
         plumeRates[0] = PLUME_REWARD_RATE_PER_SECOND;
         RewardsFacet(address(diamondProxy)).setRewardRates(plumeTokens, plumeRates);
+  */
+    
         console2.log("Reward rate for PLUME_NATIVE set to: %s per second", PLUME_REWARD_RATE_PER_SECOND);
 
         // Note: Funding the treasury with PLUME_NATIVE (ETH) needs to be done via a separate transaction sending ETH to

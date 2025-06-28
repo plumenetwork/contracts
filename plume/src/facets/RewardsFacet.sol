@@ -157,7 +157,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     function addRewardToken(
-        address token
+        address token,
+        uint256 initialRate,
+        uint256 maxRate
     ) external onlyRole(PlumeRoles.REWARD_MANAGER_ROLE) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         if (token == address(0)) {
@@ -166,20 +168,33 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if ($.isRewardToken[token]) {
             revert TokenAlreadyExists();
         }
+        if (initialRate > maxRate) {
+            revert RewardRateExceedsMax();
+        }
 
         uint256 additionTimestamp = block.timestamp;
 
+        // Clear any previous removal timestamp to allow re-adding
+        delete $.tokenRemovalTimestamps[token];
+
         $.rewardTokens.push(token);
         $.isRewardToken[token] = true;
-
-        // Store when this token was added for lazy user initialization
+        $.maxRewardRates[token] = maxRate;
+        $.rewardRates[token] = initialRate; // Set initial global rate
         $.tokenAdditionTimestamps[token] = additionTimestamp;
 
-        // Initialize validator timestamps only (bounded by validator count)
-        for (uint256 i = 0; i < $.validatorIds.length; i++) {
-            $.validatorLastUpdateTimes[$.validatorIds[i]][token] = additionTimestamp;
+        // Create a historical record that the rate starts at initialRate for all validators
+        uint16[] memory validatorIds = $.validatorIds;
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            uint16 validatorId = validatorIds[i];
+            $.validatorLastUpdateTimes[validatorId][token] = additionTimestamp;
+            PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, initialRate);
         }
+
         emit RewardTokenAdded(token);
+        if (maxRate > 0) {
+            emit MaxRewardRateUpdated(token, maxRate);
+        }
     }
 
     /**
@@ -210,12 +225,11 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             // Final update to current time to settle all rewards up to this point
             PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
 
-            // DO NOT delete validator checkpoints. This historical data is needed
-            // for users to accurately claim their final rewards for the token.
-            // delete $.validatorRewardRateCheckpoints[validatorId][token];
+            // Create a final checkpoint with a rate of 0 to stop further accrual definitively.
+            PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, 0);
         }
 
-        // Set rate to 0 to prevent future accrual.
+        // Set rate to 0 to prevent future accrual. This is now redundant but harmless.
         $.rewardRates[token] = 0;
         // DO NOT delete global checkpoints. Historical data is needed for claims.
         // delete $.rewardRateCheckpoints[token];

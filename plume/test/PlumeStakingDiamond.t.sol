@@ -103,6 +103,7 @@ contract PlumeStakingDiamondTest is Test {
     uint256 public constant INITIAL_BALANCE = 1000e18;
     uint256 public constant PUSD_REWARD_RATE = 1e18; // Example rate
     uint256 public constant PLUME_REWARD_RATE = 1_587_301_587; // Example rate
+    uint256 public constant PLUME_MAX_REWARD_RATE = 1e18;
     uint16 public constant DEFAULT_VALIDATOR_ID = 0;
     uint256 public constant DEFAULT_COMMISSION = 5e16; // 5% commission
     address public constant DEFAULT_VALIDATOR_ADMIN = 0xC0A7a3AD0e5A53cEF42AB622381D0b27969c4ab5;
@@ -213,7 +214,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // Rewards Facet Selectors
         bytes4[] memory rewardsSigs_Manual = new bytes4[](22);
-        rewardsSigs_Manual[0] = bytes4(keccak256(bytes("addRewardToken(address)")));
+        rewardsSigs_Manual[0] = bytes4(keccak256(bytes("addRewardToken(address,uint256,uint256)")));
         rewardsSigs_Manual[1] = bytes4(keccak256(bytes("removeRewardToken(address)")));
         rewardsSigs_Manual[2] = bytes4(keccak256(bytes("setRewardRates(address[],uint256[])")));
         rewardsSigs_Manual[3] = bytes4(keccak256(bytes("setMaxRewardRate(address,uint256)")));
@@ -357,7 +358,7 @@ contract PlumeStakingDiamondTest is Test {
         // Add PUSD as a reward token in the treasury
         treasury.addRewardToken(address(pUSD));
         // <<< ADD PLUME_NATIVE REWARD TOKEN AND FUND TREASURY >>>
-        RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE);
+        RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE, PLUME_REWARD_RATE, PLUME_MAX_REWARD_RATE);
         treasury.addRewardToken(PLUME_NATIVE); // Also add to treasury allowed list
         vm.deal(address(treasury), 11e30); // Give treasury some native ETH
         pUSD.transfer(address(treasury), 10e24);
@@ -392,11 +393,11 @@ contract PlumeStakingDiamondTest is Test {
         initialTokens[0] = address(pUSD);
         uint256[] memory initialRates = new uint256[](1);
         initialRates[0] = 1e15; // Small default rate
-        RewardsFacet(address(diamondProxy)).addRewardToken(address(pUSD)); // <<< RESTORE THIS LINE
-        RewardsFacet(address(diamondProxy)).setMaxRewardRate(address(pUSD), 1e18);
+        RewardsFacet(address(diamondProxy)).addRewardToken(address(pUSD), 1e15, 1e18); // <<< RESTORE THIS LINE
+        //RewardsFacet(address(diamondProxy)).setMaxRewardRate(address(pUSD), 1e18);
         // We should also set a max rate for PLUME_NATIVE here
-        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, 1e18); // Set a reasonable max rate
-        RewardsFacet(address(diamondProxy)).setRewardRates(initialTokens, initialRates); // Only sets pUSD rate
+        //RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, 1e18); // Set a reasonable max rate
+        //RewardsFacet(address(diamondProxy)).setRewardRates(initialTokens, initialRates); // Only sets pUSD rate
             // initially
 
         vm.stopPrank();
@@ -2206,10 +2207,12 @@ contract PlumeStakingDiamondTest is Test {
         vm.startPrank(admin);
         address token = address(pUSD);
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, 1e18);
-        address[] memory tokens = new address[](1);
+        address[] memory tokens = new address[](2);
         tokens[0] = token;
-        uint256[] memory rates = new uint256[](1);
+        tokens[1] = PLUME_NATIVE;
+        uint256[] memory rates = new uint256[](2);
         rates[0] = 1e15; // Small PUSD rate
+        rates[1] = 0; // Small PUSD rate
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(token, 1e15); // Ensure max rate allows the desired rate
         RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
         pUSD.transfer(address(treasury), 2000 * 1e6); // Fund treasury
@@ -4251,19 +4254,20 @@ contract PlumeStakingDiamondTest is Test {
         }
         if (!isPusdARewardToken) {
             // END MODIFIED CHECK
-            RewardsFacet(address(diamondProxy)).addRewardToken(pusdTokenAddress);
+            RewardsFacet(address(diamondProxy)).addRewardToken(pusdTokenAddress, 1e15, 1e18);
         }
         if (!treasury.isRewardToken(pusdTokenAddress)) {
             // Assuming isRewardToken view exists on treasury
             treasury.addRewardToken(pusdTokenAddress);
         }
-        RewardsFacet(address(diamondProxy)).setMaxRewardRate(pusdTokenAddress, 1e18);
-
+        //RewardsFacet(address(diamondProxy)).setMaxRewardRate(pusdTokenAddress, 1e18);
+/*
         address[] memory tokens = new address[](1);
         tokens[0] = pusdTokenAddress;
         uint256[] memory rates = new uint256[](1);
         rates[0] = 1e15;
         RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+  */
         pUSD.transfer(address(treasury), 10_000 ether);
 
         uint256 slashVoteDuration = 2 days;
@@ -5877,9 +5881,10 @@ contract PlumeStakingDiamondTest is Test {
             }
         }
         if (!isPlumeRewardToken) {
-            RewardsFacet(payable(address(diamondProxy))).addRewardToken(PLUME_NATIVE);
+            RewardsFacet(payable(address(diamondProxy))).addRewardToken(PLUME_NATIVE, plumeRate, plumeRate * 2);
         }
-        RewardsFacet(payable(address(diamondProxy))).setMaxRewardRate(PLUME_NATIVE, plumeRate * 2);
+        //RewardsFacet(payable(address(diamondProxy))).setMaxRewardRate(PLUME_NATIVE, plumeRate * 2);
+        /*
         address[] memory nativeTokenArr = new address[](1);
         nativeTokenArr[0] = PLUME_NATIVE;
         uint256[] memory nativeRateArr = new uint256[](1);
@@ -5889,8 +5894,8 @@ contract PlumeStakingDiamondTest is Test {
         vm.deal(address(treasury), 100 ether);
         console2.log("PLUME reward rate set. Treasury funded.");
         vm.stopPrank();
-
-        uint256 rewardAccrualDuration = 100 seconds;
+*/
+        uint256 rewardAccrualDuration = 1000 days;
         // uint256 rewardAccrualStartTime = block.timestamp; // Not strictly needed for this test's assertions
         vm.warp(block.timestamp + rewardAccrualDuration);
         vm.roll(block.number + rewardAccrualDuration / 12 + 1); // Advance blocks too
@@ -8017,9 +8022,9 @@ contract PlumeStakingDiamondTest is Test {
 
 
 
-        rewardsFacet.addRewardToken(address(rwdToken));
+        rewardsFacet.addRewardToken(address(rwdToken),1e14,1e19);
         treasury.addRewardToken(address(rwdToken));
-
+/*
         // Set reward rate for easy math: 1 RWD per 1 PLUME staked per second.
         address[] memory tokens = new address[](1);
         tokens[0] = address(rwdToken);
@@ -8028,6 +8033,7 @@ contract PlumeStakingDiamondTest is Test {
         rewardsFacet.setMaxRewardRate(address(rwdToken), 1e19);
 
         rewardsFacet.setRewardRates(tokens, rates);
+  */
     // --- ACTION 1: Staker1 stakes 100 PLUME ---
 vm.stopPrank();
     vm.prank(staker1);
@@ -8092,12 +8098,14 @@ vm.stopPrank();
         treasury.addRewardToken(address(rwdToken));
         rwdToken.transfer(address(treasury), 10e24);
 
-        rewardsFacet.addRewardToken(address(rwdToken));
+        rewardsFacet.addRewardToken(address(rwdToken),1e18,1e19);
+        /*
         rewardsFacet.setMaxRewardRate(address(rwdToken), 1e19); // 10 tokens/sec
         rewardsFacet.setRewardRates(
             _addrArr(address(rwdToken)),
             _uintArr(1e18) // 1 token/sec
         );
+        */
 vm.stopPrank();
         // --- 2. Stake ---
         // Assumes `staker1` is a valid address available in the test setup.
@@ -8137,6 +8145,75 @@ vm.stopPrank();
         // Final sanity check: staker received the correct amount of reward tokens.
         assertApproxEqAbs(rwdToken.balanceOf(staker1), expectedNetReward, 1e12, "Staker should receive correct reward amount");
     }
+
+
+function testRewardAccrualOnlyStartsAfterRateIsSet() public {
+
+        StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+        RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+        ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+        MockPUSD pUSD2= new MockPUSD();
+
+
+        uint16 validatorId = 1;
+
+        vm.startPrank(admin);
+        // 2. Add reward token with rate 0
+        //rewardsFacet.addRewardToken(address(pUSD2));
+        rewardsFacet.addRewardToken(address(pUSD2), 0, 1e18);
+        vm.stopPrank();
+        // 3. User stakes 100 PLUME at T1
+        address staker = makeAddr("staker");
+        uint256 stakeAmount = 100 * 1e18;
+        vm.deal(address(staker), 11e30); // Give treasury some native ETH
+
+        vm.prank(staker);
+        //stakingFacet.stake(validatorId, stakeAmount, 0, 0, 0);
+        stakingFacet.stake{ value: stakeAmount }(validatorId);
+
+        // 4. Warp time forward by 1 day (T2)
+        vm.warp(block.timestamp + 1 days);
+
+        // 5. Check earned rewards. Should be 0.
+        uint256 earnedBeforeRateSet = rewardsFacet.earned(staker, address(pUSD2));
+        assertEq(earnedBeforeRateSet, 0, "Should have 0 rewards before rate is set");
+
+        vm.startPrank(admin);
+        // 6. Set a non-zero reward rate for pUSD at T2
+        uint256 rewardRate = 1e16; // some rate
+        rewardsFacet.setMaxRewardRate(address(pUSD2), 1e18); // 1 PUSD per second
+
+        rewardsFacet.setRewardRates(_addrArr(address(pUSD2)), _uintArr(rewardRate));
+        vm.stopPrank();
+
+        // 7. Check earned rewards again, immediately after setting rate.
+        // THIS IS THE CRITICAL CHECK. It should still be 0 as no time has passed with the new rate.
+        // The bug will cause this to be non-zero.
+        uint256 earnedImmediatelyAfterRateSet = rewardsFacet.earned(staker, address(pUSD2));
+        assertEq(
+            earnedImmediatelyAfterRateSet, 0, "Should have 0 rewards immediately after rate is set (before time passes)"
+        );
+
+        // 8. Warp time forward by another day (T3)
+        uint256 timeDelta = 1 days;
+        vm.warp(block.timestamp + timeDelta);
+
+        // 9. Check earned rewards. Should be based on new rate for 1 day.
+          (PlumeStakingStorage.ValidatorInfo memory validatorInfo,,) = validatorFacet.getValidatorInfo(validatorId);
+        uint256 commission = validatorInfo.commission;
+
+        uint256 earnedAfter = rewardsFacet.earned(staker, address(pUSD2));
+
+        uint256 expectedRewards = (stakeAmount * timeDelta * rewardRate) / PlumeStakingStorage.REWARD_PRECISION;
+        uint256 commissionAmount = (expectedRewards * commission) / PlumeStakingStorage.REWARD_PRECISION;
+        uint256 expectedNetRewards = expectedRewards - commissionAmount;
+
+        assertApproxEqAbs(earnedAfter, expectedNetRewards, 1, "Rewards should accrue only after rate is set");
+    }
+
+
+
 // Helper functions for creating single-element arrays for function calls
 function _addrArr(address a) internal pure returns (address[] memory) {
     address[] memory arr = new address[](1);
