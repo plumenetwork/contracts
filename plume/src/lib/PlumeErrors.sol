@@ -110,6 +110,10 @@ error ValidatorPercentageExceeded();
  */
 error TooManyStakers();
 
+/// @notice Thrown when a percentage value is invalid (e.g., > 100%).
+/// @param percentage The invalid percentage provided (in basis points).
+error InvalidPercentage(uint256 percentage);
+
 // Reward errors
 /*
  * @notice Thrown when trying to add a token that already exists in the reward token list
@@ -297,6 +301,28 @@ error CooldownTooShortForSlashVote(uint256 newCooldownInterval, uint256 currentM
 /// @param currentCooldownInterval The current cooldown interval.
 error SlashVoteDurationTooLongForCooldown(uint256 newMaxSlashVoteDuration, uint256 currentCooldownInterval);
 
+/// @notice Thrown when slash vote duration is not shorter than the commission claim timelock.
+/// @param slashVoteDuration The proposed slash vote duration.
+/// @param commissionTimelock The current commission claim timelock.
+error SlashVoteDurationExceedsCommissionTimelock(uint256 slashVoteDuration, uint256 commissionTimelock);
+
+/// @notice Thrown when an address that is not the pending admin tries to accept admin role.
+/// @param caller The address of the unauthorized caller.
+/// @param validatorId The ID of the validator.
+error NotPendingAdmin(address caller, uint16 validatorId);
+
+/// @notice Thrown when trying to accept admin role for a validator with no pending admin.
+/// @param validatorId The ID of the validator.
+error NoPendingAdmin(uint16 validatorId);
+
+/// @notice Thrown when a validator tries to create more commission checkpoints than the allowed limit.
+/// @param validatorId The ID of the validator.
+/// @param max The maximum number of checkpoints allowed.
+error MaxCommissionCheckpointsExceeded(uint16 validatorId, uint256 max);
+
+/// @notice Thrown when attempting to prune all checkpoints from a validator's history, which is not allowed.
+error CannotPruneAllCheckpoints();
+
 /// @notice Thrown when an invalid interval is provided (e.g. zero)
 /// @param interval The invalid interval.
 error InvalidInterval(uint256 interval);
@@ -312,7 +338,6 @@ error ActionOnSlashedValidatorError(uint16 validatorId);
  * @param validatorId The ID of the validator that is not slashed.
  */
 error ValidatorNotSlashed(uint16 validatorId);
-
 
 /**
  * @notice Thrown when a function is not active.
