@@ -8212,6 +8212,150 @@ function testRewardAccrualOnlyStartsAfterRateIsSet() public {
         assertApproxEqAbs(earnedAfter, expectedNetRewards, 1, "Rewards should accrue only after rate is set");
     }
 
+    function testValidatorStateInvariants() public {
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+
+        // --- Setup ---
+        // We need new validators for this test to avoid interfering with other tests.
+        uint16 inactiveValidatorId = 2;
+        address inactiveAdmin = makeAddr("inactiveAdmin");
+
+        uint16 slashedValidatorId = 3;
+        address slashedAdmin = makeAddr("slashedAdmin");
+
+        // Add the new validators
+        vm.startPrank(admin);
+        validatorFacet.addValidator(
+            inactiveValidatorId,
+            DEFAULT_COMMISSION,
+            inactiveAdmin,
+            makeAddr("inactiveWithdraw"),
+            "l1_inactive", "l1_acc_inactive", address(0), 1_000_000e18
+        );
+        validatorFacet.addValidator(
+            slashedValidatorId,
+            DEFAULT_COMMISSION,
+            slashedAdmin,
+            makeAddr("slashedWithdraw"),
+            "l1_slashed", "l1_acc_slashed", address(0), 1_000_000e18
+        );
+        vm.stopPrank();
+
+        // --- Test Case 1: Validator set to INACTIVE by an admin ---
+        console2.log("Testing state for admin-set inactive validator...");
+
+        vm.startPrank(admin);
+        validatorFacet.setValidatorStatus(inactiveValidatorId, false); // Set to inactive
+        vm.stopPrank();
+
+        (PlumeStakingStorage.ValidatorInfo memory inactiveInfo,,) = validatorFacet.getValidatorInfo(inactiveValidatorId);
+
+        // Assertions for Inactive (but not Slashed) state
+        assertFalse(inactiveInfo.active, "Inactive validator should have active = false");
+        assertFalse(inactiveInfo.slashed, "Inactive validator should have slashed = false");
+        assertTrue(inactiveInfo.slashedAtTimestamp > 0, "Inactive validator should have a non-zero slashedAtTimestamp");
+
+        console2.log("-> State for admin-set inactive validator is correct.");
+
+        // --- Test Case 2: Validator becomes inactive due to being SLASHED ---
+        console2.log("Testing state for slashed validator...");
+
+        // Setup for slashing: Have existing validators from setUp (0 and 1) vote to slash validator 3.
+        // Validator 0 admin is `validatorAdmin` (from setUp)
+        // Validator 1 admin is `user2` (from setUp)
+
+        vm.startPrank(validatorAdmin);
+        validatorFacet.voteToSlashValidator(slashedValidatorId, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        // There are 3 active validators (0, 1, 3). Two votes are needed for unanimity among the others.
+        // This second vote should trigger the auto-slash.
+        validatorFacet.voteToSlashValidator(slashedValidatorId, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        (PlumeStakingStorage.ValidatorInfo memory slashedInfo,,) = validatorFacet.getValidatorInfo(slashedValidatorId);
+
+        // Assertions for Slashed state
+        assertFalse(slashedInfo.active, "Slashed validator should have active = false");
+        assertTrue(slashedInfo.slashed, "Slashed validator should have slashed = true");
+        assertTrue(slashedInfo.slashedAtTimestamp > 0, "Slashed validator should have a non-zero slashedAtTimestamp");
+
+        console2.log("-> State for slashed validator is correct.");
+    }
+
+
+ function testValidatorStateInvariants_full() public {
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+
+        // --- Setup ---
+        // We need new validators for this test to avoid interfering with other tests.
+        uint16 inactiveValidatorId = 2;
+        address inactiveAdmin = makeAddr("inactiveAdmin");
+
+        uint16 slashedValidatorId = 3;
+        address slashedAdmin = makeAddr("slashedAdmin");
+
+        // Add the new validators
+        vm.startPrank(admin);
+        validatorFacet.addValidator(
+            inactiveValidatorId,
+            DEFAULT_COMMISSION,
+            inactiveAdmin,
+            makeAddr("inactiveWithdraw"),
+            "l1_inactive", "l1_acc_inactive", address(0), 1_000_000e18
+        );
+        validatorFacet.addValidator(
+            slashedValidatorId,
+            DEFAULT_COMMISSION,
+            slashedAdmin,
+            makeAddr("slashedWithdraw"),
+            "l1_slashed", "l1_acc_slashed", address(0), 1_000_000e18
+        );
+        vm.stopPrank();
+
+        // --- Test Case 1: Validator set to INACTIVE by an admin ---
+        console2.log("Testing state for admin-set inactive validator...");
+
+        vm.startPrank(admin);
+        validatorFacet.setValidatorStatus(inactiveValidatorId, false); // Set to inactive
+        vm.stopPrank();
+
+        (PlumeStakingStorage.ValidatorInfo memory inactiveInfo,,) = validatorFacet.getValidatorInfo(inactiveValidatorId);
+
+        // Assertions for Inactive (but not Slashed) state
+        assertFalse(inactiveInfo.active, "Inactive validator should have active = false");
+        assertFalse(inactiveInfo.slashed, "Inactive validator should have slashed = false");
+        assertTrue(inactiveInfo.slashedAtTimestamp > 0, "Inactive validator should have a non-zero slashedAtTimestamp");
+
+        console2.log("-> State for admin-set inactive validator is correct.");
+
+        // --- Test Case 2: Validator becomes inactive due to being SLASHED ---
+        console2.log("Testing state for slashed validator...");
+
+        // Setup for slashing: Have existing validators from setUp (0 and 1) vote to slash validator 3.
+        // Validator 0 admin is `validatorAdmin` (from setUp)
+        // Validator 1 admin is `user2` (from setUp)
+
+        vm.startPrank(validatorAdmin);
+        validatorFacet.voteToSlashValidator(slashedValidatorId, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        // There are 3 active validators (0, 1, 3). Two votes are needed for unanimity among the others.
+        // This second vote should trigger the auto-slash.
+        validatorFacet.voteToSlashValidator(slashedValidatorId, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        (PlumeStakingStorage.ValidatorInfo memory slashedInfo,,) = validatorFacet.getValidatorInfo(slashedValidatorId);
+
+        // Assertions for Slashed state
+        assertFalse(slashedInfo.active, "Slashed validator should have active = false");
+        assertTrue(slashedInfo.slashed, "Slashed validator should have slashed = true");
+        assertTrue(slashedInfo.slashedAtTimestamp > 0, "Slashed validator should have a non-zero slashedAtTimestamp");
+
+        console2.log("-> State for slashed validator is correct.");
+    }
 
 
 // Helper functions for creating single-element arrays for function calls

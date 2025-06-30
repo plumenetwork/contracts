@@ -124,15 +124,8 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         for (uint256 i = 0; i < validatorIds.length; i++) {
             uint16 validatorId = validatorIds[i];
 
-            // For slashed validators or inactive validators with timestamp, calculate earned rewards (lazy settlement)
-            // For inactive validators without timestamp, just use stored rewards
-            if (!$.validators[validatorId].active && $.validators[validatorId].slashedAtTimestamp == 0) {
-                totalEarned += $.userRewards[user][validatorId][token];
-                continue;
-            }
-
-            // For active validators, slashed validators, and inactive validators with timestamp, calculate earned
-            // rewards
+            // _earned correctly handles all validator states (active, inactive, slashed)
+            // by calling calculateRewardsWithCheckpoints, which respects the slashedAtTimestamp.
             totalEarned += _earned(user, token, validatorId);
         }
 
@@ -614,12 +607,8 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         for (uint256 i = 0; i < validatorIds.length; i++) {
             uint16 validatorId = validatorIds[i];
 
-            // Same logic as state-modifying version but using view functions
-            if (!$.validators[validatorId].active && $.validators[validatorId].slashedAtTimestamp == 0) {
-                totalEarned += $.userRewards[user][validatorId][token];
-                continue;
-            }
-
+            // _earnedView correctly handles all validator states (active, inactive, slashed)
+            // by calling calculateRewardsWithCheckpointsView, which respects the slashedAtTimestamp.
             totalEarned += _earnedView(user, token, validatorId);
         }
 

@@ -144,38 +144,20 @@ library PlumeRewardLogic {
     ) internal {
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId]; // Get validator info
 
-        // --- BEGIN INACTIVE CHECK ---
+        // --- UNIFIED INACTIVE/SLASHED CHECK ---
         if (!validator.active) {
-            // For inactive validators, just update the timestamp to prevent accrual during inactive periods
-            // No rewards or commission should accrue while inactive
+            // For any inactive validator (whether manually set or slashed), no further rewards or commission accrue.
+            // We just update the timestamp to the current time to mark that the state is "settled" up to now.
             $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
-            return;
-        }
-        // --- END INACTIVE CHECK ---
 
-        // --- BEGIN SLASH CHECK ---
-        if (validator.slashed) {
-            uint256 slashTs = validator.slashedAtTimestamp;
-            uint256 currentLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
-
-            // Defensive check: slashed validators should have zero totalStaked
-            uint256 totalStaked = $.validatorTotalStaked[validatorId];
-            if (totalStaked > 0) {
-                // This should never happen if slashing logic is correct
+            // Add a defensive check here: A slashed validator should never have any stake. If it does, something is
+            // wrong with the slashing logic itself.
+            if (validator.slashed && $.validatorTotalStaked[validatorId] > 0) {
                 revert InternalInconsistency("Slashed validator has non-zero totalStaked");
             }
-
-            // For slashed validators, ensure timestamp is never updated beyond slash timestamp
-            // This preserves the reward state for user calculations
-            if (currentLastUpdateTime < slashTs) {
-                // Only update to slash timestamp if we haven't reached it yet
-                // This should only happen if settlement wasn't done properly during slashing
-                $.validatorLastUpdateTimes[validatorId][token] = slashTs;
-            }
-            // Never update beyond slash timestamp for slashed validators
             return;
         }
-        // --- END SLASH CHECK ---
+        // --- END UNIFIED CHECK ---
 
         uint256 totalStaked = $.validatorTotalStaked[validatorId];
         uint256 oldLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
