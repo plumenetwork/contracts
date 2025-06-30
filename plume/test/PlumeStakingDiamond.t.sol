@@ -8358,6 +8358,101 @@ function testRewardAccrualOnlyStartsAfterRateIsSet() public {
     }
 
 
+    function test_RestakeFromDifferentValidatorCooldown() public {
+
+        StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+
+
+        // --- Setup ---
+        // Create two validators: Validator A (the "at-risk" validator)
+        // and Validator B (the "safe harbor").
+        uint16 validatorA = 2;
+
+        // 7. Setup test validators
+        // Add validator 0 (DEFAULT_VALIDATOR_ID)
+                vm.startPrank(admin);
+
+
+        address validatorAdmin2 = makeAddr("validatorAdmin2");
+        address validatorAdmin3 = makeAddr("validatorAdmin3");
+
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            validatorA,
+            DEFAULT_COMMISSION,
+            validatorAdmin2,
+            validatorAdmin2,
+            "0x123",
+            "0x456",
+            address(0x1234),
+            1_000_000e18
+        );
+
+
+
+        uint16 validatorB = 3;
+        ValidatorFacet(address(diamondProxy)).addValidator(
+            validatorB,
+            DEFAULT_COMMISSION,
+            validatorAdmin3,
+            validatorAdmin3,
+            "0x123",
+            "0x456",
+            address(0x1234),
+            1_000_000e18
+        );
+                vm.stopPrank();
+
+        // Create a staker with 100 PLUME.
+        address staker = makeAddr("staker");
+        vm.deal(staker, 100 ether);
+
+        // --- Action ---
+        vm.startPrank(staker);
+
+        // 1. Staker puts 100 PLUME into Validator A.
+        stakingFacet.stake{ value: 100 ether }(validatorA);
+        assertEq(stakingFacet.getUserValidatorStake(staker, validatorA), 100 ether, "Stake with A should be 100");
+
+        // 2. Staker initiates unstake from Validator A, moving the funds to cooldown.
+        // These funds are now in Validator A's risk pool for the duration of the cooldown.
+        stakingFacet.unstake(validatorA);
+        assertEq(stakingFacet.amountCooling(), 100 ether, "Amount in cooling should be 100");
+        assertEq(stakingFacet.getUserValidatorStake(staker, validatorA), 0, "Stake with A should now be 0");
+
+        // --- Exploit Attempt ---
+        // 3. Staker immediately attempts to restake the funds from Validator A's cooldown
+        //    pool into the "safe" Validator B. This should fail with our fix.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                InsufficientCooledAndParkedBalance.selector,
+                0, // available (only parked funds considered)
+                100 ether // requested
+            )
+        );
+        stakingFacet.restake(validatorB, 100 ether);
+
+        vm.stopPrank();
+
+      // --- Verification ---
+        // 4. Verify that the state remains unchanged after the failed exploit attempt by using public view functions.
+
+        // Check the user's global stake info. Cooled amount should still be 100 ether.
+        PlumeStakingStorage.StakeInfo memory stakerInfo = stakingFacet.stakeInfo(staker);
+        assertEq(stakerInfo.cooled, 100 ether, "Global cooled amount should be 100");
+        assertEq(stakerInfo.parked, 0, "Parked amount should be 0");
+        assertEq(stakerInfo.staked, 0, "Global staked amount should be 0");
+
+        // Check the specific cooldown entry for Validator A.
+        StakingFacet.CooldownView[] memory cooldowns = stakingFacet.getUserCooldowns(staker);
+        assertEq(cooldowns.length, 1, "There should be exactly one cooldown entry");
+        assertEq(cooldowns[0].validatorId, validatorA, "Cooldown should be for Validator A");
+        assertEq(cooldowns[0].amount, 100 ether, "Funds should remain in cooldown with A");
+
+        // No funds should have moved to Validator B.
+        assertEq(stakingFacet.getUserValidatorStake(staker, validatorB), 0, "Stake with B should be 0");
+    }
+
+
 // Helper functions for creating single-element arrays for function calls
 function _addrArr(address a) internal pure returns (address[] memory) {
     address[] memory arr = new address[](1);

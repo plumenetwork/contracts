@@ -278,99 +278,48 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert InvalidAmount(0);
         }
 
-        // Check total available funds: cooling + parked
-        uint256 coolingAmount = $.stakeInfo[user].cooled;
-        uint256 parkedAmount = $.stakeInfo[user].parked;
-        uint256 totalAvailable = coolingAmount + parkedAmount;
+        // --- SAFE VALIDATION (Check-Then-Act) ---
+        // 1. CHECK: Use view helpers to calculate the total funds that will be available
+        // for this operation without changing state. This prevents bugs from premature state changes.
+        uint256 coolingFromTarget = $.userValidatorCooldowns[user][validatorId].amount;
+        // _calculateTotalWithdrawableAmount is a VIEW function that includes parked funds + matured cooldowns.
+        uint256 withdrawableAmount = _calculateTotalWithdrawableAmount(user);
+        uint256 totalAvailable = coolingFromTarget + withdrawableAmount;
 
         if (totalAvailable < amount) {
             revert InsufficientCooledAndParkedBalance(totalAvailable, amount);
         }
 
-        // Process matured cooldowns to make funds available for withdrawal
-        _processMaturedCooldowns(user);
+        // --- EXECUTION (Act) ---
+        // 2. ACT: Now that we have validated the operation is possible, we can safely change state.
+        _processMaturedCooldowns(user); // This moves matured cooldowns to the parked balance.
 
-        // Use comprehensive staking setup (includes validator validation, capacity validation and reward
-        // initialization)
+        // 3. SETUP & EXECUTE RESTAKE
         _performStakeSetup(user, validatorId, amount);
 
-        // Track validators that might need relationship cleanup
-        uint16[] memory validatorsToCheck = new uint16[]($.userValidators[user].length);
-        uint256 checkCount = 0;
-
-        // Prioritize fund usage and update specific validator cooldowns
         uint256 fromCooled = 0;
         uint256 fromParked = 0;
         uint256 remaining = amount;
 
-        // Priority 1: Use cooling amounts from validators
-        // First try the target validator, then other validators
-        uint16[] memory userAssociatedValidators = $.userValidators[user];
-
-        // Try target validator first
-        if (remaining > 0) {
-            PlumeStakingStorage.CooldownEntry storage targetEntry = $.userValidatorCooldowns[user][validatorId];
-            if (targetEntry.amount > 0) {
-                uint256 fromTarget = remaining > targetEntry.amount ? targetEntry.amount : remaining;
-                fromCooled += fromTarget;
-                remaining -= fromTarget;
-
-                // Use unified cooling removal function
-                _removeCoolingAmounts(user, validatorId, fromTarget);
-
-                // Target validator doesn't need cleanup since it's getting new stake
-            }
-        }
-
-        // Then try other validators if needed
-        if (remaining > 0) {
-            for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
-                if (remaining == 0) {
-                    break;
-                }
-
-                uint16 otherValidatorId = userAssociatedValidators[i];
-                if (otherValidatorId == validatorId) {
-                    continue;
-                } // Skip target validator (already processed)
-
-                PlumeStakingStorage.CooldownEntry storage otherEntry = $.userValidatorCooldowns[user][otherValidatorId];
-                if (otherEntry.amount > 0) {
-                    uint256 fromOther = remaining > otherEntry.amount ? otherEntry.amount : remaining;
-                    fromCooled += fromOther;
-                    remaining -= fromOther;
-
-                    // Use unified cooling removal function
-                    _removeCoolingAmounts(user, otherValidatorId, fromOther);
-
-                    // Track this validator for potential cleanup if cooling amount became 0
-                    if ($.userValidatorCooldowns[user][otherValidatorId].amount == 0) {
-                        validatorsToCheck[checkCount] = otherValidatorId;
-                        checkCount++;
-                    }
-                }
-            }
+        // Priority 1: Use cooling amounts from the target validator only
+        if (remaining > 0 && coolingFromTarget > 0) {
+            uint256 useAmount = remaining > coolingFromTarget ? coolingFromTarget : remaining;
+            fromCooled = useAmount;
+            remaining -= useAmount;
+            _removeCoolingAmounts(user, validatorId, useAmount);
         }
 
         // Priority 2: Use from parked amount if needed
         if (remaining > 0) {
-            // IMPROVED: Safety check before using parked funds
-            uint256 currentParkedAmount = $.stakeInfo[user].parked;
-            if (remaining > currentParkedAmount) {
+            uint256 currentParked = $.stakeInfo[user].parked;
+            if (remaining > currentParked) {
+                // This should not be reachable if the initial validation was correct.
                 revert InternalInconsistency("Insufficient parked funds for restake allocation");
             }
-
             fromParked = remaining;
-            remaining = 0;
             _removeParkedAmounts(user, fromParked);
         }
 
-        // Clean up validator relationships for validators where cooling became 0
-        for (uint256 i = 0; i < checkCount; i++) {
-            PlumeValidatorLogic.removeStakerFromValidator($, user, validatorsToCheck[i]);
-        }
-
-        // Emit events with proper fund source breakdown
         emit Staked(user, validatorId, amount, fromCooled, fromParked, 0);
     }
 
