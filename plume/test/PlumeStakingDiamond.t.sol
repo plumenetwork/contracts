@@ -8453,6 +8453,82 @@ function testRewardAccrualOnlyStartsAfterRateIsSet() public {
     }
 
 
+ function test_FinalizeCommissionClaim_SlashedDuringTimelock() public {
+
+
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+        StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+        RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+        // --- Setup ---
+        uint16 maliciousValidatorId = 2;
+        address validatorAdmin = makeAddr("validatorAdmin");
+        address validatorAdmin2 = makeAddr("validatorAdmin2");
+
+      // Add the validator we are going to slash
+        vm.startPrank(admin);
+        validatorFacet.addValidator(
+            maliciousValidatorId,
+            DEFAULT_COMMISSION,
+            validatorAdmin2,
+            validatorAdmin2,
+            "l1_val",
+            "l1_acc",
+            address(0),
+            1_000_000e18
+        );
+        vm.stopPrank();
+
+
+
+        // Stake to the validator
+        address staker = makeAddr("staker");
+        vm.deal(staker, 100 ether);
+        vm.startPrank(staker);
+        stakingFacet.stake{value: 100 ether}(maliciousValidatorId);
+        vm.stopPrank();
+
+        // Warp time forward to let a good amount of commission accrue
+        vm.warp(block.timestamp + 30 days);
+
+        // --- Action ---
+        // 1. Validator admin requests the commission claim. This starts the 7-day timelock.
+        vm.startPrank(validatorAdmin2);
+        validatorFacet.requestCommissionClaim(maliciousValidatorId, address(pUSD));
+        vm.stopPrank();
+
+        // 2. Warp time forward partway through the timelock.
+        vm.warp(block.timestamp + 3 days);
+
+        // 3. Slash the validator. We have other validators vote for the slash.
+        // In the base test setup, we have default validator admins for validators 0 and 1.
+        vm.startPrank(validatorAdmin); 
+        validatorFacet.voteToSlashValidator(maliciousValidatorId, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        vm.startPrank(user2); // Admin for validator 1
+        validatorFacet.voteToSlashValidator(maliciousValidatorId, block.timestamp + 1 days);
+        vm.stopPrank();
+
+        // Check that the validator is now slashed
+        (PlumeStakingStorage.ValidatorInfo memory info,,) = validatorFacet.getValidatorInfo(maliciousValidatorId);
+        assertTrue(info.slashed, "Validator should be slashed");
+
+        // 4. Warp time forward past the original 7-day timelock completion date.
+        vm.warp(block.timestamp + 5 days); // Total of 3 + 5 = 8 days passed since request
+
+        // --- Exploit Attempt ---
+        // 5. The now-slashed validator admin attempts to finalize the claim.
+        // This should fail because the slash happened before the timelock completed.
+        vm.startPrank(validatorAdmin2);
+        vm.expectRevert(abi.encodeWithSelector(ValidatorInactive.selector, maliciousValidatorId));
+
+        validatorFacet.finalizeCommissionClaim(maliciousValidatorId, address(pUSD));
+        vm.stopPrank();
+    }
+
+
+
 // Helper functions for creating single-element arrays for function calls
 function _addrArr(address a) internal pure returns (address[] memory) {
     address[] memory arr = new address[](1);

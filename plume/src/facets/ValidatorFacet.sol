@@ -552,21 +552,25 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert NoPendingClaim(validatorId, token);
         }
 
-        // FIXED: Allow claiming commission that was requested BEFORE slashing
-        // If validator is slashed, only allow claims requested before the slash timestamp
-        if (validator.slashed && claim.requestTimestamp >= validator.slashedAtTimestamp) {
+        uint256 readyTimestamp = claim.requestTimestamp + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK;
+
+        // First, check if the timelock has passed from the perspective of the current block.
+        if (block.timestamp < readyTimestamp) {
+            revert ClaimNotReady(validatorId, token, readyTimestamp);
+        }
+
+        // --- REVISED SLASHING CHECK ---
+        // If the validator is slashed, the claim is only considered valid if its timelock was
+        // fully completed BEFORE the slash occurred. This invalidates any pending claims.
+        if (validator.slashed && readyTimestamp >= validator.slashedAtTimestamp) {
             revert ValidatorInactive(validatorId);
         }
 
-        // For non-slashed validators, require active status
+        // For a non-slashed validator, simply require it to be active to finalize a claim.
         if (!validator.slashed && !validator.active) {
             revert ValidatorInactive(validatorId);
         }
 
-        uint256 readyTimestamp = claim.requestTimestamp + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK;
-        if (block.timestamp < readyTimestamp) {
-            revert ClaimNotReady(validatorId, token, readyTimestamp);
-        }
         uint256 amount = claim.amount;
         address recipient = claim.recipient;
         // Clear pending claim
