@@ -676,7 +676,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Check 5: Voter hasn't already voted recently (check existing vote expiration)
         uint256 currentVoteExpiration = $.slashingVotes[maliciousValidatorId][voterValidatorId];
-        if (currentVoteExpiration >= block.timestamp) {
+        if (currentVoteExpiration > block.timestamp) {
             revert AlreadyVotedToSlash(maliciousValidatorId, voterValidatorId);
         }
 
