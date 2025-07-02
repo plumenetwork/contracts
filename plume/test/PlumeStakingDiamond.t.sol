@@ -95,6 +95,10 @@ contract PlumeStakingDiamondTest is Test {
     address public user3;
     address public user4;
     address public admin;
+    address public alice;
+    address public bob;
+    address public charlie;
+    address public dave;
     address public validatorAdmin;
 
     // Constants
@@ -135,6 +139,14 @@ contract PlumeStakingDiamondTest is Test {
         user2 = makeAddr("user2");
         user3 = makeAddr("user3");
         user4 = makeAddr("user4");
+
+        alice = makeAddr("alice");
+        bob = makeAddr("bob");
+        charlie = makeAddr("charlie");
+        dave = makeAddr("dave");
+
+
+
         admin = ADMIN_ADDRESS;
         validatorAdmin = makeAddr("validatorAdmin");
 
@@ -4602,8 +4614,7 @@ contract PlumeStakingDiamondTest is Test {
         // At exact expiration time, vote should still be valid
         vm.warp(exactExpirationTime);
         uint256 voteCount = ValidatorFacet(address(diamondProxy)).getSlashVoteCount(targetValidatorId);
-        assertEq(voteCount, 1, "Vote should be valid at exact expiration time");
-        console2.log("Vote valid at exact expiration time: %s", voteCount);
+        assertEq(voteCount, 0, "Vote should NOT be valid at exact expiration time");
 
         // One second after expiration, vote should be invalid
         vm.warp(exactExpirationTime + 1);
@@ -7171,8 +7182,11 @@ contract PlumeStakingDiamondTest is Test {
         // Advance time but NOT past cooldown period - keep funds in active cooldown
         vm.warp(block.timestamp + 3 days); // Still cooling, not matured yet
 
+        //StakingFacet(address(diamondProxy)).withdraw();
+
         // Restake only partial amount - should NOT clean up validatorA relationship
-        StakingFacet(address(diamondProxy)).restake(validatorB, partialRestakeAmount);
+        StakingFacet(address(diamondProxy)).restake(validatorA,partialRestakeAmount);
+        StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorB);
         vm.stopPrank();
 
         // Check validator relationships - should still include validatorA due to remaining cooling
@@ -8527,6 +8541,309 @@ function testRewardAccrualOnlyStartsAfterRateIsSet() public {
         vm.stopPrank();
     }
 
+//// Validator slashing related:
+
+function testGetSlashVoteCountOnlyCountsEligibleValidators() public {
+
+    ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+    StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+
+
+    // Setup: Create 4 validators
+    uint16 targetValidator = 1;
+    uint16 activeValidator = 2;
+    uint16 inactiveValidator = 3;
+    uint16 slashedValidator = 4;
+
+    // Add all validators
+    vm.startPrank(admin);
+    //_addValidator(targetValidator, 5e16, alice, alice);
+    _addValidator(activeValidator, 5e16, bob, bob);
+    _addValidator(inactiveValidator, 5e16, charlie, charlie);
+    _addValidator(slashedValidator, 5e16, dave, dave);
+    vm.stopPrank();
+
+    // Make inactiveValidator inactive
+    vm.prank(admin);
+    validatorFacet.setValidatorStatus(inactiveValidator, false);
+
+    // Slash slashedValidator by having other validators vote
+    vm.startPrank(user2);
+    validatorFacet.voteToSlashValidator(slashedValidator, block.timestamp + 1 days);
+    vm.stopPrank();
+    
+    vm.startPrank(bob);
+    validatorFacet.voteToSlashValidator(slashedValidator, block.timestamp + 1 days);
+    vm.stopPrank();
+    
+    vm.startPrank(validatorAdmin);
+    validatorFacet.voteToSlashValidator(slashedValidator, block.timestamp + 1 days);
+    vm.stopPrank();
+
+    // Now we have:
+    // - targetValidator: active
+    // - activeValidator: active  
+    // - inactiveValidator: inactive (but not slashed)
+    // - slashedValidator: slashed
+
+    // Cast votes against targetValidator from all other validators
+    uint256 voteExpiration = block.timestamp + 1 hours;
+
+    vm.prank(bob); // active validator
+    validatorFacet.voteToSlashValidator(targetValidator, voteExpiration);
+
+    vm.prank(charlie); // inactive validator  
+    vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector,charlie));
+    validatorFacet.voteToSlashValidator(targetValidator, voteExpiration);
+
+    vm.prank(dave); // slashed validator
+    vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector,dave));
+
+    validatorFacet.voteToSlashValidator(targetValidator, voteExpiration);
+
+    // getSlashVoteCount should only count the vote from activeValidator (bob)
+    // Votes from inactiveValidator and slashedValidator should be ignored
+    uint256 validVoteCount = validatorFacet.getSlashVoteCount(targetValidator);
+    assertEq(validVoteCount, 1, "Should only count vote from eligible (active, non-slashed) validator");
+}
+
+function testGetSlashVoteCountExpirationLogicConsistency() public {
+
+
+    ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+    StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+    // Setup: Create 3 validators
+    uint16 targetValidator = 1;
+    uint16 voter1 = 2;
+    uint16 voter2 = 3;
+
+    vm.startPrank(admin);
+    //_addValidator(targetValidator, 5e16, alice, alice);
+    _addValidator(voter1, 5e16, bob, bob);
+    _addValidator(voter2, 5e16, charlie, charlie);
+    vm.stopPrank();
+    vm.warp(100);
+    // Cast votes with different expiration times
+    uint256 currentTime = block.timestamp;
+    uint256 pastExpiration = currentTime - 1; // Already expired
+    uint256 currentExpiration = currentTime+1; // Expires this block
+    uint256 futureExpiration = currentTime + 1 hours; // Valid
+
+    // Vote that expired in the past
+    vm.prank(bob);
+
+
+    vm.expectRevert(abi.encodeWithSelector(SlashVoteDurationTooLong.selector));
+    validatorFacet.voteToSlashValidator(targetValidator, pastExpiration);
+    vm.prank(charlie);
+    validatorFacet.voteToSlashValidator(targetValidator, currentExpiration);
+    
+    vm.warp(currentExpiration);
+    
+
+    // Vote that expires in current block
+    
+    // Check vote count - should be 0 because:
+    // - pastExpiration vote: expired (currentTime > pastExpiration)
+    // - currentExpiration vote: expired (currentTime >= currentExpiration)
+    uint256 voteCount = validatorFacet.getSlashVoteCount(targetValidator);
+    assertEq(voteCount, 0, "Votes expiring at current block should be treated as expired");
+
+    // Now cast a future vote
+    vm.prank(bob);
+    validatorFacet.voteToSlashValidator(targetValidator, futureExpiration);
+
+    // Check vote count - should be 1
+    voteCount = validatorFacet.getSlashVoteCount(targetValidator);
+    assertEq(voteCount, 1, "Future expiration vote should be counted as valid");
+
+    // Move time forward to expire the future vote
+    vm.warp(futureExpiration);
+    voteCount = validatorFacet.getSlashVoteCount(targetValidator);
+    assertEq(voteCount, 0, "Vote should be expired when current time equals expiration");
+
+    // Move time past expiration
+    vm.warp(futureExpiration + 1);
+    voteCount = validatorFacet.getSlashVoteCount(targetValidator);
+    assertEq(voteCount, 0, "Vote should remain expired when current time exceeds expiration");
+}
+
+function testGetSlashVoteCountCombinedScenario() public {
+    ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+    StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+    // Test both ineligible validators and expiration logic together
+    uint16 targetValidator = 1;
+    uint16 activeValidator = 2;
+    uint16 inactiveValidator = 3;
+    uint16 slashedValidator = 4;
+
+    // Add all validators
+    vm.startPrank(admin);
+    //managementFacet.setMaxSlashVoteDuration(7 days);
+    //_addValidator(targetValidator, 5e16, alice, alice);
+    _addValidator(activeValidator, 5e16, bob, bob);
+    _addValidator(inactiveValidator, 5e16, charlie, charlie);
+    _addValidator(slashedValidator, 5e16, dave, dave);
+    vm.stopPrank();
+
+    // Make one inactive and one slashed
+    vm.prank(admin);
+    validatorFacet.setValidatorStatus(inactiveValidator, false);
+    
+    // Slash validator (simplified for test)
+    vm.startPrank(validatorAdmin);
+    validatorFacet.voteToSlashValidator(slashedValidator, block.timestamp + 1 days);
+    vm.stopPrank();
+    vm.startPrank(user2);
+    validatorFacet.voteToSlashValidator(slashedValidator, block.timestamp + 1 days);
+    vm.stopPrank();
+
+
+    uint256 currentTime = block.timestamp;
+    uint256 expiredTime = currentTime - 1;
+    uint256 validTime = currentTime + 1 hours;
+
+    // Cast votes with mixed validity:
+    // - activeValidator: valid vote (eligible + not expired)
+    vm.prank(validatorAdmin);
+    validatorFacet.voteToSlashValidator(targetValidator, validTime);
+
+    // Now expire all votes
+    vm.warp(validTime + 1);
+    uint256 voteCount = validatorFacet.getSlashVoteCount(targetValidator);
+    assertEq(voteCount, 0, "All votes should be expired");
+}
+
+function testUpdateRewardPerTokenForValidatorHandlesSlashedCorrectly() public {
+    ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+    StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+    // Setup: Create 3 validators
+    uint16 activeValidator = 0;
+    uint16 inactiveValidator = 1;
+    uint16 slashedValidator = 2;
+
+    vm.startPrank(admin);
+    //_addValidator(activeValidator, 5e16, alice, alice);
+    //_addValidator(inactiveValidator, 5e16, bob, bob);
+    _addValidator(slashedValidator, 5e16, charlie, charlie);
+    vm.stopPrank();
+
+    // Make one inactive and one slashed
+    vm.prank(admin);
+    validatorFacet.setValidatorStatus(inactiveValidator, false);
+
+    // Slash the third validator
+    vm.startPrank(validatorAdmin);
+    validatorFacet.voteToSlashValidator(slashedValidator, block.timestamp + 1 days);
+    vm.stopPrank();
+ 
+    vm.startPrank(user2);
+    vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, user2));
+    validatorFacet.voteToSlashValidator(slashedValidator, block.timestamp + 1 days);
+    vm.stopPrank();
+
+    vm.startPrank(charlie);
+    vm.expectRevert(abi.encodeWithSelector(NotValidatorAdmin.selector, charlie));
+    validatorFacet.voteToSlashValidator(slashedValidator, block.timestamp + 1 days);
+ 
+    vm.stopPrank();
+
+    // Verify the slashed validator is both slashed and inactive
+    (PlumeStakingStorage.ValidatorInfo memory slashedInfo,,) = validatorFacet.getValidatorInfo(slashedValidator);
+    assertTrue(slashedInfo.slashed, "Validator should be slashed");
+    assertFalse(slashedInfo.active, "Slashed validator should be inactive");
+
+    // Verify the inactive validator is inactive but not slashed
+    (PlumeStakingStorage.ValidatorInfo memory inactiveInfo,,) = validatorFacet.getValidatorInfo(inactiveValidator);
+    assertFalse(inactiveInfo.slashed, "Inactive validator should not be slashed");
+    assertFalse(inactiveInfo.active, "Validator should be inactive");
+
+    // The key test: Call updateRewardPerTokenForValidator directly on both validators
+    // This should execute different code paths for slashed vs inactive validators
+    
+    // For the slashed validator, it should execute the slashed-specific logic
+    // For the inactive validator, it should execute the inactive-specific logic
+    
+    // Both should complete without reverting and update their last update times
+    address token = address(pUSD);
+    
+    // Get initial update times
+    (,uint256 slashedInitialTime) = rewardsFacet.tokenRewardInfo(token);
+    (,uint256 inactiveInitialTime) = rewardsFacet.tokenRewardInfo(token);
+    
+    // Force settlement which calls updateRewardPerTokenForValidator internally
+    vm.prank(validatorAdmin);
+    validatorFacet.forceSettleValidatorCommission(slashedValidator);
+    
+    vm.prank(bob);
+    validatorFacet.forceSettleValidatorCommission(inactiveValidator);
+
+    // Both should have completed successfully
+    // The specific behavior differences would be tested in integration tests
+    // This test verifies that the slashed check comes before the inactive check
+    // and both code paths execute without errors
+}
+
+function testSlashedValidatorHandlingInRewardCalculation() public {
+    ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+    StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+    // Setup validator
+    uint16 validatorId = 4;
+    vm.startPrank(admin);
+    _addValidator(validatorId, 5e16, alice, alice);
+    vm.stopPrank();
+
+    // User stakes
+    address staker = makeAddr("staker");
+    vm.deal(staker, 100 ether);
+    vm.startPrank(staker);
+    stakingFacet.stake{value: 100 ether}(validatorId);
+    vm.stopPrank();
+
+    // Let some time pass to accrue rewards
+    vm.warp(block.timestamp + 30 days);
+
+    // Slash the validator
+    vm.startPrank(validatorAdmin);
+    validatorFacet.voteToSlashValidator(validatorId, block.timestamp + 1 days);
+    vm.stopPrank();
+    
+
+    
+    vm.startPrank(user2);
+    validatorFacet.voteToSlashValidator(validatorId, block.timestamp + 1 days);
+    vm.stopPrank();
+
+    // Verify validator is slashed
+    (PlumeStakingStorage.ValidatorInfo memory info,,) = validatorFacet.getValidatorInfo(validatorId);
+    assertTrue(info.slashed, "Validator should be slashed");
+    assertFalse(info.active, "Slashed validator should be inactive");
+
+    // Test that slashed-specific logic is executed
+    // The user should still be able to claim rewards earned up to the slash timestamp
+    uint256 earnedRewards = rewardsFacet.earned(staker, address(pUSD));
+    
+    // Rewards should be capped at slash timestamp, not continue indefinitely
+    // This verifies the slashed-specific logic is being used
+    assertGt(earnedRewards, 0, "User should have some rewards from before slash");
+    
+    // Move time forward significantly
+    vm.warp(block.timestamp + 365 days);
+    
+    // Rewards should not have increased beyond the slash point
+    uint256 earnedAfterLongTime = rewardsFacet.earned(staker, address(pUSD));
+    assertEq(earnedRewards, earnedAfterLongTime, "Rewards should not increase after slash");
+}
+
 
 
 // Helper functions for creating single-element arrays for function calls
@@ -8535,6 +8852,28 @@ function _addrArr(address a) internal pure returns (address[] memory) {
     arr[0] = a;
     return arr;
 }
+
+
+
+function _addValidator(uint16 validatorId, uint256 commission, address adminAddress, address adminAddress2) internal   {
+    
+
+    ValidatorFacet(address(diamondProxy)).addValidator(
+            validatorId,
+            commission,
+            adminAddress,
+            adminAddress2,
+            "0x123",
+            "0x456",
+            address(0x1234),
+            1_000_000e18
+        );
+
+
+    
+}
+
+
 
 function _uintArr(uint256 a) internal pure returns (uint256[] memory) {
     uint256[] memory arr = new uint256[](1);

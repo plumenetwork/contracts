@@ -144,20 +144,26 @@ library PlumeRewardLogic {
     ) internal {
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId]; // Get validator info
 
-        // --- UNIFIED INACTIVE/SLASHED CHECK ---
-        if (!validator.active) {
-            // For any inactive validator (whether manually set or slashed), no further rewards or commission accrue.
+        // --- REORDERED SLASHED/INACTIVE CHECKS ---
+        // Check for slashed state FIRST since slashed validators are also inactive
+        if (validator.slashed) {
+            // For slashed validators, no further rewards or commission accrue.
             // We just update the timestamp to the current time to mark that the state is "settled" up to now.
             $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
 
-            // Add a defensive check here: A slashed validator should never have any stake. If it does, something is
+            // Add a defensive check: A slashed validator should never have any stake. If it does, something is
             // wrong with the slashing logic itself.
-            if (validator.slashed && $.validatorTotalStaked[validatorId] > 0) {
+            if ($.validatorTotalStaked[validatorId] > 0) {
                 revert InternalInconsistency("Slashed validator has non-zero totalStaked");
             }
             return;
+        } else if (!validator.active) {
+            // For inactive (but not slashed) validators, no further rewards or commission accrue.
+            // We just update the timestamp to the current time to mark that the state is "settled" up to now.
+            $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
+            return;
         }
-        // --- END UNIFIED CHECK ---
+        // --- END REORDERED CHECKS ---
 
         uint256 totalStaked = $.validatorTotalStaked[validatorId];
         uint256 oldLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];

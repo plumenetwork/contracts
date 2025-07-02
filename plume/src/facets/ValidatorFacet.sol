@@ -1002,7 +1002,7 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert ValidatorDoesNotExist(validatorId);
         }
 
-        // Count only valid (non-expired) votes
+        // Count only valid (non-expired) votes from eligible validators
         uint256 validVoteCount = 0;
         uint256 currentTime = block.timestamp;
 
@@ -1014,8 +1014,17 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
 
             uint256 voteExpiration = $.slashingVotes[validatorId][voterValidatorId];
-            if (voteExpiration > 0 && voteExpiration >= currentTime) {
-                validVoteCount++;
+            if (voteExpiration > 0) {
+                // Check if the voting validator is eligible (active and not slashed)
+                PlumeStakingStorage.ValidatorInfo storage voterValidator = $.validators[voterValidatorId];
+                bool voterIsEligible = voterValidator.active && !voterValidator.slashed;
+                
+                // Check if vote has not expired (align with _cleanupExpiredVotes logic)
+                bool voteHasNotExpired = currentTime < voteExpiration;
+
+                if (voterIsEligible && voteHasNotExpired) {
+                    validVoteCount++;
+                }
             }
         }
 
