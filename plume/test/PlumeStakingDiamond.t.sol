@@ -8844,7 +8844,224 @@ function testSlashedValidatorHandlingInRewardCalculation() public {
     assertEq(earnedRewards, earnedAfterLongTime, "Rewards should not increase after slash");
 }
 
+ function testAdminClear_DoesNotClearCooldownsMaturedBeforeSlash() public {
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+    StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
 
+
+
+    uint256 cooldownInterval = managementFacet.getCooldownInterval();
+        // 1. User stakes and then unstakes to start a cooldown
+        vm.startPrank(user1);
+        stakingFacet.stake{ value: 100e18 }(DEFAULT_VALIDATOR_ID);
+        stakingFacet.unstake(DEFAULT_VALIDATOR_ID, 100e18);
+        vm.stopPrank();
+
+        // 2. Time-travel PAST the cooldown period, so the funds are withdrawable
+        vm.warp(block.timestamp + cooldownInterval + 1 days);
+
+        // 3. Slash the validator
+        vm.prank(user2);
+        validatorFacet.voteToSlashValidator(DEFAULT_VALIDATOR_ID,block.timestamp + 1);
+
+        // 4. PRE-ASSERT: User's funds are withdrawable because cooldown matured before the slash
+        vm.prank(user1);
+        uint256 withdrawable = stakingFacet.amountWithdrawable();
+        assertEq(withdrawable, 100e18, "Pre-clear: Matured cooldown should be withdrawable");
+
+        // 5. Admin attempts to clear the user's record
+        vm.startPrank(admin);
+        managementFacet.adminClearValidatorRecord(user1, DEFAULT_VALIDATOR_ID);
+        vm.stopPrank();
+        
+        vm.prank(user1);
+        withdrawable = stakingFacet.amountWithdrawable();
+        // 6. POST-ASSERT: The user's withdrawable amount should be UNCHANGED
+        assertEq(
+            withdrawable,
+            100e18,
+            "Post-clear: Legitimate matured cooldown should not be cleared"
+        );
+
+        // 7. FINAL-ASSERT: The user can successfully withdraw their funds
+        vm.startPrank(user1);
+        uint256 balanceBefore = user1.balance;
+        stakingFacet.withdraw();
+        uint256 balanceAfter = user1.balance;
+        assertEq(balanceAfter - balanceBefore, 100e18, "User should have withdrawn their funds");
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Test Case: A user's cooldown would mature AFTER the validator is slashed.
+     * The admin cleanup function SHOULD clear this cooldown entry.
+     * The user's funds are considered lost.
+     */
+    function testAdminClear_ClearsCooldownsMaturingAfterSlash() public {
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+        StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+        RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+        ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+
+        // 1. User stakes and then unstakes to start a cooldown
+        vm.startPrank(user2);
+        stakingFacet.stake{ value: 100e18 }(DEFAULT_VALIDATOR_ID);
+        stakingFacet.unstake(DEFAULT_VALIDATOR_ID, 100e18);
+        vm.stopPrank();
+
+        // 2. Time-travel, but NOT past the cooldown period
+        vm.warp(block.timestamp + 1 days);
+
+        // 3. Slash the validator. The cooldown is still active.
+        vm.prank(user2);
+        validatorFacet.voteToSlashValidator(DEFAULT_VALIDATOR_ID,block.timestamp + 1 );
+
+        vm.prank(user2);
+        uint256 withdrawable = stakingFacet.amountWithdrawable();
+
+        // 4. PRE-ASSERT: User has no withdrawable funds, but has funds in cooling
+        assertEq(withdrawable, 0, "Pre-clear: Cooldown should not have matured");
+        PlumeStakingStorage.StakeInfo memory stakeInfo = stakingFacet.stakeInfo(user2);
+        uint256 userCooled = stakeInfo.cooled;
+        assertEq(userCooled, 100e18, "User should have 100e18 in cooling");
+
+        // 5. Admin attempts to clear the user's record
+        vm.startPrank(admin);
+        managementFacet.adminClearValidatorRecord(user2, DEFAULT_VALIDATOR_ID);
+        vm.stopPrank();
+
+        // 6. POST-ASSERT: The user's cooldown entry is cleared, and cooled balance is now 0.
+        stakeInfo = stakingFacet.stakeInfo(user2);
+        assertEq(stakeInfo.cooled, 0, "Post-clear: Cooled amount for slashed validator should be cleared");
+        vm.prank(user2);
+        withdrawable = stakingFacet.amountWithdrawable();
+        assertEq(
+            withdrawable,
+            0,
+            "Post-clear: User should have no withdrawable funds after cleanup"
+        );
+    }
+
+    /**
+     * @notice Test Revert: adminClearValidatorRecord should revert if the validator is not slashed.
+     */
+    function testRevert_AdminClearOnNonSlashedValidator() public {
+        ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(ValidatorNotSlashed.selector, DEFAULT_VALIDATOR_ID));
+        managementFacet.adminClearValidatorRecord(user1, DEFAULT_VALIDATOR_ID);
+    }
+
+    /*
+    ========================================================================================
+                                BATCH RECORD CLEARING TESTS
+    ========================================================================================
+    */
+
+    /**
+     * @notice Test Case: Batch clear on two users for the same slashed validator.
+     * - User1's cooldown matured BEFORE the slash (should NOT be cleared).
+     * - User2's cooldown matured AFTER the slash (SHOULD be cleared).
+     */
+    function testAdminBatchClear_HandlesMixedCooldownMaturities() public {
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+        StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+        RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+        ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+        uint256 cooldownInterval = managementFacet.getCooldownInterval();
+
+        // --- Setup User 1 (Cooldown Matures BEFORE Slash) ---
+        vm.startPrank(user1);
+        stakingFacet.stake{ value: 100e18 }(DEFAULT_VALIDATOR_ID);
+        stakingFacet.unstake(DEFAULT_VALIDATOR_ID, 100e18);
+        vm.stopPrank();
+
+        // --- Setup User 2 (Cooldown will Mature AFTER Slash) ---
+        vm.startPrank(user2);
+        stakingFacet.stake{ value: 200e18 }(DEFAULT_VALIDATOR_ID);
+        vm.stopPrank();
+
+        // --- Time-travel and Slash ---
+
+
+
+
+        // Warp time forward by half the cooldown period
+        vm.warp(block.timestamp + (cooldownInterval / 2));
+        
+        // User2 unstakes now. Their cooldown end time will be later than User1's.
+        vm.startPrank(user2);
+        stakingFacet.unstake(DEFAULT_VALIDATOR_ID, 200e18);
+        vm.stopPrank();
+
+        // Warp time forward again, so User1's cooldown is finished, but User2's is not.
+        vm.warp(block.timestamp + (cooldownInterval / 2) + 1 days);
+
+        // Slash the validator
+        vm.prank(user2);
+        validatorFacet.voteToSlashValidator(DEFAULT_VALIDATOR_ID, block.timestamp + 1 days);
+
+        vm.prank(user1);
+        uint256 withdrawable = stakingFacet.amountWithdrawable();
+
+        // --- PRE-ASSERT ---
+        // User1's cooldown is mature and predates the slash -> withdrawable
+        assertEq(withdrawable, 100e18, "Pre-batch: User1 should have withdrawable funds");
+
+
+        vm.prank(user2);
+        withdrawable = stakingFacet.amountWithdrawable();
+
+        // User2's cooldown is not mature -> not withdrawable
+        assertEq(withdrawable, 0, "Pre-batch: User2 should have no withdrawable funds");
+        PlumeStakingStorage.StakeInfo memory stakeInfo = stakingFacet.stakeInfo(user2);
+        assertEq(stakeInfo.cooled, 200e18, "User2 should have funds in cooling");
+
+        // --- Admin performs batch clear ---
+        address[] memory usersToClear = new address[](2);
+        usersToClear[0] = user1;
+        usersToClear[1] = user2;
+        
+        vm.startPrank(admin);
+        managementFacet.adminBatchClearValidatorRecords(usersToClear, DEFAULT_VALIDATOR_ID);
+        vm.stopPrank();
+
+
+        
+
+        // --- POST-ASSERT ---
+        // User1's funds should remain untouched.
+        vm.prank(user1);
+        withdrawable = stakingFacet.amountWithdrawable();
+        assertEq(
+            withdrawable,
+            100e18,
+            "Post-batch: User1's legitimate cooldown should not be cleared"
+        );
+
+        // User2's cooled funds should be gone.
+        vm.prank(user2);
+        withdrawable = stakingFacet.amountWithdrawable();
+
+        stakeInfo = stakingFacet.stakeInfo(user2);
+        assertEq(stakeInfo.cooled, 0, "Post-batch: User2's lost cooldown should be cleared");
+        assertEq(
+            withdrawable,
+            0,
+            "Post-batch: User2 should still have no withdrawable funds"
+        );
+
+        // --- FINAL-ASSERT ---
+        // User1 can successfully withdraw their funds.
+        vm.startPrank(user1);
+        uint256 balanceBefore = user1.balance;
+        stakingFacet.withdraw();
+        uint256 balanceAfter = user1.balance;
+        assertEq(balanceAfter - balanceBefore, 100e18, "User1 should have withdrawn their funds after batch clear");
+        vm.stopPrank();
+    }
 
 // Helper functions for creating single-element arrays for function calls
 function _addrArr(address a) internal pure returns (address[] memory) {

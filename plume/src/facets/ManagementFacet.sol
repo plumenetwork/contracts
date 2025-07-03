@@ -400,7 +400,8 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
 
         uint256 userActiveStakeToClear = $.userValidatorStakes[user][slashedValidatorId].staked;
-        uint256 userCooledAmountToClear = $.userValidatorCooldowns[user][slashedValidatorId].amount;
+        PlumeStakingStorage.CooldownEntry storage cooldownEntry = $.userValidatorCooldowns[user][slashedValidatorId];
+        uint256 userCooledAmountToClear = cooldownEntry.amount;
 
         bool recordChanged = false;
 
@@ -417,15 +418,22 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
 
         if (userCooledAmountToClear > 0) {
-            delete $.userValidatorCooldowns[user][slashedValidatorId];
-            // Decrement user's global cooled amount
-            if ($.stakeInfo[user].cooled >= userCooledAmountToClear) {
-                $.stakeInfo[user].cooled -= userCooledAmountToClear;
-            } else {
-                $.stakeInfo[user].cooled = 0; // Should not happen
+            // This function should only clear funds considered lost to the slash.
+            // A cooldown is lost if it did NOT mature before the slash timestamp.
+            uint256 slashTimestamp = $.validators[slashedValidatorId].slashedAtTimestamp;
+            bool cooldownIsLost = cooldownEntry.cooldownEndTime >= slashTimestamp;
+
+            if (cooldownIsLost) {
+                delete $.userValidatorCooldowns[user][slashedValidatorId];
+                // Decrement user's global cooled amount
+                if ($.stakeInfo[user].cooled >= userCooledAmountToClear) {
+                    $.stakeInfo[user].cooled -= userCooledAmountToClear;
+                } else {
+                    $.stakeInfo[user].cooled = 0; // Should not happen
+                }
+                emit AdminClearedSlashedCooldown(user, slashedValidatorId, userCooledAmountToClear);
+                recordChanged = true;
             }
-            emit AdminClearedSlashedCooldown(user, slashedValidatorId, userCooledAmountToClear);
-            recordChanged = true;
         }
 
         if ($.userHasStakedWithValidator[user][slashedValidatorId] || recordChanged) {
@@ -457,11 +465,15 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert EmptyArray();
         }
 
+        uint256 slashTimestamp = $.validators[slashedValidatorId].slashedAtTimestamp;
+
         for (uint256 i = 0; i < users.length; i++) {
             address user = users[i];
             if (user != address(0)) {
                 uint256 userActiveStakeToClear = $.userValidatorStakes[user][slashedValidatorId].staked;
-                uint256 userCooledAmountToClear = $.userValidatorCooldowns[user][slashedValidatorId].amount;
+                PlumeStakingStorage.CooldownEntry storage cooldownEntry =
+                    $.userValidatorCooldowns[user][slashedValidatorId];
+                uint256 userCooledAmountToClear = cooldownEntry.amount;
                 bool recordActuallyChangedForThisUser = false;
 
                 if (userActiveStakeToClear > 0) {
@@ -477,15 +489,18 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
                 }
 
                 if (userCooledAmountToClear > 0) {
-                    delete $.userValidatorCooldowns[user][slashedValidatorId];
-                    // Decrement user's global cooled amount
-                    if ($.stakeInfo[user].cooled >= userCooledAmountToClear) {
-                        $.stakeInfo[user].cooled -= userCooledAmountToClear;
-                    } else {
-                        $.stakeInfo[user].cooled = 0;
+                    bool cooldownIsLost = cooldownEntry.cooldownEndTime >= slashTimestamp;
+                    if (cooldownIsLost) {
+                        delete $.userValidatorCooldowns[user][slashedValidatorId];
+                        // Decrement user's global cooled amount
+                        if ($.stakeInfo[user].cooled >= userCooledAmountToClear) {
+                            $.stakeInfo[user].cooled -= userCooledAmountToClear;
+                        } else {
+                            $.stakeInfo[user].cooled = 0;
+                        }
+                        emit AdminClearedSlashedCooldown(user, slashedValidatorId, userCooledAmountToClear);
+                        recordActuallyChangedForThisUser = true;
                     }
-                    emit AdminClearedSlashedCooldown(user, slashedValidatorId, userCooledAmountToClear);
-                    recordActuallyChangedForThisUser = true;
                 }
 
                 if ($.userHasStakedWithValidator[user][slashedValidatorId] || recordActuallyChangedForThisUser) {
