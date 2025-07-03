@@ -693,13 +693,62 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return $.validatorRewardRateCheckpoints[validatorId][token].length;
     }
 
+    /**
+     * @notice Calculates the last reward rate checkpoint index relevant to a user's settled rewards.
+     * @dev This function derives the index on-the-fly by searching the checkpoints array.
+     *      It is always accurate, even after checkpoints have been pruned.
+     * @param user The user address.
+     * @param validatorId The validator ID.
+     * @param token The reward token address.
+     * @return The index of the last relevant checkpoint. Returns 0 if no relevant checkpoint is found.
+     */
     function getUserLastCheckpointIndex(
         address user,
         uint16 validatorId,
         address token
     ) external view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        return $.userLastCheckpointIndex[user][validatorId][token];
+
+        // The user's last settled state is "as of" this timestamp.
+        uint256 lastUpdateTimestamp = $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token];
+
+        // If the user has never had a reward interaction, there is no relevant checkpoint.
+        if (lastUpdateTimestamp == 0) {
+            return 0;
+        }
+
+        PlumeStakingStorage.RateCheckpoint[] storage checkpoints = $.validatorRewardRateCheckpoints[validatorId][token];
+        uint256 len = checkpoints.length;
+
+        if (len == 0) {
+            return 0; // No checkpoints exist for this validator/token.
+        }
+
+        // Binary search to find the latest checkpoint with timestamp <= lastUpdateTimestamp
+        uint256 low = 0;
+        uint256 high = len - 1;
+        uint256 resultIndex = 0;
+        bool found = false;
+
+        while (low <= high) {
+            uint256 mid = low + (high - low) / 2;
+            if (checkpoints[mid].timestamp <= lastUpdateTimestamp) {
+                // This is a potential candidate. Store it and search for a later one.
+                resultIndex = mid;
+                found = true;
+                low = mid + 1;
+            } else {
+                // This checkpoint is too recent. Search earlier.
+                if (mid == 0) {
+                    // All checkpoints are after the user's last update.
+                    break;
+                }
+                high = mid - 1;
+            }
+        }
+
+        // If a suitable checkpoint was found, return its index. Otherwise, return 0.
+        return found ? resultIndex : 0;
     }
 
     function getRewardRateCheckpoint(

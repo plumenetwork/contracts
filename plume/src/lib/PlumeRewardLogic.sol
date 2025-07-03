@@ -122,11 +122,6 @@ library PlumeRewardLogic {
         $.userValidatorRewardPerTokenPaid[user][validatorId][token] =
             $.validatorRewardPerTokenCumulative[validatorId][token];
         $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token] = block.timestamp;
-
-        if ($.validatorRewardRateCheckpoints[validatorId][token].length > 0) {
-            $.userLastCheckpointIndex[user][validatorId][token] =
-                $.validatorRewardRateCheckpoints[validatorId][token].length - 1;
-        }
     }
 
     /**
