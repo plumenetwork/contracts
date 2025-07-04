@@ -436,7 +436,7 @@ contract PlumeStakingDiamondTest is Test {
         ); // <<< NEW acceptAdmin FUNCTION
 
         // Management Facet Selectors
-        bytes4[] memory managementSigs_Manual = new bytes4[](11); // Size updated
+        bytes4[] memory managementSigs_Manual = new bytes4[](12); // Size updated
         managementSigs_Manual[0] = bytes4(
             keccak256(bytes("setMinStakeAmount(uint256)"))
         );
@@ -476,6 +476,16 @@ contract PlumeStakingDiamondTest is Test {
                 bytes("pruneRewardRateCheckpoints(uint16,address,uint256)")
             )
         ); // New
+        managementSigs_Manual[11] = bytes4(
+            keccak256(
+                bytes("setMaxValidatorPercentage(uint256)")
+            )
+        ); // New
+    
+    
+    
+
+
 
         console2.log("Manual selectors initialized");
 
@@ -13358,6 +13368,40 @@ contract PlumeStakingDiamondTest is Test {
         assertEq(rewardsFacet.earned(user1, token2), 0);
     }
 
+
+    /**
+     * @notice Tests that the first staker is not incorrectly blocked when a
+     *         maxValidatorPercentage limit is active.
+     * @dev This test will FAIL with the buggy implementation and PASS with the fix.
+     */
+    function testStake_FirstStaker_SucceedsWithPercentageLimit() public {
+        // --- Setup ---
+        // 1. Set a restrictive validator percentage limit.
+        // With the bug, any stake would represent 100% and fail this check.
+        vm.deal(admin, 1e20);
+        uint256 maxPercentage = 2000; // 20%
+vm.startPrank(admin);
+        ManagementFacet(address(diamondProxy)).setMaxValidatorPercentage(maxPercentage);
+
+        // 2. Define stake details
+        uint256 stakeAmount = 100 ether;
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+
+        // --- Execution ---
+        // 3. The first user stakes. With the corrected logic, this should succeed
+        // because the percentage check is skipped when totalStaked was previously 0.
+        StakingFacet(address(diamondProxy)).stake{value: stakeAmount}(validatorId);
+        ManagementFacet(address(diamondProxy)).setMaxValidatorPercentage(maxPercentage);
+        // --- Assertion ---
+        // 4. Verify the stake was recorded successfully.
+        PlumeStakingStorage.StakeInfo memory userInfo = StakingFacet(address(diamondProxy)).stakeInfo(admin);
+        assertEq(userInfo.staked, stakeAmount, "First staker's amount should be correctly recorded");
+
+        uint256 totalStaked = StakingFacet(address(diamondProxy)).totalAmountStaked();
+        assertEq(totalStaked, stakeAmount, "Total staked amount should be correct after first stake");
+        vm.stopPrank();
+
+    }
 
 
     // Helper functions for creating single-element arrays for function calls

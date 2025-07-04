@@ -142,12 +142,14 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      * @param validatorId The validator ID to check
      */
     function _validateValidatorPercentage(
-        uint16 validatorId
+        uint16 validatorId, uint256 stakeAmount
     ) internal view {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
+        uint256 previousTotalStaked = $.totalStaked - stakeAmount;
+
         // Check if exceeding validator percentage limit
-        if ($.totalStaked > 0 && $.maxValidatorPercentage > 0) {
+        if (previousTotalStaked > 0 && $.maxValidatorPercentage > 0) {
             uint256 newDelegatedAmount = $.validators[validatorId].delegatedAmount;
             uint256 validatorPercentage = (newDelegatedAmount * 10_000) / $.totalStaked;
             if (validatorPercentage > $.maxValidatorPercentage) {
@@ -163,7 +165,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
      */
     function _validateCapacityLimits(uint16 validatorId, uint256 stakeAmount) internal view {
         _validateValidatorCapacity(validatorId, stakeAmount);
-        _validateValidatorPercentage(validatorId);
+        _validateValidatorPercentage(validatorId, stakeAmount);
     }
 
     /**
