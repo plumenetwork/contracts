@@ -11,9 +11,11 @@ import {
     InvalidAmount,
     InvalidUpdateType,
     NativeTransferFailed,
+    NoPendingAdmin,
     NoPendingClaim,
-    NotValidatorAdmin,
     NotActive,
+    NotPendingAdmin,
+    NotValidatorAdmin,
     PendingClaimExists,
     SlashConditionsNotMet,
     SlashVoteDurationTooLong,
@@ -30,6 +32,7 @@ import {
     ZeroAddress
 } from "../lib/PlumeErrors.sol";
 import {
+    AdminProposed,
     CommissionClaimFinalized,
     CommissionClaimRequested,
     SlashVoteCast,
@@ -196,11 +199,14 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         // Mark admin as assigned in the dedicated mapping
         $.isAdminAssigned[l2AdminAddress] = true;
 
-        // Initialize last update times for all reward tokens for this validator
+        // Initialize last update times and create initial checkpoints for all reward tokens
         address[] memory rewardTokens = $.rewardTokens;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
             address token = rewardTokens[i];
             $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
+            // The validator inherits the current global rate for this token.
+            uint256 currentGlobalRate = $.rewardRates[token];
+            PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, currentGlobalRate);
         }
 
         emit ValidatorAdded(
@@ -255,8 +261,48 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert ValidatorAlreadySlashed(validatorId);
         }
 
-        validator.active = newActiveStatus;
-        // $.validators[validatorId].slashed should remain false unless explicitly slashed
+        bool currentStatus = validator.active;
+
+        // If status is actually changing
+        if (currentStatus != newActiveStatus) {
+            address[] memory rewardTokens = $.rewardTokens;
+
+            // If going INACTIVE: settle validator commission and record timestamp
+            if (!newActiveStatus && currentStatus) {
+                // Settle commission for validator using current rates
+                PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
+
+                // Record when the validator became inactive (reuse slashedAtTimestamp field)
+                // This allows existing reward logic to cap rewards at this timestamp
+                validator.slashedAtTimestamp = block.timestamp;
+
+                // Create a zero-rate checkpoint for all reward tokens to signal inactivity start
+                for (uint256 i = 0; i < rewardTokens.length; i++) {
+                    PlumeRewardLogic.createRewardRateCheckpoint($, rewardTokens[i], validatorId, 0);
+                }
+
+                // NOTE: User rewards will be settled naturally when users interact
+                // (stake, unstake, claim, etc.) due to the timestamp cap in reward logic
+            }
+
+            // Update the status
+            validator.active = newActiveStatus;
+
+            // If going ACTIVE: reset timestamps and clear the timestamp cap
+            if (newActiveStatus && !currentStatus) {
+                // Create a new checkpoint to restore the reward rate, signaling activity resumes
+                for (uint256 i = 0; i < rewardTokens.length; i++) {
+                    address token = rewardTokens[i];
+                    $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
+                    uint256 currentGlobalRate = $.rewardRates[token];
+                    PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, currentGlobalRate);
+                }
+                // Clear the timestamp since validator is active again (unless actually slashed)
+                if (!validator.slashed) {
+                    validator.slashedAtTimestamp = 0;
+                }
+            }
+        }
 
         emit ValidatorStatusUpdated(validatorId, newActiveStatus, validator.slashed);
     }
@@ -287,24 +333,20 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         uint256 oldCommission = validator.commission;
 
-        // If the commission rate is actually changing, settle commissions with the old rate first.
-        if (oldCommission != newCommission) {
-            // Settle commissions accrued with the old rate up to this point.
-            PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
-
-            // Now update the validator's commission rate to the new rate.
-            validator.commission = newCommission;
-
-            // Create a checkpoint for the new commission rate.
-            // This records the new rate effective from this block.timestamp.
-            PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
-        } else {
-            // If commission is not changing, no need to settle or create new checkpoint.
-            // We can just ensure the validator's current commission is what's intended if it was somehow out of sync,
-            // though this path implies no change is requested.
-            // If validator.commission was already newCommission, this is a no-op.
-            validator.commission = newCommission;
+        // If the commission rate is the same, there's nothing to do.
+        if (oldCommission == newCommission) {
+            return;
         }
+
+        // Settle commissions accrued with the old rate up to this point.
+        PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
+
+        // Now update the validator's commission rate to the new rate.
+        validator.commission = newCommission;
+
+        // Create a checkpoint for the new commission rate.
+        // This records the new rate effective from this block.timestamp.
+        PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
 
         emit ValidatorCommissionSet(validatorId, oldCommission, newCommission);
     }
@@ -344,18 +386,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Update L2 Admin Address if provided and different
         if (newL2AdminAddress != address(0) && newL2AdminAddress != validator.l2AdminAddress) {
-            // Check if the new admin address is already assigned
-            if ($.isAdminAssigned[newL2AdminAddress]) {
-                revert AdminAlreadyAssigned(newL2AdminAddress);
-            }
-            address currentAdminAddress = validator.l2AdminAddress;
-            validator.l2AdminAddress = newL2AdminAddress;
-            // Update admin to ID mapping
-            delete $.adminToValidatorId[currentAdminAddress];
-            $.adminToValidatorId[newL2AdminAddress] = validatorId;
-            // Update the dedicated assignment mapping
-            $.isAdminAssigned[currentAdminAddress] = false;
-            $.isAdminAssigned[newL2AdminAddress] = true;
+            // This now becomes a proposal, not a direct change.
+            // The check for whether the new admin is already assigned moves to acceptAdmin.
+            $.pendingAdmins[validatorId] = newL2AdminAddress;
+            emit AdminProposed(validatorId, newL2AdminAddress);
         }
 
         // Update L2 Withdraw Address if provided and different
@@ -384,10 +418,12 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
 
         // Emit the correct event with old and new values
+        // Note: The newL2AdminAddress in this event will reflect the *current* admin,
+        // as the change is now pending and not yet effective.
         emit ValidatorAddressesSet(
             validatorId,
             oldL2AdminAddress,
-            validator.l2AdminAddress,
+            validator.l2AdminAddress, // This remains the old admin until accepted
             oldL2WithdrawAddress,
             validator.l2WithdrawAddress,
             oldL1ValidatorAddress,
@@ -396,6 +432,64 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             validator.l1AccountAddress,
             oldL1AccountEvmAddress,
             validator.l1AccountEvmAddress
+        );
+    }
+
+    /**
+     * @notice Allows a proposed new admin to accept the admin role for a validator.
+     * @dev Completes the two-step admin transfer process initiated by `setValidatorAddresses`.
+     * @param validatorId The ID of the validator for which to accept the admin role.
+     */
+    function acceptAdmin(
+        uint16 validatorId
+    ) external nonReentrant _validateValidatorExists(validatorId) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        address newAdmin = msg.sender;
+
+        // Check 1: There must be a pending admin for this validator.
+        address pendingAdmin = $.pendingAdmins[validatorId];
+        if (pendingAdmin == address(0)) {
+            revert NoPendingAdmin(validatorId);
+        }
+
+        // Check 2: The caller must be the designated pending admin.
+        if (newAdmin != pendingAdmin) {
+            revert NotPendingAdmin(newAdmin, validatorId);
+        }
+
+        // Check 3: The new admin cannot already be assigned to another validator.
+        if ($.isAdminAssigned[newAdmin]) {
+            revert AdminAlreadyAssigned(newAdmin);
+        }
+
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+        address oldAdmin = validator.l2AdminAddress;
+
+        // Finalize the change
+        validator.l2AdminAddress = newAdmin;
+
+        // Update admin tracking mappings
+        delete $.adminToValidatorId[oldAdmin];
+        $.adminToValidatorId[newAdmin] = validatorId;
+        $.isAdminAssigned[oldAdmin] = false;
+        $.isAdminAssigned[newAdmin] = true;
+
+        // Clear the pending admin
+        delete $.pendingAdmins[validatorId];
+
+        // Emit the final event showing the successful change
+        emit ValidatorAddressesSet(
+            validatorId,
+            oldAdmin,
+            newAdmin,
+            validator.l2WithdrawAddress, // Unchanged
+            validator.l2WithdrawAddress, // Unchanged
+            validator.l1ValidatorAddress, // Unchanged
+            validator.l1ValidatorAddress, // Unchanged
+            validator.l1AccountAddress, // Unchanged
+            validator.l1AccountAddress, // Unchanged
+            validator.l1AccountEvmAddress, // Unchanged
+            validator.l1AccountEvmAddress // Unchanged
         );
     }
 
@@ -413,13 +507,15 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         _validateValidatorExists(validatorId)
         _validateIsToken(token)
     {
-
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
         if (!validator.active || validator.slashed) {
             revert ValidatorInactive(validatorId);
         }
+
+        // Settle commission up to now to ensure accurate amount
+        PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
 
         uint256 amount = $.validatorAccruedCommission[validatorId][token];
         if (amount == 0) {
@@ -453,19 +549,31 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
 
-        if (!validator.active || validator.slashed) {
-            revert ValidatorInactive(validatorId);
-        }
-
         PlumeStakingStorage.PendingCommissionClaim storage claim = $.pendingCommissionClaims[validatorId][token];
 
         if (claim.amount == 0) {
             revert NoPendingClaim(validatorId, token);
         }
+
         uint256 readyTimestamp = claim.requestTimestamp + PlumeStakingStorage.COMMISSION_CLAIM_TIMELOCK;
+
+        // First, check if the timelock has passed from the perspective of the current block.
         if (block.timestamp < readyTimestamp) {
             revert ClaimNotReady(validatorId, token, readyTimestamp);
         }
+
+        // --- REVISED SLASHING CHECK ---
+        // If the validator is slashed, the claim is only considered valid if its timelock was
+        // fully completed BEFORE the slash occurred. This invalidates any pending claims.
+        if (validator.slashed && readyTimestamp >= validator.slashedAtTimestamp) {
+            revert ValidatorInactive(validatorId);
+        }
+
+        // For a non-slashed validator, simply require it to be active to finalize a claim.
+        if (!validator.slashed && !validator.active) {
+            revert ValidatorInactive(validatorId);
+        }
+
         uint256 amount = claim.amount;
         address recipient = claim.recipient;
         // Clear pending claim
@@ -480,14 +588,15 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return amount;
     }
 
-
     /**
      * @notice Clean up expired votes for a validator and return the current valid vote count
      * @dev This function removes expired votes and updates the vote count accordingly
      * @param validatorId The validator to clean up votes for
      * @return newActiveVoteCount The number of valid (non-expired) votes remaining
      */
-    function _cleanupExpiredVotes(uint16 validatorId) internal returns (uint256 newActiveVoteCount) {
+    function _cleanupExpiredVotes(
+        uint16 validatorId
+    ) internal returns (uint256 newActiveVoteCount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         uint256 voteCount = $.slashVoteCounts[validatorId];
@@ -505,7 +614,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             }
 
             uint256 voteExpiration = $.slashingVotes[validatorId][voterValidatorId];
-            if (voteExpiration > 0) { // A vote from this validator exists.
+            if (voteExpiration > 0) {
+                // A vote from this validator exists.
                 PlumeStakingStorage.ValidatorInfo storage voterValidator = $.validators[voterValidatorId];
                 bool voterIsEligible = voterValidator.active && !voterValidator.slashed;
                 bool voteHasExpired = block.timestamp >= voteExpiration;
@@ -525,7 +635,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return newActiveVoteCount;
     }
 
-
     /**
      * @notice Vote to slash a malicious validator
      * @dev Caller must be the L2 admin of an *active* validator.
@@ -533,7 +642,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @param voteExpiration Timestamp when this vote expires
      */
     function voteToSlashValidator(uint16 maliciousValidatorId, uint256 voteExpiration) external nonReentrant {
-
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address voterAdmin = msg.sender;
         uint16 voterValidatorId = $.adminToValidatorId[voterAdmin];
@@ -562,15 +670,15 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Check 4: Vote expiration validity
         if (
-            voteExpiration <= block.timestamp || $.maxSlashVoteDurationInSeconds == 0 // Prevent voting if duration not set
-                || voteExpiration > block.timestamp + $.maxSlashVoteDurationInSeconds
+            voteExpiration <= block.timestamp || $.maxSlashVoteDurationInSeconds == 0 // Prevent voting if duration not // set
+           || voteExpiration > block.timestamp + $.maxSlashVoteDurationInSeconds
         ) {
             revert SlashVoteDurationTooLong();
         }
 
         // Check 5: Voter hasn't already voted recently (check existing vote expiration)
         uint256 currentVoteExpiration = $.slashingVotes[maliciousValidatorId][voterValidatorId];
-        if (currentVoteExpiration >= block.timestamp) {
+        if (currentVoteExpiration > block.timestamp) {
             revert AlreadyVotedToSlash(maliciousValidatorId, voterValidatorId);
         }
 
@@ -584,6 +692,15 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         $.slashVoteCounts[maliciousValidatorId]++;
 
         emit SlashVoteCast(maliciousValidatorId, voterValidatorId, voteExpiration);
+
+        // --- AUTO-SLASH TRIGGER ---
+        // After casting the vote, check if the unanimity threshold has been met.
+        uint256 activeVoteCount = $.slashVoteCounts[maliciousValidatorId];
+        uint256 totalEligibleValidators = _countEligibleValidators(maliciousValidatorId);
+
+        if (activeVoteCount >= totalEligibleValidators && totalEligibleValidators > 0) {
+            _performSlash(maliciousValidatorId, msg.sender);
+        }
     }
 
     /**
@@ -594,8 +711,6 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function slashValidator(
         uint16 validatorId
     ) external nonReentrant onlyRole(PlumeRoles.TIMELOCK_ROLE) {
-
-
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
         if (!$.validatorExists[validatorId]) {
@@ -608,115 +723,23 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert ValidatorAlreadySlashed(validatorId);
         }
 
-        // Clean up expired votes and get accurate count
-        uint256 validVotesAgainst = _cleanupExpiredVotes(validatorId);
+        // Clean up expired votes first to get accurate count
+        uint256 activeVoteCount = _cleanupExpiredVotes(validatorId);
+        uint256 totalEligibleValidators = _countEligibleValidators(validatorId);
 
-        // Count other active non-slashed validators
-        uint256 otherActiveNonSlashedValidators = 0;
-        for (uint256 i = 0; i < $.validatorIds.length; i++) {
-            uint16 currentValId = $.validatorIds[i];
-            if (currentValId == validatorId) {
-                continue;
-            }
-            if ($.validators[currentValId].active && !$.validators[currentValId].slashed) {
-                otherActiveNonSlashedValidators++;
-            }
+        // ALL eligible validators must vote for slashing (unanimous consensus)
+        if (activeVoteCount < totalEligibleValidators) {
+            revert UnanimityNotReached(activeVoteCount, totalEligibleValidators);
         }
 
-        // Check if we have enough valid votes for unanimity
-        if (otherActiveNonSlashedValidators == 0) {
-            if ($.validatorIds.length > 1) {
-                revert UnanimityNotReached(
-                    validVotesAgainst, otherActiveNonSlashedValidators > 0 ? otherActiveNonSlashedValidators : 1
-                );
-            }
-        } else if (validVotesAgainst < otherActiveNonSlashedValidators) {
-            revert UnanimityNotReached(validVotesAgainst, otherActiveNonSlashedValidators);
-        }
-
-        // Clear all votes for this validator
-        for (uint256 i = 0; i < $.validatorIds.length; i++) {
-            uint16 voterValidatorId = $.validatorIds[i];
-            if (voterValidatorId != validatorId) {
-                delete $.slashingVotes[validatorId][voterValidatorId];
-            }
-        }
-        $.slashVoteCounts[validatorId] = 0;
-
-        // CRITICAL: Preserve user rewards before clearing validator state
-        // Calculate and store all user rewards up to the slash timestamp
-        address[] memory stakersToPreserve = $.validatorStakers[validatorId];
-        address[] memory rewardTokens = $.rewardTokens;
-        
-        for (uint256 i = 0; i < stakersToPreserve.length; i++) {
-            address staker = stakersToPreserve[i];
-            uint256 userStakedAmount = $.userValidatorStakes[staker][validatorId].staked;
-            
-            if (userStakedAmount > 0) {
-                // Calculate and store rewards for each token
-                for (uint256 j = 0; j < rewardTokens.length; j++) {
-                    address token = rewardTokens[j];
-                    
-                    // Update the validator's reward state up to the slash timestamp
-                    PlumeRewardLogic.updateRewardPerTokenForValidator($, token, validatorId);
-                    
-                    // Calculate the user's pending rewards
-                    (uint256 userRewardDelta,,) = 
-                        PlumeRewardLogic.calculateRewardsWithCheckpoints($, staker, validatorId, token, userStakedAmount);
-                    
-                    // Store the total rewards (existing + newly calculated)
-                    if (userRewardDelta > 0) {
-                        $.userRewards[staker][validatorId][token] += userRewardDelta;
-                        $.totalClaimableByToken[token] += userRewardDelta;
-                        $.userHasPendingRewards[staker][validatorId] = true;
-                    }
-                    
-                    // Update user's tracking to prevent double-counting
-                    $.userValidatorRewardPerTokenPaid[staker][validatorId][token] = 
-                        $.validatorRewardPerTokenCumulative[validatorId][token];
-                    $.userValidatorRewardPerTokenPaidTimestamp[staker][validatorId][token] = block.timestamp;
-                }
-            }
-        }
-
-        validatorToSlash.active = false;
-        validatorToSlash.slashed = true;
-        validatorToSlash.slashedAtTimestamp = block.timestamp;
-
-        uint256 stakeLost = $.validatorTotalStaked[validatorId];
-        uint256 cooledLost = $.validatorTotalCooling[validatorId];
-
-        $.totalStaked = $.totalStaked >= stakeLost ? $.totalStaked - stakeLost : 0;
-        $.totalCooling = $.totalCooling >= cooledLost ? $.totalCooling - cooledLost : 0;
-
-        $.validatorTotalStaked[validatorId] = 0;
-        $.validatorTotalCooling[validatorId] = 0;
-
-        // Fix: Zero out the validator's delegatedAmount when slashed
-        validatorToSlash.delegatedAmount = 0;
-
-        delete $.validatorStakers[validatorId];
-
-        for (uint256 j = 0; j < rewardTokens.length; j++) {
-            address token = rewardTokens[j];
-            if ($.pendingCommissionClaims[validatorId][token].amount > 0) {
-                delete $.pendingCommissionClaims[validatorId][token];
-            }
-        }
-
-        if ($.adminToValidatorId[validatorToSlash.l2AdminAddress] == validatorId) {
-            delete $.adminToValidatorId[validatorToSlash.l2AdminAddress];
-            $.isAdminAssigned[validatorToSlash.l2AdminAddress] = false;
-        }
-
-        emit ValidatorSlashed(validatorId, msg.sender, stakeLost + cooledLost);
-        emit ValidatorStatusUpdated(validatorId, false, true);
+        _performSlash(validatorId, msg.sender);
     }
 
     /**
      * @notice Manually triggers the settlement of accrued commission for a specific validator.
      * @dev This updates the validator's cumulative reward per token indices (for all reward tokens)
      *      and their accrued commission storage. It uses the validator's current commission rate for settlement.
+     *      Can be called for any validator (active, inactive, or slashed) to force settlement.
      * @param validatorId The ID of the validator.
      */
     function forceSettleValidatorCommission(
@@ -738,14 +761,110 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
      * @param validatorId The validator to clean up votes for
      * @return validVoteCount The number of valid (non-expired) votes remaining
      */
-    function cleanupExpiredVotes(uint16 validatorId) external returns (uint256 validVoteCount) {
+    function cleanupExpiredVotes(
+        uint16 validatorId
+    ) external returns (uint256 validVoteCount) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        
+
         if (!$.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
-        
+
         return _cleanupExpiredVotes(validatorId);
+    }
+
+    // --- Private Helper Functions ---
+
+    /**
+     * @notice Internal logic to perform the slash action on a validator.
+     * @dev Separated to prevent code duplication between auto-slash and manual slash.
+     * @param validatorId The ID of the validator to slash.
+     * @param slasher The address that triggered the slash action.
+     */
+    function _performSlash(uint16 validatorId, address slasher) internal {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        PlumeStakingStorage.ValidatorInfo storage validatorToSlash = $.validators[validatorId];
+
+        // This check is important to prevent re-entrancy or double-slashing
+        if (validatorToSlash.slashed) {
+            return;
+        }
+
+        // Record amounts being lost for the event BEFORE any state changes
+        uint256 stakeLost = $.validatorTotalStaked[validatorId];
+        uint256 cooledLost = $.validatorTotalCooling[validatorId];
+
+        // Mark validator as slashed FIRST
+        validatorToSlash.active = false;
+        validatorToSlash.slashed = true;
+        validatorToSlash.slashedAtTimestamp = block.timestamp;
+
+        // Update global accounting - reduce totals by the amounts being lost
+        $.totalStaked -= stakeLost;
+        $.totalCooling -= cooledLost;
+
+        // IMPORTANT: Zero out validator totals - slashed funds are lost/burned
+        $.validatorTotalStaked[validatorId] = 0;
+        $.validatorTotalCooling[validatorId] = 0;
+        validatorToSlash.delegatedAmount = 0;
+
+        // Clear the stakers array - slashed validator should show 0 stakers
+        delete $.validatorStakers[validatorId];
+
+        // Clear voting records for the slashed validator
+        $.slashVoteCounts[validatorId] = 0;
+        uint16[] memory validatorIds = $.validatorIds;
+        for (uint256 i = 0; i < validatorIds.length; i++) {
+            delete $.slashingVotes[validatorId][validatorIds[i]];
+        }
+
+        emit ValidatorSlashed(validatorId, slasher, stakeLost + cooledLost);
+        emit ValidatorStatusUpdated(validatorId, false, true);
+    }
+
+    /**
+     * @notice Internal helper to count the number of validators eligible to vote on a slash.
+     * @dev An eligible validator is active, not slashed, and not the one being voted on.
+     * @param validatorToExclude The ID of the validator being voted on (to exclude from the count).
+     * @return The number of eligible voting validators.
+     */
+    function _countEligibleValidators(
+        uint16 validatorToExclude
+    ) internal view returns (uint256) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        uint256 totalActive = _countActiveValidators();
+
+        // If the validator being voted on is part of the active set, then the number
+        // of eligible voters is one less than the total.
+        PlumeStakingStorage.ValidatorInfo storage excludedInfo = $.validators[validatorToExclude];
+        if (excludedInfo.active && !excludedInfo.slashed) {
+            // Ensure we don't underflow if totalActive is somehow 0, though this is unlikely.
+            if (totalActive > 0) {
+                return totalActive - 1;
+            }
+        }
+
+        // If the excluded validator was not active anyway, then the total number of active
+        // validators is the correct count of eligible voters.
+        return totalActive;
+    }
+
+    /**
+     * @notice Internal helper to count the total number of active, non-slashed validators.
+     * @dev The single source of truth for counting active validators.
+     * @return The total number of active and non-slashed validators.
+     */
+    function _countActiveValidators() internal view returns (uint256) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        uint16[] memory ids = $.validatorIds;
+        uint256 count = 0;
+        for (uint256 i = 0; i < ids.length; i++) {
+            PlumeStakingStorage.ValidatorInfo storage info = $.validators[ids[i]];
+            if (info.active && !info.slashed) {
+                count++;
+            }
+        }
+        return count;
     }
 
     // --- View Functions ---
@@ -767,6 +886,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         info = $.validators[validatorId];
         totalStaked = $.validatorTotalStaked[validatorId];
         stakersCount = $.validatorStakers[validatorId].length;
+
+        // Ensure the returned struct has the correct delegated amount.
+        info.delegatedAmount = totalStaked;
+
         return (info, totalStaked, stakersCount);
     }
 
@@ -861,17 +984,10 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
     /**
      * @notice Returns the number of currently active validators.
+     * @dev An active validator is one that is marked as active and has not been slashed.
      */
     function getActiveValidatorCount() external view returns (uint256 count) {
-        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        uint16[] memory ids = $.validatorIds;
-        count = 0;
-        for (uint256 i = 0; i < ids.length; i++) {
-            if ($.validators[ids[i]].active) {
-                count++;
-            }
-        }
-        return count;
+        return _countActiveValidators();
     }
 
     /**
@@ -883,29 +999,54 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint16 validatorId
     ) external view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
-        
+
         if (!$.validatorExists[validatorId]) {
             revert ValidatorDoesNotExist(validatorId);
         }
-        
-        // Count only valid (non-expired) votes
+
+        // Count only valid (non-expired) votes from eligible validators
         uint256 validVoteCount = 0;
         uint256 currentTime = block.timestamp;
-        
+
         for (uint256 i = 0; i < $.validatorIds.length; i++) {
             uint16 voterValidatorId = $.validatorIds[i];
-            
+
             if (voterValidatorId == validatorId) {
                 continue;
             }
-            
+
             uint256 voteExpiration = $.slashingVotes[validatorId][voterValidatorId];
-            if (voteExpiration > 0 && voteExpiration >= currentTime) {
-                validVoteCount++;
+            if (voteExpiration > 0) {
+                // Check if the voting validator is eligible (active and not slashed)
+                PlumeStakingStorage.ValidatorInfo storage voterValidator = $.validators[voterValidatorId];
+                bool voterIsEligible = voterValidator.active && !voterValidator.slashed;
+                
+                // Check if vote has not expired (align with _cleanupExpiredVotes logic)
+                bool voteHasNotExpired = currentTime < voteExpiration;
+
+                if (voterIsEligible && voteHasNotExpired) {
+                    validVoteCount++;
+                }
             }
         }
-        
+
         return validVoteCount;
+    }
+
+    /**
+     * @notice Returns the list of commission checkpoints for a validator.
+     * @dev Primarily for testing and off-chain tooling.
+     * @param validatorId The ID of the validator.
+     * @return An array of RateCheckpoint structs.
+     */
+    function getValidatorCommissionCheckpoints(
+        uint16 validatorId
+    ) external view returns (PlumeStakingStorage.RateCheckpoint[] memory) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        return $.validatorCommissionCheckpoints[validatorId];
     }
 
 }
