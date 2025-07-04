@@ -120,6 +120,12 @@ error InvalidPercentage(uint256 percentage);
  */
 error TokenAlreadyExists();
 
+/**
+ * @notice Thrown when trying to re-add a token in the same block it was removed.
+ * @param token The address of the token.
+ */
+error CannotReAddTokenInSameBlock(address token);
+
 /*
  * @notice Thrown when array lengths don't match in a function that expects matching arrays
  */

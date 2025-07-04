@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import {
     ArrayLengthMismatch,
+    CannotReAddTokenInSameBlock,
     EmptyArray,
     InsufficientBalance,
     InternalInconsistency,
@@ -165,10 +166,15 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert RewardRateExceedsMax();
         }
 
+        // Prevent re-adding a token in the same block it was removed to avoid checkpoint overwrites.
+        if ($.tokenRemovalTimestamps[token] == block.timestamp) {
+            revert CannotReAddTokenInSameBlock(token);
+        }
+
         uint256 additionTimestamp = block.timestamp;
 
         // Clear any previous removal timestamp to allow re-adding
-        delete $.tokenRemovalTimestamps[token];
+        $.tokenRemovalTimestamps[token] = 0;
 
         $.rewardTokens.push(token);
         $.isRewardToken[token] = true;
@@ -180,7 +186,6 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         uint16[] memory validatorIds = $.validatorIds;
         for (uint256 i = 0; i < validatorIds.length; i++) {
             uint16 validatorId = validatorIds[i];
-            $.validatorLastUpdateTimes[validatorId][token] = additionTimestamp;
             PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, initialRate);
         }
 

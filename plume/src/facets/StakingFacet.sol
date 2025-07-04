@@ -279,21 +279,20 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         }
 
         // --- SAFE VALIDATION (Check-Then-Act) ---
-        // 1. CHECK: Use view helpers to calculate the total funds that will be available
-        // for this operation without changing state. This prevents bugs from premature state changes.
-        uint256 coolingFromTarget = $.userValidatorCooldowns[user][validatorId].amount;
-        // _calculateTotalWithdrawableAmount is a VIEW function that includes parked funds + matured cooldowns.
-        uint256 withdrawableAmount = _calculateTotalWithdrawableAmount(user);
-        uint256 totalAvailable = coolingFromTarget + withdrawableAmount;
+        // 1. Atomically process matured cooldowns to update parked balance. This provides a clean state.
+        _processMaturedCooldowns(user);
+
+        // 2. Now calculate total available funds from this clean state.
+        // Available funds = currently parked + any UNMATURED cooldown from the target validator.
+        uint256 parkedAmount = $.stakeInfo[user].parked;
+        uint256 unmaturedCooldownFromTarget = $.userValidatorCooldowns[user][validatorId].amount;
+        uint256 totalAvailable = parkedAmount + unmaturedCooldownFromTarget;
 
         if (totalAvailable < amount) {
             revert InsufficientCooledAndParkedBalance(totalAvailable, amount);
         }
 
         // --- EXECUTION (Act) ---
-        // 2. ACT: Now that we have validated the operation is possible, we can safely change state.
-        _processMaturedCooldowns(user); // This moves matured cooldowns to the parked balance.
-
         // 3. SETUP & EXECUTE RESTAKE
         _performStakeSetup(user, validatorId, amount);
 
@@ -301,9 +300,9 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         uint256 fromParked = 0;
         uint256 remaining = amount;
 
-        // Priority 1: Use cooling amounts from the target validator only
-        if (remaining > 0 && coolingFromTarget > 0) {
-            uint256 useAmount = remaining > coolingFromTarget ? coolingFromTarget : remaining;
+        // Priority 1: Use from unmatured cooldown of the target validator.
+        if (remaining > 0 && unmaturedCooldownFromTarget > 0) {
+            uint256 useAmount = remaining > unmaturedCooldownFromTarget ? unmaturedCooldownFromTarget : remaining;
             fromCooled = useAmount;
             remaining -= useAmount;
             _removeCoolingAmounts(user, validatorId, useAmount);

@@ -225,17 +225,10 @@ library PlumeRewardLogic {
         uint256 lastUserRewardUpdateTime = $.userValidatorRewardPerTokenPaidTimestamp[user][validatorId][token];
 
         if (lastUserRewardUpdateTime == 0) {
-            // Handle lazy user initialization for token addition
-            uint256 tokenAdditionTime = $.tokenAdditionTimestamps[token];
-            uint256 userStakeStartTime = $.userValidatorStakeStartTime[user][validatorId];
-
-            if (tokenAdditionTime > 0 && tokenAdditionTime > userStakeStartTime) {
-                // User was staking before token was added - start from token addition
-                lastUserRewardUpdateTime = tokenAdditionTime;
-            } else {
-                // Token existed when user started staking - use stake start time
-                lastUserRewardUpdateTime = userStakeStartTime;
-            }
+            // This is the first reward calculation for this user/validator/token.
+            // Start the calculation from when the user's stake began.
+            // The checkpoint system will correctly apply a zero rate for any period before the token was added.
+            lastUserRewardUpdateTime = $.userValidatorStakeStartTime[user][validatorId];
 
             if (lastUserRewardUpdateTime == 0 && $.userValidatorStakes[user][validatorId].staked > 0) {
                 // Fixed fallback: don't use block.timestamp if it's after slash timestamp
@@ -588,7 +581,7 @@ library PlumeRewardLogic {
         // state.
         // So, for rate calculation, this is okay.
 
-        effectiveCheckpoint.rate = $.rewardRates[token]; // Global rate
+        effectiveCheckpoint.rate = 0; // Global rate
         effectiveCheckpoint.timestamp = timestamp; // Timestamp of query
 
         // If falling back to global rate, what should cumulativeIndex be?
@@ -887,68 +880,50 @@ library PlumeRewardLogic {
         view
         returns (uint256 totalUserRewardDelta, uint256 totalCommissionAmountDelta, uint256 effectiveTimeDelta)
     {
-        // Don't call updateRewardPerTokenForValidator - this is view-only
-        // Calculate what the cumulative would be if updated
-        uint256 currentCumulativeRewardPerToken = $.validatorRewardPerTokenCumulative[validatorId][token];
+        // This view function simulates what the state-changing `calculateRewardsWithCheckpoints` does.
+        // It must accurately calculate the validator's theoretical cumulative reward per token at the
+        // current block timestamp, respecting all historical rate changes.
 
-        // Calculate effective end time considering all constraints
+        // 1. Determine the effective time range for the simulation.
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
         uint256 effectiveEndTime = block.timestamp;
-
-        // Check token removal timestamp
         uint256 tokenRemovalTime = $.tokenRemovalTimestamps[token];
         if (tokenRemovalTime > 0 && tokenRemovalTime < effectiveEndTime) {
             effectiveEndTime = tokenRemovalTime;
         }
-
-        // Check validator slash/inactive timestamp
-        if (validator.slashedAtTimestamp > 0) {
-            if (validator.slashedAtTimestamp < effectiveEndTime) {
-                effectiveEndTime = validator.slashedAtTimestamp;
-            }
+        if (validator.slashedAtTimestamp > 0 && validator.slashedAtTimestamp < effectiveEndTime) {
+            effectiveEndTime = validator.slashedAtTimestamp;
         }
 
-        // Calculate theoretical current cumulative (what it would be if updated)
-        uint256 validatorLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
+        // 2. Start with the last known, stored cumulative value and its timestamp.
+        uint256 simulatedCumulativeRPT = $.validatorRewardPerTokenCumulative[validatorId][token];
+        uint256 lastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
 
-        if (effectiveEndTime > validatorLastUpdateTime) {
-            uint256 timeSinceLastUpdate = effectiveEndTime - validatorLastUpdateTime;
+        // 3. If time has passed since the last update, simulate the RPT increase segment by segment.
+        if (effectiveEndTime > lastUpdateTime) {
+            uint256[] memory distinctTimestamps =
+                getDistinctTimestamps($, validatorId, token, lastUpdateTime, effectiveEndTime);
 
-            // Fix: Reorder logic to check for slashed state FIRST.
-            // A slashed validator is also inactive, so the slashed check must come first.
-            if (validator.slashed) {
-                // Slashed validator: calculate rewards up to slash timestamp if user has stake
-                if (userStakedAmount > 0) {
-                    PlumeStakingStorage.RateCheckpoint memory effectiveRewardRateChk =
-                        getEffectiveRewardRateAt($, token, validatorId, effectiveEndTime);
-                    uint256 effectiveRewardRate = effectiveRewardRateChk.rate;
+            if (distinctTimestamps.length >= 2) {
+                for (uint256 k = 0; k < distinctTimestamps.length - 1; ++k) {
+                    uint256 segmentStartTime = distinctTimestamps[k];
+                    uint256 segmentEndTime = distinctTimestamps[k + 1];
+                    uint256 segmentDuration = segmentEndTime - segmentStartTime;
 
-                    if (effectiveRewardRate > 0) {
-                        uint256 rewardPerTokenIncrease = timeSinceLastUpdate * effectiveRewardRate;
-                        currentCumulativeRewardPerToken += rewardPerTokenIncrease;
-                    }
-                }
-            } else if (!validator.active) {
-                // Inactive (but not slashed) validator: no additional rewards should be calculated
-                // The cumulative stays at its current value
-            } else {
-                // Active validator: calculate rewards normally
-                uint256 totalStaked = $.validatorTotalStaked[validatorId];
-
-                if (totalStaked > 0) {
-                    PlumeStakingStorage.RateCheckpoint memory effectiveRewardRateChk =
-                        getEffectiveRewardRateAt($, token, validatorId, effectiveEndTime);
-                    uint256 effectiveRewardRate = effectiveRewardRateChk.rate;
-
-                    if (effectiveRewardRate > 0) {
-                        uint256 rewardPerTokenIncrease = timeSinceLastUpdate * effectiveRewardRate;
-                        currentCumulativeRewardPerToken += rewardPerTokenIncrease;
+                    if (segmentDuration > 0) {
+                        // Rate for the segment is determined by the rate at its beginning.
+                        uint256 rateForSegment = getEffectiveRewardRateAt($, token, validatorId, segmentStartTime).rate;
+                        if (rateForSegment > 0) {
+                            uint256 rptIncreaseInSegment = segmentDuration * rateForSegment;
+                            simulatedCumulativeRPT += rptIncreaseInSegment;
+                        }
                     }
                 }
             }
         }
 
-        return _calculateRewardsCore($, user, validatorId, token, userStakedAmount, currentCumulativeRewardPerToken);
+        // 4. Now that we have the correctly simulated final cumulative RPT, call the core logic.
+        return _calculateRewardsCore($, user, validatorId, token, userStakedAmount, simulatedCumulativeRPT);
     }
 
 }

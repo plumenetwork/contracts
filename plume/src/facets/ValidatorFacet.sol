@@ -199,11 +199,14 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         // Mark admin as assigned in the dedicated mapping
         $.isAdminAssigned[l2AdminAddress] = true;
 
-        // Initialize last update times for all reward tokens for this validator
+        // Initialize last update times and create initial checkpoints for all reward tokens
         address[] memory rewardTokens = $.rewardTokens;
         for (uint256 i = 0; i < rewardTokens.length; i++) {
             address token = rewardTokens[i];
             $.validatorLastUpdateTimes[validatorId][token] = block.timestamp;
+            // The validator inherits the current global rate for this token.
+            uint256 currentGlobalRate = $.rewardRates[token];
+            PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, currentGlobalRate);
         }
 
         emit ValidatorAdded(
@@ -667,9 +670,8 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
 
         // Check 4: Vote expiration validity
         if (
-            voteExpiration <= block.timestamp || $.maxSlashVoteDurationInSeconds == 0 // Prevent voting if duration not
-                // set
-                || voteExpiration > block.timestamp + $.maxSlashVoteDurationInSeconds
+            voteExpiration <= block.timestamp || $.maxSlashVoteDurationInSeconds == 0 // Prevent voting if duration not // set
+           || voteExpiration > block.timestamp + $.maxSlashVoteDurationInSeconds
         ) {
             revert SlashVoteDurationTooLong();
         }
