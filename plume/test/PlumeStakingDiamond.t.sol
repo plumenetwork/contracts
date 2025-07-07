@@ -293,7 +293,7 @@ contract PlumeStakingDiamondTest is Test {
         );
 
         // Rewards Facet Selectors
-        bytes4[] memory rewardsSigs_Manual = new bytes4[](22);
+        bytes4[] memory rewardsSigs_Manual = new bytes4[](23);
         rewardsSigs_Manual[0] = bytes4(
             keccak256(bytes("addRewardToken(address,uint256,uint256)"))
         );
@@ -361,6 +361,9 @@ contract PlumeStakingDiamondTest is Test {
         );
         rewardsSigs_Manual[21] = bytes4(
             keccak256(bytes("getRewardRate(address)"))
+        );
+        rewardsSigs_Manual[22] = bytes4(
+            keccak256(bytes("isRewardToken(address)"))
         );
 
         // Validator Facet Selectors
@@ -436,7 +439,7 @@ contract PlumeStakingDiamondTest is Test {
         ); // <<< NEW acceptAdmin FUNCTION
 
         // Management Facet Selectors
-        bytes4[] memory managementSigs_Manual = new bytes4[](12); // Size updated
+        bytes4[] memory managementSigs_Manual = new bytes4[](16); // Size updated
         managementSigs_Manual[0] = bytes4(
             keccak256(bytes("setMinStakeAmount(uint256)"))
         );
@@ -481,8 +484,28 @@ contract PlumeStakingDiamondTest is Test {
                 bytes("setMaxValidatorPercentage(uint256)")
             )
         ); // New
-    
-    
+        managementSigs_Manual[12] = bytes4(
+            keccak256(
+                bytes("addHistoricalRewardToken(address)")
+            )
+        ); // New
+        managementSigs_Manual[13] = bytes4(
+            keccak256(
+                bytes("removeHistoricalRewardToken(address)")
+            )
+        ); // New
+        managementSigs_Manual[14] = bytes4(
+            keccak256(
+                bytes("isHistoricalRewardToken(address)")
+            )
+        ); // New
+        managementSigs_Manual[15] = bytes4(
+            keccak256(
+                bytes("getHistoricalRewardTokens()")
+            )
+        ); // New
+
+
     
 
 
@@ -13404,6 +13427,192 @@ vm.startPrank(admin);
     }
 
 
+    /**
+     * @notice Test Case (Failing): Ensures a user can still claim rewards from a removed token even after
+     *         fully unstaking and withdrawing their principal stake. This tests that the system
+     *         does not prematurely clear the user's pending reward status, which would sever their
+     *         relationship with the validator and lock their earned funds.
+     */
+    function test_ClaimRewardsFromRemovedTokenAfterFullUnstakeAndWithdraw() public {
+        // --- SETUP ---
+        // 1. Create a second mock reward token that will be removed.
+        vm.startPrank(admin);
+
+        MockPUSD tokenToBeRemoved = new MockPUSD();
+        treasury.addRewardToken(address(tokenToBeRemoved));
+        tokenToBeRemoved.transfer(address(treasury),10e25);
+        //pUSD.transfer(address(treasury),10e21);
+        
+        vm.deal(user1, 1000e18); // Give user1 some ETH to stake
+        uint256 cooldownInterval = ManagementFacet(address(diamondProxy)).getCooldownInterval();
+
+        address activeToken = address(pUSD);
+        address removedToken = address(tokenToBeRemoved);
+        uint16 validatorId = DEFAULT_VALIDATOR_ID;
+
+        // Facet references for convenience
+        StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+        RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+        // 2. Add two reward tokens.
+        //rewardsFacet.addRewardToken(activeToken, 1e16, 1e24);    // 0.01/sec
+        rewardsFacet.addRewardToken(removedToken, 2e14, 1e24); // 0.02/sec
+        // Fund the treasury so claims can succeed
+        pUSD.transfer(address(treasury), 1000e18);
+        vm.stopPrank();
+
+        // 3. User stakes with the validator.
+        vm.prank(user1);
+        stakingFacet.stake{value: 100e18}(validatorId);
+
+        // --- ACCRUE REWARDS ---
+        // 4. Let one day pass to accrue rewards for both tokens.
+        
+        vm.warp(vm.getBlockTimestamp() + 1 days);
+        
+        // Check: user should have earned rewards for the token that will be removed.
+        uint256 expectedRewards = rewardsFacet.earned(user1, removedToken);
+        assertTrue(expectedRewards > 0, "Test setup failed: User should have earned rewards for the token to be removed.");
+
+        // --- TRIGGER THE BUG ---
+        // 5. Remove the second token. It now becomes a "removed token" with pending rewards.
+        vm.prank(admin);
+        rewardsFacet.removeRewardToken(removedToken);
+        vm.stopPrank();
+
+        // 6. User unstakes and withdraws all their principal stake.
+        // This sequence triggers the flawed `clearPendingRewardsFlagIfEmpty` logic.
+        vm.startPrank(user1);
+        stakingFacet.unstake(validatorId, 100e18);
+console2.log("unstake",vm.getBlockTimestamp());
+
+        vm.warp(vm.getBlockTimestamp() + cooldownInterval + 1); // Warp past cooldown
+        console2.log("withdraw",vm.getBlockTimestamp());
+
+        stakingFacet.withdraw();
+
+        // At this point, in the flawed implementation:
+        // - `clearPendingRewardsFlagIfEmpty` was called during the withdraw/cleanup phase.
+        // - It checked only active tokens, saw no pending rewards there, and wrongly cleared the `userHasPendingRewards` flag.
+        // - `removeStakerFromValidator` then severed the user-validator link.
+        // - The user's pending rewards for `removedToken` are now stranded.
+
+        // --- ASSERTION ---
+        // 7. The user now attempts to claim their pending rewards from the removed token.
+        // On the current flawed code, this will revert because the user-validator link was destroyed.
+        // On the fixed code, this claim MUST succeed.
+        
+        uint256 finalClaimAmount = rewardsFacet.claim(removedToken);
+
+        // The exact amount should be what they earned before the token was removed.
+        assertApproxEqAbs(finalClaimAmount, expectedRewards, 1, "User could not claim rewards from removed token after full unstake.");
+                vm.stopPrank();
+
+    }
+
+
+function test_Revert_AddHistoricalRewardToken_WhenNotAdmin() public {
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+    MockPUSD newHistToken = new MockPUSD();
+    vm.prank(user1);
+    vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user1, PlumeRoles.ADMIN_ROLE));
+    managementFacet.addHistoricalRewardToken(address(newHistToken));
+}
+
+function test_Revert_AddHistoricalRewardToken_WhenTokenIsAddressZero() public {
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+    vm.prank(admin);
+    vm.expectRevert(abi.encodeWithSelector(ZeroAddress.selector, "token"));
+    managementFacet.addHistoricalRewardToken(address(0));
+}
+
+function test_Revert_AddHistoricalRewardToken_WhenTokenAlreadyHistorical() public {
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+    
+    MockPUSD existingToken = new MockPUSD();
+    address tokenAddr = address(existingToken);
+    vm.startPrank(admin);
+    rewardsFacet.addRewardToken(tokenAddr, 1, 1);
+    
+    vm.expectRevert(TokenAlreadyExists.selector);
+    managementFacet.addHistoricalRewardToken(tokenAddr);
+    vm.stopPrank();
+}
+
+function test_Admin_AddHistoricalRewardToken_Success() public {
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+    // 1. Setup
+    MockPUSD newHistToken = new MockPUSD();
+    address tokenAddr = address(newHistToken);
+
+    // 2. Action
+    vm.startPrank(admin);
+    vm.expectEmit(true, true, true, true);
+    emit HistoricalRewardTokenAdded(tokenAddr);
+    managementFacet.addHistoricalRewardToken(tokenAddr);
+    vm.stopPrank();
+
+    // 3. Assertions
+    assertTrue(managementFacet.isHistoricalRewardToken(tokenAddr), "Token should be marked as historical");
+    assertFalse(rewardsFacet.isRewardToken(tokenAddr), "Token should NOT be an active reward token");
+
+    address[] memory historicalTokens = managementFacet.getHistoricalRewardTokens();
+    bool found = false;
+    for (uint i = 0; i < historicalTokens.length; i++) {
+        if (historicalTokens[i] == tokenAddr) {
+            found = true;
+            break;
+        }
+    }
+    assertTrue(found, "Token should exist in historicalRewardTokens array");
+}
+
+function test_Revert_RemoveHistoricalRewardToken_WhenNotAdmin() public {
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+    // 1. Setup
+    MockPUSD token = new MockPUSD();
+    vm.startPrank(admin);
+    rewardsFacet.addRewardToken(address(token), 1, 1);
+    rewardsFacet.removeRewardToken(address(token));
+    vm.stopPrank();
+
+    // 2. Action & Assert
+    vm.prank(user1);
+    vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user1, PlumeRoles.ADMIN_ROLE));
+    managementFacet.removeHistoricalRewardToken(address(token));
+}
+
+function test_Revert_RemoveHistoricalRewardToken_WhenTokenIsStillActive() public {
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+    // 1. Setup: Add a token but do NOT remove it.
+    MockPUSD activeToken = new MockPUSD();
+    address tokenAddr = address(activeToken);
+    vm.startPrank(admin);
+    rewardsFacet.addRewardToken(tokenAddr, 1, 1);
+
+    // 2. Action & Assert: Attempting to remove an active token should fail.
+    // The implementation re-uses TokenAlreadyExists for this case.
+    vm.expectRevert(TokenAlreadyExists.selector);
+    managementFacet.removeHistoricalRewardToken(tokenAddr);
+    vm.stopPrank();
+}
+
+function test_Revert_RemoveHistoricalRewardToken_WhenTokenNeverExisted() public {
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+
+    MockPUSD nonExistentToken = new MockPUSD();
+    vm.prank(admin);
+    vm.expectRevert(abi.encodeWithSelector(TokenDoesNotExist.selector, address(nonExistentToken)));
+    managementFacet.removeHistoricalRewardToken(address(nonExistentToken));
+}
     // Helper functions for creating single-element arrays for function calls
     function _addrArr(address a) internal pure returns (address[] memory) {
         address[] memory arr = new address[](1);

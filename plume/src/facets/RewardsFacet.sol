@@ -171,6 +171,12 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             revert CannotReAddTokenInSameBlock(token);
         }
 
+        // Add to historical record if it's the first time seeing this token.
+        if (!$.isHistoricalRewardToken[token]) {
+            $.isHistoricalRewardToken[token] = true;
+            $.historicalRewardTokens.push(token);
+        }
+
         uint256 additionTimestamp = block.timestamp;
 
         // Clear any previous removal timestamp to allow re-adding
@@ -631,6 +637,15 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     function getRewardTokens() external view returns (address[] memory) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         return $.rewardTokens;
+    }
+
+    /**
+     * @notice Checks if a token is an active reward token.
+     * @param token The address of the token to check.
+     * @return True if the token is currently an active reward token.
+     */
+    function isRewardToken(address token) external view returns (bool) {
+        return PlumeStakingStorage.layout().isRewardToken[token];
     }
 
     /**

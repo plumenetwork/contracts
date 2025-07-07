@@ -65,9 +65,9 @@ library PlumeRewardLogic {
         address user,
         uint16 validatorId
     ) internal {
-        address[] memory rewardTokens = $.rewardTokens;
-        for (uint256 i = 0; i < rewardTokens.length; i++) {
-            address token = rewardTokens[i];
+        address[] storage historicalTokens = $.historicalRewardTokens;
+        for (uint256 i = 0; i < historicalTokens.length; i++) {
+            address token = historicalTokens[i];
             updateRewardsForValidatorAndToken($, user, validatorId, token);
         }
     }
@@ -816,44 +816,34 @@ library PlumeRewardLogic {
         uint16 validatorId
     ) internal {
         if (!$.userHasPendingRewards[user][validatorId]) {
-            return; // Already cleared
+            return; // Already cleared, no action needed.
         }
 
-        // Check if user still has any stored rewards for current active tokens
-        address[] memory currentRewardTokens = $.rewardTokens;
-        for (uint256 i = 0; i < currentRewardTokens.length; i++) {
-            if ($.userRewards[user][validatorId][currentRewardTokens[i]] > 0) {
-                return; // Still has pending rewards, don't clear flag
-            }
-        }
-
-        // Additional check: if user has any staking history with this validator,
-        // be conservative and only clear if we can verify no rewards from any source
+        // Iterate through EVERY token that has EVER been a reward token.
+        address[] storage historicalTokens = $.historicalRewardTokens;
         uint256 userStakedAmount = $.userValidatorStakes[user][validatorId].staked;
-        uint256 userStakeStartTime = $.userValidatorStakeStartTime[user][validatorId];
 
-        if (userStakeStartTime > 0) {
-            // User has staking history - check if they might have rewards from removed tokens
-            // by verifying with the comprehensive earned calculation for PLUME_NATIVE
-            // (most common removed token case)
-            address plumeNative = PlumeStakingStorage.PLUME_NATIVE;
+        for (uint256 i = 0; i < historicalTokens.length; i++) {
+            address token = historicalTokens[i];
 
-            // Check stored rewards for PLUME_NATIVE (might be removed)
-            if ($.userRewards[user][validatorId][plumeNative] > 0) {
-                return; // Still has PLUME_NATIVE rewards
+            // Check 1: Does the user have any rewards already settled and stored in the mapping?
+            if ($.userRewards[user][validatorId][token] > 0) {
+                return; // Found stored rewards, user still has pending rewards. Do not clear flag.
             }
 
-            // If user still has active stake, check for any calculable rewards
+            // Check 2: If the user still has an active stake, are there any *unsettled* rewards
+            // that can be calculated for this token (even if it's been removed)?
             if (userStakedAmount > 0) {
-                (uint256 pendingPlumeRewards,,) =
-                    calculateRewardsWithCheckpointsView($, user, validatorId, plumeNative, userStakedAmount);
-                if (pendingPlumeRewards > 0) {
-                    return; // Still has calculable rewards
+                (uint256 unsettledRewards,,) =
+                    calculateRewardsWithCheckpointsView($, user, validatorId, token, userStakedAmount);
+                if (unsettledRewards > 0) {
+                    return; // Found calculable rewards, user still has pending rewards. Do not clear flag.
                 }
             }
         }
 
-        // Safe to clear the flag - no stored rewards found and no significant pending rewards
+        // If we've looped through every historical token and found no stored and no calculable rewards,
+        // it is now safe to clear the pending rewards flag for this user-validator pair.
         $.userHasPendingRewards[user][validatorId] = false;
     }
 

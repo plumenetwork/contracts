@@ -366,3 +366,16 @@ event AdminClearedSlashedStake(address indexed user, uint16 indexed slashedValid
  * @param amountCleared The amount of cooled funds that were cleared (considered lost).
  */
 event AdminClearedSlashedCooldown(address indexed user, uint16 indexed slashedValidatorId, uint256 amountCleared);
+
+/**
+ * @notice Emitted when a token is manually added to the historical rewards list by an admin.
+ * @param token The address of the token that was added.
+ */
+event HistoricalRewardTokenAdded(address indexed token);
+
+/**
+ * @notice Emitted when a token is manually removed from the historical rewards list by an admin.
+ * @dev This is a high-privilege, dangerous operation.
+ * @param token The address of the token that was removed.
+ */
+event HistoricalRewardTokenRemoved(address indexed token);

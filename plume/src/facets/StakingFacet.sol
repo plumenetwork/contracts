@@ -393,6 +393,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         address user = msg.sender;
 
+
         // Process matured cooldowns into parked balance
         _processMaturedCooldowns(user);
 
@@ -855,6 +856,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             if (cooldownEntry.amount == 0) {
                 continue;
             }
+
 
             bool canRecoverFromThisCooldown = _canRecoverFromCooldown(user, validatorId, cooldownEntry);
 

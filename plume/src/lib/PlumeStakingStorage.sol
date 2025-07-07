@@ -132,6 +132,8 @@ library PlumeStakingStorage {
         // === Token Lifecycle Tracking ===
         mapping(address => uint256) tokenAdditionTimestamps; // token => when it was added
         mapping(address => uint256) tokenRemovalTimestamps; // token => when it was removed
+        mapping(address => bool) isHistoricalRewardToken; // token => true if it has ever been a reward token
+        address[] historicalRewardTokens; // append-only list of all tokens that have ever been rewards
     }
 
     /**

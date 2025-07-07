@@ -113,6 +113,7 @@ library PlumeValidatorLogic {
         // Fix: Use the pending rewards flag which handles both current and removed tokens
         bool hasPendingRewardsForThisVal = $.userHasPendingRewards[staker][validatorId];
 
+
         if (!hasActiveStakeForThisVal && !hasActiveCooldownForThisVal && !hasPendingRewardsForThisVal) {
             if ($.userHasStakedWithValidator[staker][validatorId]) {
                 // Check if they are currently in the userValidators list (via this mapping)

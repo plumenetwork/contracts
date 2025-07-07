@@ -16,6 +16,7 @@ import {
     SlashVoteDurationExceedsCommissionTimelock,
     SlashVoteDurationTooLongForCooldown,
     TokenDoesNotExist,
+    TokenAlreadyExists,
     Unauthorized,
     ValidatorDoesNotExist,
     ValidatorNotSlashed,
@@ -33,6 +34,8 @@ import {
     MaxSlashVoteDurationSet,
     MaxValidatorPercentageUpdated,
     MinStakeAmountSet,
+    HistoricalRewardTokenAdded,
+    HistoricalRewardTokenRemoved,
     RewardRateCheckpointsPruned,
     StakeInfoUpdated,
     ValidatorCommissionSet
@@ -510,5 +513,92 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         }
     }
     // --- END NEW ADMIN SLASH CLEANUP FUNCTION ---
+
+    // --- HISTORICAL REWARD TOKEN MANAGEMENT ---
+
+    /**
+     * @notice Admin function to manually add a token to the historical rewards list.
+     * @dev This is for administrative correction, e.g., after a data migration. It does not make
+     *      the token an *active* reward token. Requires ADMIN_ROLE.
+     * @param token The address of the token to add to the historical list.
+     */
+    function addHistoricalRewardToken(address token) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        if (token == address(0)) {
+            revert ZeroAddress("token");
+        }
+        if ($.isHistoricalRewardToken[token]) {
+            // Revert if it's already in the historical list to prevent duplicates.
+            revert TokenAlreadyExists();
+        }
+
+        $.isHistoricalRewardToken[token] = true;
+        $.historicalRewardTokens.push(token);
+
+        emit HistoricalRewardTokenAdded(token);
+    }
+
+    /**
+     * @notice Admin function to manually remove a token from the historical rewards list.
+     * @dev DANGEROUS: This operation can lead to PERMANENT LOSS OF USER FUNDS if there are any
+     *      unclaimed or unsettled rewards for this token. The responsibility for ensuring safety
+     *      lies entirely with the caller of this function. Requires ADMIN_ROLE.
+     * @param token The address of the token to remove from the historical list.
+     */
+    function removeHistoricalRewardToken(address token) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        if (token == address(0)) {
+            revert ZeroAddress("token");
+        }
+
+        // CRITICAL CHECK: The token MUST NOT be an active reward token.
+        // It must be "soft removed" via the standard `removeRewardToken` function first.
+        if ($.isRewardToken[token]) {
+            revert TokenAlreadyExists(); // Re-using error for "token is currently active"
+        }
+
+        // Find and remove the token from the historical array
+        address[] storage historicalTokens = $.historicalRewardTokens;
+        uint256 tokenIndex = type(uint256).max;
+        for (uint256 i = 0; i < historicalTokens.length; i++) {
+            if (historicalTokens[i] == token) {
+                tokenIndex = i;
+                break;
+            }
+        }
+
+        // Revert if the token was not found in the historical list
+        if (tokenIndex == type(uint256).max) {
+            revert TokenDoesNotExist(token);
+        }
+
+        // Swap and pop to remove the element
+        historicalTokens[tokenIndex] = historicalTokens[historicalTokens.length - 1];
+        historicalTokens.pop();
+
+        // Update the mapping
+        $.isHistoricalRewardToken[token] = false;
+
+        emit HistoricalRewardTokenRemoved(token);
+    }
+
+    // --- HISTORICAL REWARD TOKEN VIEW FUNCTIONS ---
+
+    /**
+     * @notice Checks if a token has ever been a reward token.
+     * @param token The address of the token to check.
+     * @return True if the token is in the historical list, false otherwise.
+     */
+    function isHistoricalRewardToken(address token) external view returns (bool) {
+        return PlumeStakingStorage.layout().isHistoricalRewardToken[token];
+    }
+
+    /**
+     * @notice Returns the complete list of all tokens that have ever been reward tokens.
+     * @return An array of token addresses.
+     */
+    function getHistoricalRewardTokens() external view returns (address[] memory) {
+        return PlumeStakingStorage.layout().historicalRewardTokens;
+    }
 
 }
