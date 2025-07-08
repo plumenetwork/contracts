@@ -856,4 +856,85 @@ contract RaffleFlowTest is PlumeTestBase {
     }
 }
 
+contract RaffleCancelRequestTest is PlumeTestBase {
+    Raffle public raffle;
+    SpinStub public spinStub;
+
+    function setUp() public {
+        setupFork();
+        setupArbSys();
+
+        spinStub = new SpinStub();
+        raffle = new Raffle();
+        
+        whitelistContract(ADMIN, address(raffle));
+
+        vm.prank(ADMIN);
+        raffle.initialize(address(spinStub), SUPRA_ORACLE);
+
+        // Setup prize and tickets
+        vm.prank(ADMIN);
+        raffle.addPrize("Test Prize", "Desc", 100, 1);
+        spinStub.setBalance(USER, 5);
+        vm.prank(USER);
+        raffle.spendRaffle(1, 5);
+    }
+
+    function test_Cancel_Request_Success() public {
+        // 1. Request a winner, putting the prize in a pending state
+        vm.startPrank(ADMIN);
+        raffle.requestWinner(1);
+        
+        // We can't check internal state directly, so we verify by behavior.
+        // Trying to request again should fail.
+        vm.expectRevert(abi.encodeWithSelector(Raffle.WinnerRequestPending.selector, 1));
+        raffle.requestWinner(1);
+
+        // 2. Admin cancels the pending request
+        raffle.cancelWinnerRequest(1);
+
+        // 3. Now, requesting a winner again should succeed
+        uint256 reqId = requestWinnerForPrize(1);
+        assertTrue(reqId > 0, "Should be able to request a winner after cancellation");
+        vm.stopPrank();
+    }
+
+    function test_Cancel_Request_Fails_For_Non_Admin() public {
+        // Request a winner to create a pending state
+        vm.prank(ADMIN);
+        raffle.requestWinner(1);
+
+        // Attempt to cancel from a non-admin account
+        vm.prank(USER);
+        vm.expectRevert(); // Revert due to onlyRole(ADMIN_ROLE)
+        raffle.cancelWinnerRequest(1);
+    }
+
+    function test_Cancel_Request_Fails_When_Not_Pending() public {
+        // Do NOT request a winner, so there is no pending request.
+        
+        // Attempt to cancel should revert with our specific error message
+        vm.prank(ADMIN);
+        vm.expectRevert("No request pending for this prize");
+        raffle.cancelWinnerRequest(1);
+    }
+    
+    // Helper to request a winner and return the request ID
+    function requestWinnerForPrize(uint256 prizeId) internal returns (uint256) {
+        vm.recordLogs();
+        raffle.requestWinner(prizeId);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        
+        uint256 req = 0;
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("WinnerRequested(uint256,uint256)")) {
+                req = uint256(logs[i].topics[2]);
+                break;
+            }
+        }
+        require(req != 0, "Request ID not found in logs");
+        return req;
+    }
+}
+
 

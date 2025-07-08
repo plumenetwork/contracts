@@ -311,6 +311,17 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit PrizeClaimed(msg.sender, prizeId, winnerIndex);
     }
 
+    /**
+     * @notice Allows an admin to cancel a pending VRF winner request.
+     * @dev This is an escape hatch in case the oracle callback fails,
+     * which would otherwise leave the prize in a permanently pending state.
+     * @param prizeId The ID of the prize with the pending request.
+     */
+    function cancelWinnerRequest(uint256 prizeId) external onlyRole(ADMIN_ROLE) {
+        require(isWinnerRequestPending[prizeId], "No request pending for this prize");
+        isWinnerRequestPending[prizeId] = false;
+    }
+
 
     function getPrizeIds() external view returns (uint256[] memory) {
         return prizeIds;
