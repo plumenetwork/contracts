@@ -172,7 +172,8 @@ abstract contract SpinTestBase is PlumeTestBase {
         // Fork and setup ArbSys
         setupFork();
         setupArbSys();
-        
+        vm.deal(USER, 100e18);
+
         // Deploy DateTime and set time
         dateTime = new DateTime();
         vm.warp(dateTime.toTimestamp(year, month, day, hour, minute, second));

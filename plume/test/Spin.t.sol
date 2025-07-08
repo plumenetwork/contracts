@@ -16,6 +16,7 @@ contract SpinTest is SpinTestBase {
 
     function setUp() public {
         // Set up spin with date March 8, 2025 10:00:00
+
         setupSpin(2025, 3, 8, 10, 0, 0);
     }
 
@@ -57,6 +58,7 @@ contract SpinTest is SpinTestBase {
     function testStartSpinCorrectPayment() public {
         vm.recordLogs();
         vm.prank(USER);
+        vm.deal(USER, INITIAL_SPIN_PRICE); // Fund the user
         spin.startSpin{ value: INITIAL_SPIN_PRICE }();
 
         // Expect emit Spin requested
@@ -308,7 +310,6 @@ contract SpinTest is SpinTestBase {
 
     /// @notice handleRandomness should revert when called by non-SUPRA_ORACLE address
     function testHandleRandomnessAccessControl() public {
-        vm.deal(USER, INITIAL_SPIN_PRICE);
         uint256 nonce = performPaidSpin(USER); // Use paid spin
 
         // Create a dummy nonce that will be considered valid
@@ -565,6 +566,50 @@ contract SpinTest is SpinTestBase {
 
         (uint256 streak,,,,,,) = spin.getUserData(USER);
         assertEq(streak, 1);
+    }
+
+    /// @notice Test that a broken streak results in a recalculated (lower) raffle ticket reward
+    function testBrokenStreakRaffleReward() public {
+        // Day 1: Spin to get streak to 1
+        vm.deal(USER, INITIAL_SPIN_PRICE);
+        uint256 nonce1 = performPaidSpin(USER);
+        completeSpin(nonce1, 999_999); // "Nothing" reward
+        assertEq(spin.currentStreak(USER), 1, "Streak should be 1 after day 1");
+
+        // Day 2: Spin to get streak to 2
+        vm.warp(block.timestamp + 1 days);
+        vm.deal(USER, INITIAL_SPIN_PRICE);
+        uint256 nonce2 = performPaidSpin(USER);
+        completeSpin(nonce2, 999_999);
+        assertEq(spin.currentStreak(USER), 2, "Streak should be 2 after day 2");
+
+        // Day 4: Skip a day, breaking the streak
+        vm.warp(block.timestamp + 2 days);
+        
+        // Sanity check: streak is now 0 before the spin
+        assertEq(spin.currentStreak(USER), 0, "Streak should be 0 after breaking");
+
+        // Spin and get a raffle ticket reward
+        vm.deal(USER, INITIAL_SPIN_PRICE);
+        uint256 nonce3 = performPaidSpin(USER);
+        
+        uint256[] memory rng = new uint256[](1);
+        rng[0] = 300_000; // Raffle Ticket reward
+
+        vm.prank(SUPRA_ORACLE);
+        vm.recordLogs();
+        spin.handleRandomness(nonce3, rng);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // The reward amount should be based on the new streak of 1 (baseRaffleMultiplier * 1)
+        (string memory category, uint256 amount) = abi.decode(logs[0].data, (string, uint256));
+        assertEq(category, "Raffle Ticket", "Reward should be Raffle Ticket");
+        assertEq(amount, spin.baseRaffleMultiplier() * 1, "Reward amount should be based on a streak of 1");
+        
+        // Check final user state
+        (uint256 finalStreak, , , uint256 raffleGained, uint256 raffleBalance, , ) = spin.getUserData(USER);
+        assertEq(finalStreak, 1, "Final streak should be 1");
+        assertEq(raffleGained, spin.baseRaffleMultiplier(), "Total raffle tickets gained should be based on streak of 1");
     }
 
     /// @notice Test jackpot payout with insufficient then sufficient streak
