@@ -79,6 +79,7 @@ contract WhitelistRestrictions is
         _grantRole(ADMIN_ROLE, admin);
         _grantRole(MANAGER_ROLE, admin);
         _grantRole(WHITELIST_ADMIN_ROLE, admin);
+        _grantRole(UPGRADER_ROLE, admin);
 
         // Set initial transfer restriction to unrestricted
         WhitelistStorage storage ws = _getWhitelistStorage();

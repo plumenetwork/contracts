@@ -14,6 +14,7 @@ import "./restrictions/RestrictionTypes.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title ArcTokenFactory
@@ -93,11 +94,14 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address admin
     ) internal returns (address) {
         // Deploy a fresh whitelist restrictions implementation
-        WhitelistRestrictions restrictionsImpl = new WhitelistRestrictions();
+        WhitelistRestrictions implementation = new WhitelistRestrictions();
 
-        // Initialize the implementation directly (no proxy for module for now)
-        try restrictionsImpl.initialize(admin) {
-            return address(restrictionsImpl);
+        // Prepare initialization data
+        bytes memory initData = abi.encodeWithSelector(WhitelistRestrictions.initialize.selector, admin);
+
+        // Deploy and initialize the module behind a proxy
+        try new ERC1967Proxy(address(implementation), initData) returns (ERC1967Proxy proxy) {
+            return address(proxy);
         } catch {
             revert FailedToCreateRestrictionsModule();
         }
@@ -112,11 +116,14 @@ contract ArcTokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address admin
     ) internal returns (address) {
         // Deploy a fresh yield blacklist restrictions implementation
-        YieldBlacklistRestrictions restrictionsImpl = new YieldBlacklistRestrictions();
+        YieldBlacklistRestrictions implementation = new YieldBlacklistRestrictions();
 
-        // Initialize the implementation directly
-        try restrictionsImpl.initialize(admin) {
-            return address(restrictionsImpl);
+        // Prepare initialization data
+        bytes memory initData = abi.encodeWithSelector(YieldBlacklistRestrictions.initialize.selector, admin);
+
+        // Deploy and initialize the module behind a proxy
+        try new ERC1967Proxy(address(implementation), initData) returns (ERC1967Proxy proxy) {
+            return address(proxy);
         } catch {
             revert FailedToCreateRestrictionsModule();
         }
