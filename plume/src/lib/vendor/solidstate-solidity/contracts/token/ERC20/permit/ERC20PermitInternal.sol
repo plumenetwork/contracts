@@ -85,7 +85,7 @@ abstract contract ERC20PermitInternal is
 
         ERC20PermitStorage.Layout storage l = ERC20PermitStorage.layout();
 
-        // execute EIP-712 hashStruct procedure using assembly, equavalent to:
+        // execute EIP-712 hashStruct procedure using assembly, equivalent to:
         //
         // bytes32 structHash = keccak256(
         //   abi.encode(
