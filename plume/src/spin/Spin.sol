@@ -376,33 +376,6 @@ contract Spin is
         return (year1 == year2 && month1 == month2 && day1 == day2);
     }
 
-    /**
-     * @notice Checks if the current date is the next day after the last spin date.
-     * @param lastYear The year of the last spin date.
-     * @param lastMonth The month of the last spin date.
-     * @param lastDay The day of the last spin date.
-     * @param currentYear The year of the current date.
-     * @param currentMonth The month of the current date.
-     * @param currentDay The day of the current date.
-     */
-    function isNextDay(
-        uint16 lastYear,
-        uint8 lastMonth,
-        uint8 lastDay,
-        uint16 currentYear,
-        uint8 currentMonth,
-        uint8 currentDay
-    ) internal view returns (bool) {
-        uint256 lastDateTimestamp = dateTime.toTimestamp(lastYear, lastMonth, lastDay);
-        uint256 nextDayTimestamp = lastDateTimestamp + SECONDS_PER_DAY;
-
-        uint16 nextDayYear = dateTime.getYear(nextDayTimestamp);
-        uint8 nextDayMonth = dateTime.getMonth(nextDayTimestamp);
-        uint8 nextDayDay = dateTime.getDay(nextDayTimestamp);
-
-        return (nextDayYear == currentYear) && (nextDayMonth == currentMonth) && (nextDayDay == currentDay);
-    }
-
     // View Functions
     /**
      * @notice Gets the data for a user.
@@ -592,18 +565,6 @@ contract Spin is
         
         // Note: The spin fee is NOT refunded. This is to prevent gaming the system,
         // as the oracle request may have already been sent and incurred costs.
-    }
-
-    /// @notice Internal function to get weekly jackpot details based on the week number.
-    function _getWeeklyJackpotDetails(
-        uint256 _week
-    ) internal view returns (uint256 prize, uint256 requiredStreak) {
-        if (_week >= 12) {
-            return (0, 0); // No jackpot after week 12
-        }
-        prize = jackpotPrizes[uint8(_week)];
-        requiredStreak = _week + 2;
-        return (prize, requiredStreak);
     }
 
     /// @notice Transfers Plume tokens safely, reverting if the contract has insufficient balance.
