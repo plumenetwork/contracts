@@ -533,13 +533,9 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         for (uint256 i = 0; i < validatorIds.length; i++) {
             uint16 validatorId = validatorIds[i];
 
-            // Skip inactive (but not slashed) validators - they don't accrue new rewards
-            if (!$.validators[validatorId].active && !$.validators[validatorId].slashed) {
-                continue;
-            }
+            // The underlying reward processing logic correctly handles all validator states
+            // (active, inactive, slashed) by respecting the relevant timestamps
 
-            // For both active and slashed validators, use normal reward processing
-            // For slashed validators, this will trigger lazy settlement and return preserved rewards
             uint256 rewardFromValidator = _processValidatorRewards(user, validatorId, token);
             totalReward += rewardFromValidator;
         }

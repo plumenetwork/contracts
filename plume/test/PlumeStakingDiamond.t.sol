@@ -13613,6 +13613,61 @@ function test_Revert_RemoveHistoricalRewardToken_WhenTokenNeverExisted() public 
     vm.expectRevert(abi.encodeWithSelector(TokenDoesNotExist.selector, address(nonExistentToken)));
     managementFacet.removeHistoricalRewardToken(address(nonExistentToken));
 }
+
+
+
+function test_ClaimRewardsFromInactiveValidator() public {
+    ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+    RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+    ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+    StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+
+    // 1. SETUP
+    // Create a reward token and fund the treasury.
+    MockPUSD rewardToken = new MockPUSD();
+    address token = address(rewardToken);
+    vm.startPrank(admin);
+    rewardsFacet.addRewardToken(token, 1e16, 1e24); // 0.01 rewards per second
+    treasury.addRewardToken(token);
+    rewardToken.transfer(address(treasury), 10e22);
+    vm.stopPrank();
+
+    // User stakes with the default validator.
+    uint16 validatorId = DEFAULT_VALIDATOR_ID;
+    vm.prank(user1);
+    stakingFacet.stake{value: 100e18}(validatorId);
+
+    // 2. ACCRUE REWARDS
+    // Let 1 day pass to accrue rewards while the validator is active.
+    vm.warp(block.timestamp + 1 days);
+    
+    // Check earned rewards before deactivation.
+    uint256 expectedRewards = rewardsFacet.earned(user1, token);
+    assertTrue(expectedRewards > 0, "Pre-condition failed: No rewards earned before deactivation.");
+
+    // 3. DEACTIVATE VALIDATOR
+    // Admin sets the validator to inactive.
+    vm.prank(admin);
+    validatorFacet.setValidatorStatus(validatorId, false);
+    vm.stopPrank();
+
+    // Let more time pass. No new rewards should accrue.
+    vm.warp(block.timestamp + 1 days);
+    uint256 rewardsAfterDeactivation = rewardsFacet.earned(user1, token);
+    assertApproxEqAbs(rewardsAfterDeactivation, expectedRewards, 1, "Rewards should not accrue after validator is inactive.");
+    
+    // 4. ACTION & ASSERTION
+    // User attempts to claim their rewards via claim(token), which hits the fixed logic.
+    // On the flawed code, this would return 0 or an incorrect amount.
+    // On the fixed code, this must succeed and return the rewards earned *before* deactivation.
+    vm.prank(user1);
+    uint256 claimedAmount = rewardsFacet.claim(token);
+
+    assertTrue(claimedAmount > 0, "Claim amount should be greater than zero.");
+    assertApproxEqAbs(claimedAmount, expectedRewards, 1, "User could not claim correct reward amount from inactive validator.");
+}
+
+
     // Helper functions for creating single-element arrays for function calls
     function _addrArr(address a) internal pure returns (address[] memory) {
         address[] memory arr = new address[](1);
