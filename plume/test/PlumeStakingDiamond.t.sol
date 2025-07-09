@@ -13668,6 +13668,45 @@ function test_ClaimRewardsFromInactiveValidator() public {
 }
 
 
+    function testSetMaxRewardRateLowersGlobalRate() public {
+            RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+    MockPUSD rewardToken = new MockPUSD();
+    uint16 validatorId1 = DEFAULT_VALIDATOR_ID;
+    vm.startPrank(admin);
+
+        // 1. Setup: Add a reward token with a high initial rate.
+        uint256 initialRate = 2000 * 1e9; // 2000
+        uint256 initialMaxRate = 3000 * 1e9; // 3000
+        rewardsFacet.addRewardToken(address(rewardToken), initialRate, initialMaxRate);
+
+        // Verify the initial global rate.
+        assertEq(rewardsFacet.getRewardRate(address(rewardToken)), initialRate);
+        // Verify the initial checkpoint for the validator.
+        (, uint256 initialRateFromCheckpoint, ) = rewardsFacet.getValidatorRewardRateCheckpoint(validatorId1, address(rewardToken), 0);
+        assertEq(initialRateFromCheckpoint, initialRate);
+        vm.warp(block.timestamp + 1);
+
+        // 2. Action: Set a new max rate that is lower than the current global rate.
+        uint256 newMaxRate = 500 * 1e9; // 500
+        rewardsFacet.setMaxRewardRate(address(rewardToken), newMaxRate);
+
+        // 3. Assertions:
+        // Assert the global rate was lowered to the new max rate.
+        assertEq(rewardsFacet.getRewardRate(address(rewardToken)), newMaxRate, "Global reward rate should be lowered");
+
+        // Assert a new checkpoint was created for the validator with the new capped rate.
+        uint256 checkpointCount = rewardsFacet.getValidatorRewardRateCheckpointCount(validatorId1, address(rewardToken));
+        assertTrue(checkpointCount > 1, "A new checkpoint should have been created");
+        (, uint256 newRateFromCheckpoint, ) = rewardsFacet.getValidatorRewardRateCheckpoint(validatorId1, address(rewardToken), checkpointCount - 1);
+        assertEq(newRateFromCheckpoint, newMaxRate, "New validator checkpoint rate should be the new max rate");
+
+        // Assert the max rate itself was updated.
+        assertEq(rewardsFacet.getMaxRewardRate(address(rewardToken)), newMaxRate, "Max reward rate should be updated");
+            vm.stopPrank();
+
+    }
+
+
     // Helper functions for creating single-element arrays for function calls
     function _addrArr(address a) internal pure returns (address[] memory) {
         address[] memory arr = new address[](1);

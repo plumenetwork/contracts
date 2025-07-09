@@ -289,9 +289,18 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         if (!$.isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
+
+        // If the current global rate exceeds the new max rate, enforce the new max.
         if ($.rewardRates[token] > newMaxRate) {
-            revert RewardRateExceedsMax();
+            $.rewardRates[token] = newMaxRate;
+
+            // Create new checkpoints for all validators to apply the new, capped rate.
+            uint16[] memory validatorIds = $.validatorIds;
+            for (uint256 i = 0; i < validatorIds.length; i++) {
+                PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorIds[i], newMaxRate);
+            }
         }
+
         $.maxRewardRates[token] = newMaxRate;
         emit MaxRewardRateUpdated(token, newMaxRate);
     }
