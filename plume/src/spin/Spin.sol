@@ -63,9 +63,10 @@ contract Spin is
     RewardProbabilities public rewardProbabilities;
     mapping(address => bool) public isSpinPending;
     uint256 public spinPrice; // Price to spin in wei
+    mapping(address => uint256) public pendingNonce;
 
     // Reserved storage gap for future upgrades
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 
     // Events
     event SpinRequested(uint256 indexed nonce, address indexed user);
@@ -188,6 +189,7 @@ contract Spin is
 
         uint256 nonce = supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, admin);
         userNonce[nonce] = payable(msg.sender);
+        pendingNonce[msg.sender] = nonce;
 
         emit SpinRequested(nonce, msg.sender);
     }
@@ -210,6 +212,7 @@ contract Spin is
 
         isSpinPending[user] = false;
         delete userNonce[nonce];
+        delete pendingNonce[user];
 
         uint256 currentSpinStreak = _computeStreak(user, block.timestamp, true);
         uint256 randomness = rngList[0]; // Use full VRF range
@@ -568,6 +571,27 @@ contract Spin is
         uint256 _newPrice
     ) external onlyRole(ADMIN_ROLE) {
         spinPrice = _newPrice;
+    }
+
+    /**
+     * @notice Allows an admin to cancel a pending spin request for a user.
+     * @dev This is an escape hatch in case the oracle callback fails or gets stuck,
+     * which would otherwise leave the user's spin in a permanently pending state.
+     * @param user The address of the user whose pending spin should be canceled.
+     */
+    function cancelPendingSpin(address user) external onlyRole(ADMIN_ROLE) {
+        require(isSpinPending[user], "No spin pending for this user");
+
+        uint256 nonce = pendingNonce[user];
+        if (nonce != 0) {
+            delete userNonce[nonce];
+        }
+
+        delete pendingNonce[user];
+        isSpinPending[user] = false;
+        
+        // Note: The spin fee is NOT refunded. This is to prevent gaming the system,
+        // as the oracle request may have already been sent and incurred costs.
     }
 
     /// @notice Internal function to get weekly jackpot details based on the week number.
