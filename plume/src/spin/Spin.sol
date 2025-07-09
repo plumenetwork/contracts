@@ -500,6 +500,14 @@ contract Spin is
         whitelists[user] = true;
     }
 
+    /// @notice Remove address from whitelist, restoring the daily spin limit.
+    /// @param user The address of the user to remove from the whitelist.
+    function removeWhitelist(
+        address user
+    ) external onlyRole(ADMIN_ROLE) {
+        whitelists[user] = false;
+    }
+
     /// @notice Enable or disable spinning
     /// @param _enableSpin The flag to enable/disable spinning
     function setEnableSpin(

@@ -127,6 +127,33 @@ contract SpinTest is SpinTestBase {
         assertTrue(foundSpinRequested, "SpinRequested event not emitted for second spin");
     }
 
+    /// @notice Removing a user from the whitelist restores the daily spin limit
+    function testRemoveWhitelistRestoresCooldown() public {
+        // 1. Whitelist USER
+        vm.prank(ADMIN);
+        spin.whitelist(USER);
+
+        // 2. Perform first spin (should succeed)
+        vm.deal(USER, INITIAL_SPIN_PRICE);
+        uint256 nonce1 = performPaidSpin(USER);
+        completeSpin(nonce1, 999_999);
+
+        // 3. Perform second spin while whitelisted (should succeed)
+        vm.deal(USER, INITIAL_SPIN_PRICE);
+        uint256 nonce2 = performPaidSpin(USER);
+        assertTrue(nonce2 > 0, "Second spin should succeed while whitelisted");
+
+        // 4. Remove user from whitelist
+        vm.prank(ADMIN);
+        spin.removeWhitelist(USER);
+
+        // 5. Attempt third spin on the same day (should fail)
+        vm.prank(USER);
+        vm.deal(USER, INITIAL_SPIN_PRICE);
+        vm.expectRevert(abi.encodeWithSelector(Spin.AlreadySpunToday.selector));
+        spin.startSpin{ value: INITIAL_SPIN_PRICE }();
+    }
+
     /// @notice Pause and unpause behavior
     function testPauseUnpause() public {
         // Pause
