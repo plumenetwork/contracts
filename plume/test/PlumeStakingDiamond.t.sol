@@ -13707,6 +13707,74 @@ function test_ClaimRewardsFromInactiveValidator() public {
     }
 
 
+
+    /**
+     * @notice Tests that view functions `amountCooling` and `getUserCooldowns` correctly report
+     *         on cooldowns associated with slashed validators, even though those funds are
+     *         terminated and not withdrawable.
+     * @dev This test will fail on the current code because the view functions incorrectly
+     *      filter out slashed validators.
+     */
+    function testViewFunctionsIncludeCooldownsFromSlashedValidators() public {
+        ManagementFacet managementFacet = ManagementFacet(address(diamondProxy));
+        RewardsFacet rewardsFacet = RewardsFacet(address(diamondProxy));
+        ValidatorFacet validatorFacet = ValidatorFacet(address(diamondProxy));
+        StakingFacet stakingFacet = StakingFacet(address(diamondProxy));
+
+
+        uint16 validatorId1 = DEFAULT_VALIDATOR_ID;
+
+        // 1. SETUP
+        // User1 stakes with validator1.
+        uint256 stakeAmount = 100e18;
+        vm.prank(user1);
+        stakingFacet.stake{value: stakeAmount}(validatorId1);
+
+        // User1 starts a cooldown for the full amount.
+        vm.prank(user1);
+        stakingFacet.unstake(validatorId1, stakeAmount);
+
+        // Pre-slash checks to ensure setup is correct.
+        vm.prank(user1);
+        assertEq(stakingFacet.amountCooling(), stakeAmount, "Pre-slash: amountCooling should be correct");
+
+        StakingFacet.CooldownView[] memory cooldownsBeforeSlash = stakingFacet.getUserCooldowns(user1);
+        assertEq(cooldownsBeforeSlash.length, 1, "Pre-slash: getUserCooldowns should show one entry");
+        assertEq(cooldownsBeforeSlash[0].amount, stakeAmount, "Pre-slash: Cooldown amount in struct should be correct");
+
+        // 2. ACTION: Slash validator1.
+        // The admin of validator2 votes to slash validator1.
+        vm.prank(user2);
+        validatorFacet.voteToSlashValidator(validatorId1, block.timestamp + 1 days);
+
+        // The unanimous vote from the only other active validator should trigger an immediate slash.
+        (PlumeStakingStorage.ValidatorInfo memory info,,) = validatorFacet.getValidatorInfo(validatorId1);
+        assertTrue(info.slashed, "Validator 1 should be slashed");
+
+        // 3. ASSERTIONS
+        // First, confirm the core logic: the funds are NOT withdrawable because the cooldown did not mature before the slash.
+        vm.prank(user1);
+        assertEq(stakingFacet.amountWithdrawable(), 0, "Post-slash: amountWithdrawable should be 0 as cooldown is lost");
+
+        // --- THIS IS THE CORE TEST FOR THE BUG ---
+        // Now, check the view functions that were previously hiding the cooldown entry.
+
+        // Test amountCooling()
+        // BUGGY BEHAVIOR: Would return 0.
+        // CORRECT BEHAVIOR: Should return stakeAmount because the cooldown entry still exists in storage and is not yet matured.
+        vm.prank(user1);
+        assertEq(stakingFacet.amountCooling(), stakeAmount, "Post-slash: amountCooling should still report the (terminated) cooling amount");
+
+        // Test getUserCooldowns()
+        // BUGGY BEHAVIOR: Would return an empty array.
+        // CORRECT BEHAVIOR: Should return an array with 1 entry for the slashed validator.
+        StakingFacet.CooldownView[] memory cooldownsAfterSlash = stakingFacet.getUserCooldowns(user1);
+        assertEq(cooldownsAfterSlash.length, 1, "Post-slash: getUserCooldowns should still show the entry");
+        assertEq(cooldownsAfterSlash[0].amount, stakeAmount, "Post-slash: Cooldown amount in struct should be correct");
+        assertEq(cooldownsAfterSlash[0].validatorId, validatorId1, "Post-slash: Cooldown validatorId should be correct");
+    }
+
+
     // Helper functions for creating single-element arrays for function calls
     function _addrArr(address a) internal pure returns (address[] memory) {
         address[] memory arr = new address[](1);

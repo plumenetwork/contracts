@@ -599,15 +599,19 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Populate the array
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
             uint16 validatorId_iterator = userAssociatedValidators[i];
-            if ($.validatorExists[validatorId_iterator] && !$.validators[validatorId_iterator].slashed) {
+            // FIX: Remove the check for `!slashed`. Cooldowns from slashed validators should be visible.
+            if ($.validatorExists[validatorId_iterator]) {
                 PlumeStakingStorage.CooldownEntry storage entry = $.userValidatorCooldowns[user][validatorId_iterator];
                 if (entry.amount > 0) {
-                    cooldowns[currentIndex] = CooldownView({
-                        validatorId: validatorId_iterator,
-                        amount: entry.amount,
-                        cooldownEndTime: entry.cooldownEndTime
-                    });
-                    currentIndex++;
+                    // Prevent array out-of-bounds if _countActiveCooldowns logic differs.
+                    if (currentIndex < activeCooldownCount) {
+                        cooldowns[currentIndex] = CooldownView({
+                            validatorId: validatorId_iterator,
+                            amount: entry.amount,
+                            cooldownEndTime: entry.cooldownEndTime
+                        });
+                        currentIndex++;
+                    }
                 }
             }
         }
@@ -1017,10 +1021,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
             uint16 validatorId = userAssociatedValidators[i];
-            if (
-                $.validatorExists[validatorId] && !$.validators[validatorId].slashed
-                    && $.userValidatorCooldowns[user][validatorId].amount > 0
-            ) {
+            // FIX: Remove the check for `!slashed`. View functions should report the state as-is.
+            if ($.validatorExists[validatorId] && $.userValidatorCooldowns[user][validatorId].amount > 0) {
                 count++;
             }
         }
@@ -1042,7 +1044,8 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
             uint16 validatorId = userAssociatedValidators[i];
-            if ($.validatorExists[validatorId] && !$.validators[validatorId].slashed) {
+            // FIX: Remove the check for `!slashed`. View functions should report the state as-is.
+            if ($.validatorExists[validatorId]) {
                 PlumeStakingStorage.CooldownEntry storage cooldownEntry = $.userValidatorCooldowns[user][validatorId];
                 if (cooldownEntry.amount > 0 && block.timestamp < cooldownEntry.cooldownEndTime) {
                     activelyCoolingAmount += cooldownEntry.amount;
