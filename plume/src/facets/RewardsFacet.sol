@@ -663,7 +663,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     ) external view returns (uint256) {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
 
-        // Fix: Check if token exists in current rewardTokens mapping
+        // Check if token exists in current rewardTokens mapping
         if (!$.isRewardToken[token]) {
             revert TokenDoesNotExist(token);
         }
@@ -695,7 +695,7 @@ contract RewardsFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
         rewardRate = $.rewardRates[token];
 
-        // Fix: Return the most recent validator update time for this token
+        // Return the most recent validator update time for this token
         uint16[] memory validatorIds = $.validatorIds;
         lastUpdateTime = 0;
         for (uint256 i = 0; i < validatorIds.length; i++) {

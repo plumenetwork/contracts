@@ -110,7 +110,7 @@ library PlumeValidatorLogic {
         bool hasActiveStakeForThisVal = $.userValidatorStakes[staker][validatorId].staked > 0;
         bool hasActiveCooldownForThisVal = $.userValidatorCooldowns[staker][validatorId].amount > 0;
 
-        // Fix: Use the pending rewards flag which handles both current and removed tokens
+        // Use the pending rewards flag which handles both current and removed tokens
         bool hasPendingRewardsForThisVal = $.userHasPendingRewards[staker][validatorId];
 
 

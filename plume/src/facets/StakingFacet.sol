@@ -475,10 +475,10 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
             revert StakeAmountTooSmall(amountRestaked, $.minStakeAmount);
         }
 
-        // --- BEGIN CRITICAL FIX ---
-        // Transfer the rewards from the treasury TO THIS CONTRACT to back the new stake.
+        
+        // Transfer the rewards from the treasury TO DIAMOND PROXY to back the new stake.
         _transferRewardFromTreasury(tokenToRestake, amountRestaked, address(this));
-        // --- END CRITICAL FIX ---
+        
 
         // Use proper stake setup instead of restake workflow - this handles:
         // 1. New stake reward state initialization
@@ -607,7 +607,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         // Populate the array
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
             uint16 validatorId_iterator = userAssociatedValidators[i];
-            // FIX: Remove the check for `!slashed`. Cooldowns from slashed validators should be visible.
+            // Remove the check for `!slashed`. Cooldowns from slashed validators should be visible.
             if ($.validatorExists[validatorId_iterator]) {
                 PlumeStakingStorage.CooldownEntry storage entry = $.userValidatorCooldowns[user][validatorId_iterator];
                 if (entry.amount > 0) {
@@ -1029,7 +1029,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
             uint16 validatorId = userAssociatedValidators[i];
-            // FIX: Remove the check for `!slashed`. View functions should report the state as-is.
+            // Remove the check for `!slashed`. View functions should report the state as-is.
             if ($.validatorExists[validatorId] && $.userValidatorCooldowns[user][validatorId].amount > 0) {
                 count++;
             }
@@ -1052,7 +1052,7 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
 
         for (uint256 i = 0; i < userAssociatedValidators.length; i++) {
             uint16 validatorId = userAssociatedValidators[i];
-            // FIX: Remove the check for `!slashed`. View functions should report the state as-is.
+            // Remove the check for `!slashed`. View functions should report the state as-is.
             if ($.validatorExists[validatorId]) {
                 PlumeStakingStorage.CooldownEntry storage cooldownEntry = $.userValidatorCooldowns[user][validatorId];
                 if (cooldownEntry.amount > 0 && block.timestamp < cooldownEntry.cooldownEndTime) {

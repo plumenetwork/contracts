@@ -181,7 +181,7 @@ library PlumeRewardLogic {
                     uint256 grossRewardForValidatorThisSegment =
                         (totalStaked * rewardPerTokenIncrease) / PlumeStakingStorage.REWARD_PRECISION;
 
-                    // Fix: Use regular division (floor) for validator's accrued commission
+                    // Use regular division (floor) for validator's accrued commission
                     uint256 commissionDeltaForValidator = (
                         grossRewardForValidatorThisSegment * commissionRateForSegment
                     ) / PlumeStakingStorage.REWARD_PRECISION;
@@ -231,7 +231,7 @@ library PlumeRewardLogic {
             lastUserRewardUpdateTime = $.userValidatorStakeStartTime[user][validatorId];
 
             if (lastUserRewardUpdateTime == 0 && $.userValidatorStakes[user][validatorId].staked > 0) {
-                // Fixed fallback: don't use block.timestamp if it's after slash timestamp
+                
                 uint256 fallbackTime = block.timestamp;
 
                 // If validator is slashed, cap fallback time at slash timestamp
@@ -244,11 +244,11 @@ library PlumeRewardLogic {
             }
         }
 
-        // CRITICAL FIX: For recently reactivated validators, don't calculate rewards
+        // For recently reactivated validators, don't calculate rewards
         // from before the reactivation time to prevent retroactive accrual
         uint256 validatorLastUpdateTime = $.validatorLastUpdateTimes[validatorId][token];
 
-        // CRITICAL FIX: For slashed/inactive validators, cap the calculation period at the timestamp
+        // For slashed/inactive validators, cap the calculation period at the timestamp
         PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
         uint256 effectiveEndTime = block.timestamp;
 
@@ -343,7 +343,7 @@ library PlumeRewardLogic {
                 // Commission rate effective at the START of this segment
                 uint256 effectiveCommissionRate = getEffectiveCommissionRateAt($, validatorId, segmentStartTime);
 
-                // Fix: Use ceiling division for commission charged to user to ensure rounding up
+                // Use ceiling division for commission charged to user to ensure rounding up
                 uint256 commissionForThisSegment =
                     _ceilDiv(grossRewardForSegment * effectiveCommissionRate, PlumeStakingStorage.REWARD_PRECISION);
 
