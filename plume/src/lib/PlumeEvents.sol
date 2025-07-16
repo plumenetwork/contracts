@@ -302,8 +302,17 @@ event ValidatorAddressesSet(
     address newL1AccountEvm
 );
 
+/// @notice Emitted when a new admin is proposed for a validator, starting the two-step ownership transfer.
+/// @param validatorId The ID of the validator.
+/// @param proposedAdmin The address of the proposed new admin.
+event AdminProposed(uint16 indexed validatorId, address indexed proposedAdmin);
+
 // --- Administrative Events ---
 event MaxAllowedValidatorCommissionSet(uint256 oldMaxRate, uint256 newMaxRate);
+
+/// @notice Emitted when the maximum number of commission checkpoints per validator is set.
+/// @param newLimit The new maximum limit.
+event MaxCommissionCheckpointsSet(uint256 newLimit);
 
 // --- Commission Claim Timelock Events ---
 event CommissionClaimRequested(
@@ -330,6 +339,17 @@ event CommissionClaimFinalized(
  */
 event ValidatorCommissionCheckpointCreated(uint16 indexed validatorId, uint256 rate, uint256 timestamp);
 
+/// @notice Emitted when an admin prunes old commission checkpoints for a validator.
+/// @param validatorId The ID of the validator.
+/// @param count The number of checkpoints that were removed.
+event CommissionCheckpointsPruned(uint16 indexed validatorId, uint256 count);
+
+/// @notice Emitted when an admin prunes old reward rate checkpoints for a validator and token.
+/// @param validatorId The ID of the validator.
+/// @param token The reward token.
+/// @param count The number of checkpoints that were removed.
+event RewardRateCheckpointsPruned(uint16 indexed validatorId, address indexed token, uint256 count);
+
 // --- NEW SLASH CLEANUP EVENTS ---
 /**
  * @notice Emitted when an admin clears a user's active stake record for a slashed validator.
@@ -346,3 +366,16 @@ event AdminClearedSlashedStake(address indexed user, uint16 indexed slashedValid
  * @param amountCleared The amount of cooled funds that were cleared (considered lost).
  */
 event AdminClearedSlashedCooldown(address indexed user, uint16 indexed slashedValidatorId, uint256 amountCleared);
+
+/**
+ * @notice Emitted when a token is manually added to the historical rewards list by an admin.
+ * @param token The address of the token that was added.
+ */
+event HistoricalRewardTokenAdded(address indexed token);
+
+/**
+ * @notice Emitted when a token is manually removed from the historical rewards list by an admin.
+ * @dev This is a high-privilege, dangerous operation.
+ * @param token The address of the token that was removed.
+ */
+event HistoricalRewardTokenRemoved(address indexed token);

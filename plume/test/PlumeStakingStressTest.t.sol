@@ -193,7 +193,13 @@ contract PlumeStakingStressTest is Test {
         console2.log("Diamond cut applied.");
 
         // 5. Initialize
-        diamondProxy.initializePlume(address(0), MIN_STAKE, INITIAL_COOLDOWN);
+        diamondProxy.initializePlume(
+            address(0),
+            MIN_STAKE,
+            INITIAL_COOLDOWN,
+            1 days, // maxSlashVoteDuration
+            50e16 // maxAllowedValidatorCommission (50%)
+        );
         AccessControlFacet(address(diamondProxy)).initializeAccessControl();
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.ADMIN_ROLE, admin);
         AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
@@ -212,13 +218,9 @@ contract PlumeStakingStressTest is Test {
         RewardsFacet(address(diamondProxy)).setTreasury(address(treasury));
         console2.log("Treasury deployed and set.");
 
-        // 7. Add PLUME_NATIVE as the only reward token
-        RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE);
-        treasury.addRewardToken(PLUME_NATIVE); // Also add to treasury allowed list
-        vm.deal(address(treasury), 1_000_000 ether); // Give treasury a large amount of native ETH for rewards
-        console2.log("PLUME_NATIVE reward token added and treasury funded.");
 
-        // 8. Setup Validators (15)
+
+        // 7. Setup Validators (15)
         uint256 defaultMaxCapacity = 1_000_000_000 ether; // High capacity
         for (uint16 i = 0; i < NUM_VALIDATORS; i++) {
             address valAdmin = vm.addr(uint256(keccak256(abi.encodePacked("validatorAdmin", i))));
@@ -236,6 +238,14 @@ contract PlumeStakingStressTest is Test {
         }
         console2.log("%d validators added.", NUM_VALIDATORS);
 
+
+        // 8. Add PLUME_NATIVE as the only reward token
+        RewardsFacet(address(diamondProxy)).addRewardToken(PLUME_NATIVE, PLUME_REWARD_RATE_PER_SECOND, PLUME_REWARD_RATE_PER_SECOND*2);
+        treasury.addRewardToken(PLUME_NATIVE); // Also add to treasury allowed list
+        vm.deal(address(treasury), 1_000_000 ether); // Give treasury a large amount of native ETH for rewards
+        console2.log("PLUME_NATIVE reward token added and treasury funded.");
+
+/*
         // 9. Set reward rates for PLUME_NATIVE
         address[] memory rewardTokens = new address[](1);
         rewardTokens[0] = PLUME_NATIVE;
@@ -244,6 +254,7 @@ contract PlumeStakingStressTest is Test {
         // Set Max Rate slightly higher just in case
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, PLUME_REWARD_RATE_PER_SECOND * 2);
         RewardsFacet(address(diamondProxy)).setRewardRates(rewardTokens, rates);
+        */
         console2.log("PLUME reward rate set.");
 
         vm.stopPrank();
