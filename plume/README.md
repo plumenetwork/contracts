@@ -381,12 +381,12 @@ Slashing is driven by **unanimous votes** from *all other active validators* and
 
 ```mermaid
 flowchart TD
-    V[Validator Admins] -->|voteToSlashValidator| S[Slash Votes]
-    S -->|Unanimous?| AS{>= activeValidators - 1}
-    AS -->|Yes| P[\"_performSlash\" (auto)]
-    AS -->|No| W[Wait / More Votes]
-    P --> F[Validator Slashed]
-    W -->|TIMELOCK_ROLE slashValidator| F
+    V["Validator Admins"] -->|"voteToSlashValidator"| S["Slash Votes"]
+    S -->|"Unanimous?"| AS{"Enough Votes"}
+    AS -->|"Yes"| P["_performSlash()"]
+    AS -->|"No"| W["Waiting for More"]
+    P --> F["Validator Slashed"]
+    W -->|"TIMELOCK_ROLE slashValidator"| F
 ```
 
 Key details:
