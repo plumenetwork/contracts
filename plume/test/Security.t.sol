@@ -79,3 +79,56 @@ contract ReentrancyTest is SpinTestBase {
         assertEq(streak, 1, "Re-entrancy guard failed (streak > 1)");
     }
 }
+
+contract StuckSpinTest is SpinTestBase {
+    function setUp() public {
+        // Use SpinTestBase's setupSpin with current timestamp
+        setupSpin(2025, 3, 8, 10, 0, 0);
+    }
+
+    function test_Cancel_Pending_Spin_Success() public {
+        // 1. User starts a spin, which will be pending
+        vm.deal(USER, spin.getSpinPrice());
+        uint256 nonce = performPaidSpin(USER);
+
+        // Verify spin is pending
+        assertTrue(spin.isSpinPending(USER), "Spin should be pending");
+        assertEq(spin.pendingNonce(USER), nonce, "Pending nonce should be stored");
+
+        // 2. Admin cancels the pending spin
+        vm.prank(ADMIN);
+        spin.cancelPendingSpin(USER);
+
+        // 3. Verify state is reset
+        assertFalse(spin.isSpinPending(USER), "Spin should not be pending after cancellation");
+        assertEq(spin.pendingNonce(USER), 0, "Pending nonce should be cleared");
+        assertEq(address(spin.userNonce(nonce)), address(0), "userNonce mapping should be cleared");
+
+        // 4. User should be able to spin again
+        vm.deal(USER, spin.getSpinPrice());
+        uint256 newNonce = performPaidSpin(USER);
+        assertTrue(newNonce > 0, "Should be able to start a new spin");
+        assertNotEq(newNonce, nonce, "New nonce should be different from the old one");
+    }
+
+    function test_Cancel_Pending_Spin_Fails_For_Non_Admin() public {
+        // 1. User starts a spin
+        vm.deal(USER, spin.getSpinPrice());
+        performPaidSpin(USER);
+
+        // 2. Another user (non-admin) tries to cancel, should revert
+        vm.prank(USER2);
+        vm.expectRevert(); // Basic revert check for access control is sufficient
+        spin.cancelPendingSpin(USER);
+    }
+
+    function test_Cancel_Pending_Spin_Fails_When_Not_Pending() public {
+        // 1. No spin is pending for USER
+        assertFalse(spin.isSpinPending(USER), "User should not have a pending spin");
+
+        // 2. Admin tries to cancel, should revert with specific error
+        vm.prank(ADMIN);
+        vm.expectRevert(bytes("No spin pending for this user"));
+        spin.cancelPendingSpin(USER);
+    }
+}

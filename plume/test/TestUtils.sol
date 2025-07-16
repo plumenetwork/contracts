@@ -172,7 +172,8 @@ abstract contract SpinTestBase is PlumeTestBase {
         // Fork and setup ArbSys
         setupFork();
         setupArbSys();
-        
+        vm.deal(USER, 100e18);
+
         // Deploy DateTime and set time
         dateTime = new DateTime();
         vm.warp(dateTime.toTimestamp(year, month, day, hour, minute, second));
@@ -211,6 +212,26 @@ abstract contract SpinTestBase is PlumeTestBase {
         spin.startSpin();
         
         return extractNonceFromLogs(vm.getRecordedLogs());
+    }
+
+    // Helper function to perform a spin with payment
+    function performPaidSpin(
+        address _user
+    ) internal returns (uint256) {
+        vm.recordLogs();
+        vm.startPrank(_user);
+        uint256 currentPrice = spin.getSpinPrice();
+        spin.startSpin{ value: currentPrice }();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        vm.stopPrank();
+
+        // Find the SpinRequested event and extract the nonce
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("SpinRequested(uint256,address)")) {
+                return uint256(logs[i].topics[1]);
+            }
+        }
+        revert("SpinRequested event not found in performPaidSpin");
     }
     
     // Complete a spin with given RNG result
