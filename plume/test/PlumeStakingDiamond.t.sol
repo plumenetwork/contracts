@@ -13775,6 +13775,80 @@ function test_ClaimRewardsFromInactiveValidator() public {
     }
 
 
+    function test_Fix_RestakeRewardsIsBackedByTreasuryTransfer() public {
+        console2.log("\n--- Test: test_Fix_RestakeRewardsIsBackedByTreasuryTransfer START ---");
+
+        // --- 1. Setup ---
+        // Using a test-specific validator and user to avoid state conflicts
+        uint16 validatorId = 5;
+        address staker = user4;
+        uint256 initialStakeAmount = 100 ether;
+
+        vm.startPrank(admin);
+        // Add a new validator for this test to ensure a clean state
+        _addValidator(validatorId, DEFAULT_COMMISSION, makeAddr("v5_admin"), makeAddr("v5_withdraw"));
+
+        // Ensure PLUME_NATIVE is a reward token with a known rate for easy calculation
+        uint256 rewardRate = 1e16; // 0.01 PLUME per second
+        address[] memory tokens = new address[](1);
+        tokens[0] = PLUME_NATIVE;
+        uint256[] memory rates = new uint256[](1);
+        rates[0] = rewardRate;
+        
+        // Make sure max rate is high enough
+        RewardsFacet(address(diamondProxy)).setMaxRewardRate(PLUME_NATIVE, rewardRate * 10);
+        RewardsFacet(address(diamondProxy)).setRewardRates(tokens, rates);
+        console2.log("Set PLUME reward rate to %s wei/sec", rewardRate);
+        vm.stopPrank();
+
+        // --- 2. Accrue Rewards ---
+        vm.startPrank(staker);
+        StakingFacet(address(diamondProxy)).stake{value: initialStakeAmount}(validatorId);
+        
+        // Warp time to accrue a predictable amount of rewards
+        uint256 accrualDuration = 1000 seconds;
+        vm.warp(block.timestamp + accrualDuration);
+        vm.stopPrank();
+
+        // --- 3. Capture Pre-Restake State ---
+        uint256 pendingRewards = RewardsFacet(address(diamondProxy)).earned(staker, PLUME_NATIVE);
+        assertTrue(pendingRewards > 0, "Pre-condition failed: No rewards were accrued.");
+        console2.log("User has %s pending PLUME rewards to restake.", pendingRewards);
+
+        uint256 stakingBalance_before = address(diamondProxy).balance;
+        uint256 treasuryBalance_before = address(treasury).balance;
+        console2.log("Staking contract balance (before): %s", stakingBalance_before);
+        console2.log("Treasury contract balance (before): %s", treasuryBalance_before);
+        
+        // --- 4. Execute restakeRewards ---
+        console2.log("Executing restakeRewards...");
+        vm.startPrank(staker);
+        uint256 amountRestaked = StakingFacet(address(diamondProxy)).restakeRewards(validatorId);
+        vm.stopPrank();
+
+        // --- 5. Assert Correct Behavior ---
+        console2.log("Verifying balances after restake...");
+        uint256 stakingBalance_after = address(diamondProxy).balance;
+        uint256 treasuryBalance_after = address(treasury).balance;
+        console2.log("Staking contract balance (after): %s", stakingBalance_after);
+        console2.log("Treasury contract balance (after): %s", treasuryBalance_after);
+
+        assertApproxEqAbs(amountRestaked, pendingRewards, 1e12, "Amount reported by restakeRewards should match pending amount");
+
+        // **THE CRITICAL ASSERTIONS FOR THE FIX**
+        assertEq(stakingBalance_after, stakingBalance_before + amountRestaked, "Staking contract balance did not increase correctly.");
+        assertEq(treasuryBalance_after, treasuryBalance_before - amountRestaked, "Treasury contract balance did not decrease correctly.");
+
+        uint256 expectedFinalStake = initialStakeAmount + amountRestaked;
+        uint256 actualFinalStake = StakingFacet(address(diamondProxy)).getUserValidatorStake(staker, validatorId);
+        assertEq(actualFinalStake, expectedFinalStake, "User's final stake amount is incorrect.");
+
+        console2.log("--- Test: test_Fix_RestakeRewardsIsBackedByTreasuryTransfer PASSED ---");
+    }
+
+
+
+
     // Helper functions for creating single-element arrays for function calls
     function _addrArr(address a) internal pure returns (address[] memory) {
         address[] memory arr = new address[](1);

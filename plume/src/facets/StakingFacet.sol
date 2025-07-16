@@ -25,7 +25,8 @@ import {
     ValidatorInactive,
     ValidatorPercentageExceeded,
     ZeroAddress,
-    ZeroRecipientAddress
+    ZeroRecipientAddress,
+    TreasuryNotSet
 } from "../lib/PlumeErrors.sol";
 
 import {
@@ -46,6 +47,7 @@ import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
+import { IPlumeStakingRewardTreasury } from "../interfaces/IPlumeStakingRewardTreasury.sol";
 
 using PlumeRewardLogic for PlumeStakingStorage.Layout;
 
@@ -57,6 +59,7 @@ interface IRewardsGetter {
         address token
     ) external returns (uint256 pendingReward);
 
+    function getTreasury() external view returns (address);
 }
 
 /**
@@ -471,6 +474,11 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         if (amountRestaked < $.minStakeAmount) {
             revert StakeAmountTooSmall(amountRestaked, $.minStakeAmount);
         }
+
+        // --- BEGIN CRITICAL FIX ---
+        // Transfer the rewards from the treasury TO THIS CONTRACT to back the new stake.
+        _transferRewardFromTreasury(tokenToRestake, amountRestaked, address(this));
+        // --- END CRITICAL FIX ---
 
         // Use proper stake setup instead of restake workflow - this handles:
         // 1. New stake reward state initialization
@@ -1136,6 +1144,16 @@ contract StakingFacet is ReentrancyGuardUpgradeable {
         }
 
         return totalRewards;
+    }
+
+    function _transferRewardFromTreasury(address token, uint256 amount, address recipient) internal {
+        address treasury = IRewardsGetter(address(this)).getTreasury();
+        if (treasury == address(0)) {
+            revert TreasuryNotSet();
+        }
+
+        // Make the treasury send the rewards directly to the recipient
+        IPlumeStakingRewardTreasury(treasury).distributeReward(token, amount, recipient);
     }
 
 }

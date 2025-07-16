@@ -111,7 +111,6 @@ library PlumeStakingStorage {
         uint256 cooldownInterval; // Duration of the cooldown period in seconds
         uint256 maxValidatorPercentage; // Maximum percentage of total stake a validator can have (in basis points)
         uint256 maxAllowedValidatorCommission; // Maximum allowed commission for any validator
-        uint16 maxCommissionCheckpoints; // Max commission checkpoints per validator
         // === Access Control ===
         mapping(bytes32 => mapping(address => bool)) hasRole; // role => address => has role
         bool initialized; // Whether the contract has been initialized
@@ -123,12 +122,14 @@ library PlumeStakingStorage {
         mapping(uint16 => uint256) slashVoteCounts; // validatorId => active vote count
         mapping(address => uint16) adminToValidatorId; // admin address => validatorId
         mapping(address => bool) isAdminAssigned; // admin address => is assigned to a validator
-        mapping(uint16 => address) pendingAdmins; // validatorId => pending admin address for ownership transfer
         // === Commission Claims ===
         mapping(uint16 => mapping(address => PendingCommissionClaim)) pendingCommissionClaims; // validatorId => token
             // => pending claim
         // === Flags ===
         mapping(address => bool) hasPendingRewards; // user => whether they have pending rewards to claim
+        // --- NEW VARIABLES APPENDED FOR UPGRADE ---
+        uint16 maxCommissionCheckpoints; // Max commission checkpoints per validator
+        mapping(uint16 => address) pendingAdmins; // validatorId => pending admin address for ownership transfer
         // === Token Lifecycle Tracking ===
         mapping(address => uint256) tokenAdditionTimestamps; // token => when it was added
         mapping(address => uint256) tokenRemovalTimestamps; // token => when it was removed
