@@ -601,4 +601,76 @@ contract ManagementFacet is ReentrancyGuardUpgradeable, OwnableInternal {
         return PlumeStakingStorage.layout().historicalRewardTokens;
     }
 
+    // --- MIGRATION-SPECIFIC FUNCTION ---
+
+    /**
+     * @notice Admin function to manually create a historical reward rate checkpoint for a validator.
+     * @dev DANGEROUS: This is a special-purpose migration function. It bypasses normal settlement logic
+     *      and should only be used to back-fill historical data during an upgrade.
+     *      Requires ADMIN_ROLE.
+     * @param validatorId The ID of the validator to create the checkpoint for.
+     * @param token The address of the reward token.
+     * @param timestamp The historical timestamp for the checkpoint.
+     * @param rate The historical rate for the checkpoint.
+     */
+    function adminCreateHistoricalRewardCheckpoint(
+        uint16 validatorId,
+        address token,
+        uint256 timestamp,
+        uint256 rate
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Basic validation
+        if (!$.validatorExists[validatorId]) {
+            revert ValidatorDoesNotExist(validatorId);
+        }
+        if (!$.isHistoricalRewardToken[token]) {
+            // Check historical list, as this is for migrating historical data
+            revert TokenDoesNotExist(token);
+        }
+
+        // Directly create the checkpoint. We assume cumulativeIndex is not needed for this migration,
+        // as the new reward logic will calculate it based on this new baseline.
+        PlumeStakingStorage.RateCheckpoint memory checkpoint = PlumeStakingStorage.RateCheckpoint({
+            timestamp: timestamp,
+            rate: rate,
+            cumulativeIndex: 0 // Explicitly set to 0 for migrated checkpoints
+         });
+
+        $.validatorRewardRateCheckpoints[validatorId][token].push(checkpoint);
+
+        // Note: No event is emitted here as this is a background migration action.
+    }
+
+    /**
+     * @notice Admin function to manually set the addition timestamp for a historical token.
+     * @dev DANGEROUS: This is a special-purpose migration function intended to be used with
+     *      `adminCreateHistoricalRewardCheckpoint`. It should only be used to back-fill
+     *      historical data during an upgrade. Requires ADMIN_ROLE.
+     * @param token The address of the historical reward token.
+     * @param timestamp The historical timestamp when the token was originally added.
+     */
+    function adminSetTokenAdditionTimestamp(
+        address token,
+        uint256 timestamp
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+
+        // Basic validation
+        if (token == address(0)) {
+            revert ZeroAddress("token");
+        }
+        if (timestamp == 0) {
+            revert InvalidAmount(timestamp);
+        }
+        if (!$.isHistoricalRewardToken[token]) {
+            revert TokenDoesNotExist(token);
+        }
+
+        // Set the timestamp.
+        $.tokenAdditionTimestamps[token] = timestamp;
+
+        // No event is emitted as this is a background migration action.
+    }
 }
