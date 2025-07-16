@@ -359,4 +359,40 @@ contract ArcTokenFactoryTest is Test {
         UUPSUpgradeable(tokenAddress).upgradeToAndCall(newImpl, "");
         vm.stopPrank();
     }
+
+    // ============ Module Upgrade Tests ============
+
+    bytes32 internal constant IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
+    function test_UpgradeRestrictionModule() public {
+        // 1. Create a token, which also creates the restriction modules as proxies
+        address tokenAddress = factory.createToken("Test Token", "TEST", 1000e18, address(yieldToken), "uri", admin, 18);
+        ArcToken token = ArcToken(tokenAddress);
+
+        // 2. Get the address of the whitelist module proxy
+        address wlModuleAddress = token.getRestrictionModule(TRANSFER_RESTRICTION_TYPE);
+        assertTrue(wlModuleAddress != address(0), "Whitelist module address should not be zero");
+
+        address initialImplementation = address(uint160(uint256(vm.load(wlModuleAddress, IMPLEMENTATION_SLOT))));
+
+        // 3. Whitelist a user to set some state before the upgrade
+        // The creator (`admin` in this case) has MANAGER_ROLE on the module
+        WhitelistRestrictions(wlModuleAddress).addToWhitelist(user);
+        assertTrue(WhitelistRestrictions(wlModuleAddress).isWhitelisted(user), "User should be whitelisted before upgrade");
+
+        // 4. Deploy a new implementation of WhitelistRestrictions
+        WhitelistRestrictions newImplementation = new WhitelistRestrictions();
+
+        // 5. Upgrade the module
+        // The creator (`admin`) also has UPGRADER_ROLE on the module
+        UUPSUpgradeable(wlModuleAddress).upgradeToAndCall(address(newImplementation), "");
+
+        // 6. Verify the upgrade was successful
+        address currentImplementation = address(uint160(uint256(vm.load(wlModuleAddress, IMPLEMENTATION_SLOT))));
+        assertEq(currentImplementation, address(newImplementation), "Implementation should be updated");
+        assertTrue(currentImplementation != initialImplementation, "New implementation should be different");
+
+        // 7. Verify state was preserved
+        assertTrue(WhitelistRestrictions(wlModuleAddress).isWhitelisted(user), "User should still be whitelisted after upgrade");
+    }
 }

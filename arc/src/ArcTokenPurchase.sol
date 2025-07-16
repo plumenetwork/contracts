@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /**
  * @title ArcTokenPurchase
@@ -21,6 +22,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *      corresponding to 1 full ArcToken (e.g., 1e18 for 18 decimals).
  */
 contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     struct TokenInfo {
         bool isEnabled;
@@ -50,6 +52,8 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         mapping(address => TokenInfo) tokenInfo;
         mapping(address => StorefrontConfig) storefrontConfigs;
         mapping(string => address) domainToAddress;
+        // Set of tokens currently enabled for sale
+        EnumerableSet.AddressSet enabledTokens;
     }
 
     // Calculate unique storage slot
@@ -65,6 +69,7 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     // Events
     event PurchaseMade(address indexed buyer, address indexed tokenContract, uint256 amount, uint256 pricePaid);
     event TokenSaleEnabled(address indexed tokenContract, uint256 numberOfTokens, uint256 tokenPrice);
+    event TokenSaleDisabled(address indexed tokenContract);
     event StorefrontConfigSet(address indexed tokenContract, string domain);
     event PurchaseTokenUpdated(address indexed newPurchaseToken);
     event TokenFactoryUpdated(address indexed newFactory);
@@ -94,6 +99,7 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     error ZeroAmount(); // Added for consistency if needed
     error TokenFactoryNotSet();
     error TokenNotCreatedByFactory();
+    error CannotChangePurchaseTokenWithActiveSales();
 
     /**
      * @dev Initializes the contract and sets up admin role
@@ -166,7 +172,27 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         ps.tokenInfo[_tokenContract] =
             TokenInfo({ isEnabled: true, tokenPrice: _tokenPrice, totalAmountForSale: _numberOfTokens, amountSold: 0 });
 
+        ps.enabledTokens.add(_tokenContract);
+
         emit TokenSaleEnabled(_tokenContract, _numberOfTokens, _tokenPrice);
+    }
+
+    /**
+     * @dev Disables a token for sale.
+     * @param _tokenContract Address of the ArcToken contract to disable.
+     */
+    function disableToken(address _tokenContract) external onlyTokenAdmin(_tokenContract) {
+        PurchaseStorage storage ps = _getPurchaseStorage();
+        TokenInfo storage info = ps.tokenInfo[_tokenContract];
+
+        if (!info.isEnabled) {
+            revert TokenNotEnabled();
+        }
+
+        info.isEnabled = false;
+        ps.enabledTokens.remove(_tokenContract);
+
+        emit TokenSaleDisabled(_tokenContract);
     }
 
     /**
@@ -263,10 +289,13 @@ contract ArcTokenPurchase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     function setPurchaseToken(
         address purchaseTokenAddress
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        PurchaseStorage storage ps = _getPurchaseStorage();
+        if (ps.enabledTokens.length() > 0) {
+            revert CannotChangePurchaseTokenWithActiveSales();
+        }
         if (purchaseTokenAddress == address(0)) {
             revert InvalidPurchaseTokenAddress();
         }
-        PurchaseStorage storage ps = _getPurchaseStorage();
         ps.purchaseToken = IERC20(purchaseTokenAddress);
         emit PurchaseTokenUpdated(purchaseTokenAddress);
     }

@@ -60,6 +60,7 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
         uint256 numberOfTokens,
         uint256 tokenPrice
     );
+    event TokenSaleDisabled(address indexed tokenContract);
     event StorefrontConfigSet(address indexed tokenContract, string domain);
     event PurchaseTokenUpdated(address indexed newPurchaseToken);
 
@@ -318,14 +319,40 @@ contract ArcTokenPurchaseTest is Test, IERC20Errors {
 
     // ============ Purchase Token Management Tests ============
 
-    function test_UpdatePurchaseToken() public {
+    function test_UpdatePurchaseTokenWithActiveSale() public {
         address newPurchaseToken = address(new ERC20Mock());
 
+        // 1. Verify a token is enabled from setUp
+        assertTrue(purchase.isEnabled(address(token)));
+
+        // 2. Attempt to set purchase token, expect revert because a sale is active
+        vm.expectRevert(ArcTokenPurchase.CannotChangePurchaseTokenWithActiveSales.selector);
+        purchase.setPurchaseToken(newPurchaseToken);
+
+        // 3. Disable the token sale
+        vm.prank(owner); // 'owner' is the token admin
+        vm.expectEmit(true, true, true, true);
+        emit TokenSaleDisabled(address(token));
+        purchase.disableToken(address(token));
+
+        // 4. Verify the token is now disabled
+        assertFalse(purchase.isEnabled(address(token)));
+
+        // 5. Set the purchase token again, which should now succeed
         vm.expectEmit(true, true, true, true);
         emit PurchaseTokenUpdated(newPurchaseToken);
-
         purchase.setPurchaseToken(newPurchaseToken);
+
+        // 6. Verify the purchase token was updated
         assertEq(address(purchase.purchaseToken()), newPurchaseToken);
+    }
+
+    function test_RevertWhen_DisableTokenNotAdmin() public {
+        // Alice is not the token admin
+        vm.startPrank(alice);
+        vm.expectRevert(abi.encodeWithSelector(ArcTokenPurchase.NotTokenAdmin.selector, alice, address(token)));
+        purchase.disableToken(address(token));
+        vm.stopPrank();
     }
 
     // ============ Error Cases Tests ============
