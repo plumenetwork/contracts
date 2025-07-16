@@ -85,7 +85,7 @@ graph TD
 
 **Facet Responsibilities:**
 - **AccessControlFacet**: OpenZeppelin AccessControl implementation
-- **StakingFacet**: stake(), unstake(), withdraw(), restake()
+- **StakingFacet**: stake(), unstake(), withdraw(), restake(), restakeRewards()
 - **RewardsFacet**: Reward calculation, distribution, treasury integration
 - **ValidatorFacet**: Validator lifecycle, slashing, commission management
 - **ManagementFacet**: System parameters, admin functions
@@ -359,54 +359,54 @@ uint256 grossReward = (stake * rewardPerToken) / REWARD_PRECISION;
 
 This checkpoint-based system ensures perfect accuracy regardless of when users claim, while maintaining gas efficiency through optimized data structures and algorithms.
 
+#### Reward Token Lifecycle & Historical Tokens
+
+Plume supports adding and removing reward tokens without disrupting historical reward accuracy:
+
+- **Adding a token** (`addRewardToken`) immediately pushes the token into `rewardTokens`, marks it `isRewardToken=true`, and creates an *initial* reward-rate checkpoint for **every validator** at the chosen `initialRate`.  The token is also appended to the immutable `historicalRewardTokens` list.
+- **Removing a token** (`removeRewardToken`) does **not** delete checkpoints. Instead it:
+  1. Records `tokenRemovalTimestamps[token] = block.timestamp` so future calculations cap at this moment.
+  2. Forces a final **zero-rate checkpoint** for each validator, guaranteeing no further accrual.
+  3. Leaves all historical checkpoints intact so users can still claim previously-earned rewards.
+- Users can therefore continue to claim even after a token is no longer active.  View/claim helpers automatically fall back to historical calculations when `isRewardToken[token] == false` but `isHistoricalRewardToken[token] == true`.
+- Administrative helpers exist to *manually* add or remove entries from the historical list (`addHistoricalRewardToken`, `removeHistoricalRewardToken`).  These are migration-grade tools and are dangerous because removing a token that still has claimable rewards will strand user funds.
+- The events `HistoricalRewardTokenAdded` / `HistoricalRewardTokenRemoved` capture these changes for off-chain indexers.
+
 #### Slashing Mechanism
 
-Slashing is a two-step process: voting and execution.
+Slashing is driven by **unanimous votes** from *all other active validators* and can execute in two ways:
+
+1. **Auto-Slash (preferred)** – when the last required validator casts its vote via `voteToSlashValidator`, the contract immediately calls the internal `_performSlash` and the validator is slashed in the *same* transaction. No privileged role is needed.
+2. **Timed Slash** – if unanimity was reached but the auto-slash failed (e.g., a re-org removed a vote) anyone with `TIMELOCK_ROLE` may call `slashValidator` to perform the slash once the vote set is valid.
 
 ```mermaid
 flowchart TD
-    A[Validator Misbehavior] --> B[Active Validators Vote]
-    B --> C{Unanimous?}
-    C -->|No| D[No Action]
-    C -->|Yes| E[TIMELOCK_ROLE Executes]
-    E --> F[Mark Slashed + Inactive]
-    F --> G[Burn Staked Tokens]
-    F --> H[Burn Cooling Tokens]
-    F --> I[Stop Reward Accrual]
-    
-    J[Admin Cleanup] --> K[Clear User Records]
-    
-    style A fill:#fce4ec
-    style E fill:#fff3e0
-    style G fill:#ffcdd2
-    style H fill:#ffcdd2
+    V[Validator Admins] -->|voteToSlashValidator| S[Slash Votes]
+    S -->|Unanimous?| AS{>= activeValidators - 1}
+    AS -->|Yes| P[\"_performSlash\" (auto)]
+    AS -->|No| W[Wait / More Votes]
+    P --> F[Validator Slashed]
+    W -->|TIMELOCK_ROLE slashValidator| F
 ```
 
-**Implementation:**
+Key details:
+- **Vote Expiry:** Each vote carries an `expiration` ≤ `maxSlashVoteDurationInSeconds`. Expired votes are cleaned up automatically by `_cleanupExpiredVotes` (invoked in voting & slashing paths).
+- **Eligibility:** Only *active & non-slashed* validators may vote; a validator cannot vote to slash itself.
+- **Cooldown Safety:** Admins must ensure `cooldownInterval > maxSlashVoteDuration` (enforced by `setCooldownInterval`). This guarantees users can always withdraw if a slash fails to pass.
+- **Commission & Rewards:** Upon slashing, all stake & cooling amounts are burned; reward & commission accrual stops at `slashedAtTimestamp`.
+- **Post-Slash Cleanup:** Users cannot recover losses, so admins use `adminClearValidatorRecord` / `adminBatchClearValidatorRecords` to erase orphaned state.
 
-1. **Voting:**
-   - Only active, non-slashed validator admins can vote
-   - Votes expire (configurable max duration)
-   - Requires ALL other active validators to vote YES
-   - Self-voting prohibited
+##### Effects of a Successful Slash
 
-2. **Execution:**
-   - Requires TIMELOCK_ROLE
-   - Checks unanimous vote still active
-   - Irreversible
+When `_performSlash` runs, the contract immediately:
 
-3. **Effects:**
-   - 100% penalty - all staked and cooling tokens burned
-   - Validator marked slashed, set inactive
-   - Rewards stop at slashedAtTimestamp
-   - Commission forfeited
-   - No user recovery mechanism
+1. **Burns 100 % of the validator’s stake and cooling balances.**  Both `validatorTotalStaked` and `validatorTotalCooling` are zeroed and the global aggregates (`totalStaked`, `totalCooling`) are reduced accordingly.
+2. **Marks the validator as `slashed = true` and `active = false`.**  A `slashedAtTimestamp` is stored; reward logic caps accrual at this timestamp for all future calculations.
+3. **Stops Reward & Commission Accrual.**  Reward‐rate calculations reference `slashedAtTimestamp`, so no new rewards or commission can accumulate after the slash block.
+4. **Clears the stakers list and voting records** to prevent further interactions or double-slashing.
+5. **Emits `ValidatorSlashed` and `ValidatorStatusUpdated` events** with the total stake+cooling amount burned so off-chain indexers can reconcile supply changes.
 
-4. **Cleanup:**
-   - adminClearValidatorRecord() - single user cleanup
-   - adminBatchClearValidatorRecords() - batch cleanup
-   - Only for slashed validators
-   - Required since users can't recover funds
+After these state changes, affected users must rely on the admin cleanup functions to remove now-irrecoverable records tied to the slashed validator.
 
 #### Commission System
 
@@ -437,8 +437,8 @@ sequenceDiagram
 ```
 
 **Implementation:**
-- Commission stored as rate (scaled by 1e18, max 50%)
-- Changes tracked via checkpoints
+- Each validator keeps its **own** commission checkpoint history.  To defend against unbounded growth:
+  •  `setMaxCommissionCheckpoints` caps the length (default 500).  Attempts to exceed revert with `MaxCommissionCheckpointsExceeded`.<br>  •  Admins can **prune** old data via `pruneCommissionCheckpoints` / `pruneRewardRateCheckpoints` (gas-heavy, irreversible).  Successful pruning emits `CommissionCheckpointsPruned` or `RewardRateCheckpointsPruned` respectively.
 - 7-day timelock on withdrawals (COMMISSION_CLAIM_TIMELOCK)
 - forceSettleValidatorCommission() for manual settlement
 
@@ -470,7 +470,7 @@ Core staking operations and user balance management.
 | `unstake(uint16 validatorId, uint256 amount)` | Unstake specific amount | - Has sufficient stake<br>- Validator not slashed<br>- Starts cooldown period |
 | `restake(uint16 validatorId, uint256 amount)` | Move cooling tokens back to staked | - Has cooling tokens<br>- Validator active<br>- Validator not slashed |
 | `withdraw()` | Withdraw tokens after cooldown | - Has completed cooldowns<br>- Automatically skips slashed validators |
-| `restakeRewards(uint16 validatorId)` | Claim and restake PLUME rewards | - Has PLUME rewards<br>- Validator active<br>- Validator not slashed |
+| `restakeRewards(uint16 validatorId)` | Claim and restake PLUME rewards | - Has PLUME rewards<br>- PLUME token must be an active reward token<br>- Transfers rewards from Treasury to back new stake<br>- Validator active<br>- Validator not slashed |
 
 ##### View Functions
 
@@ -529,10 +529,12 @@ Validator lifecycle management and slashing operations.
 | `setValidatorStatus(uint16, bool)` | Activate/deactivate validator | VALIDATOR_ROLE |
 | `setValidatorCommission(uint16, uint256)` | Update commission rate | Validator Admin |
 | `setValidatorAddresses(uint16, ...)` | Update admin/withdraw addresses | Validator Admin |
+| `acceptAdmin(uint16 validatorId)` | Accept pending admin role and complete two-step validator admin transfer | Pending Admin |
 | `requestCommissionClaim(uint16, address)` | Start commission claim timelock | Validator Admin |
 | `finalizeCommissionClaim(uint16, address)` | Complete commission claim | Validator Admin |
 | `voteToSlashValidator(uint16, uint256)` | Vote to slash another validator | Validator Admin |
-| `slashValidator(uint16)` | Execute slashing (requires unanimous vote) | TIMELOCK_ROLE |
+| `slashValidator(uint16)` | Execute slashing if unanimity already reached (fallback) | TIMELOCK_ROLE |
+| `cleanupExpiredVotes(uint16)` | Remove expired votes and return current valid count | Public |
 | `forceSettleValidatorCommission(uint16)` | Manually settle accrued commission | Public |
 
 ##### View Functions
@@ -562,6 +564,12 @@ System parameter configuration and administrative functions.
 | `setMaxAllowedValidatorCommission(uint256)` | Set system-wide commission cap | ADMIN_ROLE |
 | `adminClearValidatorRecord(address, uint16)` | Clear slashed validator records | ADMIN_ROLE |
 | `adminBatchClearValidatorRecords(address[], uint16)` | Batch clear records | ADMIN_ROLE |
+| `setMaxCommissionCheckpoints(uint16)` | Set max commission checkpoints per validator | ADMIN_ROLE |
+| `setMaxValidatorPercentage(uint256)` | Set max % of total stake a validator can hold | ADMIN_ROLE |
+| `pruneCommissionCheckpoints(uint16, uint256)` | Prune oldest commission checkpoints | ADMIN_ROLE |
+| `pruneRewardRateCheckpoints(uint16, address, uint256)` | Prune oldest reward rate checkpoints | ADMIN_ROLE |
+| `addHistoricalRewardToken(address)` | Add token to historical reward list (non-active) | ADMIN_ROLE |
+| `removeHistoricalRewardToken(address)` | Remove token from historical reward list | ADMIN_ROLE |
 
 ##### View Functions
 
@@ -635,6 +643,12 @@ Grants DEFAULT_ADMIN_ROLE and ADMIN_ROLE to caller, sets up role hierarchy.
 | `MaxAllowedValidatorCommissionSet` | Commission cap updated | `oldMaxRate`, `newMaxRate` |
 | `AdminClearedSlashedStake` | Slashed stake cleared | `user`, `slashedValidatorId`, `amountCleared` |
 | `AdminClearedSlashedCooldown` | Slashed cooldown cleared | `user`, `slashedValidatorId`, `amountCleared` |
+| `MaxCommissionCheckpointsSet` | Max commission checkpoints updated | `newLimit` |
+| `CommissionCheckpointsPruned` | Old commission checkpoints pruned | `validatorId`, `count` |
+| `RewardRateCheckpointsPruned` | Old reward rate checkpoints pruned | `validatorId`, `token`, `count` |
+| `HistoricalRewardTokenAdded` | Token added to historical list | `token` |
+| `HistoricalRewardTokenRemoved` | Token removed from historical list | `token` |
+| `AdminProposed` | New validator admin proposed | `validatorId`, `proposedAdmin` |
 
 ### Errors Reference
 
@@ -684,6 +698,11 @@ Grants DEFAULT_ADMIN_ROLE and ADMIN_ROLE to caller, sets up role hierarchy.
 | `AlreadyVotedToSlash(uint16, uint16)` | Duplicate vote |
 | `UnanimityNotReached(uint256, uint256)` | Missing votes |
 | `SlashVoteExpired(uint16, uint16)` | Vote expired |
+| `CooldownTooShortForSlashVote(uint256, uint256)` | cooldownInterval ≤ maxSlashVoteDuration |
+| `SlashVoteDurationTooLongForCooldown(uint256, uint256)` | Proposed vote duration ≥ cooldownInterval |
+| `SlashVoteDurationExceedsCommissionTimelock(uint256, uint256)` | Proposed vote duration ≥ commission timelock |
+| `NotPendingAdmin(address,uint16)` | Caller tries to accept admin without being the pending admin |
+| `NoPendingAdmin(uint16)` | acceptAdmin called with no pending admin |
 
 See PlumeErrors.sol for complete list.
 
