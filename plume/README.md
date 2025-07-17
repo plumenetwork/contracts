@@ -1,5 +1,9 @@
 # PlumeStaking and Spin/Raffle Contracts
 
+> [!NOTE]
+> **Plume Staking is now live on Plume!**
+> Try it out here: [https://staking.plume.org/](https://staking.plume.org/)
+
 ## Table of Contents
 
 1. [PlumeStaking System](#plumestaking-system)
@@ -146,7 +150,7 @@ The reward system uses a sophisticated checkpoint-based mechanism to handle vari
 ##### Core Components
 
 **1. Validator-Level Rate Tracking**
-The system tracks reward rates exclusively at the validator level. There is no global fallback rate. When a reward token is added or its rate is updated via `setRewardRates`, a rate checkpoint is created for *every* active validator. This ensures all reward calculations are based on a specific validator's rate history.
+The system tracks reward rates exclusively at the validator level. When a reward token is added or its rate is updated via `setRewardRates`, a rate checkpoint is created for *every* active validator. This ensures all reward calculations are based on a specific validator's rate history.
 
 **2. Checkpoint Structure**
 ```solidity
@@ -369,7 +373,7 @@ Plume supports adding and removing reward tokens without disrupting historical r
   2. Forces a final **zero-rate checkpoint** for each validator, guaranteeing no further accrual.
   3. Leaves all historical checkpoints intact so users can still claim previously-earned rewards.
 - Users can therefore continue to claim even after a token is no longer active.  View/claim helpers automatically fall back to historical calculations when `isRewardToken[token] == false` but `isHistoricalRewardToken[token] == true`.
-- Administrative helpers exist to *manually* add or remove entries from the historical list (`addHistoricalRewardToken`, `removeHistoricalRewardToken`).  These are migration-grade tools and are dangerous because removing a token that still has claimable rewards will strand user funds.
+- Administrative helpers exist to *manually* add or remove entries from the historical list (`addHistoricalRewardToken`, `removeHistoricalRewardToken`).  These functions were used to migrate the contract state from v1 to v2 version. 
 - The events `HistoricalRewardTokenAdded` / `HistoricalRewardTokenRemoved` capture these changes for off-chain indexers.
 
 #### Slashing Mechanism
@@ -746,6 +750,10 @@ forge test --match-contract PlumeStakingDiamond  -vvvv --via-ir
 
 ## Spin and Raffle Contracts
 
+
+More detailed info is available [here](SPIN.md).
+
+
 ### Environment Setup
 
 `.env` configuration:
@@ -785,7 +793,6 @@ source .env && forge script script/DeploySpinRaffleContracts.s.sol \
     --broadcast \
     --via-ir
 ```
-
 Save proxy addresses from deployment output for upgrades.
 
 ### Upgrade Process
