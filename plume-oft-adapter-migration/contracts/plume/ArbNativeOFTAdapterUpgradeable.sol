@@ -2,12 +2,12 @@
 
 pragma solidity ^0.8.20;
 
-import { OFTCore } from "@layerzerolabs/oft-evm/contracts/OFTCore.sol";
+import { OFTCoreUpgradeable } from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import { IOFT, SendParam, OFTReceipt, MessagingReceipt, MessagingFee } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 
 import { ArbNativeTokenManager } from "./precompiles/ArbNativeTokenManager.sol";
 
-abstract contract ArbNativeOFTAdapter is OFTCore {
+abstract contract ArbNativeOFTAdapterUpgradeable is OFTCoreUpgradeable {
     ArbNativeTokenManager public immutable arbNativeTokenManager = ArbNativeTokenManager(address(0x73));
     
     error IncorrectMessageValue(uint256 provided, uint256 required);
@@ -16,13 +16,23 @@ abstract contract ArbNativeOFTAdapter is OFTCore {
     /**
      * @param _localDecimals The decimals of the native on the local chain (this chain). 18 on ETH.
      * @param _lzEndpoint The LayerZero endpoint address.
-     * @param _delegate The delegate capable of making OApp configurations inside of the endpoint.
      */
     constructor(
         uint8 _localDecimals,
-        address _lzEndpoint,
-        address _delegate
-    ) OFTCore(_localDecimals, _lzEndpoint, _delegate) {}
+        address _lzEndpoint
+    ) OFTCoreUpgradeable(_localDecimals, _lzEndpoint) {}
+
+    /**
+     * @dev Initializes the OFTAdapter with the provided delegate.
+     * @param _delegate The delegate capable of making OApp configurations inside of the endpoint.
+     *
+     * @dev The delegate typically should be set as the owner of the contract.
+     * @dev Ownable is not initialized here on purpose. It should be initialized in the child contract to
+     * accommodate the different version of Ownable.
+     */
+    function __NativeOFTAdapter_init(address _delegate) internal onlyInitializing {
+        __OFTCore_init(_delegate);
+    }
 
     function token() external pure returns (address) {
         return address(0);
