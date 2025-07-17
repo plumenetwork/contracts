@@ -5,10 +5,10 @@
 pragma solidity ^0.8.0;
 
 import "./InboxStub.sol";
-import {BadSequencerMessageNumber} from "../../../contracts/ethereum/libraries/Error.sol";
+import {BadSequencerMessageNumber} from "../libraries/Error.sol";
 
 import "../../../contracts/ethereum/bridge/IBridge.sol";
-import "../../../contracts/ethereum/bridge/IEthBridge.sol";
+import "../bridge/IEthBridge.sol";
 
 contract BridgeStub is IBridge, IEthBridge {
     struct InOutInfo {

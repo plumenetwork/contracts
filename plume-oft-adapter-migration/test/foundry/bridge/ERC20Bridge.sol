@@ -5,7 +5,7 @@
 pragma solidity ^0.8.4;
 
 import "./AbsBridge.sol";
-import "./IERC20Bridge.sol";
+import "../../../contracts/ethereum/bridge/IERC20Bridge.sol";
 import "../libraries/AddressAliasHelper.sol";
 import {InvalidTokenSet, CallTargetNotAllowed, CallNotAllowed} from "../libraries/Error.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";

@@ -13,15 +13,15 @@ import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.so
 import { GasToken } from "./mocks/GasToken.sol";
 import { OrbitERC20OFTAdapterUpgradeable } from "../../contracts/ethereum/OrbitERC20OFTAdapterUpgradeable.sol";
 import { IBridge } from "../../contracts/ethereum/bridge/IBridge.sol";
-import { ERC20Bridge } from "../../contracts/ethereum/bridge/ERC20Bridge.sol";
+import { ERC20Bridge } from "./bridge/ERC20Bridge.sol";
 import { IOwnable } from "../../contracts/ethereum/bridge/IOwnable.sol";
-import { ISequencerInbox } from "../../contracts/ethereum/bridge/ISequencerInbox.sol";
+import { ISequencerInbox } from "./bridge/ISequencerInbox.sol";
 import { SimpleProxy } from "./mocks/SimpleProxy.sol";
 import { BridgeStub } from "./mocks/BridgeStub.sol";
 import { RollupStub } from "./mocks/RollupStub.sol";
 import { UpgradeExecutorMock } from "./mocks/UpgradeExecutorMock.sol";
 import { OrbitNativeOFTAdapterUpgradeable } from "../../contracts/plume/OrbitNativeOFTAdapterUpgradeable.sol";
-import { IDelayedMessageProvider } from "../../contracts/ethereum/bridge/IDelayedMessageProvider.sol";
+import { IDelayedMessageProvider } from "./bridge/IDelayedMessageProvider.sol";
 import { MockNativeTokenManager } from "./mocks/MockNativeTokenManager.sol";
 
 import { TestHelperOz5 } from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";

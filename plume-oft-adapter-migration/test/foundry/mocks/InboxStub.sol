@@ -4,12 +4,12 @@
 
 pragma solidity ^0.8.0;
 
-import "../../../contracts/ethereum/bridge/IInboxBase.sol";
-import "../../../contracts/ethereum/bridge/IInbox.sol";
+import "../bridge/IInboxBase.sol";
+import "../bridge/IInbox.sol";
 import "../../../contracts/ethereum/bridge/IBridge.sol";
-import "../../../contracts/ethereum/bridge/IEthBridge.sol";
+import "../bridge/IEthBridge.sol";
 
-import "../../../contracts/ethereum/bridge/Messages.sol";
+import "../bridge/Messages.sol";
 import "./BridgeStub.sol";
 import {
     L2_MSG,
@@ -17,7 +17,7 @@ import {
     L1MessageType_submitRetryableTx,
     L2MessageType_unsignedEOATx,
     L2MessageType_unsignedContractTx
-} from "../../../contracts/ethereum/libraries/MessageTypes.sol";
+} from "../libraries/MessageTypes.sol";
 
 contract InboxStub is IInboxBase, IInbox {
     IBridge public override bridge;

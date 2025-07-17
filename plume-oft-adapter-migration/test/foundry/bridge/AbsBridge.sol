@@ -16,7 +16,7 @@ import {
     InvalidOutboxSet,
     BadSequencerMessageNumber
 } from "../libraries/Error.sol";
-import "./IBridge.sol";
+import "../../../contracts/ethereum/bridge/IBridge.sol";
 import "./Messages.sol";
 import "../libraries/DelegateCallAware.sol";
 
