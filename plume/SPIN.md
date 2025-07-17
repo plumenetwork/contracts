@@ -1,6 +1,6 @@
 # Daily Spin & Raffle Contracts
 
-> [!TIP]
+> [!NOTE]
 > **The Daily Spin is now live on Plume!**
 > Try it out here: [https://portal.plume.org/daily-spin](https://portal.plume.org/daily-spin)
 

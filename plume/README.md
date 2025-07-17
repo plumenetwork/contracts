@@ -1,5 +1,9 @@
 # PlumeStaking and Spin/Raffle Contracts
 
+> [!NOTE]
+> **The Daily Spin is now live on Plume!**
+> Try it out here: [https://staking.plume.org/](https://staking.plume.org/)
+
 ## Table of Contents
 
 1. [PlumeStaking System](#plumestaking-system)
