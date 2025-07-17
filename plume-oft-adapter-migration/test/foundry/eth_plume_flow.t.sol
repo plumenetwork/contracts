@@ -28,23 +28,23 @@ import { TestHelperOz5 } from "@layerzerolabs/test-devtools-evm-foundry/contract
 
 import "forge-std/console.sol";
 
-contract L2ToL3FlowTest is TestHelperOz5 {
+contract EthToPlumeFlowTest is TestHelperOz5 {
     using OptionsBuilder for bytes;
 
     address rollupOwner = makeAddr("rollupOwner");
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
 
-    uint32 L2_Eid = 1;
-    uint32 L3_Eid = 2;
+    uint32 ETH_Eid = 1;
+    uint32 PLUME_Eid = 2;
 
-    // L2
-    OrbitERC20OFTAdapterUpgradeable    l2Adapter;
+    // ETH
+    OrbitERC20OFTAdapterUpgradeable    ethAdapter;
     GasToken                gasToken;
-    IUpgradeExecutor        l2UpgradeExecutor;
+    IUpgradeExecutor        ethUpgradeExecutor;
 
-    // L3
-    OrbitNativeOFTAdapterUpgradeable   l3Adapter;
+    // PLUME
+    OrbitNativeOFTAdapterUpgradeable   plumeAdapter;
     MockNativeTokenManager  mockNativeTokenManager = MockNativeTokenManager(address(0x73));
 
     uint256 gasTokenSupply = 100 ether;
@@ -59,8 +59,8 @@ contract L2ToL3FlowTest is TestHelperOz5 {
         MockNativeTokenManager _mockNativeTokenManager = new MockNativeTokenManager();
         vm.etch(address(mockNativeTokenManager), address(_mockNativeTokenManager).code);
 
-        // L2
-        address endpointL2 = endpoints[L2_Eid];
+        // ETH
+        address endpointETH = endpoints[ETH_Eid];
         
         vm.startPrank(rollupOwner);
         gasToken = new GasToken("GasToken", "GTK");
@@ -69,69 +69,69 @@ contract L2ToL3FlowTest is TestHelperOz5 {
         executors[0] = rollupOwner;
 
         ProxyAdmin proxyAdmin = new ProxyAdmin(rollupOwner);
-        l2UpgradeExecutor = new UpgradeExecutorMock();
+        ethUpgradeExecutor = new UpgradeExecutorMock();
         TransparentUpgradeableProxy transparentProxy = new TransparentUpgradeableProxy(
-            address(l2UpgradeExecutor),
+            address(ethUpgradeExecutor),
             address(proxyAdmin),
             abi.encodeWithSelector(UpgradeExecutorMock.initialize.selector, rollupOwner, executors)
         );
-        l2UpgradeExecutor = IUpgradeExecutor(address(transparentProxy));
+        ethUpgradeExecutor = IUpgradeExecutor(address(transparentProxy));
 
-        bool isRollupOwnerExecutor = IAccessControl(address(l2UpgradeExecutor)).hasRole(keccak256("EXECUTOR_ROLE"), rollupOwner);
+        bool isRollupOwnerExecutor = IAccessControl(address(ethUpgradeExecutor)).hasRole(keccak256("EXECUTOR_ROLE"), rollupOwner);
         if (!isRollupOwnerExecutor) {
             revert("!isRollupOwnerExecutor");
         }
 
-        RollupStub rollup = new RollupStub(address(l2UpgradeExecutor));
+        RollupStub rollup = new RollupStub(address(ethUpgradeExecutor));
 
-        ERC20Bridge l2Bridge = new ERC20Bridge();
-        SimpleProxy l2BridgeProxy = new SimpleProxy(address(l2Bridge));
-        l2Bridge = ERC20Bridge(address(l2BridgeProxy));
-        l2Bridge.initialize(rollup, address(gasToken));
+        ERC20Bridge ethBridge = new ERC20Bridge();
+        SimpleProxy ethBridgeProxy = new SimpleProxy(address(ethBridge));
+        ethBridge = ERC20Bridge(address(ethBridgeProxy));
+        ethBridge.initialize(rollup, address(gasToken));
 
         // Deploy logic
-        OrbitERC20OFTAdapterUpgradeable l2Logic = new OrbitERC20OFTAdapterUpgradeable(address(gasToken), endpointL2, l2Bridge);
+        OrbitERC20OFTAdapterUpgradeable ethLogic = new OrbitERC20OFTAdapterUpgradeable(address(gasToken), endpointETH, ethBridge);
 
         // Deploy proxy
-        TransparentUpgradeableProxy l2Proxy = new TransparentUpgradeableProxy(
-            address(l2Logic),
+        TransparentUpgradeableProxy ethProxy = new TransparentUpgradeableProxy(
+            address(ethLogic),
             address(proxyAdmin),
             abi.encodeWithSelector(OrbitERC20OFTAdapterUpgradeable.initialize.selector, rollupOwner)
         );
 
         // Use the proxy address as the adapter instance
-        l2Adapter = OrbitERC20OFTAdapterUpgradeable(address(l2Proxy));
+        ethAdapter = OrbitERC20OFTAdapterUpgradeable(address(ethProxy));
 
-        // L3
-        address endpointL3 = endpoints[L3_Eid];
+        // PLUME
+        address endpointPLUME = endpoints[PLUME_Eid];
 
         // Deploy the logic contract (constructor will call _disableInitializers())
-        OrbitNativeOFTAdapterUpgradeable l3Logic = new OrbitNativeOFTAdapterUpgradeable(18, endpointL3);
+        OrbitNativeOFTAdapterUpgradeable plumeLogic = new OrbitNativeOFTAdapterUpgradeable(18, endpointPLUME);
 
         // Deploy the proxy, initializing through the constructor
-        TransparentUpgradeableProxy l3Proxy = new TransparentUpgradeableProxy(
-            address(l3Logic),
+        TransparentUpgradeableProxy plumeProxy = new TransparentUpgradeableProxy(
+            address(plumeLogic),
             address(proxyAdmin),
             abi.encodeWithSelector(OrbitNativeOFTAdapterUpgradeable.initialize.selector, rollupOwner)
         );
 
         // Cast the proxy address to the adapter interface
-        l3Adapter = OrbitNativeOFTAdapterUpgradeable(address(l3Proxy));
-        address l3AdapterAddress = address(l3Adapter);
+        plumeAdapter = OrbitNativeOFTAdapterUpgradeable(address(plumeProxy));
+        address plumeAdapterAddress = address(plumeAdapter);
 
-        // L2
-        gasToken.mint(address(l2Bridge), gasTokenSupply);
-        l2UpgradeExecutor.executeCall(address(l2Bridge), abi.encodeWithSelector(l2Bridge.setOutbox.selector, address(l2Adapter), true));
+        // ETH
+        gasToken.mint(address(ethBridge), gasTokenSupply);
+        ethUpgradeExecutor.executeCall(address(ethBridge), abi.encodeWithSelector(ethBridge.setOutbox.selector, address(ethAdapter), true));
 
-        l2Adapter.setPeer(L3_Eid, bytes32(uint(uint160(l3AdapterAddress))));
-        l3Adapter.setPeer(L2_Eid, bytes32(uint(uint160(address(l2Adapter)))));
+        ethAdapter.setPeer(PLUME_Eid, bytes32(uint(uint160(plumeAdapterAddress))));
+        plumeAdapter.setPeer(ETH_Eid, bytes32(uint(uint160(address(ethAdapter)))));
         vm.stopPrank();
 
         assertEq(gasToken.balanceOf(rollupOwner), 0);
-        assertEq(address(l3Adapter).balance, 0, "L3 adapter balance has to be 0 because it uses mint burn");
+        assertEq(address(plumeAdapter).balance, 0, "PLUME adapter balance has to be 0 because it uses mint burn");
     }
 
-    function test_send_l2_to_l3_different_account() public {
+    function test_send_eth_to_plume_different_account() public {
         uint256 tokensToSend = 1 ether;
         uint256 initialNativeBalance = 1 ether;
 
@@ -144,11 +144,11 @@ contract L2ToL3FlowTest is TestHelperOz5 {
         assertEq(alice.balance, initialNativeBalance);
 
         vm.startPrank(alice);
-        gasToken.approve(address(l2Adapter), tokensToSend);
+        gasToken.approve(address(ethAdapter), tokensToSend);
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         SendParam memory sendParam = SendParam(
-            L3_Eid,
+            PLUME_Eid,
             addressToBytes32(bob),
             tokensToSend,
             tokensToSend,
@@ -156,20 +156,20 @@ contract L2ToL3FlowTest is TestHelperOz5 {
             "",
             ""
         );
-        MessagingFee memory fee = l2Adapter.quoteSend(sendParam, false);
+        MessagingFee memory fee = ethAdapter.quoteSend(sendParam, false);
 
-        l2Adapter.send{ value: fee.nativeFee }(sendParam, fee, alice);
+        ethAdapter.send{ value: fee.nativeFee }(sendParam, fee, alice);
 
         vm.stopPrank();
 
-        verifyPackets(L3_Eid, addressToBytes32(address(l3Adapter)));
+        verifyPackets(PLUME_Eid, addressToBytes32(address(plumeAdapter)));
 
         assertEq(gasToken.balanceOf(alice), 0);
         assertEq(alice.balance, initialNativeBalance - fee.nativeFee);
         assertEq(bob.balance, tokensToSend);
     }
 
-    function test_send_l2_to_l3_same_account() public {
+    function test_send_eth_to_plume_same_account() public {
         uint256 tokensToSend = 1 ether;
         uint256 initialNativeBalance = 1 ether;
 
@@ -182,11 +182,11 @@ contract L2ToL3FlowTest is TestHelperOz5 {
         assertEq(rollupOwner.balance, initialNativeBalance);
 
         vm.startPrank(rollupOwner);
-        gasToken.approve(address(l2Adapter), tokensToSend);
+        gasToken.approve(address(ethAdapter), tokensToSend);
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         SendParam memory sendParam = SendParam(
-            L3_Eid,
+            PLUME_Eid,
             addressToBytes32(rollupOwner),
             tokensToSend,
             tokensToSend,
@@ -194,19 +194,19 @@ contract L2ToL3FlowTest is TestHelperOz5 {
             "",
             ""
         );
-        MessagingFee memory fee = l2Adapter.quoteSend(sendParam, false);
+        MessagingFee memory fee = ethAdapter.quoteSend(sendParam, false);
 
-        l2Adapter.send{ value: fee.nativeFee }(sendParam, fee, rollupOwner);
+        ethAdapter.send{ value: fee.nativeFee }(sendParam, fee, rollupOwner);
 
         vm.stopPrank();
 
-        verifyPackets(L3_Eid, addressToBytes32(address(l3Adapter)));
+        verifyPackets(PLUME_Eid, addressToBytes32(address(plumeAdapter)));
 
         assertEq(gasToken.balanceOf(rollupOwner), 0);
         assertEq(rollupOwner.balance, initialNativeBalance - fee.nativeFee + tokensToSend);
     }
 
-    function test_send_l3_to_l2() public {
+    function test_send_plume_to_eth() public {
         uint256 tokensToSend = 1 ether;
         uint256 initialNativeBalance = 2 ether;
 
@@ -219,7 +219,7 @@ contract L2ToL3FlowTest is TestHelperOz5 {
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         SendParam memory sendParam = SendParam(
-            L2_Eid,
+            ETH_Eid,
             addressToBytes32(bob),
             tokensToSend,
             tokensToSend,
@@ -227,16 +227,16 @@ contract L2ToL3FlowTest is TestHelperOz5 {
             "",
             ""
         );
-        MessagingFee memory fee = l3Adapter.quoteSend(sendParam, false);
+        MessagingFee memory fee = plumeAdapter.quoteSend(sendParam, false);
 
         vm.prank(alice);
-        l3Adapter.send{ value: tokensToSend + fee.nativeFee }(sendParam, fee, alice);
+        plumeAdapter.send{ value: tokensToSend + fee.nativeFee }(sendParam, fee, alice);
 
-        verifyPackets(L2_Eid, addressToBytes32(address(l2Adapter)));
+        verifyPackets(ETH_Eid, addressToBytes32(address(ethAdapter)));
 
         assertEq(gasToken.balanceOf(alice), 0);
         assertEq(gasToken.balanceOf(bob), tokensToSend);
-        assertEq(address(l3Adapter).balance, 0);
+        assertEq(address(plumeAdapter).balance, 0);
         assertEq(mockNativeTokenManager.mintedAmount(), 0);
         assertEq(mockNativeTokenManager.burnedAmount(), tokensToSend);
         assertEq(alice.balance, initialNativeBalance - tokensToSend - fee.nativeFee);
