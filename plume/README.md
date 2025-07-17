@@ -21,7 +21,10 @@
    - [Events Reference](#events-reference)
    - [Errors Reference](#errors-reference)
    - [Constants and Roles](#constants-and-roles)
-2. [Spin and Raffle Contracts](#spin-and-raffle-contracts)
+2. [Testing](#testing)
+   - [Running Tests](#running-tests)
+   - [Gas Considerations](#gas-considerations)
+3. [Spin and Raffle Contracts](#spin-and-raffle-contracts)
    - [Environment Setup](#environment-setup)
    - [Build Instructions](#build-instructions)
    - [Deployment Guide](#deployment-guide)
@@ -53,7 +56,7 @@ PlumeStaking is a Diamond proxy-based staking system that separates concerns acr
 **Initialization:**
 ```solidity
 // After Diamond deployment, initialize PlumeStaking
-plumeStaking.initializePlume(initialOwner, minStake, cooldownInterval)
+plumeStaking.initializePlume(initialOwner, minStake, cooldown, maxSlashVoteDuration, maxValidatorCommission)
 
 // Initialize AccessControlFacet
 accessControlFacet.initializeAccessControl()
@@ -142,13 +145,8 @@ The reward system uses a sophisticated checkpoint-based mechanism to handle vari
 
 ##### Core Components
 
-**1. Multi-Level Rate Tracking**
-```
-Global Rate → Validator Rate → User Rewards
-     ↓              ↓                ↓
-  Default      Checkpoint        Calculate
-   Rate         History          w/Commission
-```
+**1. Validator-Level Rate Tracking**
+The system tracks reward rates exclusively at the validator level. There is no global fallback rate. When a reward token is added or its rate is updated via `setRewardRates`, a rate checkpoint is created for *every* active validator. This ensures all reward calculations are based on a specific validator's rate history.
 
 **2. Checkpoint Structure**
 ```solidity
@@ -286,6 +284,8 @@ function findCheckpointIndex(checkpoints, timestamp) {
     return 0;
 }
 ```
+
+> *Note: The function above is a simplified example for illustrative purposes. The actual implementation in `src/lib/PlumeRewardLogic.sol` is more robust and uses specialized functions such as `findRewardRateCheckpointIndexAtOrBefore` and `findCommissionCheckpointIndexAtOrBefore` to handle edge cases.*
 
 **2. Time Segment Generation**
 
@@ -495,11 +495,11 @@ Reward token management and distribution system.
 | Function | Description | Access Control |
 |----------|-------------|----------------|
 | `setTreasury(address treasury)` | Set reward treasury address | REWARD_MANAGER_ROLE |
-| `addRewardToken(address token)` | Add new reward token | REWARD_MANAGER_ROLE |
-| `removeRewardToken(address token)` | Remove reward token | REWARD_MANAGER_ROLE |
-| `setRewardRates(address[] tokens, uint256[] rates)` | Set emission rates | REWARD_MANAGER_ROLE |
-| `setMaxRewardRate(address token, uint256 rate)` | Set maximum rate limit | REWARD_MANAGER_ROLE |
-| `claim(address token, uint16 validatorId)` | Claim from specific validator | Public |
+| `addRewardToken(address token, uint256 initialRate, uint256 maxRate)` | Add new reward token and set its initial rate for all validators | REWARD_MANAGER_ROLE |
+| `removeRewardToken(address token)` | Remove reward token and create a final zero-rate checkpoint | REWARD_MANAGER_ROLE |
+| `setRewardRates(address[] tokens, uint256[] rates)` | Set emission rates for multiple tokens, creating new checkpoints for all validators | REWARD_MANAGER_ROLE |
+| `setMaxRewardRate(address token, uint256 rate)` | Set maximum rate limit for a token | REWARD_MANAGER_ROLE |
+| `claim(address token, uint16 validatorId)` | Claim rewards for a specific token from a specific validator | Public |
 | `claim(address token)` | Claim from all validators | Public |
 | `claimAll()` | Claim all tokens from all validators | Public |
 
@@ -524,14 +524,14 @@ Validator lifecycle management and slashing operations.
 
 | Function | Description | Access Control |
 |----------|-------------|----------------|
-| `addValidator(...)` | Register new validator | VALIDATOR_ROLE |
+| `addValidator(uint16 validatorId, uint256 commission, address l2AdminAddress, ... , uint256 maxCapacity)` | Register new validator | VALIDATOR_ROLE |
 | `setValidatorCapacity(uint16, uint256)` | Update staking capacity | VALIDATOR_ROLE |
 | `setValidatorStatus(uint16, bool)` | Activate/deactivate validator | VALIDATOR_ROLE |
-| `setValidatorCommission(uint16, uint256)` | Update commission rate | Validator Admin |
-| `setValidatorAddresses(uint16, ...)` | Update admin/withdraw addresses | Validator Admin |
+| `setValidatorCommission(uint16 validatorId, uint256 newCommission)` | Update commission rate for a validator | Validator Admin |
+| `setValidatorAddresses(uint16, ...)` | Update admin/withdraw addresses. Admin changes initiate a two-step transfer. | Validator Admin |
 | `acceptAdmin(uint16 validatorId)` | Accept pending admin role and complete two-step validator admin transfer | Pending Admin |
-| `requestCommissionClaim(uint16, address)` | Start commission claim timelock | Validator Admin |
-| `finalizeCommissionClaim(uint16, address)` | Complete commission claim | Validator Admin |
+| `requestCommissionClaim(uint16 validatorId, address token)` | Start commission claim timelock for a specific token | Validator Admin |
+| `finalizeCommissionClaim(uint16 validatorId, address token)` | Complete commission claim after timelock | Validator Admin |
 | `voteToSlashValidator(uint16, uint256)` | Vote to slash another validator | Validator Admin |
 | `slashValidator(uint16)` | Execute slashing if unanimity already reached (fallback) | TIMELOCK_ROLE |
 | `cleanupExpiredVotes(uint16)` | Remove expired votes and return current valid count | Public |
@@ -641,8 +641,8 @@ Grants DEFAULT_ADMIN_ROLE and ADMIN_ROLE to caller, sets up role hierarchy.
 | `AdminWithdraw` | Emergency withdrawal | `token`, `amount`, `recipient` |
 | `MaxSlashVoteDurationSet` | Vote expiration updated | `duration` |
 | `MaxAllowedValidatorCommissionSet` | Commission cap updated | `oldMaxRate`, `newMaxRate` |
-| `AdminClearedSlashedStake` | Slashed stake cleared | `user`, `slashedValidatorId`, `amountCleared` |
-| `AdminClearedSlashedCooldown` | Slashed cooldown cleared | `user`, `slashedValidatorId`, `amountCleared` |
+| `AdminClearedSlashedStake` | Slashed stake cleared by admin | `user`, `slashedValidatorId`, `amountCleared` |
+| `AdminClearedSlashedCooldown` | Slashed cooldown cleared by admin | `user`, `slashedValidatorId`, `amountCleared` |
 | `MaxCommissionCheckpointsSet` | Max commission checkpoints updated | `newLimit` |
 | `CommissionCheckpointsPruned` | Old commission checkpoints pruned | `validatorId`, `count` |
 | `RewardRateCheckpointsPruned` | Old reward rate checkpoints pruned | `validatorId`, `token`, `count` |
@@ -725,8 +725,22 @@ See PlumeErrors.sol for complete list.
 | `PLUME_NATIVE` | 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE | Native PLUME token address |
 | `REWARD_PRECISION` | 1e18 | Precision for rate calculations |
 | `COMMISSION_CLAIM_TIMELOCK` | 7 days | Validator commission withdrawal delay |
-| `MAX_COMMISSION` | 50% (0.5e18) | Hard cap on validator commission |
-| `STORAGE_SLOT` | keccak256("plume.storage.PlumeStaking") | Diamond storage location |
+| `STORAGE_SLOT` | keccak256("plume.staking.storage") | Diamond storage location |
+
+---
+
+## Testing
+
+### Running Tests
+The core test suite can be run using the following Forge command, which specifically targets the `PlumeStakingDiamond` tests with high verbosity:
+
+```bash
+forge test --match-contract PlumeStakingDiamond  -vvvv --via-ir
+```
+
+### Gas Considerations
+
+**Notice on Loop Operations:** The PlumeStaking contract's design accounts for the current operational scale. At present, the system operates with 10 validators and one primary reward token. As there are no immediate plans to scale to hundreds of validators or tens of reward tokens, functions that loop through all validators or reward tokens are computationally safe and are not expected to exceed block gas limits under these conditions. Developers should remain mindful of these looping patterns if the system's scale significantly increases in the future.
 
 ---
 

@@ -3180,6 +3180,8 @@ contract PlumeStakingDiamondTest is Test {
      * 15. Final checks
      */
     function testComplexStakeUnstakeRestakeWithdrawScenario() public {
+        vm.deal(address(treasury),3000 ether);
+
         uint256 initialStake = 10 ether;
         uint256 firstUnstake = 5 ether;
         uint256 firstRestake = 2 ether; // Restake less than unstaked
@@ -3585,7 +3587,7 @@ contract PlumeStakingDiamondTest is Test {
 
         // 11. Activate PLUME rewards and advance time to accrue rewards
         console2.log("11. Activating PLUME rewards and advancing time...");
-        uint256 plumeRate = 1e16; // 0.01 PLUME per second
+        uint256 plumeRate = 1e12; // 0.000001 PLUME per second
         vm.startPrank(admin);
         RewardsFacet(address(diamondProxy)).setMaxRewardRate(
             PLUME_NATIVE,
