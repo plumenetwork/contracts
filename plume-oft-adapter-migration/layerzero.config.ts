@@ -12,7 +12,7 @@ const ethereumContract: OmniPointHardhat = {
 
 const plumeContract: OmniPointHardhat = {
     eid: EndpointId.PLUMEPHOENIX_V2_MAINNET,
-    contractName: 'OrbitNativeOFTAdapter',
+    contractName: 'OrbitNativeOFTAdapterUpgradeable',
 }
 
 const existingEthereumPlumeOFTAdapterContract: OmniPointHardhat = {
