@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.22;
 
-import { ArbNativeOFTAdapterUpgradeable } from  "../../../contracts/plume/ArbNativeOFTAdapterUpgradeable.sol";
+import { ArbNativeOFTAdapterUpgradeable } from  "../../contracts/plume/ArbNativeOFTAdapterUpgradeable.sol";
 
 contract MockArbNativeOFTAdapterUpgradeable is ArbNativeOFTAdapterUpgradeable {
     /**

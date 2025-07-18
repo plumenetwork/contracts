@@ -6,7 +6,7 @@ pragma solidity ^0.8.0;
 
 import "../bridge/IInboxBase.sol";
 import "../bridge/IInbox.sol";
-import "../../../contracts/ethereum/bridge/IBridge.sol";
+import "../../contracts/ethereum/bridge/IBridge.sol";
 import "../bridge/IEthBridge.sol";
 
 import "../bridge/Messages.sol";

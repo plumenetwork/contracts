@@ -1,7 +1,7 @@
 pragma solidity ^0.8.22;
 
 import { TestHelperOz5 } from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
-import { ArbNativeOFTAdapterUpgradeable } from "../../contracts/plume/ArbNativeOFTAdapterUpgradeable.sol";
+import { ArbNativeOFTAdapterUpgradeable } from "../contracts/plume/ArbNativeOFTAdapterUpgradeable.sol";
 import { MockArbNativeOFTAdapterUpgradeable } from "./mocks/MockArbNativeOFTAdapterUpgradeable.sol";
 import { MockOFT } from "./mocks/MockOFT.sol";
 import { MockNativeTokenManager } from "./mocks/MockNativeTokenManager.sol";
