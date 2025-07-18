@@ -3,7 +3,7 @@ import { type DeployFunction } from 'hardhat-deploy/types'
 import { EndpointId, endpointIdToNetwork } from '@layerzerolabs/lz-definitions'
 import { getDeploymentAddressAndAbi } from '@layerzerolabs/lz-evm-sdk-v2'
 
-const contractName = 'MyOFTUpgradeableMock'
+const contractName = 'OrbitERC20OFTAdapterUpgradeable'
 
 const deploy: DeployFunction = async (hre) => {
     const { deploy } = hre.deployments
@@ -17,7 +17,7 @@ const deploy: DeployFunction = async (hre) => {
 
     await deploy(contractName, {
         from: signer.address,
-        args: [address],
+        args: ['0x4C1746A800D224393fE2470C70A35717eD4eA5F1', address, '0x35381f63091926750F43b2A7401B083263aDEF83'], // replace '0xtoken' with the address of the ERC-20 token and '0xbridge' with the address of the bridge
         log: true,
         waitConfirmations: 1,
         skipIfAlreadyDeployed: false,
@@ -27,7 +27,7 @@ const deploy: DeployFunction = async (hre) => {
             execute: {
                 init: {
                     methodName: 'initialize',
-                    args: ['MyOFT', 'MOFT', signer.address], // TODO: add name/symbol
+                    args: [signer.address],
                 },
             },
         },
