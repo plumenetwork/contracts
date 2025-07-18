@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.22;
 
-import { ArbNativeOFTAdapter } from  "../../src/L3/ArbNativeOFTAdapter.sol";
+import { ArbNativeOFTAdapterUpgradeable } from  "../../src/L3/ArbNativeOFTAdapterUpgradeable.sol";
 
-contract MockArbNativeOFTAdapter is ArbNativeOFTAdapter {
+contract MockArbNativeOFTAdapterUpgradeable is ArbNativeOFTAdapterUpgradeable {
     /**
      * @param _localDecimals The decimals of the native on the local chain (this chain). 18 on ETH.
      * @param _lzEndpoint The LayerZero endpoint address.
