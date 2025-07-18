@@ -5,7 +5,7 @@
 // solhint-disable-next-line compiler-version
 pragma solidity >=0.6.9 <0.9.0;
 
-import "./IBridge.sol";
+import "../../../contracts/ethereum/bridge/IBridge.sol";
 import "./IDelayedMessageProvider.sol";
 import "./ISequencerInbox.sol";
 
