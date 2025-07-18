@@ -5,14 +5,24 @@ import { OAppEnforcedOption } from '@layerzerolabs/toolbox-hardhat'
 
 import type { OmniPointHardhat } from '@layerzerolabs/toolbox-hardhat'
 
-const optimismContract: OmniPointHardhat = {
-    eid: EndpointId.OPTSEP_V2_TESTNET,
-    contractName: 'MyOFTUpgradeableMock', // Note: change this to 'MyOFTUpgradeable' or your production contract name
+const ethereumContract: OmniPointHardhat = {
+    eid: EndpointId.ETHEREUM_V2_MAINNET,
+    contractName: 'OrbitERC20OFTAdapterUpgradeable',
 }
 
-const arbitrumContract: OmniPointHardhat = {
-    eid: EndpointId.ARBSEP_V2_TESTNET,
-    contractName: 'MyOFTUpgradeableMock', // Note: change this to 'MyOFTUpgradeable' or your production contract name
+const plumeContract: OmniPointHardhat = {
+    eid: EndpointId.PLUMEPHOENIX_V2_MAINNET,
+    contractName: 'OrbitNativeOFTAdapterUpgradeable',
+}
+
+const existingEthereumPlumeOFTAdapterContract: OmniPointHardhat = {
+    eid: EndpointId.ETHEREUM_V2_MAINNET,
+    address: '0xbDA8a2285F4C3e75b37E467C4DB9bC633FfbD29d',
+}
+
+const plumeDummyContract: OmniPointHardhat = {
+    eid: EndpointId.PLUMEPHOENIX_V2_MAINNET,
+    contractName: 'PlumeOFTMock',
 }
 
 // To connect all the above chains to each other, we need the following pathways:
@@ -33,20 +43,27 @@ const EVM_ENFORCED_OPTIONS: OAppEnforcedOption[] = [
 // i.e. if you declare A,B there's no need to declare B,A
 const pathways: TwoWayConfig[] = [
     [
-        optimismContract, // Chain A contract
-        arbitrumContract, // Chain C contract
-        [['LayerZero Labs'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
-        [1, 1], // [A to B confirmations, B to A confirmations]
-        [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain C enforcedOptions, Chain A enforcedOptions
+        ethereumContract, // Chain A contract
+        plumeContract, // Chain C contract
+        [['LayerZero Labs'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ] // TODO update dvns
+        [1, 1], // [A to B confirmations, B to A confirmations] // TODO update confirmations
+        [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain C enforcedOptions, Chain A enforcedOptions // TODO confirm this
+    ],
+    [
+        // TODO this cannot be done by LZ -- Plume owns existing PlumeOFTAdapter contract on Ethereum
+        existingEthereumPlumeOFTAdapterContract, // Chain A contract
+        plumeDummyContract, // Chain C contract
+        [['LayerZero Labs'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ] // TODO update dvns
+        [1, 1], // [A to B confirmations, B to A confirmations] // TODO update confirmations
+        [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain C enforcedOptions, Chain A enforcedOptions // TODO confirm this
     ],
 ]
-// Note: you should not use the values 1, 1 for confirmations. Choose the right number of confirmations based on the finalization that you require from the source/destination chains.
 
 export default async function () {
     // Generate the connections config based on the pathways
     const connections = await generateConnectionsConfig(pathways)
     return {
-        contracts: [{ contract: optimismContract }, { contract: arbitrumContract }],
+        contracts: [{ contract: ethereumContract }, { contract: plumeContract }],
         connections,
     }
 }
