@@ -21,7 +21,7 @@ contract MockPUSDTest is Test {
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
 
-        // Deploy implementation
+        
         implementation = new MockPUSD();
 
         // Prepare initialization data

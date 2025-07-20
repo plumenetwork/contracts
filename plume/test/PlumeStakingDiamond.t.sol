@@ -102,6 +102,7 @@ contract PlumeStakingDiamondTest is Test {
     address public charlie;
     address public dave;
     address public validatorAdmin;
+    address public validatorMacro;
 
     // Constants
     uint256 public constant MIN_STAKE = 1e18;
