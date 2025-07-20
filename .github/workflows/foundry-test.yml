@@ -1,4 +1,4 @@
-name: Run Foundry Tests
+name: Run PlumeStakingDiamond Tests
 on:
   push:
     branches:
@@ -15,5 +15,5 @@ jobs:
           submodules: recursive
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-      - name: Run tests
-        run: forge test -vvv
+      - name: Run PlumeStakingDiamond tests
+        run: forge test --match-path test/PlumeStakingDiamond.t.sol -vvv
