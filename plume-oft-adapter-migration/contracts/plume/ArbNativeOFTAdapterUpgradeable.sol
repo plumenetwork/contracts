@@ -20,7 +20,9 @@ abstract contract ArbNativeOFTAdapterUpgradeable is OFTCoreUpgradeable {
     constructor(
         uint8 _localDecimals,
         address _lzEndpoint
-    ) OFTCoreUpgradeable(_localDecimals, _lzEndpoint) {}
+    ) OFTCoreUpgradeable(_localDecimals, _lzEndpoint) {
+        _disableInitializers();
+    }
 
     /**
      * @dev Initializes the OFTAdapter with the provided delegate.
@@ -141,9 +143,5 @@ abstract contract ArbNativeOFTAdapterUpgradeable is OFTCoreUpgradeable {
      */
     function _payNative(uint256 _nativeFee) internal pure override returns (uint256 nativeFee) {
         return _nativeFee;
-    }
-
-    function oftVersion() external pure virtual override returns (bytes4 interfaceId, uint64 version) {
-        return (type(IOFT).interfaceId, 1);
     }
 }

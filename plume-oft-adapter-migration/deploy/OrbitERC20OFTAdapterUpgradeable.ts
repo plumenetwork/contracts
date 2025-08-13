@@ -17,7 +17,11 @@ const deploy: DeployFunction = async (hre) => {
 
     await deploy(contractName, {
         from: signer.address,
-        args: ['0x4C1746A800D224393fE2470C70A35717eD4eA5F1', address, '0x35381f63091926750F43b2A7401B083263aDEF83'], // replace '0xtoken' with the address of the ERC-20 token and '0xbridge' with the address of the bridge
+        args: [
+            '0x4C1746A800D224393fE2470C70A35717eD4eA5F1', // token address
+            address, // endpoint address
+            '0x35381f63091926750F43b2A7401B083263aDEF83', // bridge address
+        ],
         log: true,
         waitConfirmations: 1,
         skipIfAlreadyDeployed: false,
