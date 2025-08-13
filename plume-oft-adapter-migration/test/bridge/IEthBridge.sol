@@ -5,8 +5,8 @@
 // solhint-disable-next-line compiler-version
 pragma solidity >=0.6.9 <0.9.0;
 
-import "./IOwnable.sol";
-import "./IBridge.sol";
+import "../../contracts/ethereum/bridge/IOwnable.sol";
+import "../../contracts/ethereum/bridge/IBridge.sol";
 
 interface IEthBridge is IBridge {
     /**
