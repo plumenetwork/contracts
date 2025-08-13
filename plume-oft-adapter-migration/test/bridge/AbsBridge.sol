@@ -5,7 +5,7 @@
 pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 
 import {
     NotContract,
@@ -16,7 +16,7 @@ import {
     InvalidOutboxSet,
     BadSequencerMessageNumber
 } from "../libraries/Error.sol";
-import "./IBridge.sol";
+import "../../contracts/ethereum/bridge/IBridge.sol";
 import "./Messages.sol";
 import "../libraries/DelegateCallAware.sol";
 
@@ -29,7 +29,7 @@ import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
  * outboxes that can make calls from here and withdraw this escrow.
  */
 abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
-    using AddressUpgradeable for address;
+    using Address for address;
 
     struct InOutInfo {
         uint256 index;
@@ -213,7 +213,7 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
         bytes calldata data
     ) external returns (bool success, bytes memory returnData) {
         if (!allowedOutboxes(msg.sender)) revert NotOutbox(msg.sender);
-        if (data.length > 0 && !to.isContract()) revert NotContract(to);
+        if (data.length > 0 && to.code.length == 0) revert NotContract(to);
         address prevOutbox = _activeOutbox;
         _activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call

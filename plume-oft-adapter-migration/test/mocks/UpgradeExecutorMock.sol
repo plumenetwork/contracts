@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
 import "@offchainlabs/upgrade-executor/src/IUpgradeExecutor.sol";
 
 contract UpgradeExecutorMock is
     Initializable,
-    AccessControlUpgradeable,
+    AccessControl,
     ReentrancyGuard,
     IUpgradeExecutor
 {
@@ -32,14 +33,12 @@ contract UpgradeExecutorMock is
     function initialize(address admin, address[] memory executors) public initializer {
         require(admin != address(0), "UpgradeExecutor: zero admin");
 
-        __AccessControl_init();
-
         _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
         _setRoleAdmin(EXECUTOR_ROLE, ADMIN_ROLE);
 
-        _setupRole(ADMIN_ROLE, admin);
+        _grantRole(ADMIN_ROLE, admin);
         for (uint256 i = 0; i < executors.length; ++i) {
-            _setupRole(EXECUTOR_ROLE, executors[i]);
+            _grantRole(EXECUTOR_ROLE, executors[i]);
         }
     }
 
@@ -54,10 +53,7 @@ contract UpgradeExecutorMock is
         nonReentrant
     {
         // OZ Address library check if the address is a contract and bubble up inner revert reason
-        address(upgrade).functionDelegateCall(
-            upgradeCallData,
-            "UpgradeExecutor: inner delegate call failed without reason"
-        );
+        address(upgrade).functionDelegateCall(upgradeCallData);
 
         emit UpgradeExecuted(upgrade, msg.value, upgradeCallData);
     }
@@ -71,11 +67,7 @@ contract UpgradeExecutorMock is
         nonReentrant
     {
         // OZ Address library check if the address is a contract and bubble up inner revert reason
-        address(target).functionCallWithValue(
-            targetCallData,
-            msg.value,
-            "UpgradeExecutor: inner call failed without reason"
-        );
+        address(target).functionCallWithValue(targetCallData, msg.value);
 
         emit TargetCallExecuted(target, msg.value, targetCallData);
     }
