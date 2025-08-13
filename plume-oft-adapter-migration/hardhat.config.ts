@@ -58,14 +58,14 @@ const config: HardhatUserConfig = {
         ],
     },
     networks: {
-        'optimism-testnet': {
-            eid: EndpointId.OPTSEP_V2_TESTNET,
-            url: process.env.RPC_URL_OP_SEPOLIA || 'https://optimism-sepolia.gateway.tenderly.co',
+        'ethereum-mainnet': {
+            eid: EndpointId.ETHEREUM_V2_MAINNET,
+            url: process.env.RPC_URL_ETH_MAINNET || 'https://1rpc.io/eth',
             accounts,
         },
-        'arbitrum-testnet': {
-            eid: EndpointId.ARBSEP_V2_TESTNET,
-            url: process.env.RPC_URL_ARB_SEPOLIA || 'https://arbitrum-sepolia.gateway.tenderly.co',
+        'plume-mainnet': {
+            eid: EndpointId.PLUMEPHOENIX_V2_MAINNET,
+            url: process.env.RPC_URL_PLUME_MAINNET || 'https://rpc.plume.org',
             accounts,
         },
         hardhat: {
