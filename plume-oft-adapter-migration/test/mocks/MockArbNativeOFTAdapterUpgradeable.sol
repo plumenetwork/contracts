@@ -11,7 +11,9 @@ contract MockArbNativeOFTAdapterUpgradeable is ArbNativeOFTAdapterUpgradeable {
     constructor(
         uint8 _localDecimals,
         address _lzEndpoint
-    ) ArbNativeOFTAdapterUpgradeable(_localDecimals, _lzEndpoint) {}
+    ) ArbNativeOFTAdapterUpgradeable(_localDecimals, _lzEndpoint) {
+        _disableInitializers();
+    }
 
     function initialize(address _delegate) public initializer {
         __NativeOFTAdapter_init(_delegate);
