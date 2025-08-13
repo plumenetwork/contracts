@@ -2,12 +2,12 @@
 
 pragma solidity ^0.8.20;
 
-import { OFTCore } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/OFTCore.sol";
-import { IOFT, SendParam, OFTReceipt, MessagingReceipt, MessagingFee } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
+import { OFTCoreUpgradeable } from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
+import { IOFT, SendParam, OFTReceipt, MessagingReceipt, MessagingFee } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 
 import { ArbNativeTokenManager } from "./precompiles/ArbNativeTokenManager.sol";
 
-abstract contract ArbNativeOFTAdapter is OFTCore {
+abstract contract ArbNativeOFTAdapterUpgradeable is OFTCoreUpgradeable {
     ArbNativeTokenManager public immutable arbNativeTokenManager = ArbNativeTokenManager(address(0x73));
     
     error IncorrectMessageValue(uint256 provided, uint256 required);
@@ -16,13 +16,25 @@ abstract contract ArbNativeOFTAdapter is OFTCore {
     /**
      * @param _localDecimals The decimals of the native on the local chain (this chain). 18 on ETH.
      * @param _lzEndpoint The LayerZero endpoint address.
-     * @param _delegate The delegate capable of making OApp configurations inside of the endpoint.
      */
     constructor(
         uint8 _localDecimals,
-        address _lzEndpoint,
-        address _delegate
-    ) OFTCore(_localDecimals, _lzEndpoint, _delegate) {}
+        address _lzEndpoint
+    ) OFTCoreUpgradeable(_localDecimals, _lzEndpoint) {
+        _disableInitializers();
+    }
+
+    /**
+     * @dev Initializes the OFTAdapter with the provided delegate.
+     * @param _delegate The delegate capable of making OApp configurations inside of the endpoint.
+     *
+     * @dev The delegate typically should be set as the owner of the contract.
+     * @dev Ownable is not initialized here on purpose. It should be initialized in the child contract to
+     * accommodate the different version of Ownable.
+     */
+    function __NativeOFTAdapter_init(address _delegate) internal onlyInitializing {
+        __OFTCore_init(_delegate);
+    }
 
     function token() external pure returns (address) {
         return address(0);
@@ -53,6 +65,7 @@ abstract contract ArbNativeOFTAdapter is OFTCore {
      * a pre/post balance check will need to be done to calculate the amountReceivedLD.
      */
     function _debit(
+        address /*_from*/,
         uint256 _amountLD,
         uint256 _minAmountLD,
         uint32 _dstEid
@@ -106,6 +119,7 @@ abstract contract ArbNativeOFTAdapter is OFTCore {
         // - amountSentLD is the amount in local decimals that was ACTUALLY sent/debited from the sender.
         // - amountReceivedLD is the amount in local decimals that will be received/credited to the recipient on the remote OFT instance.
         (uint256 amountSentLD, uint256 amountReceivedLD) = _debit(
+            msg.sender,
             _sendParam.amountLD,
             _sendParam.minAmountLD,
             _sendParam.dstEid
@@ -129,9 +143,5 @@ abstract contract ArbNativeOFTAdapter is OFTCore {
      */
     function _payNative(uint256 _nativeFee) internal pure override returns (uint256 nativeFee) {
         return _nativeFee;
-    }
-
-    function oftVersion() external pure virtual returns (bytes4 interfaceId, uint64 version) {
-        return (type(IOFT).interfaceId, 1);
     }
 }

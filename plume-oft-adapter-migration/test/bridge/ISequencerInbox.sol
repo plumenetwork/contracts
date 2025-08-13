@@ -8,7 +8,7 @@ pragma experimental ABIEncoderV2;
 
 import "../libraries/IGasRefunder.sol";
 import "./IDelayedMessageProvider.sol";
-import "./IBridge.sol";
+import "../../contracts/ethereum/bridge/IBridge.sol";
 
 interface ISequencerInbox is IDelayedMessageProvider {
     struct MaxTimeVariation {

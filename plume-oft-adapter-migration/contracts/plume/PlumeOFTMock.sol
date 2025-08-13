@@ -4,7 +4,7 @@ pragma solidity ^0.8.22;
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { OFT } from "@layerzerolabs/oft-evm/contracts/OFT.sol";
 
-contract MockOFT is OFT {
+contract PlumeOFTMock is OFT {
     constructor(
         string memory _name,
         string memory _symbol,
@@ -12,7 +12,7 @@ contract MockOFT is OFT {
         address _delegate
     ) OFT(_name, _symbol, _lzEndpoint, _delegate) Ownable(_delegate) {}
 
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
+    function mint(address _to, uint256 _amount) public onlyOwner {
+        _mint(_to, _amount);
     }
 }
