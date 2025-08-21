@@ -400,6 +400,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256 winnersDrawn;
         uint256 totalTickets;
         uint256 totalUsers;
+        string formId;
     }
 
     function getPrizeDetails(
@@ -418,7 +419,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             bool claimed, // @deprecated
             uint256 quantity,
             uint256 numWinnersDrawn,
-            string memory formId,
+            string memory formId
         )
     {
         Prize storage p = prizes[prizeId];
@@ -433,7 +434,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             totalUniqueUsers[prizeId],
             p.claimed,
             p.quantity,
-            winnersDrawn[prizeId]
+            winnersDrawn[prizeId],
+            p.formId
         );
     }
 
@@ -461,7 +463,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
                 winnersDrawn: winnersDrawn[currentPrizeId],
                 totalTickets: totalTickets[currentPrizeId],
                 totalUsers: totalUniqueUsers[currentPrizeId],
-                formId: currentPrize.formId,
+                formId: currentPrize.formId
             });
         }
 
