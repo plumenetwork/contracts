@@ -3,7 +3,6 @@
 pragma solidity ^0.8.14;
 
 contract DateTime {
-
     /*
          *  Date and Time utilities for ethereum contracts
          *
@@ -27,9 +26,7 @@ contract DateTime {
 
     uint16 constant ORIGIN_YEAR = 1970;
 
-    function isLeapYear(
-        uint16 year
-    ) public pure returns (bool) {
+    function isLeapYear(uint16 year) public pure returns (bool) {
         if (year % 4 != 0) {
             return false;
         }
@@ -42,9 +39,7 @@ contract DateTime {
         return true;
     }
 
-    function leapYearsBefore(
-        uint256 year
-    ) public pure returns (uint256) {
+    function leapYearsBefore(uint256 year) public pure returns (uint256) {
         year -= 1;
         return year / 4 - year / 100 + year / 400;
     }
@@ -61,9 +56,7 @@ contract DateTime {
         }
     }
 
-    function parseTimestamp(
-        uint256 timestamp
-    ) internal pure returns (_DateTime memory dt) {
+    function parseTimestamp(uint256 timestamp) internal pure returns (_DateTime memory dt) {
         uint256 secondsAccountedFor = 0;
         uint256 buf;
         uint8 i;
@@ -108,9 +101,7 @@ contract DateTime {
         dt.weekday = getWeekday(timestamp);
     }
 
-    function getYear(
-        uint256 timestamp
-    ) public pure returns (uint16) {
+    function getYear(uint256 timestamp) public pure returns (uint16) {
         uint256 secondsAccountedFor = 0;
         uint16 year;
         uint256 numLeapYears;
@@ -133,39 +124,27 @@ contract DateTime {
         return year;
     }
 
-    function getMonth(
-        uint256 timestamp
-    ) public pure returns (uint8) {
+    function getMonth(uint256 timestamp) public pure returns (uint8) {
         return parseTimestamp(timestamp).month;
     }
 
-    function getDay(
-        uint256 timestamp
-    ) public pure returns (uint8) {
+    function getDay(uint256 timestamp) public pure returns (uint8) {
         return parseTimestamp(timestamp).day;
     }
 
-    function getHour(
-        uint256 timestamp
-    ) public pure returns (uint8) {
+    function getHour(uint256 timestamp) public pure returns (uint8) {
         return uint8((timestamp / 60 / 60) % 24);
     }
 
-    function getMinute(
-        uint256 timestamp
-    ) public pure returns (uint8) {
+    function getMinute(uint256 timestamp) public pure returns (uint8) {
         return uint8((timestamp / 60) % 60);
     }
 
-    function getSecond(
-        uint256 timestamp
-    ) public pure returns (uint8) {
+    function getSecond(uint256 timestamp) public pure returns (uint8) {
         return uint8(timestamp % 60);
     }
 
-    function getWeekday(
-        uint256 timestamp
-    ) public pure returns (uint8) {
+    function getWeekday(uint256 timestamp) public pure returns (uint8) {
         return uint8((timestamp / DAY_IN_SECONDS + 4) % 7);
     }
 
@@ -177,24 +156,19 @@ contract DateTime {
         return toTimestamp(year, month, day, hour, 0, 0);
     }
 
-    function toTimestamp(
-        uint16 year,
-        uint8 month,
-        uint8 day,
-        uint8 hour,
-        uint8 minute
-    ) public pure returns (uint256 timestamp) {
+    function toTimestamp(uint16 year, uint8 month, uint8 day, uint8 hour, uint8 minute)
+        public
+        pure
+        returns (uint256 timestamp)
+    {
         return toTimestamp(year, month, day, hour, minute, 0);
     }
 
-    function toTimestamp(
-        uint16 year,
-        uint8 month,
-        uint8 day,
-        uint8 hour,
-        uint8 minute,
-        uint8 second
-    ) public pure returns (uint256 timestamp) {
+    function toTimestamp(uint16 year, uint8 month, uint8 day, uint8 hour, uint8 minute, uint8 second)
+        public
+        pure
+        returns (uint256 timestamp)
+    {
         uint16 i;
 
         // Year
@@ -244,9 +218,7 @@ contract DateTime {
         return timestamp;
     }
 
-    function getWeekNumber(
-        uint256 timestamp
-    ) public pure returns (uint8) {
+    function getWeekNumber(uint256 timestamp) public pure returns (uint8) {
         _DateTime memory dt = parseTimestamp(timestamp);
         uint16 year = dt.year;
         uint8 month = dt.month;
@@ -270,5 +242,4 @@ contract DateTime {
         }
         return days_;
     }
-
 }
