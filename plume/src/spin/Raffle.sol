@@ -415,11 +415,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // Timestamp update for prizes
-    function updatePrizeEndTimestamp(uint256 prizeId, uint256 endTimestamp)
-        external
-        onlyRole(ADMIN_ROLE)
-        prizeIsActive(prizeId)
-    {
+    function updatePrizeEndTimestamp(uint256 prizeId, uint256 endTimestamp) external onlyRole(ADMIN_ROLE) {
         prizes[prizeId].endTimestamp = endTimestamp;
     }
 
