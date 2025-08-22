@@ -410,6 +410,55 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         return prizeWinners[prizeId];
     }
 
+
+  /**
+     * @notice Returns the indices in prizeWinners[prizeId] for a given user's wins.
+     * @dev These indices are the values to pass as winnerIndex to claimPrize.
+     * @param prizeId The prize identifier.
+     * @param onlyUnclaimed If true, returns only indices of unclaimed wins.
+     * @param user The user address to query for.
+     */
+    function getWinnerIndices(
+        uint256 prizeId,
+        bool onlyUnclaimed,
+        address user
+    ) external view returns (uint256[] memory) {
+        Winner[] storage wins = prizeWinners[prizeId];
+        uint256[] memory indices = new uint256[](wins.length);
+        uint256 j = 0;
+        for (uint256 i = 0; i < wins.length; i++) {
+            if (wins[i].winnerAddress == user && (!onlyUnclaimed || !wins[i].claimed)) {
+                indices[j++] = i;
+            }
+        }
+        assembly ("memory-safe") { mstore(indices, j) }
+        return indices;
+    }
+
+
+
+    /**
+     * @notice Returns the indices in prizeWinners[prizeId] for the caller's wins.
+     * @dev These indices are the values to pass as winnerIndex to claimPrize.
+     * @param prizeId The prize identifier.
+     * @param onlyUnclaimed If true, returns only indices of unclaimed wins.
+     */
+    function getMyWinnerIndices(
+        uint256 prizeId,
+        bool onlyUnclaimed
+    ) external view returns (uint256[] memory) {
+        Winner[] storage wins = prizeWinners[prizeId];
+        uint256[] memory indices = new uint256[](wins.length);
+        uint256 j = 0;
+        for (uint256 i = 0; i < wins.length; i++) {
+            if (wins[i].winnerAddress == msg.sender && (!onlyUnclaimed || !wins[i].claimed)) {
+                indices[j++] = i;
+            }
+        }
+        assembly ("memory-safe") { mstore(indices, j) }
+        return indices;
+    }
+
     function getUserWinnings(address user) external view returns (uint256[] memory) {
         return winnings[user];
     }
