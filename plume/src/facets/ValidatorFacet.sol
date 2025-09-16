@@ -352,6 +352,46 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
     }
 
     /**
+     * @notice ADMIN function to set the commission rate for a specific validator.
+     * @dev Mirrors validator-admin flow: enforces active state, max cap, settles accrued commission,
+     *      creates a commission checkpoint, and emits ValidatorCommissionSet.
+     *      Requires ADMIN_ROLE and validator existence.
+     * @param validatorId ID of the validator to update.
+     * @param newCommission The new commission rate (scaled by 1e18).
+     */
+    function adminSetValidatorCommission(
+        uint16 validatorId,
+        uint256 newCommission
+    ) external onlyRole(PlumeRoles.ADMIN_ROLE) _validateValidatorExists(validatorId) {
+        PlumeStakingStorage.Layout storage $ = PlumeStakingStorage.layout();
+        PlumeStakingStorage.ValidatorInfo storage validator = $.validators[validatorId];
+
+        // Validator must be active and not slashed
+        if (!validator.active || validator.slashed) {
+            revert ValidatorInactive(validatorId);
+        }
+
+        // Enforce system-wide max allowed commission
+        if (newCommission > $.maxAllowedValidatorCommission) {
+            revert CommissionExceedsMaxAllowed(newCommission, $.maxAllowedValidatorCommission);
+        }
+
+        uint256 oldCommission = validator.commission;
+        if (oldCommission == newCommission) {
+            return; // No-op
+        }
+
+        // Settle accrued commission with the old rate up to now
+        PlumeRewardLogic._settleCommissionForValidatorUpToNow($, validatorId);
+
+        // Update commission and create a checkpoint effective at current block timestamp
+        validator.commission = newCommission;
+        PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, newCommission);
+
+        emit ValidatorCommissionSet(validatorId, oldCommission, newCommission);
+    }
+
+    /**
      * @notice Set various addresses associated with a validator.
      * @dev Caller must be the l2AdminAddress for the validator.
      *      Updates are optional: pass address(0) or "" to keep the current value.

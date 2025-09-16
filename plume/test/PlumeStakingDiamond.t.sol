@@ -367,7 +367,7 @@ contract PlumeStakingDiamondTest is Test {
         );
 
         // Validator Facet Selectors
-        bytes4[] memory validatorSigs_Manual = new bytes4[](20); // Size updated to 19
+        bytes4[] memory validatorSigs_Manual = new bytes4[](21); // Size updated to 19
         validatorSigs_Manual[0] = bytes4(
             keccak256(
                 bytes(
@@ -437,6 +437,8 @@ contract PlumeStakingDiamondTest is Test {
         validatorSigs_Manual[19] = bytes4(
             keccak256(bytes("acceptAdmin(uint16)"))
         ); // <<< NEW acceptAdmin FUNCTION
+validatorSigs_Manual[20] = bytes4(keccak256("adminSetValidatorCommission(uint16,uint256)")); // <<< NEW adminSetValidatorCommission FUNCTION
+
 
         // Management Facet Selectors
         bytes4[] memory managementSigs_Manual = new bytes4[](16); // Size updated
@@ -13848,7 +13850,147 @@ function test_ClaimRewardsFromInactiveValidator() public {
         console2.log("--- Test: test_Fix_RestakeRewardsIsBackedByTreasuryTransfer PASSED ---");
     }
 
+ // 
+function test_AdminSetValidatorCommission_SucceedsAndCreatesCheckpoint() public {
+    // Arrange
+    address token = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE; // PLUME_NATIVE
+    uint16 validatorId = 1001;
+    uint256 initialCommission = 1e17; // 10%
+    uint256 newCommission = 2e17;     // 20%
+    uint256 stakeAmount = 100 ether;
 
+    vm.startPrank(admin);
+    // initializeAccessControl may already be initialized in other tests
+    try AccessControlFacet(address(diamondProxy)).initializeAccessControl() {} catch {}
+    AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
+    AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.ADMIN_ROLE, admin);
+    vm.stopPrank();
+
+    // Add validator
+    vm.prank(admin);
+    _addValidator(validatorId, initialCommission, admin, admin);
+
+    // User stakes to generate some commission accrual
+    vm.deal(user1, stakeAmount);
+    vm.prank(user1);
+    StakingFacet(address(diamondProxy)).stake{ value: stakeAmount }(validatorId);
+
+    // Let time pass to accrue commission
+    vm.warp(block.timestamp + 3 days);
+
+    // Before-change snapshot
+    uint256 commissionBefore = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+    PlumeStakingStorage.RateCheckpoint[] memory cpsBefore =
+        ValidatorFacet(address(diamondProxy)).getValidatorCommissionCheckpoints(validatorId);
+    uint256 cpsLenBefore = cpsBefore.length;
+
+    // Act: Admin sets new commission (migration function)
+    vm.prank(admin);
+    ValidatorFacet(address(diamondProxy)).adminSetValidatorCommission(validatorId, newCommission);
+
+    // Assert: commission updated and checkpoint created
+    (bool active, uint256 commissionNow,,) = ValidatorFacet(address(diamondProxy)).getValidatorStats(validatorId);
+    assertTrue(active, "Validator should remain active");
+    assertEq(commissionNow, newCommission, "Commission did not update");
+
+    PlumeStakingStorage.RateCheckpoint[] memory cpsAfter =
+        ValidatorFacet(address(diamondProxy)).getValidatorCommissionCheckpoints(validatorId);
+    assertEq(cpsAfter.length, cpsLenBefore + 1, "Commission checkpoint not appended");
+    assertEq(cpsAfter[cpsAfter.length - 1].rate, newCommission, "Last checkpoint rate mismatch");
+
+    // Settlement must have occurred inside the migration call (accrued >= before when time passed and stake exists)
+    uint256 commissionAfter = ValidatorFacet(address(diamondProxy)).getAccruedCommission(validatorId, token);
+    assertGe(commissionAfter, commissionBefore, "Accrued commission did not settle before rate change");
+}
+
+function test_AdminSetValidatorCommission_RequiresAdminRole() public {
+    // Arrange
+    uint16 validatorId = 1002;
+    uint256 initialCommission = 1e17;
+    uint256 newCommission = 2e17;
+    vm.startPrank(admin);
+    try AccessControlFacet(address(diamondProxy)).initializeAccessControl() {} catch {}
+    AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
+    vm.stopPrank();
+
+    vm.prank(admin);
+    _addValidator(validatorId, initialCommission, admin, admin);
+
+    // Act + Assert: non-admin caller should revert
+    vm.prank(user1);
+    vm.expectRevert(abi.encodeWithSelector(Unauthorized.selector, user1, PlumeRoles.ADMIN_ROLE));
+    ValidatorFacet(address(diamondProxy)).adminSetValidatorCommission(validatorId, newCommission);
+}
+
+function test_AdminSetValidatorCommission_FailsWhenValidatorInactiveOrSlashed() public {
+    // Arrange
+    uint16 validatorId = 1003;
+    uint256 initialCommission = 1e17;
+    uint256 newCommission = 2e17;
+
+    vm.startPrank(admin);
+    try AccessControlFacet(address(diamondProxy)).initializeAccessControl() {} catch {}
+    AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
+    AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.ADMIN_ROLE, admin);
+    _addValidator(validatorId, initialCommission, admin, admin);
+
+    // Make validator inactive
+    ValidatorFacet(address(diamondProxy)).setValidatorStatus(validatorId, false);
+    vm.stopPrank();
+
+    // Act + Assert: should revert for inactive
+    vm.prank(admin);
+    vm.expectRevert(abi.encodeWithSelector(ValidatorInactive.selector, validatorId));
+    ValidatorFacet(address(diamondProxy)).adminSetValidatorCommission(validatorId, newCommission);
+}
+
+function test_AdminSetValidatorCommission_EnforcesMaxCommissionCap() public {
+    // Arrange
+    uint16 validatorId = 1004;
+    uint256 initialCommission = 1e17;
+    uint256 capCommission = 15e16;     // 15%
+    uint256 excessiveCommission = 2e17; // 20%
+
+    vm.startPrank(admin);
+    try AccessControlFacet(address(diamondProxy)).initializeAccessControl() {} catch {}
+    AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
+    AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.TIMELOCK_ROLE, admin);
+    _addValidator(validatorId, initialCommission, admin, admin);
+
+    // Tighten max allowed commission system-wide
+    ManagementFacet(address(diamondProxy)).setMaxAllowedValidatorCommission(capCommission);
+    vm.stopPrank();
+
+    // Act + Assert: exceeding the cap should revert
+    vm.prank(admin);
+    vm.expectRevert(abi.encodeWithSelector(CommissionExceedsMaxAllowed.selector, excessiveCommission, capCommission));
+    ValidatorFacet(address(diamondProxy)).adminSetValidatorCommission(validatorId, excessiveCommission);
+}
+
+function test_AdminSetValidatorCommission_NoOpWhenSameCommission() public {
+    // Arrange
+    uint16 validatorId = 1005;
+    uint256 commission = 1e17;
+
+    vm.startPrank(admin);
+    try AccessControlFacet(address(diamondProxy)).initializeAccessControl() {} catch {}
+    AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.VALIDATOR_ROLE, admin);
+    AccessControlFacet(address(diamondProxy)).grantRole(PlumeRoles.ADMIN_ROLE, admin);
+    _addValidator(validatorId, commission, admin, admin);
+
+    PlumeStakingStorage.RateCheckpoint[] memory cpsBefore =
+        ValidatorFacet(address(diamondProxy)).getValidatorCommissionCheckpoints(validatorId);
+    uint256 cpsLenBefore = cpsBefore.length;
+
+    // Act: set to same commission
+    ValidatorFacet(address(diamondProxy)).adminSetValidatorCommission(validatorId, commission);
+    vm.stopPrank();
+
+    // Assert: no new checkpoint added
+    PlumeStakingStorage.RateCheckpoint[] memory cpsAfter =
+        ValidatorFacet(address(diamondProxy)).getValidatorCommissionCheckpoints(validatorId);
+    assertEq(cpsAfter.length, cpsLenBefore, "No-op commission update should not create a new checkpoint");
+}
 
 
     // Helper functions for creating single-element arrays for function calls
