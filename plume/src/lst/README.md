@@ -2,6 +2,27 @@
 
 This folder contains the LST contracts that integrate with the Plume Staking diamond using a bucket based bus model for predictable exits, buffer backed instant redemptions, and keeper friendly operations.
 
+## Table of contents
+- [Overview](#overview)
+- [Architecture](#architecture)
+  - [Components](#components)
+  - [Key flows](#key-flows)
+  - [Anti merge bus model](#anti-merge-bus-model)
+- [Policy and parameters](#policy-and-parameters)
+- [Unstake timing](#unstake-timing)
+- [Public API (stPlumeMinter excerpts)](#public-api-stplumeminter-excerpts)
+  - [Buckets and registry](#buckets-and-registry)
+  - [Buffer and queue operations](#buffer-and-queue-operations)
+  - [Keeper views](#keeper-views)
+  - [Policy and params (admin)](#policy-and-params-admin)
+- [Getting started](#getting-started)
+- [Keeper runbook](#keeper-runbook)
+- [Scripts](#scripts)
+  - [Bucket deployment (example)](#bucket-deployment-example)
+- [Observability](#observability)
+- [What’s new vs the original LST code](#whats-new-vs-the-original-lst-code)
+- [Testing](#testing)
+
 ## Overview
 - No changes to the staking diamond; all integration logic is LST side.
 - Buckets provide independent cooldown slots per validator to avoid cooldown merges.
@@ -27,6 +48,27 @@ This folder contains the LST contracts that integrate with the Plume Staking dia
 - Fees: instant and standard.
 - Buffer: withholdRatio, utilization guard (pause and threshold).
 - Batching: withdrawalQueueThreshold and batchUnstakeInterval (set close to diamond cooldown plus small buffer).
+
+## Unstake timing
+### TL;DR
+- Instant: seconds, if buffer capacity and policy allow (may be partial).
+- AMM: seconds, if enabled and price is within slippage limits.
+- Standard queue: T_exit ≈ T_to_batch + cooldownInterval + T_keeper.
+
+### Standard queue explained
+- T_to_batch: time until your validator’s next batch is placed. Triggered by reaching `withdrawalQueueThreshold` or by the periodic `batchUnstakeInterval` (worst case you just missed the last batch, so ≤ batchUnstakeInterval). If all buckets for that validator are currently cooling, the batch waits until the earliest `nextAvailableTime` across buckets (generally bounded by your ladder spacing/safety buffer).
+- cooldownInterval: the staking diamond’s cooldown (e.g., 21 days on mainnet deployments).
+- T_keeper: sweep and fulfill latency, typically one keeper cycle for `sweepMaturedBuckets(...)` followed by `fulfillRequests(...)` or `fulfillProRata(...)`.
+
+### Examples
+- Example A (typical): cooldown=21d, batchUnstakeInterval=1h, keeper cadence=5m → 0–1h + 21d + 0–10m.
+- Example B (partial instant): buffer covers 30% now → 30% paid instantly; remaining 70% follows the standard timeline above.
+
+### Estimating live from views
+- Buffer headroom and queued exits: `getBufferAndQueueStats()`
+- Bucket readiness per validator: `getBucketAvailabilitySummary(validatorId)`
+- Validator processing priority: `getValidatorsToProcess(maxCount)`
+- Ops cadence: keeper frequency for sweep/fulfil in your environment
 
 ## Public API (stPlumeMinter excerpts)
 ### Buckets and registry
