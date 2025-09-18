@@ -13,7 +13,7 @@ This folder contains the LST contracts that integrate with the Plume Staking dia
 - stPlumeMinter: deposits, buffer, batching, bucket scheduling, queue fulfilment.
 - stPlumeRewards: receives native rewards and accounts them to holders.
 - StakerBucket: minimal account that stakes, unstakes, withdraws, and restakes with the diamond, forwarding matured funds to the minter.
-- Scripts under `plume/script/lst`: setup, validator sync, bucket deployment, claims, sweeps, and fulfils.
+- Scripts under [`plume/script/lst`](../../script/lst/): setup, validator sync, bucket deployment, claims, sweeps, and fulfils.
 
 ### Key flows
 - Deposit: user sends ETH -> frxETH minted -> withholdRatio seeds buffer -> remainder staked via validator and bucket routing.
