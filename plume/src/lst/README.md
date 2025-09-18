@@ -10,6 +10,12 @@ This folder contains the LST contracts that integrate with the Plume Staking dia
   - [Anti merge bus model](#anti-merge-bus-model)
 - [Policy and parameters](#policy-and-parameters)
 - [Unstake timing](#unstake-timing)
+- [Roles and permissions](#roles-and-permissions)
+- [Recommended parameters](#recommended-parameters)
+- [Failure modes and safety](#failure-modes-and-safety)
+- [Monitoring and alerts](#monitoring-and-alerts)
+- [Production checklist](#production-checklist)
+- [Optional AMM path (if enabled)](#optional-amm-path-if-enabled)
 - [Public API (stPlumeMinter excerpts)](#public-api-stplumeminter-excerpts)
   - [Buckets and registry](#buckets-and-registry)
   - [Buffer and queue operations](#buffer-and-queue-operations)
@@ -69,6 +75,40 @@ This folder contains the LST contracts that integrate with the Plume Staking dia
 - Bucket readiness per validator: `getBucketAvailabilitySummary(validatorId)`
 - Validator processing priority: `getValidatorsToProcess(maxCount)`
 - Ops cadence: keeper frequency for sweep/fulfil in your environment
+
+## Roles and permissions
+- ADMIN: set fees, minStake, withholdRatio, instant policy, batch thresholds/interval; set rewards sink; grant/revoke roles; add buckets.
+- REBALANCER: sweep matured buckets, stake withheld, restake cooled funds if exposed.
+- CLAIMER: run `claim/claimAll` and load rewards to `stPlumeRewards` via the minter.
+- HANDLER: fulfill queues (`fulfillRequests`, `fulfillProRata`).
+
+## Recommended parameters
+- withholdRatio: 10%–30% to start; tune to target instant success rate.
+- fees: instant 30–100 bps; standard 0–20 bps.
+- withdrawalQueueThreshold: small fixed amount (e.g., 5–20 ETH) or policy based per validator.
+- batchUnstakeInterval: ≈ cooldown + small buffer to avoid bucket merge; ladder buckets to smooth cadence.
+- keeper cadence: 3–10 minutes for sweep/fulfil; claims hourly or daily.
+
+## Failure modes and safety
+- Buffer depletion/paused instant: requests fall back to AMM (if enabled) or queue; increase withholdRatio or run sweeps.
+- All buckets cooling: next batch waits for earliest `nextAvailableTime`; increase bucket count if sustained.
+- Queue growth: raise cadence/thresholds, add buckets, or temporarily increase withholdRatio.
+- RPC/backfill failures: keepers are idempotent; retry small bounded batches.
+
+## Monitoring and alerts
+- Buffer headroom below X ETH or Y% of queued exits.
+- Matured but unswept buckets > N or oldest matured age > T.
+- Queue growth rate and tail age per validator.
+- Last sweep/fulfil timestamps; keeper error rates.
+
+## Production checklist
+- Preflight on fork: deploy minter/rewards, sync validators, deploy buckets, set params, dry run keepers.
+- Post‑deploy: verify views (buffers, queues, buckets), small live deposit/exit, start keepers.
+- Rollback: ability to pause instant, lower thresholds, and stop keepers.
+
+## Optional AMM path (if enabled)
+- When buffer is insufficient and instant is desired, route via AMM under slippage caps and policy flags.
+- Not required for core operation; default deployments may omit AMM wiring.
 
 ## Public API (stPlumeMinter excerpts)
 ### Buckets and registry
@@ -183,9 +223,7 @@ flowchart LR
 
 
 
-- Interfaces and wiring
-  - Fix `plume/src/lst/interfaces/IPlumeStaking.sol` to mirror the diamond (remove unused `updateValidator(...)` to avoid selector mismatches).
-  - Keep all calls via this interface; no changes to staking contracts.
+
 
 - Bucketized bus model (LST-only)
   - Add `StakerBucket` (minimal ownable contract) that can stake/unstake/withdraw/restake with the diamond and forwards withdrawals to `stPlumeMinter`.
@@ -236,7 +274,6 @@ flowchart LR
   - Deploy `BucketFactory`, pre-deploy buckets per validator via CREATE2, wire into `stPlumeMinter`.
   - Keep a validator-sync script (diamond → minter registry) and keeper runbooks.
 
-This integrates the bus model entirely within LST contracts, preserves the diamond as-is, and gives you scheduled stake/exit behavior with predictable cooldown handling.
 
 
 
