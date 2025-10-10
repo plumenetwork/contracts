@@ -324,7 +324,7 @@ contract Spin is
         return 0 + streakAdjustment; // broken streak
     }
 
-    function restoreStreak(address user, uint256 streak) internal {
+    function restoreStreak(address user, uint256 streak) external onlyRole(ADMIN_ROLE) {
         userData[user].streakCount = streak;
     }
 
