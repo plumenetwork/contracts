@@ -328,6 +328,12 @@ contract Spin is
         userData[user].streakCount = streak;
     }
 
+    function restoreStreaks(address[] memory users, uint256[] memory streaks) external onlyRole(ADMIN_ROLE) {
+        for (uint256 i = 0; i < users.length; i++) {
+            userData[users[i]].streakCount = streaks[i];
+        }
+    }
+
     /// @notice Returns the user\'s current streak count based on their last spin date.
     function currentStreak(
         address user
