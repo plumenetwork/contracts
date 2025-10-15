@@ -326,11 +326,13 @@ contract Spin is
 
     function restoreStreak(address user, uint256 streak) external onlyRole(ADMIN_ROLE) {
         userData[user].streakCount = streak;
+        userData[user].lastSpinTimestamp = block.timestamp;
     }
 
     function restoreStreaks(address[] memory users, uint256[] memory streaks) external onlyRole(ADMIN_ROLE) {
         for (uint256 i = 0; i < users.length; i++) {
             userData[users[i]].streakCount = streaks[i];
+            userData[users[i]].lastSpinTimestamp = block.timestamp;
         }
     }
 
