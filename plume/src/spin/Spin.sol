@@ -70,7 +70,9 @@ contract Spin is
 
     // Events
     event SpinRequested(uint256 indexed nonce, address indexed user);
-    event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
+    event SpinCompleted(
+        address indexed walletAddress, string rewardCategory, uint256 rewardAmount, uint256 currentStreak
+    );
     event RaffleTicketsSpent(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
     event NotEnoughStreak(string message);
     event JackpotAlreadyClaimed(string message);
@@ -261,7 +263,7 @@ contract Spin is
             _safeTransferPlume(user, rewardAmount * 1 ether);
         }
 
-        emit SpinCompleted(user, rewardCategory, rewardAmount);
+        emit SpinCompleted(user, rewardCategory, rewardAmount, currentSpinStreak);
     }
 
     /**
