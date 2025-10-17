@@ -70,7 +70,9 @@ contract Spin is
 
     // Events
     event SpinRequested(uint256 indexed nonce, address indexed user);
-    event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
+    event SpinCompleted(
+        address indexed walletAddress, string rewardCategory, uint256 rewardAmount, uint256 currentStreak
+    );
     event RaffleTicketsSpent(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
     event NotEnoughStreak(string message);
     event JackpotAlreadyClaimed(string message);
@@ -261,7 +263,7 @@ contract Spin is
             _safeTransferPlume(user, rewardAmount * 1 ether);
         }
 
-        emit SpinCompleted(user, rewardCategory, rewardAmount);
+        emit SpinCompleted(user, rewardCategory, rewardAmount, currentSpinStreak);
     }
 
     /**
@@ -326,11 +328,13 @@ contract Spin is
 
     function restoreStreak(address user, uint256 streak) external onlyRole(ADMIN_ROLE) {
         userData[user].streakCount = streak;
+        userData[user].lastSpinTimestamp = block.timestamp;
     }
 
     function restoreStreaks(address[] memory users, uint256[] memory streaks) external onlyRole(ADMIN_ROLE) {
         for (uint256 i = 0; i < users.length; i++) {
             userData[users[i]].streakCount = streaks[i];
+            userData[users[i]].lastSpinTimestamp = block.timestamp;
         }
     }
 
