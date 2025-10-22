@@ -94,6 +94,12 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     );
     event WinnerSet(uint256 indexed prizeId, address indexed winner); // @deprecated
 
+    event WinnerInvalidated(uint256 indexed prizeId, uint256 indexed winnerIndex, address indexed winner);
+    error AlreadyInvalid();
+    error InvalidWinnerIndex();
+    error WinnerInvalid(); // used in claimPrize for invalidated winners
+
+
     // Errors
     error EmptyTicketPool();
     error WinnerDrawn(address winner); // @deprecated
@@ -251,6 +257,36 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit WinnerRequested(prizeId, requestId);
     }
 
+
+    function invalidateWinner(uint256 prizeId, uint256 winnerIndex) external onlyRole(ADMIN_ROLE) {
+        Winner storage w = prizeWinners[prizeId][winnerIndex];
+
+        if (winnerIndex >= prizeWinners[prizeId].length) revert InvalidWinnerIndex();
+        if (w.winnerAddress == address(0)) revert InvalidWinnerIndex();
+        if (w.claimed) revert WinnerClaimed();
+        if (!w.valid) revert AlreadyInvalid();
+
+        // Mark invalid
+        w.valid = false;
+
+        // Keep counts consistent
+        if (winnersDrawn[prizeId] > 0) {
+            winnersDrawn[prizeId] -= 1;
+        }
+        uint256 c = userWinCount[prizeId][w.winnerAddress];
+        if (c > 0) {
+            userWinCount[prizeId][w.winnerAddress] = c - 1;
+        }
+
+        // Reactivate so prize is editable & redrawable
+        prizes[prizeId].isActive = true;
+
+        emit WinnerInvalidated(prizeId, winnerIndex, w.winnerAddress);
+    }
+
+
+
+
     // Callback from VRF to set the winning ticket number and determine the winner
     function handleWinnerSelection(uint256 requestId, uint256[] memory rng) external onlyRole(SUPRA_ROLE) {
         uint256 prizeId = pendingVRFRequests[requestId];
@@ -306,6 +342,45 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit WinnerSelected(prizeId, winnerAddress, winningTicketIndex);
     }
 
+
+    function winnersCountForPrize(uint256 prizeId) public view returns (uint256) {
+        Winner[] storage arr = prizeWinners[prizeId];
+        uint256 count;
+        for (uint256 i = 0; i < arr.length; i++) {
+            if (arr[i].valid) count++;
+        }
+        return count;
+    }
+
+    function getValidPrizeWinners(uint256 prizeId) external view returns (Winner[] memory) {
+        Winner[] storage allWins = prizeWinners[prizeId];
+        uint256 n;
+        for (uint256 i = 0; i < allWins.length; i++) if (allWins[i].valid) n++;
+
+        Winner[] memory out = new Winner[](n);
+        uint256 j;
+        for (uint256 i = 0; i < allWins.length; i++) {
+            if (allWins[i].valid) {
+                out[j++] = allWins[i];
+            }
+        }
+        return out;
+    }
+
+
+
+    function backfillValidFlags(uint256 prizeId, uint256 from, uint256 to) external onlyRole(ADMIN_ROLE) {
+        Winner[] storage arr = prizeWinners[prizeId];
+        uint256 lim = arr.length;
+        if (to > lim) to = lim;
+        for (uint256 i = from; i < to; i++) {
+            if (!arr[i].valid && arr[i].winnerAddress != address(0)) {
+                arr[i].valid = true;
+            }
+        }
+    }
+
+
     // Admin function called immediately after VRF callback to set the winner in contract storage
     // Executes a binary search to find the winner but only called once
     function setWinner(
@@ -332,6 +407,10 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         }
         if (msg.sender != individualWin.winnerAddress) {
             revert NotAWinner();
+        }
+
+        if (!individualWin.claimed) {
+            revert WinnerInvalid();
         }
 
         individualWin.claimed = true;
