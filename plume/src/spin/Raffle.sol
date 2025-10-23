@@ -39,7 +39,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256 cumulativeEnd;
     }
 
-    // REFACTORED: Removed 'valid' flag from Winner struct
     struct Winner {
         address winnerAddress;
         uint256 winningTicketIndex;
@@ -78,7 +77,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     mapping(uint256 => uint256) public winnersDrawn;
     mapping(uint256 => mapping(address => uint256)) public userWinCount;
 
-    // REFACTORED: New mapping to track invalid winners
     // Structure: prizeId => winnerIndex => isInvalid
     mapping(uint256 => mapping(uint256 => bool)) public invalidWinners;
 
@@ -248,7 +246,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     function requestWinner(
         uint256 prizeId
     ) external onlyRole(ADMIN_ROLE) {
-        // REFACTORED: Check actual valid winners count
         if (getValidWinnersCount(prizeId) >= prizes[prizeId].quantity) {
             revert AllWinnersDrawn();
         }
@@ -272,7 +269,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit WinnerRequested(prizeId, requestId);
     }
 
-    // REFACTORED: Updated invalidateWinner to use mapping instead of struct flag
     function invalidateWinner(
         uint256 prizeId,
         uint256 winnerIndex
@@ -325,7 +321,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             revert PrizeInactive();
         }
 
-        // REFACTORED: Check actual valid winners count
+        // Check actual valid winners count
         if (getValidWinnersCount(prizeId) >= prizes[prizeId].quantity) {
             revert NoMoreWinners();
         }
@@ -372,7 +368,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit WinnerSelected(prizeId, winnerAddress, winningTicketIndex);
     }
 
-    // REFACTORED: Helper function to count valid (non-invalidated) winners
+    // Helper function to count valid (non-invalidated) winners
     function getValidWinnersCount(
         uint256 prizeId
     ) public view returns (uint256) {
@@ -386,7 +382,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         return count;
     }
 
-    // REFACTORED: Updated to check invalidWinners mapping
     function getValidPrizeWinners(
         uint256 prizeId
     ) external view returns (Winner[] memory) {
@@ -427,7 +422,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         return prizeWinners[prizeId][index].winnerAddress;
     }
 
-    // REFACTORED: Fixed the critical bug and updated to check invalidWinners mapping
     function claimPrize(
         uint256 prizeId,
         uint256 winnerIndex
@@ -538,7 +532,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             totalUniqueUsers[prizeId],
             p.claimed,
             p.quantity,
-            getValidWinnersCount(prizeId), // REFACTORED: Return valid winners count
+            getValidWinnersCount(prizeId),
             p.formId
         );
     }
@@ -558,7 +552,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
                 endTimestamp: currentPrize.endTimestamp,
                 isActive: currentPrize.isActive,
                 quantity: currentPrize.quantity,
-                winnersDrawn: getValidWinnersCount(currentPrizeId), // REFACTORED: Return valid winners count
+                winnersDrawn: getValidWinnersCount(currentPrizeId),
                 totalTickets: totalTickets[currentPrizeId],
                 totalUsers: totalUniqueUsers[currentPrizeId],
                 formId: currentPrize.formId
@@ -574,7 +568,6 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         return prizeWinners[prizeId];
     }
 
-    // REFACTORED: Check if a specific winner is valid
     function isWinnerValid(
         uint256 prizeId,
         uint256 winnerIndex
@@ -598,7 +591,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256[] memory indices = new uint256[](wins.length);
         uint256 j = 0;
         for (uint256 i = 0; i < wins.length; i++) {
-            // REFACTORED: Also check that winner is not invalidated
+            // Also check that winner is not invalidated
             if (wins[i].winnerAddress == user && !invalidWinners[prizeId][i] && (!onlyUnclaimed || !wins[i].claimed)) {
                 indices[j++] = i;
             }
@@ -623,7 +616,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256[] memory indices = new uint256[](wins.length);
         uint256 j = 0;
         for (uint256 i = 0; i < wins.length; i++) {
-            // REFACTORED: Also check that winner is not invalidated
+            // Also check that winner is not invalidated
             if (
                 wins[i].winnerAddress == msg.sender && !invalidWinners[prizeId][i]
                     && (!onlyUnclaimed || !wins[i].claimed)
