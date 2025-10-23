@@ -939,7 +939,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize with 1 winner slot
         vm.prank(ADMIN);
         raffle.addPrize("Test Prize", "Desc", 100, 1, "0");
-        
+
         spinStub.setBalance(USER, 5);
         vm.prank(USER);
         raffle.spendRaffle(1, 5);
@@ -985,7 +985,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize
         vm.prank(ADMIN);
         raffle.addPrize("Test Prize", "Desc", 100, 1, "0");
-        
+
         spinStub.setBalance(USER, 5);
         vm.prank(USER);
         raffle.spendRaffle(1, 5);
@@ -1012,7 +1012,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize
         vm.prank(ADMIN);
         raffle.addPrize("Test Prize", "Desc", 100, 1, "0");
-        
+
         spinStub.setBalance(USER, 5);
         vm.prank(USER);
         raffle.spendRaffle(1, 5);
@@ -1038,7 +1038,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize
         vm.prank(ADMIN);
         raffle.addPrize("Test Prize", "Desc", 100, 1, "0");
-        
+
         spinStub.setBalance(USER, 5);
         vm.prank(USER);
         raffle.spendRaffle(1, 5);
@@ -1064,7 +1064,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize
         vm.prank(ADMIN);
         raffle.addPrize("Test Prize", "Desc", 100, 1, "0");
-        
+
         spinStub.setBalance(USER, 5);
         vm.prank(USER);
         raffle.spendRaffle(1, 5);
@@ -1086,7 +1086,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize
         vm.prank(ADMIN);
         raffle.addPrize("Test Prize", "Desc", 100, 1, "0");
-        
+
         spinStub.setBalance(USER, 5);
         vm.prank(USER);
         raffle.spendRaffle(1, 5);
@@ -1112,7 +1112,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize with 1 winner slot
         vm.prank(ADMIN);
         raffle.addPrize("Test Prize", "Desc", 100, 1, "0");
-        
+
         spinStub.setBalance(USER, 5);
         vm.prank(USER);
         raffle.spendRaffle(1, 3);
@@ -1161,7 +1161,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize with 3 winner slots
         vm.prank(ADMIN);
         raffle.addPrize("Multi-Winner Prize", "Desc", 100, 3, "0");
-        
+
         spinStub.setBalance(USER, 10);
         vm.prank(USER);
         raffle.spendRaffle(1, 4);
@@ -1172,7 +1172,7 @@ contract RaffleFlowTest is PlumeTestBase {
 
         // Draw three winners
         uint256[] memory rng = new uint256[](1);
-        
+
         // Winner 1: USER
         uint256 req1 = requestWinnerForPrize(1);
         rng[0] = 1;
@@ -1226,7 +1226,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize with 2 winner slots
         vm.prank(ADMIN);
         raffle.addPrize("Prize", "Desc", 100, 2, "0");
-        
+
         spinStub.setBalance(USER, 10);
         vm.prank(USER);
         raffle.spendRaffle(1, 5);
@@ -1237,7 +1237,7 @@ contract RaffleFlowTest is PlumeTestBase {
 
         // Draw two winners
         uint256[] memory rng = new uint256[](1);
-        
+
         uint256 req1 = requestWinnerForPrize(1);
         rng[0] = 1;
         vm.prank(SUPRA_ORACLE);
@@ -1266,14 +1266,14 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize with 3 winner slots
         vm.prank(ADMIN);
         raffle.addPrize("Prize", "Desc", 100, 3, "0");
-        
+
         spinStub.setBalance(USER, 10);
         vm.prank(USER);
         raffle.spendRaffle(1, 10);
 
         // Draw three winners (all USER)
         uint256[] memory rng = new uint256[](1);
-        
+
         uint256 req1 = requestWinnerForPrize(1);
         rng[0] = 1;
         vm.prank(SUPRA_ORACLE);
@@ -1308,7 +1308,7 @@ contract RaffleFlowTest is PlumeTestBase {
         // Setup prize with quantity 1
         vm.prank(ADMIN);
         raffle.addPrize("Prize", "Desc", 100, 1, "0");
-        
+
         spinStub.setBalance(USER, 5);
         vm.prank(USER);
         raffle.spendRaffle(1, 5);
