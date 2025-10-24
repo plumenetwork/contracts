@@ -84,7 +84,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     bool private _migrationComplete;
 
     // Reserved storage gap for future upgrades
-    uint256[45] private __gap; // Reduced by 1 due to new mapping
+    uint256[49] private __gap; // Reduced by 1 due to new mapping
 
     // Events
     event PrizeAdded(uint256 indexed prizeId, string name);
