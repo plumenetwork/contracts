@@ -9,7 +9,10 @@ import "../interfaces/ISupraRouterContract.sol";
 
 interface ISpin {
 
-    function spendRaffleTickets(address _user, uint256 _amount) external;
+    function spendRaffleTickets(
+        address _user,
+        uint256 _amount
+    ) external;
     function getUserData(
         address _user
     ) external view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256);
@@ -74,11 +77,14 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     mapping(uint256 => uint256) public winnersDrawn;
     mapping(uint256 => mapping(address => uint256)) public userWinCount;
 
+    // Structure: prizeId => winnerIndex => isInvalid
+    mapping(uint256 => mapping(uint256 => bool)) public invalidWinners;
+
     // Migration tracking
     bool private _migrationComplete;
 
     // Reserved storage gap for future upgrades
-    uint256[50] private __gap;
+    uint256[49] private __gap; // Reduced by 1 due to new mapping
 
     // Events
     event PrizeAdded(uint256 indexed prizeId, string name);
@@ -93,6 +99,11 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256 indexed prizeId, string name, string description, uint256 value, uint256 quantity, string indexed formId
     );
     event WinnerSet(uint256 indexed prizeId, address indexed winner); // @deprecated
+
+    event WinnerInvalidated(uint256 indexed prizeId, uint256 indexed winnerIndex, address indexed winner);
+    error AlreadyInvalid();
+    error InvalidWinnerIndex();
+    error WinnerInvalid(); // used in claimPrize for invalidated winners
 
     // Errors
     error EmptyTicketPool();
@@ -110,7 +121,10 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     uint256 private nextPrizeId;
 
     // Initialize function
-    function initialize(address _spinContract, address _supraRouter) public initializer {
+    function initialize(
+        address _spinContract,
+        address _supraRouter
+    ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
 
@@ -201,7 +215,10 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // User is spending raffle tickets to enter a prize
-    function spendRaffle(uint256 prizeId, uint256 ticketAmount) external prizeIsActive(prizeId) {
+    function spendRaffle(
+        uint256 prizeId,
+        uint256 ticketAmount
+    ) external prizeIsActive(prizeId) {
         require(ticketAmount > 0, "Must spend at least 1 ticket");
 
         // Verify and deduct tickets from user balance
@@ -229,9 +246,10 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     function requestWinner(
         uint256 prizeId
     ) external onlyRole(ADMIN_ROLE) {
-        if (winnersDrawn[prizeId] >= prizes[prizeId].quantity) {
+        if (getValidWinnersCount(prizeId) >= prizes[prizeId].quantity) {
             revert AllWinnersDrawn();
         }
+
         if (prizeRanges[prizeId].length == 0) {
             revert EmptyTicketPool();
         }
@@ -251,8 +269,49 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         emit WinnerRequested(prizeId, requestId);
     }
 
+    function invalidateWinner(
+        uint256 prizeId,
+        uint256 winnerIndex
+    ) external onlyRole(ADMIN_ROLE) {
+        if (winnerIndex >= prizeWinners[prizeId].length) {
+            revert InvalidWinnerIndex();
+        }
+
+        Winner storage w = prizeWinners[prizeId][winnerIndex];
+
+        if (w.winnerAddress == address(0)) {
+            revert InvalidWinnerIndex();
+        }
+        if (w.claimed) {
+            revert WinnerClaimed();
+        }
+        if (invalidWinners[prizeId][winnerIndex]) {
+            revert AlreadyInvalid();
+        }
+
+        // Mark as invalid in separate mapping
+        invalidWinners[prizeId][winnerIndex] = true;
+
+        // Keep counts consistent
+        if (winnersDrawn[prizeId] > 0) {
+            winnersDrawn[prizeId] -= 1;
+        }
+        uint256 c = userWinCount[prizeId][w.winnerAddress];
+        if (c > 0) {
+            userWinCount[prizeId][w.winnerAddress] = c - 1;
+        }
+
+        // Reactivate prize so it's editable & redrawable
+        prizes[prizeId].isActive = true;
+
+        emit WinnerInvalidated(prizeId, winnerIndex, w.winnerAddress);
+    }
+
     // Callback from VRF to set the winning ticket number and determine the winner
-    function handleWinnerSelection(uint256 requestId, uint256[] memory rng) external onlyRole(SUPRA_ROLE) {
+    function handleWinnerSelection(
+        uint256 requestId,
+        uint256[] memory rng
+    ) external onlyRole(SUPRA_ROLE) {
         uint256 prizeId = pendingVRFRequests[requestId];
 
         isWinnerRequestPending[prizeId] = false;
@@ -261,7 +320,9 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         if (!prizes[prizeId].isActive) {
             revert PrizeInactive();
         }
-        if (winnersDrawn[prizeId] >= prizes[prizeId].quantity) {
+
+        // Check actual valid winners count
+        if (getValidWinnersCount(prizeId) >= prizes[prizeId].quantity) {
             revert NoMoreWinners();
         }
 
@@ -285,8 +346,9 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             winnerAddress = ranges[lo].user;
         }
 
-        // Store winner details
-        prizeWinners[prizeId].push(
+        // Store winner details (no 'valid' flag needed)
+        prizeWinners[prizeId]
+        .push(
             Winner({
                 winnerAddress: winnerAddress,
                 winningTicketIndex: winningTicketIndex,
@@ -298,12 +360,50 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         winnersDrawn[prizeId]++;
         userWinCount[prizeId][winnerAddress]++;
 
-        // Deactivate prize if all winners have been drawn
-        if (winnersDrawn[prizeId] == prizes[prizeId].quantity) {
+        // Deactivate prize if all valid winners have been drawn
+        if (getValidWinnersCount(prizeId) >= prizes[prizeId].quantity) {
             prizes[prizeId].isActive = false;
         }
 
         emit WinnerSelected(prizeId, winnerAddress, winningTicketIndex);
+    }
+
+    // Helper function to count valid (non-invalidated) winners
+    function getValidWinnersCount(
+        uint256 prizeId
+    ) public view returns (uint256) {
+        Winner[] storage arr = prizeWinners[prizeId];
+        uint256 count = 0;
+        for (uint256 i = 0; i < arr.length; i++) {
+            if (!invalidWinners[prizeId][i]) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    function getValidPrizeWinners(
+        uint256 prizeId
+    ) external view returns (Winner[] memory) {
+        Winner[] storage allWins = prizeWinners[prizeId];
+        uint256 n = 0;
+
+        // Count valid winners
+        for (uint256 i = 0; i < allWins.length; i++) {
+            if (!invalidWinners[prizeId][i]) {
+                n++;
+            }
+        }
+
+        // Build array of valid winners
+        Winner[] memory out = new Winner[](n);
+        uint256 j = 0;
+        for (uint256 i = 0; i < allWins.length; i++) {
+            if (!invalidWinners[prizeId][i]) {
+                out[j++] = allWins[i];
+            }
+        }
+        return out;
     }
 
     // Admin function called immediately after VRF callback to set the winner in contract storage
@@ -315,23 +415,39 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // read function to get the winner of a prize by direct read
-    function getWinner(uint256 prizeId, uint256 index) public view returns (address) {
+    function getWinner(
+        uint256 prizeId,
+        uint256 index
+    ) public view returns (address) {
         return prizeWinners[prizeId][index].winnerAddress;
     }
 
-    // User claims their prize, we mark it as claimed and deactivate the prize
-    function claimPrize(uint256 prizeId, uint256 winnerIndex) external {
-        if (prizes[prizeId].isActive && winnersDrawn[prizeId] < prizes[prizeId].quantity) {
+    function claimPrize(
+        uint256 prizeId,
+        uint256 winnerIndex
+    ) external {
+        // Check if this specific winner exists
+        if (winnerIndex >= prizeWinners[prizeId].length) {
             revert WinnerNotDrawn();
         }
 
         Winner storage individualWin = prizeWinners[prizeId][winnerIndex];
+
+        // Check if winner has been drawn (address should not be zero)
+        if (individualWin.winnerAddress == address(0)) {
+            revert WinnerNotDrawn();
+        }
 
         if (individualWin.claimed) {
             revert WinnerClaimed();
         }
         if (msg.sender != individualWin.winnerAddress) {
             revert NotAWinner();
+        }
+
+        // FIXED: Check if winner has been invalidated
+        if (invalidWinners[prizeId][winnerIndex]) {
+            revert WinnerInvalid();
         }
 
         individualWin.claimed = true;
@@ -416,7 +532,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
             totalUniqueUsers[prizeId],
             p.claimed,
             p.quantity,
-            winnersDrawn[prizeId],
+            getValidWinnersCount(prizeId),
             p.formId
         );
     }
@@ -436,7 +552,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
                 endTimestamp: currentPrize.endTimestamp,
                 isActive: currentPrize.isActive,
                 quantity: currentPrize.quantity,
-                winnersDrawn: winnersDrawn[currentPrizeId],
+                winnersDrawn: getValidWinnersCount(currentPrizeId),
                 totalTickets: totalTickets[currentPrizeId],
                 totalUsers: totalUniqueUsers[currentPrizeId],
                 formId: currentPrize.formId
@@ -450,6 +566,13 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256 prizeId
     ) external view returns (Winner[] memory) {
         return prizeWinners[prizeId];
+    }
+
+    function isWinnerValid(
+        uint256 prizeId,
+        uint256 winnerIndex
+    ) external view returns (bool) {
+        return !invalidWinners[prizeId][winnerIndex];
     }
 
     /**
@@ -468,7 +591,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256[] memory indices = new uint256[](wins.length);
         uint256 j = 0;
         for (uint256 i = 0; i < wins.length; i++) {
-            if (wins[i].winnerAddress == user && (!onlyUnclaimed || !wins[i].claimed)) {
+            // Also check that winner is not invalidated
+            if (wins[i].winnerAddress == user && !invalidWinners[prizeId][i] && (!onlyUnclaimed || !wins[i].claimed)) {
                 indices[j++] = i;
             }
         }
@@ -484,12 +608,19 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
      * @param prizeId The prize identifier.
      * @param onlyUnclaimed If true, returns only indices of unclaimed wins.
      */
-    function getMyWinnerIndices(uint256 prizeId, bool onlyUnclaimed) external view returns (uint256[] memory) {
+    function getMyWinnerIndices(
+        uint256 prizeId,
+        bool onlyUnclaimed
+    ) external view returns (uint256[] memory) {
         Winner[] storage wins = prizeWinners[prizeId];
         uint256[] memory indices = new uint256[](wins.length);
         uint256 j = 0;
         for (uint256 i = 0; i < wins.length; i++) {
-            if (wins[i].winnerAddress == msg.sender && (!onlyUnclaimed || !wins[i].claimed)) {
+            // Also check that winner is not invalidated
+            if (
+                wins[i].winnerAddress == msg.sender && !invalidWinners[prizeId][i]
+                    && (!onlyUnclaimed || !wins[i].claimed)
+            ) {
                 indices[j++] = i;
             }
         }
@@ -506,7 +637,10 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     // Timestamp update for prizes
-    function updatePrizeEndTimestamp(uint256 prizeId, uint256 endTimestamp) external onlyRole(ADMIN_ROLE) {
+    function updatePrizeEndTimestamp(
+        uint256 prizeId,
+        uint256 endTimestamp
+    ) external onlyRole(ADMIN_ROLE) {
         prizes[prizeId].endTimestamp = endTimestamp;
     }
 
@@ -516,11 +650,14 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
      * @param prizeId The ID of the prize to modify
      * @param active The new active status to set
      */
-    function setPrizeActive(uint256 prizeId, bool active) external onlyRole(ADMIN_ROLE) {
+    function setPrizeActive(
+        uint256 prizeId,
+        bool active
+    ) external onlyRole(ADMIN_ROLE) {
         Prize storage prize = prizes[prizeId];
         require(bytes(prize.name).length != 0, "Prize does not exist");
         if (active) {
-            require(winnersDrawn[prizeId] < prize.quantity, "All winners already selected");
+            require(getValidWinnersCount(prizeId) < prize.quantity, "All winners already selected");
         }
         prizes[prizeId].isActive = active;
     }
