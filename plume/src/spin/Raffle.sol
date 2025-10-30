@@ -271,6 +271,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 
     function invalidateWinner(
         uint256 prizeId,
+        // winnerIndex refers to the index of the winner in the prizeWinners array
+        // NOT the winning ticket index
         uint256 winnerIndex
     ) external onlyRole(ADMIN_ROLE) {
         if (winnerIndex >= prizeWinners[prizeId].length) {
@@ -424,6 +426,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 
     function claimPrize(
         uint256 prizeId,
+        // winnerIndex refers to the index of the winner in the prizeWinners array
+        // NOT the winning ticket index
         uint256 winnerIndex
     ) external {
         // Check if this specific winner exists
@@ -570,6 +574,8 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
 
     function isWinnerValid(
         uint256 prizeId,
+        // winnerIndex refers to the index of the winner in the prizeWinners array
+        // NOT the winning ticket index
         uint256 winnerIndex
     ) external view returns (bool) {
         return !invalidWinners[prizeId][winnerIndex];
