@@ -184,7 +184,7 @@ contract Raffle is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
         uint256 value,
         uint256 quantity,
         string calldata formId
-    ) external onlyRole(ADMIN_ROLE) prizeIsActive(prizeId) {
+    ) external onlyRole(ADMIN_ROLE) {
         // Update prize details without affecting tickets or active status
         Prize storage prize = prizes[prizeId];
         prize.name = name;
