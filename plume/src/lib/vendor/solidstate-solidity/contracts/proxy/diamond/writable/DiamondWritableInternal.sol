@@ -90,7 +90,7 @@ abstract contract DiamondWritableInternal is IDiamondWritableInternal {
      * @notice add to the diamond a set of selectors associated with a particular facet
      * @dev selectors are added one-by-one to lastSlug, which is written to storage and updated to represent the subsequent slug when full
      * @dev lastSlug may be initialized with "dirty" higher-index bits, but these are ignored because they are out of range
-     * @dev selectorCount and lastSlug are modified in place and returned to avoid reundant storage access
+     * @dev selectorCount and lastSlug are modified in place and returned to avoid redundant storage access
      * @param l storage pointer to the DiamondBaseStorage Layout struct
      * @param facetCut structured data representing facet address and selectors to add
      * @param selectorCount total number of selectors registered on the diamond proxy
@@ -150,7 +150,7 @@ abstract contract DiamondWritableInternal is IDiamondWritableInternal {
      * @notice remove from the diamond a set of selectors associated with a particular facet
      * @dev selectors are removed one-by-one from lastSlug, which is updated to represent the preceeding slug when empty
      * @dev lastSlug is not updated in storage when modified or removed, leaving "dirty" higher-index bits, but these are ignored because they are out of range
-     * @dev selectorCount and lastSlug are modified in place and returned to avoid reundant storage access
+     * @dev selectorCount and lastSlug are modified in place and returned to avoid redundant storage access
      * @param l storage pointer to the DiamondBaseStorage Layout struct
      * @param facetCut structured data representing facet address and selectors to remove
      * @param selectorCount total number of selectors registered on the diamond proxy
@@ -268,7 +268,7 @@ abstract contract DiamondWritableInternal is IDiamondWritableInternal {
     }
 
     /**
-     * @notice run an optional post-diamond-cut initialization transation via delegatecall
+     * @notice run an optional post-diamond-cut initialization transaction via delegatecall
      * @dev the target and data parameters must both be zero, or both be non-zero
      * @param target contract address to which call shall be delegated
      * @param data encoded delegatecall transaction data
