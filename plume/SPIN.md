@@ -132,6 +132,7 @@ The contract calculates a user's streak of consecutive daily spins to reward con
 | `startSpin()`                     | User-callable function to initiate a spin by sending the required `spinPrice`.                        | Public                |
 | `handleRandomness(...)`           | The callback function for the Supra oracle. Processes the spin result and updates user state.         | `SUPRA_ROLE`          |
 | `spendRaffleTickets(...)`         | Allows the `Raffle` contract to deduct tickets from a user's balance.                                 | `raffleContract` only |
+| `addRaffleTickets(...)`           | Allows the admin to add tickets to a user's balance.                                                  | `ADMIN_ROLE`          |
 | `pause()` / `unpause()`           | Pauses or unpauses the `startSpin` functionality.                                                     | `ADMIN_ROLE`          |
 | `adminWithdraw(...)`              | Allows admin to withdraw PLUME tokens from the contract balance.                                      | `ADMIN_ROLE`          |
 | `cancelPendingSpin(address user)` | Escape hatch to cancel a user's spin request that is stuck pending an oracle callback.                | `ADMIN_ROLE`          |
@@ -145,6 +146,7 @@ The contract calculates a user's streak of consecutive daily spins to reward con
 - `SpinRequested(uint256 indexed nonce, address indexed user)`: Emitted when a user successfully initiates a spin.
 - `SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount)`: Emitted after the oracle callback is processed, detailing the reward.
 - `RaffleTicketsSpent(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets)`: Emitted when the `Raffle` contract spends a user's tickets.
+- `RaffleTicketsAdded(address indexed walletAddress, uint256 ticketsAdded, uint256 newBalance)`: Emitted when an admin adds tickets to a user's balance.
 - `NotEnoughStreak(string message)`: Emitted if a user meets the odds for a jackpot but does not have the required streak count.
 - `JackpotAlreadyClaimed(string message)`: Emitted if a user meets the odds for a jackpot but it has already been won that week.
 

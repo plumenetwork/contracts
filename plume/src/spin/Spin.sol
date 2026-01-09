@@ -17,7 +17,6 @@ contract Spin is
     PausableUpgradeable,
     ReentrancyGuardUpgradeable
 {
-
     // Storage
     struct UserData {
         uint256 jackpotWins;
@@ -36,8 +35,8 @@ contract Spin is
         uint256 plumeTokenThreshold; // Range start depends on daily jackpot threshold, ends here.
         uint256 raffleTicketThreshold; // Starts after plumeTokenThreshold, ends here.
         uint256 ppThreshold; // Starts after raffleTicketThreshold, ends here.
-            // anything above ppThreshold is "Nothing"
     }
+    // anything above ppThreshold is "Nothing"
 
     // Roles
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -71,9 +70,21 @@ contract Spin is
     // Events
     event SpinRequested(uint256 indexed nonce, address indexed user);
     event SpinCompleted(
-        address indexed walletAddress, string rewardCategory, uint256 rewardAmount, uint256 currentStreak
+        address indexed walletAddress,
+        string rewardCategory,
+        uint256 rewardAmount,
+        uint256 currentStreak
     );
-    event RaffleTicketsSpent(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
+    event RaffleTicketsSpent(
+        address indexed walletAddress,
+        uint256 ticketsUsed,
+        uint256 remainingTickets
+    );
+    event RaffleTicketsAdded(
+        address indexed walletAddress,
+        uint256 ticketsAdded,
+        uint256 newBalance
+    );
     event NotEnoughStreak(string message);
     event JackpotAlreadyClaimed(string message);
 
@@ -89,7 +100,10 @@ contract Spin is
      * @param supraRouterAddress The address of the Supra Router contract.
      * @param dateTimeAddress The address of the DateTime contract.
      */
-    function initialize(address supraRouterAddress, address dateTimeAddress) public initializer {
+    function initialize(
+        address supraRouterAddress,
+        address dateTimeAddress
+    ) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
@@ -132,8 +146,8 @@ contract Spin is
             plumeTokenThreshold: 200_000, // Up to 200,000 (Approx 20%)
             raffleTicketThreshold: 600_000, // Up to 600,000 (Approx 40%)
             ppThreshold: 900_000 // Up to 900,000 (Approx 30%)
-                // Above 900,000 is "Nothing" (Approx 10%)
-         });
+        });
+        // Above 900,000 is "Nothing" (Approx 10%)
     }
 
     /// @notice Ensures that the user can only spin once per day by checking their last spin date.
@@ -155,11 +169,23 @@ contract Spin is
         );
 
         // Retrieve current date components
-        (uint16 currentYear, uint8 currentMonth, uint8 currentDay) =
-            (dateTime.getYear(block.timestamp), dateTime.getMonth(block.timestamp), dateTime.getDay(block.timestamp));
+        (uint16 currentYear, uint8 currentMonth, uint8 currentDay) = (
+            dateTime.getYear(block.timestamp),
+            dateTime.getMonth(block.timestamp),
+            dateTime.getDay(block.timestamp)
+        );
 
         // Ensure the user hasn't already spun today
-        if (isSameDay(lastSpinYear, lastSpinMonth, lastSpinDay, currentYear, currentMonth, currentDay)) {
+        if (
+            isSameDay(
+                lastSpinYear,
+                lastSpinMonth,
+                lastSpinDay,
+                currentYear,
+                currentMonth,
+                currentDay
+            )
+        ) {
             revert AlreadySpunToday();
         }
 
@@ -167,7 +193,10 @@ contract Spin is
     }
 
     modifier onlyRaffleContract() {
-        require(msg.sender == raffleContract, "Only Raffle contract can call this");
+        require(
+            msg.sender == raffleContract,
+            "Only Raffle contract can call this"
+        );
         _;
     }
 
@@ -187,9 +216,17 @@ contract Spin is
         string memory callbackSignature = "handleRandomness(uint256,uint256[])";
         uint8 rngCount = 1;
         uint256 numConfirmations = 1;
-        uint256 clientSeed = uint256(keccak256(abi.encodePacked(admin, block.timestamp)));
+        uint256 clientSeed = uint256(
+            keccak256(abi.encodePacked(admin, block.timestamp))
+        );
 
-        uint256 nonce = supraRouter.generateRequest(callbackSignature, rngCount, numConfirmations, clientSeed, admin);
+        uint256 nonce = supraRouter.generateRequest(
+            callbackSignature,
+            rngCount,
+            numConfirmations,
+            clientSeed,
+            admin
+        );
         userNonce[nonce] = payable(msg.sender);
         pendingNonce[msg.sender] = nonce;
 
@@ -206,7 +243,10 @@ contract Spin is
      * @param nonce The nonce associated with the spin request.
      * @param rngList The list of random numbers generated.
      */
-    function handleRandomness(uint256 nonce, uint256[] memory rngList) external onlyRole(SUPRA_ROLE) nonReentrant {
+    function handleRandomness(
+        uint256 nonce,
+        uint256[] memory rngList
+    ) external onlyRole(SUPRA_ROLE) nonReentrant {
         address payable user = userNonce[nonce];
         if (user == address(0)) {
             revert InvalidNonce();
@@ -218,7 +258,10 @@ contract Spin is
 
         uint256 currentSpinStreak = _computeStreak(user, block.timestamp, true);
         uint256 randomness = rngList[0]; // Use full VRF range
-        (string memory rewardCategory, uint256 rewardAmount) = determineReward(randomness, currentSpinStreak);
+        (string memory rewardCategory, uint256 rewardAmount) = determineReward(
+            randomness,
+            currentSpinStreak
+        );
 
         // Apply reward logic
         UserData storage userDataStorage = userData[user];
@@ -235,17 +278,23 @@ contract Spin is
                 userDataStorage.nothingCounts += 1;
                 rewardCategory = "Nothing";
                 rewardAmount = 0;
-                emit NotEnoughStreak("Not enough streak count to claim Jackpot");
+                emit NotEnoughStreak(
+                    "Not enough streak count to claim Jackpot"
+                );
             } else {
                 userDataStorage.jackpotWins++;
                 lastJackpotClaimWeek = currentWeek;
             }
-        } else if (keccak256(bytes(rewardCategory)) == keccak256("Raffle Ticket")) {
+        } else if (
+            keccak256(bytes(rewardCategory)) == keccak256("Raffle Ticket")
+        ) {
             userDataStorage.raffleTicketsGained += rewardAmount;
             userDataStorage.raffleTicketsBalance += rewardAmount;
         } else if (keccak256(bytes(rewardCategory)) == keccak256("PP")) {
             userDataStorage.PPGained += rewardAmount;
-        } else if (keccak256(bytes(rewardCategory)) == keccak256("Plume Token")) {
+        } else if (
+            keccak256(bytes(rewardCategory)) == keccak256("Plume Token")
+        ) {
             userDataStorage.plumeTokens += rewardAmount;
         } else {
             userDataStorage.nothingCounts += 1;
@@ -257,13 +306,18 @@ contract Spin is
         userDataStorage.lastSpinTimestamp = block.timestamp;
         // ----------  Interactions: transfer Plume last ----------
         if (
-            keccak256(bytes(rewardCategory)) == keccak256("Jackpot")
-                || keccak256(bytes(rewardCategory)) == keccak256("Plume Token")
+            keccak256(bytes(rewardCategory)) == keccak256("Jackpot") ||
+            keccak256(bytes(rewardCategory)) == keccak256("Plume Token")
         ) {
             _safeTransferPlume(user, rewardAmount * 1 ether);
         }
 
-        emit SpinCompleted(user, rewardCategory, rewardAmount, currentSpinStreak);
+        emit SpinCompleted(
+            user,
+            rewardCategory,
+            rewardAmount,
+            currentSpinStreak
+        );
     }
 
     /**
@@ -306,7 +360,11 @@ contract Spin is
     }
 
     // ----------  Unified streak calculation ----------
-    function _computeStreak(address user, uint256 nowTs, bool justSpun) internal view returns (uint256) {
+    function _computeStreak(
+        address user,
+        uint256 nowTs,
+        bool justSpun
+    ) internal view returns (uint256) {
         // if a user just spun, we need to increment the streak its a new day or a broken streak
         uint256 streakAdjustment = justSpun ? 1 : 0;
 
@@ -326,12 +384,18 @@ contract Spin is
         return 0 + streakAdjustment; // broken streak
     }
 
-    function restoreStreak(address user, uint256 streak) external onlyRole(ADMIN_ROLE) {
+    function restoreStreak(
+        address user,
+        uint256 streak
+    ) external onlyRole(ADMIN_ROLE) {
         userData[user].streakCount = streak;
         userData[user].lastSpinTimestamp = block.timestamp;
     }
 
-    function restoreStreaks(address[] memory users, uint256[] memory streaks) external onlyRole(ADMIN_ROLE) {
+    function restoreStreaks(
+        address[] memory users,
+        uint256[] memory streaks
+    ) external onlyRole(ADMIN_ROLE) {
         for (uint256 i = 0; i < users.length; i++) {
             userData[users[i]].streakCount = streaks[i];
             userData[users[i]].lastSpinTimestamp = block.timestamp;
@@ -339,22 +403,47 @@ contract Spin is
     }
 
     /// @notice Returns the user\'s current streak count based on their last spin date.
-    function currentStreak(
-        address user
-    ) public view returns (uint256) {
+    function currentStreak(address user) public view returns (uint256) {
         return _computeStreak(user, block.timestamp, false);
     }
 
     /// @notice Allows the raffle contract to deduct tickets from a user\'s balance.
-    function spendRaffleTickets(address user, uint256 amount) external onlyRaffleContract {
+    function spendRaffleTickets(
+        address user,
+        uint256 amount
+    ) external onlyRaffleContract {
         UserData storage userDataStorage = userData[user];
-        require(userDataStorage.raffleTicketsBalance >= amount, "Insufficient raffle tickets");
+        require(
+            userDataStorage.raffleTicketsBalance >= amount,
+            "Insufficient raffle tickets"
+        );
         userDataStorage.raffleTicketsBalance -= amount;
-        emit RaffleTicketsSpent(user, amount, userDataStorage.raffleTicketsBalance);
+        emit RaffleTicketsSpent(
+            user,
+            amount,
+            userDataStorage.raffleTicketsBalance
+        );
+    }
+
+    /// @notice Allows the admin to add tickets to a user\'s balance.
+    function addRaffleTickets(
+        address user,
+        uint256 amount
+    ) external onlyRole(ADMIN_ROLE) {
+        UserData storage userDataStorage = userData[user];
+        userDataStorage.raffleTicketsBalance += amount;
+        emit RaffleTicketsAdded(
+            user,
+            amount,
+            userDataStorage.raffleTicketsBalance
+        );
     }
 
     /// @notice Allows the admin to withdraw PLUME tokens from the contract.
-    function adminWithdraw(address payable recipient, uint256 amount) external onlyRole(ADMIN_ROLE) {
+    function adminWithdraw(
+        address payable recipient,
+        uint256 amount
+    ) external onlyRole(ADMIN_ROLE) {
         require(recipient != address(0), "Invalid recipient address");
         _safeTransferPlume(recipient, amount);
     }
@@ -429,7 +518,11 @@ contract Spin is
     function getWeeklyJackpot()
         external
         view
-        returns (uint256 weekNumber, uint256 jackpotPrize, uint256 requiredStreak)
+        returns (
+            uint256 weekNumber,
+            uint256 jackpotPrize,
+            uint256 requiredStreak
+        )
     {
         require(campaignStartDate > 0, "Campaign not started");
 
@@ -464,13 +557,14 @@ contract Spin is
     /// @notice Sets the jackpot prize for a specific week.
     /// @param week The week number (0-11).
     /// @param prize The jackpot prize amount.
-    function setJackpotPrizes(uint8 week, uint256 prize) external onlyRole(ADMIN_ROLE) {
+    function setJackpotPrizes(
+        uint8 week,
+        uint256 prize
+    ) external onlyRole(ADMIN_ROLE) {
         jackpotPrizes[week] = prize;
     }
 
-    function setCampaignStartDate(
-        uint256 start
-    ) external onlyRole(ADMIN_ROLE) {
+    function setCampaignStartDate(uint256 start) external onlyRole(ADMIN_ROLE) {
         campaignStartDate = start == 0 ? block.timestamp : start;
     }
 
@@ -484,9 +578,7 @@ contract Spin is
 
     /// @notice Sets the PP gained per spin.
     /// @param _PP_PerSpin The PP gained per spin.
-    function setPP_PerSpin(
-        uint256 _PP_PerSpin
-    ) external onlyRole(ADMIN_ROLE) {
+    function setPP_PerSpin(uint256 _PP_PerSpin) external onlyRole(ADMIN_ROLE) {
         PP_PerSpin = _PP_PerSpin;
     }
 
@@ -508,25 +600,19 @@ contract Spin is
 
     /// @notice Whitelist address to bypass cooldown period.
     /// @param user The address of the user to whitelist.
-    function whitelist(
-        address user
-    ) external onlyRole(ADMIN_ROLE) {
+    function whitelist(address user) external onlyRole(ADMIN_ROLE) {
         whitelists[user] = true;
     }
 
     /// @notice Remove address from whitelist, restoring the daily spin limit.
     /// @param user The address of the user to remove from the whitelist.
-    function removeWhitelist(
-        address user
-    ) external onlyRole(ADMIN_ROLE) {
+    function removeWhitelist(address user) external onlyRole(ADMIN_ROLE) {
         whitelists[user] = false;
     }
 
     /// @notice Enable or disable spinning
     /// @param _enableSpin The flag to enable/disable spinning
-    function setEnableSpin(
-        bool _enableSpin
-    ) external onlyRole(ADMIN_ROLE) {
+    function setEnableSpin(bool _enableSpin) external onlyRole(ADMIN_ROLE) {
         enableSpin = _enableSpin;
     }
 
@@ -541,8 +627,14 @@ contract Spin is
         uint256 _raffleTicketThreshold,
         uint256 _ppThreshold
     ) external onlyRole(ADMIN_ROLE) {
-        require(_plumeTokenThreshold < _raffleTicketThreshold, "Invalid thresholds order");
-        require(_raffleTicketThreshold < _ppThreshold, "Invalid thresholds order");
+        require(
+            _plumeTokenThreshold < _raffleTicketThreshold,
+            "Invalid thresholds order"
+        );
+        require(
+            _raffleTicketThreshold < _ppThreshold,
+            "Invalid thresholds order"
+        );
         require(_ppThreshold <= 1_000_000, "Threshold exceeds maximum");
 
         rewardProbabilities.plumeTokenThreshold = _plumeTokenThreshold;
@@ -562,9 +654,7 @@ contract Spin is
      * @notice Allows the admin to set the price required to spin.
      * @param _newPrice The new price in wei.
      */
-    function setSpinPrice(
-        uint256 _newPrice
-    ) external onlyRole(ADMIN_ROLE) {
+    function setSpinPrice(uint256 _newPrice) external onlyRole(ADMIN_ROLE) {
         spinPrice = _newPrice;
     }
 
@@ -574,9 +664,7 @@ contract Spin is
      * which would otherwise leave the user's spin in a permanently pending state.
      * @param user The address of the user whose pending spin should be canceled.
      */
-    function cancelPendingSpin(
-        address user
-    ) external onlyRole(ADMIN_ROLE) {
+    function cancelPendingSpin(address user) external onlyRole(ADMIN_ROLE) {
         require(isSpinPending[user], "No spin pending for this user");
 
         uint256 nonce = pendingNonce[user];
@@ -593,8 +681,11 @@ contract Spin is
 
     /// @notice Transfers Plume tokens safely, reverting if the contract has insufficient balance.
     function _safeTransferPlume(address payable _to, uint256 _amount) internal {
-        require(address(this).balance >= _amount, "insufficient Plume in the Spin contract");
-        (bool success,) = _to.call{ value: _amount }("");
+        require(
+            address(this).balance >= _amount,
+            "insufficient Plume in the Spin contract"
+        );
+        (bool success, ) = _to.call{value: _amount}("");
         require(success, "Plume transfer failed");
     }
 
@@ -605,9 +696,8 @@ contract Spin is
      */
     function _authorizeUpgrade(
         address newImplementation
-    ) internal override onlyRole(ADMIN_ROLE) { }
+    ) internal override onlyRole(ADMIN_ROLE) {}
 
     /// @notice Fallback function to receive ether
-    receive() external payable { }
-
+    receive() external payable {}
 }
