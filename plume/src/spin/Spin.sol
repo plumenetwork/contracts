@@ -430,8 +430,10 @@ contract Spin is
         address user,
         uint256 amount
     ) external onlyRole(ADMIN_ROLE) {
+        require(user != address(0), "Invalid user address");
         UserData storage userDataStorage = userData[user];
         userDataStorage.raffleTicketsBalance += amount;
+        userDataStorage.raffleTicketsGained += amount;
         emit RaffleTicketsAdded(
             user,
             amount,
