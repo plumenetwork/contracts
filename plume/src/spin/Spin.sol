@@ -36,8 +36,8 @@ contract Spin is
         uint256 plumeTokenThreshold; // Range start depends on daily jackpot threshold, ends here.
         uint256 raffleTicketThreshold; // Starts after plumeTokenThreshold, ends here.
         uint256 ppThreshold; // Starts after raffleTicketThreshold, ends here.
-            // anything above ppThreshold is "Nothing"
     }
+    // anything above ppThreshold is "Nothing"
 
     // Roles
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -72,6 +72,7 @@ contract Spin is
     event SpinRequested(uint256 indexed nonce, address indexed user);
     event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
     event RaffleTicketsSpent(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
+    event RaffleTicketsAdded(address indexed walletAddress, uint256 ticketsAdded, uint256 newBalance);
     event NotEnoughStreak(string message);
     event JackpotAlreadyClaimed(string message);
 
@@ -130,8 +131,8 @@ contract Spin is
             plumeTokenThreshold: 200_000, // Up to 200,000 (Approx 20%)
             raffleTicketThreshold: 600_000, // Up to 600,000 (Approx 40%)
             ppThreshold: 900_000 // Up to 900,000 (Approx 30%)
-                // Above 900,000 is "Nothing" (Approx 10%)
          });
+        // Above 900,000 is "Nothing" (Approx 10%)
     }
 
     /// @notice Ensures that the user can only spin once per day by checking their last spin date.
@@ -349,6 +350,15 @@ contract Spin is
         require(userDataStorage.raffleTicketsBalance >= amount, "Insufficient raffle tickets");
         userDataStorage.raffleTicketsBalance -= amount;
         emit RaffleTicketsSpent(user, amount, userDataStorage.raffleTicketsBalance);
+    }
+
+    /// @notice Allows the admin to add tickets to a user\'s balance.
+    function addRaffleTickets(address user, uint256 amount) external onlyRole(ADMIN_ROLE) {
+        require(user != address(0), "Invalid user address");
+        UserData storage userDataStorage = userData[user];
+        userDataStorage.raffleTicketsBalance += amount;
+        userDataStorage.raffleTicketsGained += amount;
+        emit RaffleTicketsAdded(user, amount, userDataStorage.raffleTicketsBalance);
     }
 
     /// @notice Allows the admin to withdraw PLUME tokens from the contract.
