@@ -24,7 +24,7 @@ library EIP712 {
         bytes32 nameHash,
         bytes32 versionHash
     ) internal view returns (bytes32 domainSeparator) {
-        // execute EIP-712 hashStruct procedure using assembly, equavalent to:
+        // execute EIP-712 hashStruct procedure using assembly, equivalent to:
         //
         // domainSeparator = keccak256(
         //   abi.encode(
