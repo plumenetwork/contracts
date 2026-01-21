@@ -378,7 +378,7 @@ contract AssetVault is WalletUtils, IAssetVault {
      *   If there are too many yield distributions to process, the function will stop to avoid
      *   reaching the gas limit, and the beneficiary must call the function again to renounce more.
      * @param assetToken AssetToken from which the yield is to be redistributed
-     * @param amount Amount of AssetTokens to renounce from from the yield distribution
+     * @param amount Amount of AssetTokens to renounce from the yield distribution
      * @param expiration Timestamp at which the yield expires
      */
     function renounceYieldDistribution(
