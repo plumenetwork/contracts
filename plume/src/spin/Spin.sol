@@ -73,6 +73,7 @@ contract Spin is
     event SpinCompleted(address indexed walletAddress, string rewardCategory, uint256 rewardAmount);
     event RaffleTicketsSpent(address indexed walletAddress, uint256 ticketsUsed, uint256 remainingTickets);
     event RaffleTicketsAdded(address indexed walletAddress, uint256 ticketsAdded, uint256 newBalance);
+    event RaffleTicketsConvertedToPP(address indexed walletAddress, uint256 ticketsSpent, uint256 ppGained);
     event NotEnoughStreak(string message);
     event JackpotAlreadyClaimed(string message);
 
@@ -359,6 +360,23 @@ contract Spin is
         userDataStorage.raffleTicketsBalance += amount;
         userDataStorage.raffleTicketsGained += amount;
         emit RaffleTicketsAdded(user, amount, userDataStorage.raffleTicketsBalance);
+    }
+
+    /// @notice Converts all of a user's raffle tickets to PP (10 tickets = 1 PP, rounded up).
+    /// @param user The address of the user whose tickets should be converted.
+    function convertRaffleTicketsToPP(address user) external onlyRole(ADMIN_ROLE) {
+        require(user != address(0), "Invalid user address");
+        UserData storage userDataStorage = userData[user];
+        uint256 ticketsToConvert = userDataStorage.raffleTicketsBalance;
+        require(ticketsToConvert > 0, "No raffle tickets to convert");
+
+        // Calculate PP gained: 10 tickets = 1 PP, rounded up
+        uint256 ppGained = (ticketsToConvert + 9) / 10;
+
+        userDataStorage.raffleTicketsBalance = 0;
+        userDataStorage.PPGained += ppGained;
+
+        emit RaffleTicketsConvertedToPP(user, ticketsToConvert, ppGained);
     }
 
     /// @notice Allows the admin to withdraw PLUME tokens from the contract.
