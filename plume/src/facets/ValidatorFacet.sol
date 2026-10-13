@@ -209,6 +209,15 @@ contract ValidatorFacet is ReentrancyGuardUpgradeable, OwnableInternal {
             PlumeRewardLogic.createRewardRateCheckpoint($, token, validatorId, currentGlobalRate);
         }
 
+        // Seed an initial commission-rate checkpoint at genesis so historical commission lookups
+        // (PlumeRewardLogic.getEffectiveCommissionRateAt) never fall back to the mutable live
+        // `validator.commission` for periods before the first commission change. Without this seed,
+        // `validatorCommissionCheckpoints[validatorId]` is empty until the first setValidatorCommission,
+        // so the first commission change re-prices the pre-checkpoint window for stakers at the NEW
+        // rate (via the fallback) while the validator-accrual leg already settled it at the OLD rate —
+        // leaving the two legs inconsistent. Seeding here keeps every historical window well-defined.
+        PlumeRewardLogic.createCommissionRateCheckpoint($, validatorId, commission);
+
         emit ValidatorAdded(
             validatorId,
             commission,
